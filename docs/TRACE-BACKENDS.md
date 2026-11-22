@@ -49,6 +49,10 @@ printf '{"action":"append","path":"trace.wal","events":[...]}' | trit-orch trace
 printf '{"action":"sql","path":"trace.wal","sql":"SELECT kind, count(*) FROM trit_trace GROUP BY kind"}' \
   | trit-orch trace --trace-backend tritdb
 
+# pgwire 远程查询（features = ["tritdb-pgwire"]）
+printf '{"action":"serve","path":"trace.wal","listen":"127.0.0.1:5433"}' \
+  | trit-orch trace --trace-backend tritdb
+
 # CAS 快照/恢复（features = ["tritdb-cas"]）
 printf '{"action":"snapshot","path":"trace.wal","cas_root":"cas"}' \
   | trit-orch trace --trace-backend tritdb
@@ -57,7 +61,23 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 ```
 
 `path` 也可以由 `--trace-path <path>` 覆盖。`trace` 的 action：
-`append` / `load` / `check` / `sql` / `snapshot` / `restore`。
+`append` / `load` / `check` / `sql` / `snapshot` / `restore` / `serve`。
+
+## SQL 物化与远程查询
+
+- `tritdb-sql`：事件先按 `chain_seq` 增量物化进 `trit_trace`（每个 trace 记水位，
+  只插更新的行），再执行查询；重复查询不会重复插入，事件只读一遍。
+- `tritdb-pgwire`：`trace serve` 先做一次物化，再在 `listen` 上起 pgwire 服务；
+  服务期间新写入的事件不会自动同步，需要重启或再跑一次同步。
+
+## CAS 快照与 anchor 链
+
+- `snapshot` 把 WAL 当前 KV 全量写进 `ChunkStore`，manifest 以上一次 anchor 头作
+  `parent`，然后把新头原子写进 `cas_root/trit-trace.anchor`；设
+  `TRIT_TRACE_CAS_KEY` 时 anchor 带 HMAC-SHA256，读取时校验。
+- `restore` 不给 `head` 时从 anchor 取头；给了 `head` 且设了 key 时要求它与 anchor
+  一致，否则 `trace_anchor_mismatch`。恢复前用 `verify_chain` 验整条 manifest 链，
+  再用单事务改 WAL。
 
 ## 两种后端的分工
 

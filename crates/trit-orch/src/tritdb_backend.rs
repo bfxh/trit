@@ -5,6 +5,8 @@
 
 #[cfg(feature = "tritdb-cas")]
 pub mod cas;
+#[cfg(feature = "tritdb-pgwire")]
+pub mod pgwire;
 #[cfg(feature = "tritdb-sql")]
 pub mod sql;
 
@@ -28,6 +30,13 @@ struct Meta {
     last_hash: String,
     watermark: u64,
     signature: String,
+}
+
+/// 签名输入：除 `signature` 外的全部字段。
+fn unsigned(meta: &Meta) -> Vec<u8> {
+    let mut copy = meta.clone();
+    copy.signature.clear();
+    serde_json::to_vec(&copy).unwrap()
 }
 
 enum AppendError {
@@ -294,35 +303,13 @@ impl TritDbTraceStore {
 
     fn sign_meta(&self, meta: &mut Meta) {
         if let Some(key) = &self.key {
-            let copy = Meta {
-                schema: meta.schema,
-                chain_seq: meta.chain_seq,
-                last_seq: meta.last_seq,
-                last_hash: meta.last_hash.clone(),
-                watermark: meta.watermark,
-                signature: String::new(),
-            };
-            meta.signature = digest::hex(&digest::hmac_sha256(
-                key,
-                &serde_json::to_vec(&copy).unwrap(),
-            ));
+            meta.signature = digest::hex(&digest::hmac_sha256(key, &unsigned(meta)));
         }
     }
 
     fn verify_meta(&self, meta: &Meta) -> Result<(), Error> {
         if let Some(key) = &self.key {
-            let copy = Meta {
-                schema: meta.schema,
-                chain_seq: meta.chain_seq,
-                last_seq: meta.last_seq,
-                last_hash: meta.last_hash.clone(),
-                watermark: meta.watermark,
-                signature: String::new(),
-            };
-            let expected = digest::hex(&digest::hmac_sha256(
-                key,
-                &serde_json::to_vec(&copy).unwrap(),
-            ));
+            let expected = digest::hex(&digest::hmac_sha256(key, &unsigned(meta)));
             if meta.signature.is_empty() || meta.signature != expected {
                 return Err(Error::TraceAnchorMismatch {
                     path: self.path.display().to_string(),

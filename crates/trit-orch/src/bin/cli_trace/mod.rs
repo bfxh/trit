@@ -1,12 +1,12 @@
-#[cfg(any(feature = "tritdb-sql", feature = "tritdb-cas"))]
-use std::path::Path;
-
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{Error, TraceEvent, TraceEventStore, TraceLog, check_trace};
 
 #[cfg(feature = "tritdb")]
 use trit_orch::tritdb_backend::TritDbTraceStore;
+
+mod actions;
+use actions::{restore_action, serve_action, snapshot_action, sql_action};
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -24,6 +24,8 @@ struct TraceInput {
     cas_root: Option<String>,
     #[serde(default)]
     head: Option<String>,
+    #[serde(default)]
+    listen: Option<String>,
 }
 
 enum Backend {
@@ -78,7 +80,11 @@ pub(crate) fn run(input: &str) -> Result<Value, Error> {
         })?;
     request.path = Some(path.clone());
     let backend = backend_name();
-    if matches!(request.action.as_str(), "sql" | "snapshot" | "restore") && backend != "tritdb" {
+    if matches!(
+        request.action.as_str(),
+        "sql" | "snapshot" | "restore" | "serve"
+    ) && backend != "tritdb"
+    {
         return Err(Error::InputParse {
             message: format!("trace {} 需要 tritdb backend", request.action),
         });
@@ -136,88 +142,11 @@ fn run_with(backend: Backend, request: &TraceInput) -> Result<Value, Error> {
         "sql" => sql_action(request),
         "snapshot" => snapshot_action(request),
         "restore" => restore_action(request),
+        "serve" => serve_action(request),
         other => Err(Error::InputParse {
             message: format!(
-                "未知 trace action {other:?}（可用：append/load/check/sql/snapshot/restore）"
+                "未知 trace action {other:?}（可用：append/load/check/sql/snapshot/restore/serve）"
             ),
         }),
     }
-}
-
-#[cfg(feature = "tritdb-sql")]
-fn sql_action(request: &TraceInput) -> Result<Value, Error> {
-    let path = request.path.as_deref().ok_or_else(|| Error::InputParse {
-        message: "trace sql 需要 path".into(),
-    })?;
-    let sql = request.sql.as_deref().ok_or_else(|| Error::InputParse {
-        message: "trace sql 需要 sql".into(),
-    })?;
-    let results = trit_orch::tritdb_backend::sql::query_trace_events(Path::new(path), sql)?;
-    Ok(json!({
-        "ok": true,
-        "backend": "tritdb",
-        "results": results,
-    }))
-}
-
-#[cfg(not(feature = "tritdb-sql"))]
-fn sql_action(_request: &TraceInput) -> Result<Value, Error> {
-    Err(Error::InputParse {
-        message: "trace sql 需要编译 feature tritdb-sql".into(),
-    })
-}
-
-#[cfg(feature = "tritdb-cas")]
-fn snapshot_action(request: &TraceInput) -> Result<Value, Error> {
-    let path = request.path.as_deref().ok_or_else(|| Error::InputParse {
-        message: "trace snapshot 需要 path".into(),
-    })?;
-    let cas_root = request
-        .cas_root
-        .as_deref()
-        .ok_or_else(|| Error::InputParse {
-            message: "trace snapshot 需要 cas_root".into(),
-        })?;
-    let head = trit_orch::tritdb_backend::cas::snapshot_wal(Path::new(path), Path::new(cas_root))?;
-    Ok(json!({
-        "ok": true,
-        "backend": "tritdb",
-        "head": head,
-    }))
-}
-
-#[cfg(not(feature = "tritdb-cas"))]
-fn snapshot_action(_request: &TraceInput) -> Result<Value, Error> {
-    Err(Error::InputParse {
-        message: "trace snapshot 需要编译 feature tritdb-cas".into(),
-    })
-}
-
-#[cfg(feature = "tritdb-cas")]
-fn restore_action(request: &TraceInput) -> Result<Value, Error> {
-    let path = request.path.as_deref().ok_or_else(|| Error::InputParse {
-        message: "trace restore 需要 path".into(),
-    })?;
-    let cas_root = request
-        .cas_root
-        .as_deref()
-        .ok_or_else(|| Error::InputParse {
-            message: "trace restore 需要 cas_root".into(),
-        })?;
-    let head = request.head.as_deref().ok_or_else(|| Error::InputParse {
-        message: "trace restore 需要 head".into(),
-    })?;
-    trit_orch::tritdb_backend::cas::restore_wal(Path::new(path), Path::new(cas_root), head)?;
-    Ok(json!({
-        "ok": true,
-        "backend": "tritdb",
-        "restored": head,
-    }))
-}
-
-#[cfg(not(feature = "tritdb-cas"))]
-fn restore_action(_request: &TraceInput) -> Result<Value, Error> {
-    Err(Error::InputParse {
-        message: "trace restore 需要编译 feature tritdb-cas".into(),
-    })
 }
