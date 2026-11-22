@@ -7,21 +7,33 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::paths::{JS_EXTS, file_name, norm, parent_dir, targets, up};
 use crate::repo::Unit;
+use super::kind::{self, Kind};
+
+pub use super::deps_report::{Summary, summarize};
 
 const JVM_EXTS: &[&str] = &["java", "kt", "scala"];
 
-/// 填 `imports_resolved` / `unresolved` / `tests` / `tests_for`。
+#[derive(Default)]
+struct Link {
+    resolved: Vec<String>,
+    unresolved: Vec<String>,
+    external: Vec<String>,
+}
+
+type Links = Vec<Link>;
+type Tests = Vec<(Vec<String>, Vec<String>)>;
+
+/// 填 `imports_resolved` / `unresolved` / `imports_external` / 测试关联。
 pub fn annotate(units: &mut [Unit]) {
     let (links, tests) = plan(units);
     for (i, u) in units.iter_mut().enumerate() {
-        u.imports_resolved = links[i].0.clone();
-        u.unresolved = links[i].1.clone();
+        u.imports_resolved = links[i].resolved.clone();
+        u.unresolved = links[i].unresolved.clone();
+        u.imports_external = links[i].external.clone();
         u.tests = tests[i].0.clone();
         u.tests_for = tests[i].1.clone();
     }
 }
-
-type Links = Vec<(Vec<String>, Vec<String>)>;
 
 /// 起点容错：接受工作区相对路径（`crates/x/src/lib.rs`）或仓库相对路径。
 fn match_start(units: &[Unit], start: &str) -> String {
@@ -35,7 +47,8 @@ fn match_start(units: &[Unit], start: &str) -> String {
         .map(|u| u.path.clone())
         .unwrap_or_else(|| start.to_string())
 }
-fn plan(units: &[Unit]) -> (Links, Links) {
+
+fn plan(units: &[Unit]) -> (Links, Tests) {
     let paths: BTreeSet<String> = units.iter().map(|u| u.path.clone()).collect();
     let mut by_name: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for p in &paths {
@@ -47,25 +60,27 @@ fn plan(units: &[Unit]) -> (Links, Links) {
     let links = units
         .iter()
         .map(|u| {
-            let (mut ok, mut bad) = (Vec::new(), Vec::new());
+            let mut link = Link::default();
             for imp in &u.imports {
                 match resolve(&u.path, &u.lang, imp, &paths, &by_name) {
                     Some(p) if p != u.path => {
-                        if !ok.contains(&p) {
-                            ok.push(p);
+                        if !link.resolved.contains(&p) {
+                            link.resolved.push(p);
                         }
                     }
                     Some(_) => {}
-                    None => bad.push(imp.clone()),
+                    None => match kind::classify(&u.lang, imp, &paths) {
+                        Kind::External => link.external.push(imp.clone()),
+                        Kind::Unresolved => link.unresolved.push(imp.clone()),
+                    },
                 }
             }
-            (ok, bad)
+            link
         })
         .collect();
     (links, link_tests(units, &paths))
 }
-
-fn link_tests(units: &[Unit], paths: &BTreeSet<String>) -> Links {
+fn link_tests(units: &[Unit], paths: &BTreeSet<String>) -> Tests {
     let pos: BTreeMap<&str, usize> = units
         .iter()
         .enumerate()
@@ -240,63 +255,6 @@ fn resolve_include(
         .get(file_name(imp))
         .filter(|v| v.len() == 1)
         .map(|v| v[0].clone())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Summary {
-    pub edges: usize,
-    pub imports_resolved: usize,
-    pub imports_unresolved: usize,
-    pub tested_sources: usize,
-    pub test_links: usize,
-    pub cyclic: usize,
-}
-
-pub fn summarize(units: &[Unit]) -> Summary {
-    let edges: usize = units.iter().map(|u| u.imports_resolved.len()).sum();
-    Summary {
-        edges,
-        imports_resolved: edges,
-        imports_unresolved: units.iter().map(|u| u.unresolved.len()).sum(),
-        tested_sources: units
-            .iter()
-            .filter(|u| !u.is_test && !u.tests.is_empty())
-            .count(),
-        test_links: units.iter().map(|u| u.tests_for.len()).sum(),
-        cyclic: cyclic_nodes(units),
-    }
-}
-
-/// Kahn 拓扑排序后剩下的节点：落在环上或只被环依赖的文件数。
-fn cyclic_nodes(units: &[Unit]) -> usize {
-    let mut indeg: BTreeMap<&str, usize> = units.iter().map(|u| (u.path.as_str(), 0)).collect();
-    for u in units {
-        for t in &u.imports_resolved {
-            if let Some(d) = indeg.get_mut(t.as_str()) {
-                *d += 1;
-            }
-        }
-    }
-    let mut q: VecDeque<&str> = indeg
-        .iter()
-        .filter(|(_, d)| **d == 0)
-        .map(|(p, _)| *p)
-        .collect();
-    let mut removed = 0;
-    while let Some(p) = q.pop_front() {
-        removed += 1;
-        if let Some(u) = units.iter().find(|u| u.path == p) {
-            for t in &u.imports_resolved {
-                if let Some(d) = indeg.get_mut(t.as_str()) {
-                    *d -= 1;
-                    if *d == 0 {
-                        q.push_back(t.as_str());
-                    }
-                }
-            }
-        }
-    }
-    units.len() - removed
 }
 
 /// 从 `start` 沿依赖方向展开的闭包（含起点），最多 `max` 个文件。

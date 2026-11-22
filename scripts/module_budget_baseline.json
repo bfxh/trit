@@ -1043,12 +1043,16 @@
       "lines": 42
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_json.rs",
+      "lines": 84
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo_opts.rs",
       "lines": 34
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo_stats.rs",
-      "lines": 144
+      "lines": 70
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/report_extra.rs",
@@ -1192,23 +1196,47 @@
     },
     {
       "file": "crates/trit-data/src/repo.rs",
-      "lines": 232
+      "lines": 227
     },
     {
       "file": "crates/trit-data/src/repo/deps.rs",
-      "lines": 328
+      "lines": 286
+    },
+    {
+      "file": "crates/trit-data/src/repo/deps_report.rs",
+      "lines": 66
     },
     {
       "file": "crates/trit-data/src/repo/deps_tests.rs",
-      "lines": 116
+      "lines": 95
+    },
+    {
+      "file": "crates/trit-data/src/repo/graph_tests.rs",
+      "lines": 31
     },
     {
       "file": "crates/trit-data/src/repo/imports.rs",
-      "lines": 83
+      "lines": 54
+    },
+    {
+      "file": "crates/trit-data/src/repo/imports_lang.rs",
+      "lines": 69
     },
     {
       "file": "crates/trit-data/src/repo/imports_rust.rs",
       "lines": 36
+    },
+    {
+      "file": "crates/trit-data/src/repo/imports_tests.rs",
+      "lines": 19
+    },
+    {
+      "file": "crates/trit-data/src/repo/kind.rs",
+      "lines": 69
+    },
+    {
+      "file": "crates/trit-data/src/repo/license.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-data/src/repo/paths.rs",

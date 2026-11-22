@@ -6,8 +6,12 @@ use crate::code_langs::code_languages;
 use crate::code_quality::check;
 
 pub mod deps;
+mod deps_report;
 mod imports;
+mod imports_lang;
 mod imports_rust;
+mod kind;
+mod license;
 pub mod paths;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +24,8 @@ pub struct Unit {
     pub license: Option<String>,
     pub imports: Vec<String>,
     pub imports_known: bool,
+    pub imports_external: Vec<String>,
+    pub imports_dynamic: Vec<String>,
     pub imports_resolved: Vec<String>,
     pub unresolved: Vec<String>,
     pub tests: Vec<String>,
@@ -34,7 +40,7 @@ pub fn scan(root: &Path) -> Result<Vec<Unit>, String> {
         .and_then(|s| s.to_str())
         .unwrap_or("repo")
         .to_string();
-    let license = detect_license(&root);
+    let license = license::detect(&root);
     let mut out = Vec::new();
     walk(&root, &root, &repo, license.as_deref(), &mut out)?;
     out.sort_by(|a, b| a.path.cmp(&b.path));
@@ -80,7 +86,7 @@ fn walk(
             let lang = detect_lang(&p, &head);
             let q = check(&head);
             let generated = q.auto_generated || is_generated_path(&p);
-            let (imports, imports_known) = imports::parse(&head, &lang);
+            let parsed = imports::parse(&head, &lang);
             let is_test = is_test_path(&p);
             out.push(Unit {
                 repo: repo.to_string(),
@@ -89,8 +95,10 @@ fn walk(
                 bytes,
                 generated,
                 license: license.map(|s| s.to_string()),
-                imports,
-                imports_known,
+                imports: parsed.imports,
+                imports_known: parsed.known,
+                imports_external: Vec::new(),
+                imports_dynamic: parsed.dynamic,
                 imports_resolved: Vec::new(),
                 unresolved: Vec::new(),
                 tests: Vec::new(),
@@ -119,7 +127,7 @@ fn rel(root: &Path, p: &Path) -> String {
         .replace('\\', "/")
 }
 
-fn read_head(p: &Path, n: usize) -> String {
+pub(crate) fn read_head(p: &Path, n: usize) -> String {
     let data = std::fs::read(p).unwrap_or_default();
     String::from_utf8_lossy(&data[..data.len().min(n)]).into_owned()
 }
@@ -207,26 +215,13 @@ fn is_test_path(p: &Path) -> bool {
     TEST_MARKS.iter().any(|m| s.contains(m))
 }
 
-fn detect_license(root: &Path) -> Option<String> {
-    let entries = std::fs::read_dir(root).ok()?;
-    for e in entries.flatten() {
-        let name = e.file_name().to_string_lossy().to_uppercase();
-        if name.starts_with("LICENSE") || name.starts_with("COPYING") || name.starts_with("NOTICE") {
-            let text = read_head(&e.path(), 4096).to_uppercase();
-            for k in ["MIT", "APACHE", "GPL", "BSD", "MPL", "UNLICENSE", "PROPRIETARY", "ISC"] {
-                if text.contains(k) {
-                    return Some(k.to_string());
-                }
-            }
-            return Some("UNKNOWN".to_string());
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 #[path = "repo_tests.rs"]
 mod tests;
 
 #[cfg(test)]
 mod deps_tests;
+#[cfg(test)]
+mod graph_tests;
+#[cfg(test)]
+mod imports_tests;
