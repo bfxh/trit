@@ -33,6 +33,7 @@ members = [
     "crates/trit-schedule",
     "crates/trit-net",
     "crates/trit-parts",
+    "crates/trit-data",
     "crates/trit-machines",
     "crates/trit-codec",
     "crates/trit-attn",
@@ -77,6 +78,7 @@ sansheng = { path = "crates/sansheng", version = "0.12.0" }
 trit-schedule = { path = "crates/trit-schedule", version = "0.12.0" }
 trit-ops = { path = "crates/trit-ops", version = "0.12.0" }
 trit-orch = { path = "crates/trit-orch", version = "0.12.0" }
+trit-data = { path = "crates/trit-data", version = "0.12.0" }
 trit-wspace = { path = "crates/trit-wspace", version = "0.12.0" }
 trit-gamescan = { path = "crates/trit-gamescan", version = "0.12.0" }
 

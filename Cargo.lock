@@ -2293,6 +2293,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-data"
+version = "0.12.0"
+dependencies = [
+ "trit-core",
+ "trit-learn",
+]
+
+[[package]]
 name = "trit-dot"
 version = "0.12.0"
 dependencies = [

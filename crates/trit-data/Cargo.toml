@@ -1,0 +1,12 @@
+[package]
+name = "trit-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "智能体轨迹与语言数据的可复算质量门（M0）"
+
+[dependencies]
+trit-core.workspace = true
+trit-learn.workspace = true

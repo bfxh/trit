@@ -891,6 +891,26 @@
       "lines": 167
     },
     {
+      "file": "crates/trit-data/src/bin/trit-data.rs",
+      "lines": 185
+    },
+    {
+      "file": "crates/trit-data/src/gate.rs",
+      "lines": 307
+    },
+    {
+      "file": "crates/trit-data/src/lib.rs",
+      "lines": 16
+    },
+    {
+      "file": "crates/trit-data/src/manifest.rs",
+      "lines": 44
+    },
+    {
+      "file": "crates/trit-data/src/schema.rs",
+      "lines": 158
+    },
+    {
       "file": "crates/trit-dot/src/lib.rs",
       "lines": 644
     },
