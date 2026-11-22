@@ -172,7 +172,7 @@
  },
  {
   "name": "orch: pending tasks block completion",
-  "file": "crates/trit-orch/src/progress.rs",
+  "file": "crates/trit-orch/src/progress/finish.rs",
   "old": "                Phase::Pending => pending += 1,",
   "new": "                Phase::Pending => {}",
   "pkg": "trit-orch",
@@ -190,12 +190,30 @@
  },
  {
   "name": "orch: inconclusive results are not completion",
-  "file": "crates/trit-orch/src/progress.rs",
+  "file": "crates/trit-orch/src/progress/finish.rs",
   "old": "                    _ => inconclusive += 1,",
   "new": "                    _ => confirmed += 1,",
   "pkg": "trit-orch",
   "filter": "settled_without_evidence_cannot_be_reported_complete",
   "diagnostic": "ORCH_FINISH_INCONCLUSIVE"
+ },
+ {
+  "name": "orch: completion requires an executor receipt",
+  "file": "crates/trit-orch/src/progress/finish.rs",
+  "old": "            if !unattested.is_empty() {",
+  "new": "            if false {",
+  "pkg": "trit-orch",
+  "filter": "finish_with_receipts_requires_matching_executor_receipt",
+  "diagnostic": "ORCH_FINISH_UNATTESTED"
+ },
+ {
+  "name": "orch: unauthorized tasks block completion",
+  "file": "crates/trit-orch/src/progress/finish.rs",
+  "old": "                Phase::Settled if observation.authorization == Ternary::True => {",
+  "new": "                Phase::Settled if true => {",
+  "pkg": "trit-orch",
+  "filter": "finish_with_receipts_rejects_unauthorized_settled_task",
+  "diagnostic": "ORCH_FINISH_UNAUTHORIZED"
  },
  {
   "name": "orch: dispatch requires Prepared state",
