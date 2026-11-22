@@ -104,7 +104,7 @@ cargo run --release -p trit-wspace --example bias_e2e -- \
 ## 6. 未证栏
 
 - 输入默认是随机 `uniform(-1, 1)`；真实激活对照见
-  [WSP-E2E-REAL-ACT.md](WSP-E2E-REAL-ACT.md)：query 不低估、intermediate 高估 10–13%、
+  [WSP-E2E-REAL-ACT.md](../research/WSP-E2E-REAL-ACT.md)：query 不低估、intermediate 高估 10–13%、
   output 低估 1.72×。随机读数只代表算子层面的量化误差。
 - 只测第 0 层的三段线性权重，没有注意力、LayerNorm、GELU、残差和后续 5 层；
   真实 transformer 的非线性与归一化可能改变误差累积方式。

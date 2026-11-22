@@ -15,7 +15,7 @@
 - f32 bias 真实激活收益：query −18.4%、intermediate −10.3%、output −0.06%
   （随机输入下分别是 −14.4% / −7.2% / −0.8%）。
 - 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
-  `docs_hygiene`、`doc_pointers` 绿。详见 `docs/results/WSP-E2E-REAL-ACT.md`。
+  `docs_hygiene`、`doc_pointers` 绿。详见 `docs/research/WSP-E2E-REAL-ACT.md`。
 
 ### Changed（trit-wspace：补丁事实覆盖 tile / 行级编辑）
 

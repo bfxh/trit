@@ -61,7 +61,6 @@
 | [EXTRACT-RESULTS.md](results/EXTRACT-RESULTS.md) | 提取结果（自动生成） |
 | [WSP3-RESULTS.md](results/WSP3-RESULTS.md) | WSP3（RLE 二级压缩）在真实 MiniLM 上的实测：无收益 |
 | [WSP-E2E-RESULTS.md](results/WSP-E2E-RESULTS.md) | 真实模型端到端 bias 读数（all-MiniLM-L6-v2 第 0 层） |
-| [WSP-E2E-REAL-ACT.md](results/WSP-E2E-REAL-ACT.md) | 真实激活校准：MiniLM 第 0 层三段的随机 vs 真实输入对照 |
 | [WSP-STS.md](results/WSP-STS.md) | 真句向量（STS 风格 pair）上的编辑集门禁 |
 | [WSP-STS-BENCH.md](results/WSP-STS-BENCH.md) | 真实 STS benchmark（1,379 行）上的编辑集门禁 |
 | [WSP-STS-TUNED.md](results/WSP-STS-TUNED.md) | 真实 tuned 权重（非合成 Δ）上的编辑集门禁 |
@@ -76,6 +75,7 @@
 | [WSP-INTERNAL-LOGIC.md](research/WSP-INTERNAL-LOGIC.md) | 从「读特征」升级到「读程序」：最小自动机提取、轨迹承重、Tracr 反向闭环的判据与 M0 |
 | [WSP-INTERNAL-LOGIC-RESULTS.md](research/WSP-INTERNAL-LOGIC-RESULTS.md) | M0 读数：三值网络 → 最小 DFA 的提取与参考对拍（DIFF=0，7/7 状态） |
 | [WSP-LIMITS.md](research/WSP-LIMITS.md) | `trit-wspace` 未证栏汇总（每条给来源与补证所需） |
+| [WSP-E2E-REAL-ACT.md](research/WSP-E2E-REAL-ACT.md) | 真实激活校准：MiniLM 第 0 层三段的随机 vs 真实输入对照 |
 | [WSP-BLOCK-INDEX.md](research/WSP-BLOCK-INDEX.md) | WSP2 块索引与随机访问 |
 | [WSP-WRITE-LOCK.md](research/WSP-WRITE-LOCK.md) | CLI 并发写锁（`--out` / `--log` 分发前加锁） |
 | [WSP-TILE-EDIT.md](research/WSP-TILE-EDIT.md) | WSP1 tile 编辑：任意矩形块的事务编辑与审计 |

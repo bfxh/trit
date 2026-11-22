@@ -86,7 +86,7 @@ CLI/MCP、learned、gradient、写锁、GPU WF32、6 层读数。
 3. **TIES trim**：`task_merge --trim k / --trim-margin m`，按票数/票差裁剪；
    `--tie keep|zero` 对齐 disjoint merge。
 4. **真实激活校准**（2026-11-22 第 0 层三段完成，见
-   [WSP-E2E-REAL-ACT.md](../results/WSP-E2E-REAL-ACT.md)）：随机输入只在 output 段低估
+   [WSP-E2E-REAL-ACT.md](WSP-E2E-REAL-ACT.md)）：随机输入只在 output 段低估
    1.72×；query 不低估、intermediate 反而高估 10–13%。下一步是完整 6 层
    （attention/LN/GELU/残差）。
 5. **三值化 scale 乘子扫描 / per-group scale**：`s/E|w| ∈ [0.6,1.6]` 与 g=64/128；
