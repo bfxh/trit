@@ -1,4 +1,4 @@
-//! 文档 / 演示 / 表格 / PDF 格式识别（Office Open XML 与 PDF 特征）。
+//! 文档 / 演示 / 表格 / PDF 格式识别。
 
 pub fn detect(text: &str) -> Vec<&'static str> {
     let lower = text.to_lowercase();

@@ -26,6 +26,7 @@ pub mod code_langs_data;
 pub mod code_quality;
 pub mod edu;
 pub mod format;
+pub mod format_data;
 pub mod format_filter;
 pub mod format_office;
 pub mod format_table;

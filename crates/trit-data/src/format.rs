@@ -1,4 +1,3 @@
-//! 结构化格式识别：JSON/JSONL/YAML/TOML/INI/XML/HTML/CSV/TSV/Markdown/SQL/
 //! LaTeX/Dockerfile/Makefile/GraphQL/logfmt/diff/二进制。
 
 use trit_learn::json::Json;
@@ -110,6 +109,7 @@ pub fn detect(text: &str) -> Vec<&'static str> {
         out.push("binary");
     }
     out.extend(crate::format_office::detect(t));
+    out.extend(crate::format_data::detect(t));
     out
 }
 

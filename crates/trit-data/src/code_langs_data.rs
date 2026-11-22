@@ -1,5 +1,4 @@
 //! 编程语言特征表（前后端 / GPU / 着色器 / 定理证明 / 命令行方言）。
-
 pub const PROBES: &[(&str, &[&str])] = &[
         (
             "python",
@@ -149,4 +148,5 @@ pub const PROBES: &[(&str, &[&str])] = &[
         ("powershell", &["param(", "write-host", "$env:", "get-childitem", "pwsh"]),
         ("cmd", &["@echo off", "setlocal", "%errorlevel%", "goto "]),
         ("nushell", &["| where", "| each", "def "]),
+        ("trit", &["trit ", "trit-", "ternary", "bool3", "tritpack", "trit-codec", "gguf", "type_trit"]),
     ];

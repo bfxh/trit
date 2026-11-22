@@ -1040,7 +1040,11 @@
     },
     {
       "file": "crates/trit-data/src/bits.rs",
-      "lines": 103
+      "lines": 96
+    },
+    {
+      "file": "crates/trit-data/src/bits_tests.rs",
+      "lines": 25
     },
     {
       "file": "crates/trit-data/src/code_langs.rs",
@@ -1085,6 +1089,10 @@
     {
       "file": "crates/trit-data/src/format.rs",
       "lines": 119
+    },
+    {
+      "file": "crates/trit-data/src/format_data.rs",
+      "lines": 29
     },
     {
       "file": "crates/trit-data/src/format_filter.rs",

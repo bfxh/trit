@@ -57,6 +57,12 @@ pub fn analyze(text: &str) -> BitInfo {
         "int4",
         "int8",
         "nf4",
+        "bool3",
+        "tritpack",
+        "trit-codec",
+        "type_trit",
+        "5 trits",
+        "1.6 bit",
     ]
     .iter()
     .any(|k| lower.contains(k));
@@ -66,6 +72,7 @@ pub fn analyze(text: &str) -> BitInfo {
 /// 可用于筛选的标签：`1bit`..`64bit`、`multi-valued`。
 pub fn labels(text: &str) -> Vec<&'static str> {
     let info = analyze(text);
+    let lower = text.to_lowercase();
     let mut out = Vec::new();
     for w in ["1bit", "2bit", "4bit", "8bit", "16bit", "32bit", "64bit"] {
         if info.widths.contains_key(w) {
@@ -75,29 +82,15 @@ pub fn labels(text: &str) -> Vec<&'static str> {
     if info.multi_valued {
         out.push("multi-valued");
     }
+    if lower.contains("trit") || lower.contains("ternary") || lower.contains("bool3") || lower.contains("type_trit") {
+        out.push("trit");
+    }
+    if lower.contains("tritpack") || lower.contains("trit-codec") || lower.contains("5 trits") || lower.contains("1.6 bit") {
+        out.push("packed-trit");
+    }
     out
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detects_widths_units_and_multi_value() {
-        let info = analyze("使用 int8 与 4-bit 权重，对比 16 bit 激活；内存 512 MB，吞吐 2 GB/s。");
-        assert!(info.widths.contains_key("8bit"));
-        assert!(info.widths.contains_key("4bit"));
-        assert!(info.widths.contains_key("16bit"));
-        assert!(info.units.contains_key("mb"));
-        assert!(info.units.contains_key("gb"));
-        assert!(info.multi_valued);
-    }
-
-    #[test]
-    fn bit_ops_and_labels() {
-        let info = analyze("x = a << 2 | b & mask;");
-        assert!(info.bit_ops);
-        assert_eq!(labels("8-bit 量化与 ternary 权重"), vec!["8bit", "multi-valued"]);
-        assert!(labels("普通文本").is_empty());
-    }
-}
+#[path = "bits_tests.rs"]
+mod tests;
