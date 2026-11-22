@@ -68,7 +68,7 @@ fn bipolar_dot_handles_tail_padding() {
             let a: Vec<i32> = (0..len).map(|_| bipolar(&mut rng)).collect();
             let b: Vec<i32> = (0..len).map(|_| bipolar(&mut rng)).collect();
             assert_eq!(
-                bipolar_dot(&pack_bipolar(&a), &pack_bipolar(&b), len).expect("同长度"),
+                bipolar_dot(&pack_bipolar(&a), &pack_bipolar(&b)).expect("同长度"),
                 scalar_dot(&a, &b),
                 "len={len} seed={seed}"
             );

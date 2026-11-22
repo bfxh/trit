@@ -802,19 +802,21 @@
     },
     {
       "id": "C047",
-      "title": "bipolar_dot 校验等长与打包覆盖并返回 Result",
+      "title": "bipolar_dot 的长度由 PackedBipolar 携带（无法谎报 len）",
       "kind": "cmd",
       "covers": [
         "L111"
       ],
       "scope": [
         "crates/trit-dot/src/bipolar.rs",
-        "crates/trit-dot/src/lib.rs"
+        "crates/trit-dot/src/lib.rs",
+        "crates/trit-dot/src/packed.rs",
+        "crates/trit-dot/tests/bipolar.rs"
       ],
       "since": "2026-11-22",
       "tier": "fast",
       "added": "2026-11-22T14:00:00+08:00",
-      "run": "grep -q 'fn check_bipolar' crates/trit-dot/src/bipolar.rs && grep -q 'Result<i64, DotError>' crates/trit-dot/src/bipolar.rs && grep -q 'checked_mul(BLOCK_BITS)' crates/trit-dot/src/bipolar.rs",
+      "run": "grep -q 'struct PackedBipolar' crates/trit-dot/src/packed.rs && grep -q 'fn from_words' crates/trit-dot/src/packed.rs && grep -q 'Result<i64, DotError>' crates/trit-dot/src/bipolar.rs",
       "shell": "bash",
       "expect_exit": 0
     },

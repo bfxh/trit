@@ -908,7 +908,7 @@
     },
     {
       "file": "crates/trit-dot/src/bipolar.rs",
-      "lines": 71
+      "lines": 44
     },
     {
       "file": "crates/trit-dot/src/cli.rs",
@@ -916,11 +916,19 @@
     },
     {
       "file": "crates/trit-dot/src/lib.rs",
-      "lines": 644
+      "lines": 595
     },
     {
       "file": "crates/trit-dot/src/main.rs",
-      "lines": 205
+      "lines": 203
+    },
+    {
+      "file": "crates/trit-dot/src/packed.rs",
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-dot/tests/bipolar.rs",
+      "lines": 78
     },
     {
       "file": "crates/trit-dot/tests/cli.rs",
