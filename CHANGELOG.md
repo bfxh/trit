@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：per-group scale + GPTQ——STS 0.8065 → 0.8290）
+
+- `crates/trit-wspace/src/gptq.rs`：`quantize_grouped`（每 N 列一个 absmean scale，
+  `scales` 布局 `(row * groups + g)`）；`quantize` 是 `group = cols` 的特例。
+- `examples/bert6`：`--gptq-group N`（隐含开启 GPTQ）；`QuantLinear` 支持分组前向。
+- 读数（STS 64 对）：per-row GPTQ `0.8065 / 0.8320` → group=128 `0.8144 / 0.8333` →
+  group=64 `0.8159 / 0.8408` → group=32 `0.8272 / 0.8464` → group=16 `0.8290 / 0.8460`；
+  32 附近饱和。相对 absmean 0.7330 的 Pearson +0.0942（+12.9% 相对）。
+- 测试：`tests/gptq_group.rs`（与逐行版对齐、块内 absmean、粒度更细不变差）。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
 ### Added（trit-wspace：权重侧 GPTQ 逐列补偿——STS 0.7330 → 0.8065）
 
 - `crates/trit-wspace/src/gptq.rs`：`absmean` / `quantize`（H = XᵀX 逐列补偿，act-order

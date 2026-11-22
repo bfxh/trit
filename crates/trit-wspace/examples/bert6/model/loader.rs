@@ -5,17 +5,11 @@ use crate::model::{Bert, BertConfig, BertLayer};
 use trit_wspace::safetensors;
 
 pub(crate) fn load(file: &str, config: BertConfig) -> Bert {
-    let BertConfig {
-        layers,
-        hidden,
-        intermediate,
-        heads,
-        eps,
-        quantize,
-        activation,
-        sidecar_rank,
-        gptq_dir,
-    } = config;
+    let (layers, hidden) = (config.layers, config.hidden);
+    let (heads, eps) = (config.heads, config.eps);
+    let (quantize, activation, sidecar_rank) =
+        (config.quantize, config.activation, config.sidecar_rank);
+    let (gptq_dir, gptq_group) = (config.gptq_dir, config.gptq_group);
     let tensor = |name: &str| -> F32Linear {
         let weight =
             safetensors::read_tensor(file, name).unwrap_or_else(|e| panic!("读 {name} 失败：{e}"));
@@ -49,6 +43,7 @@ pub(crate) fn load(file: &str, config: BertConfig) -> Bert {
                 &linear,
                 sidecar_rank,
                 load_h(short).as_deref(),
+                gptq_group,
             ))
         } else {
             Linear::F32(linear)
@@ -87,7 +82,6 @@ pub(crate) fn load(file: &str, config: BertConfig) -> Bert {
             activation,
         });
     }
-    let _ = intermediate;
     Bert {
         hidden,
         heads,

@@ -17,26 +17,14 @@ pub(crate) fn run(
     batch: usize,
     seq: usize,
     hidden: usize,
-    heads: usize,
     eps: f32,
     ranks: &[usize],
 ) -> Value {
     let mut out = Vec::with_capacity(ranks.len());
     for &rank in ranks {
-        let mut bert = Bert::load(
-            file,
-            BertConfig {
-                layers: 6,
-                hidden,
-                intermediate: hidden * 4,
-                heads,
-                eps,
-                quantize: true,
-                activation: ActivationMode::TernaryAllChannel,
-                sidecar_rank: rank,
-                gptq_dir: None,
-            },
-        );
+        let config = BertConfig::new(hidden, eps, true, ActivationMode::TernaryAllChannel)
+            .with_sidecar(rank);
+        let mut bert = Bert::load(file, config);
         bert.set_scales(scales.to_vec());
         let (real, _, _) = bert.forward(input, mask, batch, seq, false);
         out.push(json!({
