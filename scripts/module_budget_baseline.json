@@ -2156,7 +2156,11 @@
     },
     {
       "file": "crates/trit-learn/src/manifest.rs",
-      "lines": 152
+      "lines": 99
+    },
+    {
+      "file": "crates/trit-learn/src/manifest_tests.rs",
+      "lines": 85
     },
     {
       "file": "crates/trit-learn/src/metrics.rs",

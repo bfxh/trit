@@ -23,7 +23,7 @@
  "crate/trit-graph": 59,
  "crate/trit-immune": 267,
  "crate/trit-ir": 16,
- "crate/trit-learn": 44,
+ "crate/trit-learn": 46,
  "crate/trit-lsp": 54,
  "crate/trit-machines": 27,
  "crate/trit-mmap": 8,

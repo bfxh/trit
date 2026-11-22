@@ -11,7 +11,7 @@
   {
     "name": "budget: 变胖不再判红（GREW 失效）",
     "file": "scripts/module_budget.py",
-    "old": "        if lines > cap:",
+    "old": "        if lines > limit:",
     "new": "        if False:",
     "pkg": "scripts/module_budget.py",
     "filter": "",
@@ -38,7 +38,7 @@
   {
     "name": "budget: --update 不再拒绝抬高上限",
     "file": "scripts/module_budget.py",
-    "old": "        if new is not None and new > recorded:",
+    "old": "        if new > allowed:",
     "new": "        if False:",
     "pkg": "scripts/module_budget.py",
     "filter": "",
