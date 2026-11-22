@@ -3503,6 +3503,14 @@
       "lines": 51
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/main.rs",
+      "lines": 211
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model.rs",
+      "lines": 352
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_e2e/main.rs",
       "lines": 188
     },
@@ -3688,7 +3696,15 @@
     },
     {
       "file": "crates/trit-wspace/src/activations.rs",
-      "lines": 55
+      "lines": 16
+    },
+    {
+      "file": "crates/trit-wspace/src/activations/mask.rs",
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-wspace/src/activations/matrix.rs",
+      "lines": 47
     },
     {
       "file": "crates/trit-wspace/src/analyze.rs",
@@ -4049,6 +4065,10 @@
     {
       "file": "crates/trit-wspace/tests/activations.rs",
       "lines": 60
+    },
+    {
+      "file": "crates/trit-wspace/tests/activations_mask.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",
