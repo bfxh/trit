@@ -120,6 +120,10 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
   元数据 HMAC 只防“改数据库文件”的攻击者，拥有密钥的宿主仍可重写。
 - 自研 SQLite 只读服务不实现认证与 TLS：`TRIT_PG_PASSWORD` / `TRIT_PG_TLS_CERT`
   只对「回退直读轨迹 WAL」的旧路径生效。需要认证时请走旧路径，或在前置代理上做。
+- mTLS 目前**不可强制**：配 `TRIT_PG_TLS_CLIENT_CA` 后服务端会请求客户端证书，但
+  `tritdb-pgwire` 的校验器是「可选客户端证书」——实测不带证书、带非 CA 签发证书、
+  带已吊销证书都能连（客户端证书根本没被索取），CRL/OCSP 因此无法作为准入手段。
+  要强制客户端证书得改 vendor 的校验器或另做服务。
 - 两个后端都建立在“宿主可信”的模型上；执行器/模型自报问题仍由完成闸的
   `Receipt` provenance 负责。
 

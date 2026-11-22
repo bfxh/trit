@@ -7,6 +7,9 @@ use tritdb_pgwire::{AuthMode, ScramVerifier, ServerOptions};
 
 use crate::Error;
 
+#[path = "pgwire_tls.rs"]
+mod tls;
+
 /// SCRAM-SHA-256 迭代次数（与 pgwire 内部默认一致）。
 const SCRAM_ITERATIONS: u32 = 4096;
 
@@ -18,13 +21,7 @@ pub(super) fn server_options() -> Result<Arc<ServerOptions>, Error> {
         options.auth = AuthMode::ScramSha256Verifier(verifier);
         options.allow_plaintext_password = std::env::var("TRIT_PG_ALLOW_PLAINTEXT").is_ok();
     }
-    if let (Ok(cert), Ok(key)) = (
-        std::env::var("TRIT_PG_TLS_CERT"),
-        std::env::var("TRIT_PG_TLS_KEY"),
-    ) {
-        options.tls_cert = Some(cert.into());
-        options.tls_key = Some(key.into());
-    }
+    tls::apply(&mut options);
     Ok(Arc::new(options))
 }
 

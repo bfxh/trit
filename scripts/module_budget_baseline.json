@@ -2388,7 +2388,7 @@
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/pgwire_options.rs",
-      "lines": 36
+      "lines": 33
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/pgwire_serve.rs",
@@ -2397,6 +2397,10 @@
     {
       "file": "crates/trit-orch/src/tritdb_backend/pgwire_sqlite.rs",
       "lines": 279
+    },
+    {
+      "file": "crates/trit-orch/src/tritdb_backend/pgwire_tls.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/sql.rs",
