@@ -1231,6 +1231,14 @@
       "lines": 49
     },
     {
+      "file": "crates/trit-data/src/repo/crates.rs",
+      "lines": 42
+    },
+    {
+      "file": "crates/trit-data/src/repo/crates_tests.rs",
+      "lines": 23
+    },
+    {
       "file": "crates/trit-data/src/repo/deps.rs",
       "lines": 286
     },
@@ -1291,12 +1299,24 @@
       "lines": 40
     },
     {
+      "file": "crates/trit-data/src/repo/paths_rules.rs",
+      "lines": 84
+    },
+    {
       "file": "crates/trit-data/src/repo/paths_targets.rs",
-      "lines": 107
+      "lines": 37
     },
     {
       "file": "crates/trit-data/src/repo/paths_tests.rs",
       "lines": 47
+    },
+    {
+      "file": "crates/trit-data/src/repo/paths_unique.rs",
+      "lines": 35
+    },
+    {
+      "file": "crates/trit-data/src/repo/paths_unique_tests.rs",
+      "lines": 24
     },
     {
       "file": "crates/trit-data/src/repo_gate.rs",

@@ -24,20 +24,18 @@ pub struct Unit {
     pub tests_for: Vec<String>,
     pub is_test: bool,
     pub inline_tests: bool,
+    pub crate_tests: bool,
 }
 
 pub fn scan(root: &Path) -> Result<Vec<Unit>, String> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let repo = root
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("repo")
-        .to_string();
+    let repo = root.file_name().and_then(|s| s.to_str()).unwrap_or("repo").to_string();
     let license = license::detect(&root);
     let mut out = Vec::new();
     walk(&root, &root, &repo, license.as_deref(), &mut out)?;
     out.sort_by(|a, b| a.path.cmp(&b.path));
     deps::annotate(&mut out);
+    crates::annotate(&mut out);
     Ok(out)
 }
 
@@ -69,11 +67,12 @@ fn walk(
             let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
             let head = read_head(&p, 64 * 1024);
             let lang = lang_map::detect(&p, &head);
-            let q = check(&head);
-            let generated = q.auto_generated || marks::is_generated_path(&p);
+            let generated = check(&head).auto_generated || marks::is_generated_path(&p);
             let parsed = imports::parse(&head, &lang);
-            let is_test = marks::is_test_path(&p);
-            let inline_tests = lang == "rust" && read_head(&p, 1 << 20).contains("#[cfg(test)]");
+            let (is_test, inline_tests) = (
+                marks::is_test_path(&p),
+                lang == "rust" && read_head(&p, 1 << 20).contains("#[cfg(test)]"),
+            );
             out.push(Unit {
                 repo: repo.to_string(),
                 path: marks::rel(root, &p),
@@ -91,6 +90,7 @@ fn walk(
                 tests_for: Vec::new(),
                 is_test,
                 inline_tests,
+                crate_tests: false,
             });
         }
     }

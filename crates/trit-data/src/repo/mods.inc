@@ -1,4 +1,5 @@
 pub mod context;
+mod crates;
 pub mod deps;
 mod deps_report;
 pub mod dup;
@@ -10,10 +11,13 @@ mod lang_map;
 mod license;
 mod marks;
 pub mod paths;
+mod paths_rules;
 mod paths_targets;
-
+mod paths_unique;
 #[cfg(test)]
 mod context_tests;
+#[cfg(test)]
+mod crates_tests;
 #[cfg(test)]
 mod deps_tests;
 #[cfg(test)]
@@ -24,6 +28,8 @@ mod graph_tests;
 mod imports_tests;
 #[cfg(test)]
 mod paths_tests;
+#[cfg(test)]
+mod paths_unique_tests;
 #[cfg(test)]
 #[path = "../repo_tests.rs"]
 mod tests;

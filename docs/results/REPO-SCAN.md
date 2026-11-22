@@ -95,12 +95,20 @@ cargo run -q --release -p trit-data --bin trit-data -- pipeline --repo <目录> 
 实测（本仓库，1831 文件，1.1s）：
 
 ```json
-{"files": 1831, "decisions": {"accept": 680, "defer": 1133, "reject": 18},
- "reasons": {"duplicate": 5, "generated": 13, "imports_unknown": 331, "no_test": 1128}}
+{"files": 1836, "decisions": {"accept": 1444, "defer": 374, "reject": 18},
+ "reasons": {"duplicate": 5, "generated": 13, "imports_unknown": 331, "no_test": 67}}
 ```
 
-Rust 的 `#[cfg(test)]` 内联测试已计入覆盖（识别前 no_test 1435、accept 372；
-识别后 no_test 1128、accept 680，`coverage.tests` 0.058 → 0.228）。
+测试覆盖分两级，`no_test` 软门认二级：
+
+| 层级 | 判据 | 用途 |
+|---|---|---|
+| 文件级 | `inline_tests`（Rust `#[cfg(test)]`）或 `tests` 非空（同名/约定匹配，含 JUnit） | 数据卡 `coverage.tests` |
+| crate 级 | 同 `Cargo.toml` 的 crate 内任意文件有文件级测试 | 只用于 `no_test` 软门 |
+
+演进：初始 no_test 1435 / accept 372 → 内联测试识别后 1128 / 680 →
+crate 级 + 同目录唯一候选后 **67 / 1444**。剩余 67 条是没有测试 crate 或没有可匹配
+测试的文件；`coverage.tests` 仍是**文件级**（0.228），不把 crate 级覆盖算进数据卡。
 
 - `no_test` 占多数：本仓库大量文件没有同名/同 crate 测试关联（R2 的测试匹配只认约定）。
 - `duplicate` 5 与 `repo.dup.json` 的 2 组精确 + 2 组近似一致（组内除首份全部拒绝）。

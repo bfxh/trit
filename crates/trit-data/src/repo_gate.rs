@@ -69,7 +69,7 @@ pub fn evaluate(u: &Unit, cfg: &Config, dup: &BTreeSet<String>) -> Verdict {
     if !u.imports_known {
         defer.push("imports_unknown");
     }
-    if cfg.require_tests && !u.is_test && u.tests.is_empty() && !u.inline_tests {
+    if cfg.require_tests && !u.is_test && u.tests.is_empty() && !u.inline_tests && !u.crate_tests {
         defer.push("no_test");
     }
     if u.bytes > cfg.max_bytes {
