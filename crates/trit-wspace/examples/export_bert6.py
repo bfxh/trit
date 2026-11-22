@@ -71,10 +71,17 @@ def main():
 
     captured = {}
     layers = []
+    scale_captured = {}
 
     def hook(name):
         def fn(_module, inputs, _output):
             captured[name] = inputs[0].detach()
+
+        return fn
+
+    def scale_hook(name, kind):
+        def fn(_module, inputs, output):
+            scale_captured[name] = (output if kind == "out" else inputs[0]).detach()
 
         return fn
 
@@ -84,6 +91,13 @@ def main():
             lambda _m, _inp, out, index=index: layers.append(
                 (index, (out[0] if isinstance(out, tuple) else out).detach())
             )
+        )
+        layer.attention.output.LayerNorm.register_forward_hook(
+            scale_hook(f"norm1_{index}", "out")
+        )
+        layer.output.dense.register_forward_hook(scale_hook(f"ffn_{index}", "in"))
+        layer.output.LayerNorm.register_forward_hook(
+            scale_hook(f"norm2_{index}", "out")
         )
 
     encoded = tokenizer(
@@ -114,6 +128,24 @@ def main():
             os.path.join(out_dir, f"layer{index}.f32"),
             hidden.reshape(-1, hidden.shape[-1]).numpy(),
         )
+
+    def channel_absmean(tensor):
+        weight = mask.unsqueeze(-1).float()
+        total = (tensor.abs() * weight).sum(dim=(0, 1))
+        count = weight.sum(dim=(0, 1)).clamp(min=1)
+        return (total / count).numpy().astype(float).tolist()
+
+    layer_scales = []
+    for index in range(config.num_hidden_layers):
+        layer_scales.append(
+            {
+                "norm1": channel_absmean(scale_captured[f"norm1_{index}"]),
+                "ffn": channel_absmean(scale_captured[f"ffn_{index}"]),
+                "norm2": channel_absmean(scale_captured[f"norm2_{index}"]),
+            }
+        )
+    with open(os.path.join(out_dir, "scales.json"), "w", encoding="utf-8") as handle:
+        json.dump({"layers": layer_scales}, handle, indent=2, ensure_ascii=False)
 
     with open(os.path.join(out_dir, "pairs.json"), "w", encoding="utf-8") as handle:
         json.dump({"pairs": pairs}, handle, indent=2, ensure_ascii=False)

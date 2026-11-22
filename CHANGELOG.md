@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：激活 scale——per-channel 把全三值 STS 拉到 0.432）
+
+- `--activation-mode` 增加 `ternary-all-scale`（per-token absmean）与
+  `ternary-all-channel`（f32 校准的 per-channel absmean，读 `scales.json`）；
+  `export_bert6.py` 现在导出每层 LN1 / GELU 后 / LN2 的 per-channel scale。
+- 读数（STS test 64 对，真实输入）：
+
+  | 模式 | rel_l2 | cosine | Pearson | Spearman |
+  |---|---:|---:|---:|---:|
+  | 仅线性权重（f32 激活） | 1.1660 | 0.4695 | 0.7330 | 0.7437 |
+  | ternary-ln | 1.3999 | 0.3583 | 0.5461 | 0.5310 |
+  | ternary-all（纯 sign） | 2.5051 | 0.0275 | 0.2472 | 0.2494 |
+  | ternary-all-scale（per-token） | 1.5598 | 0.1837 | 0.3576 | 0.3846 |
+  | ternary-all-channel（f32 校准） | 1.2373 | 0.0100 | **0.4322** | 0.3889 |
+
+- 结论：per-channel scale 把 Pearson 从 0.247 拉到 **0.432**（超过 0.4），但 Spearman
+  0.389、cosine 0.01；学习式闭式解 `s=(q·y)/(q·q)` 在 `q=sign(y)` 时就是 per-channel
+  absmean。距仅线性权重的 0.733 仍有 0.30，下一步是残差侧车/混合精度。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
 ### Added（trit-wspace：STS 任务头 + 128 句——全三值激活 Pearson 0.25）
 
 - `export_bert6.py` 扩到 128 句 / 64 对，导出 `pairs.json`（人工分）；Rust 侧新增
