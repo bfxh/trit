@@ -23,13 +23,14 @@
 //! **重复目标**（同一位置被写多次）——它们不改变行为，但会让“编辑了几位”的读数虚高。
 //!
 
-use std::collections::BTreeMap;
-
+mod facts;
 mod verdicts;
+
+pub use facts::{PatchFacts, patch_facts};
 
 use serde_json::{Value, json};
 
-use crate::edit::{Edit, Patch};
+use crate::edit::Patch;
 use crate::error::Result;
 use crate::net::Net;
 use crate::oracle::Oracle;
@@ -188,41 +189,6 @@ impl KeepReport {
     }
 }
 
-/// 补丁自身的事实（与行为无关的部分）。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PatchFacts {
-    /// 编辑条数。
-    pub edits: usize,
-    /// `SetTrit` 条数。
-    pub trits: usize,
-    /// `SetBias` 条数。
-    pub biases: usize,
-    /// `SetScale` 条数。
-    pub scales: usize,
-    /// 空操作条数：目标值已经等于当前值。
-    pub noop: usize,
-    /// 重复目标条数：同一位置被写第二次及以后。
-    pub repeated: usize,
-    /// 碰到的三值位置数。
-    pub touched: usize,
-}
-
-impl PatchFacts {
-    /// → JSON。
-    #[must_use]
-    pub fn to_json(&self) -> Value {
-        json!({
-            "edits": self.edits,
-            "trits": self.trits,
-            "biases": self.biases,
-            "scales": self.scales,
-            "noop": self.noop,
-            "repeated": self.repeated,
-            "touched": self.touched,
-        })
-    }
-}
-
 /// 副作用证书。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Certificate {
@@ -351,72 +317,6 @@ pub fn behavior_set(net: &Net, samples: usize, seed: u64) -> Result<Oracle> {
         .map(|row| net.forward(row))
         .collect::<Result<Vec<_>>>()?;
     Oracle::new(inputs, outputs)
-}
-
-/// 补丁事实：条数、成本、空操作与重复目标。
-#[must_use]
-pub fn patch_facts(base: &Net, patch: &Patch) -> PatchFacts {
-    let cost = patch.cost(base);
-    let mut seen: BTreeMap<(usize, u8, usize, usize), usize> = BTreeMap::new();
-    let mut noop = 0usize;
-    let mut repeated = 0usize;
-    for edit in patch.edits() {
-        if is_noop(base, edit) {
-            noop += 1;
-        }
-        if let Some(key) = target_key(edit) {
-            let count = seen.entry(key).or_insert(0);
-            if *count > 0 {
-                repeated += 1;
-            }
-            *count += 1;
-        }
-    }
-    PatchFacts {
-        edits: cost.edits,
-        trits: cost.trits,
-        biases: cost.biases,
-        scales: cost.scales,
-        noop,
-        repeated,
-        touched: cost.touched,
-    }
-}
-
-fn is_noop(net: &Net, edit: &Edit) -> bool {
-    match *edit {
-        Edit::SetTrit {
-            layer,
-            row,
-            col,
-            to,
-            ..
-        } => net
-            .layer(layer)
-            .and_then(|one| one.trit(row, col))
-            .is_some_and(|current| current == to),
-        Edit::SetBias { layer, row, to, .. } => net
-            .layer(layer)
-            .and_then(|one| one.bias_trit(row))
-            .is_some_and(|current| current == to),
-        Edit::SetScale { layer, row, to, .. } => net
-            .layer(layer)
-            .and_then(|one| one.scale(row))
-            .is_some_and(|current| current == to),
-        Edit::SwapRows { a, b, .. } => a == b,
-        _ => false,
-    }
-}
-
-fn target_key(edit: &Edit) -> Option<(usize, u8, usize, usize)> {
-    match *edit {
-        Edit::SetTrit {
-            layer, row, col, ..
-        } => Some((layer, 0, row, col)),
-        Edit::SetBias { layer, row, .. } => Some((layer, 1, row, 0)),
-        Edit::SetScale { layer, row, .. } => Some((layer, 2, row, 0)),
-        _ => None,
-    }
 }
 
 fn compare(set: &Oracle, before: &Net, after: &Net, rows: usize) -> Result<KeepReport> {
