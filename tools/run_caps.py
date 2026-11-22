@@ -197,7 +197,6 @@ def _run_posix(cmd, mem_bytes, procs, seconds):
     account), and grandchildren that escape the group with a second setsid().
     """
     import resource
-    import signal
 
     def _pre():
         if mem_bytes:
@@ -216,7 +215,10 @@ def _run_posix(cmd, mem_bytes, procs, seconds):
         return p.wait(timeout=seconds if seconds else None)
     except subprocess.TimeoutExpired:
         try:
-            os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+            # 9 is SIGKILL on POSIX. Do not `import signal` here: the script's own
+            # directory is sys.path[0] and this repo also has tools/signal.py, so
+            # the bare import resolves to the project module, not the stdlib.
+            os.killpg(os.getpgid(p.pid), 9)
         except OSError:
             p.kill()
         p.wait()

@@ -1,0 +1,20 @@
+[
+ {
+  "name": "package: 不可发布 crate 被当成可发布（内部层进发布链）",
+  "file": "scripts/package_publishable.py",
+  "old": "    return publish is None or (isinstance(publish, list) and len(publish) > 0)",
+  "new": "    return True",
+  "pkg": "scripts/package_publishable.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "package: exclude 列表取反（把可发布 crate 排除）",
+  "file": "scripts/package_publishable.py",
+  "old": "    return [p[\"name\"] for p in packages if not is_publishable(p)]",
+  "new": "    return [p[\"name\"] for p in packages if is_publishable(p)]",
+  "pkg": "scripts/package_publishable.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

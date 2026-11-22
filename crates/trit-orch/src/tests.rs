@@ -1,52 +1,7 @@
 use crate::*;
 
-fn spec(id: &str) -> TaskSpec {
-    TaskSpec {
-        task: Task {
-            id: id.into(),
-            priority: 0,
-            duration: 1,
-            deps: Vec::new(),
-        },
-        requirements: Resources::new(1, 1),
-        max_tokens: 10,
-        epoch: 0,
-    }
-}
-
-fn edge(id: &str, required: Ternary) -> Dependency {
-    Dependency {
-        task: id.into(),
-        required,
-    }
-}
-
-fn snapshot(tasks: &[TaskSpec]) -> Snapshot {
-    Snapshot {
-        revision: 7,
-        observations: tasks
-            .iter()
-            .map(|spec| {
-                (
-                    spec.task.id.clone(),
-                    Observation {
-                        authorization: Ternary::True,
-                        freshness: Ternary::True,
-                        ..Observation::default()
-                    },
-                )
-            })
-            .collect(),
-    }
-}
-
-fn limits() -> Limits {
-    Limits {
-        workers: 16,
-        capacity: Resources::new(16, 16),
-        tokens: 1_000,
-    }
-}
+mod support;
+use support::*;
 
 #[test]
 fn all_dependency_and_admission_truth_tables() {

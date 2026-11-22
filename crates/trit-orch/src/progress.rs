@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, EvidenceVerdict, Observation, Phase, Selection, Snapshot, TaskSpec, Ternary};
+use crate::{Error, EvidenceVerdict, Phase, Selection, Snapshot, TaskSpec};
 
 /// 一轮调度的结构化记录：这一轮选中/挂起/拒绝/在途/已结算各多少。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,13 +133,5 @@ impl Progress {
     }
 }
 
-pub(crate) fn decisive(observation: &Observation, spec: &TaskSpec) -> Option<EvidenceVerdict> {
-    if observation.epoch != spec.epoch || observation.freshness != Ternary::True {
-        return None;
-    }
-    observation
-        .evidence
-        .as_ref()
-        .map(|report| report.judgment(spec.epoch))
-        .filter(|verdict| *verdict != EvidenceVerdict::Neither)
-}
+mod decisive;
+pub(crate) use decisive::decisive;

@@ -20,7 +20,7 @@
  {
   "name": "publish: 依赖未发布 crate 不再拦截",
   "file": "scripts/publish_graph.py",
-  "old": "            if not is_publishable(target):",
+  "old": "            if publishable and not is_publishable(target):",
   "new": "            if False:",
   "pkg": "scripts/publish_graph.py",
   "filter": "",
