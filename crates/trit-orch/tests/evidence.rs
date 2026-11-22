@@ -1,12 +1,7 @@
 use trit_orch::{CheckReport, CheckResult, EvidenceSpec, Exit, Receipt, Ternary};
 
 fn receipt(exit: Exit, passed: u32, failed: u32) -> Receipt {
-    Receipt {
-        epoch: 9,
-        exit,
-        assertions_passed: passed,
-        assertions_failed: failed,
-    }
+    Receipt::host_measured(9, exit, passed, failed)
 }
 
 fn spec() -> EvidenceSpec {

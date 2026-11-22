@@ -4,6 +4,7 @@ mod admission;
 mod budget;
 mod claim;
 mod context;
+mod digest;
 mod effects;
 mod error;
 mod evidence;
@@ -26,7 +27,6 @@ mod exports;
 pub use exports::*;
 #[cfg(test)]
 mod invariants_tests;
-
 #[cfg(test)]
 mod rails_tests;
 

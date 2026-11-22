@@ -5,8 +5,6 @@
 //! `admit-with-claim`。成功退出码 0，失败退出码 1 并输出
 //! `{"ok":false,"kind":"...","error":"..."}`；成功输出永远带 `"ok":true`。
 
-use std::io::Read;
-
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
@@ -44,12 +42,10 @@ fn parse_receipt_state(raw: &str) -> Result<ReceiptState, trit_orch::Error> {
 
 fn main() {
     let command = std::env::args().nth(1).unwrap_or_default();
-    let mut input = String::new();
-    if let Err(error) = std::io::stdin().read_to_string(&mut input) {
-        fail(&trit_orch::Error::InputParse {
-            message: error.to_string(),
-        });
-    }
+    let input = match cli_inputs::stdin::read_stdin() {
+        Ok(input) => input,
+        Err(error) => fail(&error),
+    };
     match run(&command, &input) {
         Ok(value) => println!("{value}"),
         Err(error) => fail(&error),

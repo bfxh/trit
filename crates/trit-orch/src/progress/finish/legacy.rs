@@ -1,6 +1,6 @@
 use crate::{Error, Snapshot, TaskSpec};
 
-use super::{Progress, Summary};
+use crate::{Progress, Summary};
 
 impl Progress {
     /// 完成闸门：任何未定/未验的任务都让「做完了」判红。

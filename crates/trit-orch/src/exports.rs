@@ -22,7 +22,7 @@ pub use crate::progress::{Progress, RoundReport, Summary};
 pub use crate::rails::{Rails, RailsLedger};
 pub use crate::receipt::{
     DeliveryReceipt, HandoffPacket, ReceiptFailure, ReceiptLedger, ReceiptState, handoff_gate,
-    handoff_obligation, receipt_obligation,
+    handoff_gate_with_key, handoff_obligation, receipt_obligation,
 };
 pub use crate::shadow::{ShadowReport, TraceStep, TraceStore, replay};
 pub use crate::status::Counts;

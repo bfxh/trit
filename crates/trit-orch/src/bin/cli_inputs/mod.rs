@@ -1,8 +1,8 @@
 use serde::Deserialize;
 use trit_orch::*;
-
 mod finish;
-pub(crate) use finish::FinishInput;
+pub(crate) mod stdin;
+pub(crate) use finish::{Execution, FinishInput};
 
 #[derive(Deserialize)]
 pub(crate) struct PlanInput {

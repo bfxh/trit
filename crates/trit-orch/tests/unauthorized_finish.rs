@@ -6,12 +6,7 @@ mod progress_support;
 use progress_support::*;
 
 fn receipt(passed: u32, failed: u32) -> Receipt {
-    Receipt {
-        epoch: 0,
-        exit: Exit::Completed { code: 0 },
-        assertions_passed: passed,
-        assertions_failed: failed,
-    }
+    Receipt::host_measured(0, Exit::Completed { code: 0 }, passed, failed)
 }
 
 #[test]
