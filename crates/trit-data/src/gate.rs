@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use trit_core::fingerprint::sha256_hex;
 
+use crate::language::{LangClass, Limits, classify, features};
 use crate::schema::Trajectory;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,7 +138,9 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
     if !(2..=32).contains(&t.steps.len()) {
         soft.push("length");
     }
-    if !language_ok(&collect_text(t), cfg) {
+    let lang_text = collect_text(t);
+    let lang = classify(&features(&lang_text), &Limits::default());
+    if lang == LangClass::Bad {
         soft.push("language");
     }
     if !cfg.require_verified && t.outcome.verifier.eq_ignore_ascii_case("none") {
@@ -203,39 +206,6 @@ fn collect_text(t: &Trajectory) -> String {
     out
 }
 
-fn language_ok(text: &str, cfg: &Config) -> bool {
-    if text.trim().is_empty() {
-        return false;
-    }
-    let chars: Vec<char> = text.chars().collect();
-    let total = chars.len() as f64;
-    let nonspace = chars.iter().filter(|c| !c.is_whitespace()).count() as f64;
-    let control = chars
-        .iter()
-        .filter(|c| {
-            let u = (**c) as u32;
-            u < 0x20 && !matches!(**c, '\n' | '\r' | '\t')
-        })
-        .count() as f64;
-    if nonspace / total < cfg.min_nonspace || control / total > 0.01 {
-        return false;
-    }
-    let words: Vec<&str> = text.split_whitespace().collect();
-    if words.len() < 8 {
-        return true;
-    }
-    let mut seen = BTreeSet::new();
-    let mut dup = 0usize;
-    let mut total4 = 0usize;
-    for w in words.windows(4) {
-        total4 += 1;
-        let key = w.join("\u{1}");
-        if !seen.insert(key) {
-            dup += 1;
-        }
-    }
-    dup as f64 / total4 as f64 <= cfg.max_repeat4
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,5 +273,16 @@ mod tests {
         let b = td(OK);
         assert_eq!(content_key(&a), content_key(&b));
         assert_eq!(content_key(&a).len(), 64);
+    }
+    #[test]
+    fn defers_on_bad_language() {
+        let bad = "重复句子。".repeat(80);
+        let json = format!(
+            r#"{{"task_id":"t3","model":"m","steps":[{{"role":"assistant","thought":"{bad}","action":{{"tool":"bash","args":{{"cmd":"ls"}}}},"observation":"{bad}"}},{{"role":"assistant","thought":"{bad}","action":{{"tool":"finish","args":{{}}}},"observation":"{bad}"}}],"outcome":{{"verifier":"pytest","passed":true,"evidence":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"final":"{bad}"}}}}"#
+        );
+        let mut seen = BTreeSet::new();
+        let v = evaluate(&td(&json), &Config::default(), &mut seen);
+        assert_eq!(v.decision, Decision::Defer, "{:?}", v.reasons);
+        assert!(v.reasons.contains(&"language"));
     }
 }

@@ -908,7 +908,7 @@
     },
     {
       "file": "crates/trit-data/src/gate.rs",
-      "lines": 307
+      "lines": 288
     },
     {
       "file": "crates/trit-data/src/language.rs",
