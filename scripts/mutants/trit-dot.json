@@ -18,10 +18,10 @@
  {
   "name": "dot: 二值公式丢掉系数 2",
   "file": "crates/trit-dot/src/bipolar.rs",
-  "old": "        return Ok(len as i64 - 2 * mismatches as i64);",
-  "new": "        return Ok(len as i64 - mismatches as i64);",
+  "old": "        return Ok(a.len() as i64 - 2 * mismatches as i64);",
+  "new": "        return Ok(a.len() as i64 - mismatches as i64);",
   "pkg": "trit-dot",
-  "filter": "bipolar_dot_matches_scalar"
+  "filter": "dot_matches_scalar_across_boundaries"
  },
  {
   "name": "dot: 展开体丢掉负负项",
