@@ -1,11 +1,11 @@
 //! 半行恢复：显式截掉最后一条不完整行（没有换行结尾的尾巴）。
-//!
-//! 这是破坏性操作，只由调用方在确认“最后一次写崩了”后执行；截断后水位可能
-//! 仍高于实际最大 seq，`load` 会继续 fail-closed，需要调用方按业务决定是否重置。
 
 use crate::Error;
 
 use super::TraceEventStore;
+
+#[path = "reseal.rs"]
+mod reseal;
 
 impl TraceEventStore {
     /// 返回被丢弃的字节数；文件完整或不存在时返回 0。

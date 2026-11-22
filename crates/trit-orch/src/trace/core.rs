@@ -1,7 +1,5 @@
 //! 轨迹事件与单 trace 事件日志。
-//!
-//! 事件按 `seq` 排序；`event_time` 是事实发生时间，`observed_at` 是编排获知时间，
-//! 两者不互相替代。`TraceLog` 只做单 trace 的追加、去重、冲突与缺口判定。
+//! `TraceLog` 只做单 trace 的追加、去重、冲突与缺口判定。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Error, Ledger, Limits, Snapshot, TaskSpec, TraceStep};
 
+#[path = "canonical.rs"]
+mod canonical;
 #[path = "seal.rs"]
 mod seal;
 

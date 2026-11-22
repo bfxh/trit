@@ -3,14 +3,6 @@ use crate::digest;
 use super::TraceEvent;
 
 impl TraceEvent {
-    /// 规范化 payload 字节：`payload_hash` / `prev_hash` 自身不参与计算。
-    pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut copy = self.clone();
-        copy.payload_hash.clear();
-        copy.prev_hash.clear();
-        serde_json::to_vec(&copy).expect("trace event is always serializable")
-    }
-
     /// 当前内容对应的 SHA-256 十六进制摘要。
     pub fn computed_payload_hash(&self) -> String {
         digest::hex(&digest::sha256(&self.canonical_bytes()))
