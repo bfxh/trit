@@ -152,7 +152,7 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
 
 1. 模型质量/成本评测矩阵（同一任务多模型对拍，按角色给读数）。
 2. 失败重试与显式降级链：现在失败即拒绝，避免静默换模型；若要做，必须由计划显式列出 fallback。
-3. 真实外部模型连通性：本机 DeepSeek 凭据返回 401；需要一个有效凭据或一个可用的
+3. 真实外部模型连通性：本机 DeepSeek 凭据返回 401；需要一个有效凭据，或一个已配置成功的
    `command` provider（`codex exec` 存在但本轮调用挂起，未配置成功）。
 4. 密钥托管（现在只认环境变量；没有 keychain/secret manager 接入）。
 5. 派发器自动套 `sandbox_run`：现在 command provider 的隔离由调用者显式包裹，尚未内联。

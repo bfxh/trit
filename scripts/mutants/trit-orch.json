@@ -19,7 +19,7 @@
  },
  {
   "name": "orch: zero checks cannot verify a result",
-  "file": "crates/trit-orch/src/model.rs",
+  "file": "crates/trit-orch/src/model/check.rs",
   "old": "        if self.checks == 0 || self.epoch != expected_epoch {",
   "new": "        if self.epoch != expected_epoch {",
   "pkg": "trit-orch",
@@ -37,16 +37,16 @@
  },
  {
   "name": "orch: pending predecessor is not complete",
-  "file": "crates/trit-orch/src/selection.rs",
-  "old": "        let verdict = if observation.phase == Phase::Settled",
-  "new": "        let verdict = if true",
+  "file": "crates/trit-orch/src/selection/gates.rs",
+  "old": "        let judgment = if observation.phase == Phase::Settled",
+  "new": "        let judgment = if true",
   "pkg": "trit-orch",
   "filter": "selected_predecessor_is_not_imagined_complete",
   "diagnostic": "ORCH_NO_FORECAST_COMPLETION"
  },
  {
   "name": "orch: stale predecessor evidence is not trusted",
-  "file": "crates/trit-orch/src/selection.rs",
+  "file": "crates/trit-orch/src/selection/gates.rs",
   "old": "            && observation.freshness == Ternary::True",
   "new": "            && true",
   "pkg": "trit-orch",
@@ -181,7 +181,7 @@
  },
  {
   "name": "orch: stale evidence blocks completion",
-  "file": "crates/trit-orch/src/progress.rs",
+  "file": "crates/trit-orch/src/progress/decisive.rs",
   "old": "    if observation.epoch != spec.epoch || observation.freshness != Ternary::True {",
   "new": "    if false {",
   "pkg": "trit-orch",
@@ -199,7 +199,7 @@
  },
  {
   "name": "orch: dispatch requires Prepared state",
-  "file": "crates/trit-orch/src/effects.rs",
+  "file": "crates/trit-orch/src/effects/dispatch.rs",
   "old": "        match ledger.state(id) {",
   "new": "        match Some(Effect::Prepared) {",
   "pkg": "trit-orch",
@@ -208,7 +208,7 @@
  },
  {
   "name": "orch: dispatch checks the prepared epoch",
-  "file": "crates/trit-orch/src/effects.rs",
+  "file": "crates/trit-orch/src/effects/dispatch.rs",
   "old": "        if attempt.epoch != spec.epoch {",
   "new": "        if false {",
   "pkg": "trit-orch",
@@ -217,7 +217,7 @@
  },
  {
   "name": "orch: corrupt ledger must be reported",
-  "file": "crates/trit-orch/src/effects.rs",
+  "file": "crates/trit-orch/src/effects/persist.rs",
   "old": "            Ok(text) => Ledger::from_json(&text),",
   "new": "            Ok(text) => Ok(Ledger::from_json(&text).unwrap_or_default()),",
   "pkg": "trit-orch",
@@ -226,7 +226,7 @@
  },
  {
   "name": "orch: recovery treats a durable sending mark as in-doubt",
-  "file": "crates/trit-orch/src/effects.rs",
+  "file": "crates/trit-orch/src/effects/persist.rs",
   "old": "                Effect::Prepared => recovery.ready.push(operation.clone()),\n                Effect::Sending | Effect::Sent | Effect::Unknown => {",
   "new": "                Effect::Prepared | Effect::Sending => recovery.ready.push(operation.clone()),\n                Effect::Sent | Effect::Unknown => {",
   "pkg": "trit-orch",
@@ -397,7 +397,7 @@
  },
  {
   "name": "orch: ledger save needs a per-save temp name",
-  "file": "crates/trit-orch/src/effects.rs",
+  "file": "crates/trit-orch/src/effects/persist.rs",
   "old": "        let temporary = self.temporary_path();",
   "new": "        let temporary = self.path.with_extension(\"tmp\");",
   "pkg": "trit-orch",
@@ -469,7 +469,7 @@
  },
  {
   "name": "orch: handoff state hash mismatch holds",
-  "file": "crates/trit-orch/src/receipt.rs",
+  "file": "crates/trit-orch/src/receipt/handoff.rs",
   "old": "        Ok(()) => Ternary::Unknown,",
   "new": "        Ok(()) => Ternary::True,",
   "pkg": "trit-orch",
@@ -478,7 +478,7 @@
  },
  {
   "name": "orch: handoff expiry holds",
-  "file": "crates/trit-orch/src/receipt.rs",
+  "file": "crates/trit-orch/src/receipt/handoff.rs",
   "old": "        Err(Error::HandoffExpired { .. }) => Ternary::Unknown,",
   "new": "        Err(Error::HandoffExpired { .. }) => Ternary::True,",
   "pkg": "trit-orch",

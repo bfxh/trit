@@ -816,6 +816,447 @@
       "run": "python tools/capacity_lease.py --self-test",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C048",
+      "title": "入口文字污染门自测（59/59）",
+      "kind": "cmd",
+      "covers": [
+        "L133",
+        "L134",
+        "L135",
+        "L136",
+        "L137",
+        "L138",
+        "L142",
+        "L143",
+        "L149",
+        "L150",
+        "L153",
+        "L154"
+      ],
+      "scope": [
+        "tools/context_guard.py"
+      ],
+      "since": "L133",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "run": "python tools/context_guard.py --self-test",
+      "expect_exit": 0,
+      "timeout_s": 300,
+      "shell": "bash"
+    },
+    {
+      "id": "C049",
+      "title": "workspace 沙盒自测（37/37，含宿主写/链接/超时/忽略文件）",
+      "kind": "cmd",
+      "covers": [
+        "L128",
+        "L129",
+        "L130",
+        "L139",
+        "L140",
+        "L141",
+        "L144",
+        "L145",
+        "L146",
+        "L148",
+        "L152",
+        "L155",
+        "L156"
+      ],
+      "scope": [
+        "tools/sandbox_run.py"
+      ],
+      "since": "L128",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "run": "python tools/sandbox_run.py --self-test",
+      "expect_exit": 0,
+      "timeout_s": 300,
+      "shell": "bash"
+    },
+    {
+      "id": "C050",
+      "title": "子智能体派发自测（25/25，含 dry-run/链接/junction/二进制抽取）",
+      "kind": "cmd",
+      "covers": [
+        "L131",
+        "L132",
+        "L147",
+        "L151"
+      ],
+      "scope": [
+        "tools/subagent_dispatch.py"
+      ],
+      "since": "L131",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "run": "python tools/subagent_dispatch.py --self-test",
+      "expect_exit": 0,
+      "timeout_s": 300,
+      "shell": "bash"
+    },
+    {
+      "id": "C051",
+      "title": "fetch_guard 无网络自测（21 条 SSRF/重定向断言）",
+      "kind": "cmd",
+      "covers": [
+        "L112"
+      ],
+      "scope": [
+        "scripts/fetch_guard.py"
+      ],
+      "since": "L112",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "run": "python scripts/fetch_guard.py --selftest",
+      "expect_exit": 0,
+      "timeout_s": 300,
+      "shell": "bash"
+    },
+    {
+      "id": "C052",
+      "title": "trit-orch/trit-ops Rust 测试（claim 域/trace 并发/interval 零宽）",
+      "kind": "cmd",
+      "covers": [
+        "L50",
+        "L98",
+        "L122",
+        "L123"
+      ],
+      "scope": [
+        "Cargo.toml",
+        "crates/trit-orch",
+        "crates/trit-ops"
+      ],
+      "since": "L50",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "run": "cargo test -p trit-orch -p trit-ops",
+      "expect_exit": 0,
+      "timeout_s": 600
+    },
+    {
+      "id": "C053",
+      "title": "trit-eval/trit-redteam/trit-machines Rust 测试（三值求值/CRC/Jz）",
+      "kind": "cmd",
+      "covers": [
+        "L51",
+        "L52",
+        "L53",
+        "L55"
+      ],
+      "scope": [
+        "Cargo.toml",
+        "crates/trit-eval",
+        "crates/trit-redteam",
+        "crates/trit-machines"
+      ],
+      "since": "L51",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "run": "cargo test -p trit-eval -p trit-redteam -p trit-machines",
+      "expect_exit": 0,
+      "timeout_s": 600
+    },
+    {
+      "id": "C054",
+      "title": "journal 损坏 manifest 的 AM25/AM25b/AM26 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L124",
+        "L125"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L124",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AM25",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C055",
+      "title": "doctor 的 AI30–AI35 第七面断言必须在",
+      "kind": "require",
+      "covers": [
+        "L118",
+        "L126"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L118",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AI30",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C056",
+      "title": "claims 聚合糊弄的 AJ 组断言必须在",
+      "kind": "require",
+      "covers": [
+        "L120"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L120",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AJ1",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C057",
+      "title": "number derivation 重执行的 AK 组断言必须在",
+      "kind": "require",
+      "covers": [
+        "L121"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L121",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AK1",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C058",
+      "title": "回执前缀稳定的 AL 组断言必须在",
+      "kind": "require",
+      "covers": [
+        "L123"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L123",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AL1",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C059",
+      "title": "journal-end 三分支的 AF4 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L114"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L114",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AF4",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C060",
+      "title": "attest 收编双账的 AG6 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L116"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L116",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AG6",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C061",
+      "title": "signal 默认路径的 AA12 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L101"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L101",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AA12",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C062",
+      "title": "declutter 模板插值的 AB10 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L103",
+        "L104"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L103",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AB10",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C063",
+      "title": "40 例并发沙盒的 AN3 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L155"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L155",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AN3",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C064",
+      "title": "核心步骤顺序的 I2b 修正断言必须在",
+      "kind": "require",
+      "covers": [
+        "L98"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L98",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "I2b",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C065",
+      "title": "本机路径拒收的 AC3/AC3b 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L106"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L106",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AC3",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C066",
+      "title": "worktree 隐藏 .git 的 W18f 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L107"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L107",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "W18f",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C067",
+      "title": "cognition/collect 隐私闸的 AE14 断言必须在",
+      "kind": "require",
+      "covers": [
+        "L110"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L110",
+      "tier": "fast",
+      "added": "2026-11-22T00:00:00+08:00",
+      "pattern": "AE14",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C068",
+      "title": "完整 selftest（675 断言；heavy，本机/显式 -Tier heavy 运行）",
+      "kind": "cmd",
+      "covers": [
+        "L02",
+        "L04",
+        "L05",
+        "L06",
+        "L07",
+        "L09",
+        "L10",
+        "L11",
+        "L12",
+        "L13",
+        "L14",
+        "L15",
+        "L16",
+        "L22",
+        "L23",
+        "L24",
+        "L25",
+        "L26",
+        "L27",
+        "L29",
+        "L30",
+        "L31",
+        "L33",
+        "L34",
+        "L35",
+        "L36",
+        "L49"
+      ],
+      "scope": [
+        "tools/selftest.ps1"
+      ],
+      "since": "L02",
+      "tier": "heavy",
+      "added": "2026-11-22T00:00:00+08:00",
+      "run": "pwsh -NoProfile -File tools/selftest.ps1",
+      "expect_exit": 0,
+      "timeout_s": 1200
     }
   ],
   "ledger_from": "L56"

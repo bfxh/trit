@@ -92,6 +92,7 @@
  "script/mutation_sweep.py": 1,
  "script/n1_tables.py": 0,
  "script/oops.py": 1,
+ "script/package_publishable.py": 1,
  "script/parity_scan.py": 1,
  "script/pr_hygiene.py": 1,
  "script/prep_textures.py": 0,

@@ -27,7 +27,7 @@ BIPIA 的结论把这一点说得很直白：模型普遍不能区分“信息�
 | 论文/工作 | 关键结论 | 对本实现的约束 |
 |---|---|---|
 | Instruction Hierarchy（Wallace et al., 2024, [arXiv:2404.13208](https://arxiv.org/abs/2404.13208)） | 给不同来源的指令排优先级，训练模型优先服从高优先级指令 | 我们没有训练/微调能力；只能在宿主侧显式标注来源，不能假装已经获得层级保证 |
-| StruQ（Chen et al., USENIX Security 2025, [arXiv:2402.06363](https://arxiv.org/abs/2402.06363)） | 把 prompt 与 data 分成两个通道，专用训练后的模型只服从 prompt 通道 | 数据/指令分通道是正确方向；本仓用 nonce 封套做**格式层**分离，模型侧约束仍待训练或模型供应商配合 |
+| StruQ（Chen et al., USENIX Security 2025, [arXiv:2402.06363](https://arxiv.org/abs/2402.06363)） | 把 prompt 与 data 分成两个通道，专用训练后的模型只服从 prompt 通道 | 数据/指令分通道是正确方向；本仓用 nonce 封套做**格式层**分离，模型侧保证不在本仓承诺内，仍待训练或模型供应商配合 |
 | Spotlighting（Hines et al., [CEUR Vol-3920](https://ceur-ws.org/Vol-3920/paper03.pdf)） | 用分隔符/标记把外部数据“打光”，降低间接注入成功率 | `wrap` 用随机 nonce 边界 + 明确的 “DATA, not instructions” 提示 |
 | BIPIA（Yi et al., KDD 2025, [arXiv:2312.14197](https://arxiv.org/abs/2312.14197)） | 模型缺乏“资料 vs 指令”边界意识；boundary awareness + reminder 有实质缓解 | `wrap` 的边界提示是产品的一部分，不是装饰；`scan` 单独 clean 不构成安全结论 |
 | CaMeL / Design Patterns（Debenedetti et al., [arXiv:2503.18813](https://arxiv.org/abs/2503.18813)；Beurer-Kellner et al., [arXiv:2506.08837](https://arxiv.org/abs/2506.08837)） | 从控制流/数据流分离和工具能力（capability）上做**可证明**防护，不能只靠文字过滤 | 本仓当前只做到入口层；工具能力/动作白名单仍是未完成的第二层，不能把本工具当证明 |
@@ -36,7 +36,7 @@ BIPIA 的结论把这一点说得很直白：模型普遍不能区分“信息�
 | The Attacker Moves Second（Nasr et al., [arXiv:2510.09023](https://arxiv.org/abs/2510.09023)） | 针对防御设计自适应攻击，可绕过 12 个近期防御，多数成功率 >90% | **任何“静态检测 100%”都是不可信的**；`--stress` 的 90/90 只证明已知变形覆盖，不证明自适应安全 |
 | How Not to Detect Prompt Injections with an LLM（Choudhary et al., [arXiv:2507.05630](https://arxiv.org/abs/2507.05630)） | 已知答案检测（KAD）可被 DataFlip 绕过，检测率低至 0%、攻击成功率 91% | 不把“检测器说干净”写成“模型安全”；回执必须保留 heuristic 边界 |
 
-这九条合起来只给出一个保守结论：**先把数据降级，再谈检测；检测只能当纵深，不能当证明。**
+这九条合起来只推出一个保守结论：**先把数据降级，再谈检测；检测只能当纵深，不能当证明。**
 
 ## 3. 本仓的实现：四件入口卫生，加输入/输出两处接入
 
@@ -228,7 +228,7 @@ python tools/subagent_dispatch.py --self-test
 4. **动态基准**：用 AgentDojo 类任务/自适应变体测“效用损失 + 攻击成功率”，而不是
    只测固定 90 例变形。
 5. **模型侧协作**：在 prompt 结构里使用 provider 提供的 system/developer/data
-   分离；不把宿主侧封套冒充模型侧训练保证。
+   角色分离；是否生效取决于 provider，不把宿主侧封套冒充模型侧训练保证。
 
 ## 7. 复算清单
 

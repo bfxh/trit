@@ -1,50 +1,12 @@
 use std::collections::BTreeMap;
 
 use trit_orch::{
-    CheckReport, CheckResult, Error, Observation, Phase, Plan, Progress, Resources, Snapshot, Task,
-    TaskSpec, Ternary, TokenUsage,
+    CheckReport, CheckResult, Error, Phase, Plan, Progress, Resources, Snapshot, Ternary,
+    TokenUsage,
 };
 
-fn task(id: &str) -> TaskSpec {
-    TaskSpec {
-        task: Task {
-            id: id.into(),
-            priority: 0,
-            duration: 1,
-            deps: vec![],
-        },
-        requirements: Resources::new(1, 1),
-        max_tokens: 100,
-        epoch: 0,
-    }
-}
-
-fn snapshot(tasks: &[TaskSpec]) -> Snapshot {
-    Snapshot {
-        revision: 1,
-        observations: tasks
-            .iter()
-            .map(|spec| {
-                (
-                    spec.task.id.clone(),
-                    Observation {
-                        authorization: Ternary::True,
-                        freshness: Ternary::True,
-                        ..Observation::default()
-                    },
-                )
-            })
-            .collect(),
-    }
-}
-
-fn passed() -> CheckReport {
-    CheckReport {
-        epoch: 0,
-        checks: 1,
-        result: CheckResult::Passed,
-    }
-}
+mod progress_support;
+use progress_support::*;
 
 #[test]
 fn rounds_record_exact_counts_and_totals() {
