@@ -4,7 +4,7 @@
 > `tools/sandbox_run.py` 的**本地可复算攻击面**。不攻击外部服务，不制造真实
 > 凭据；默认沙盒不当内核隔离，真隔离路径（`-Isolation wsl`）另行实测。
 >
-> 结论先说：**已修掉一串真实可穿门问题**：Unicode 拆词、单层/多层编码、
+> 结论先说：**修掉一串真实可穿门问题**（复算：`python tools/guard_redteam.py` 81 例 0 漏检；`python tools/context_guard.py --self-test` 59/59）：Unicode 拆词、单层/多层编码、
 > base64 任意位置与四层嵌套、nonce 归一化伪造、`.agent/.git` 排除目录、
 > `.git/index` 与构建缓存漏检、根内 junction 复制/派发、大小写/尾点路径绕过；
 > 本轮又补了 `context_guard --out/--receipt` root 包含、超 256 KiB base64 分窗
@@ -64,7 +64,7 @@
    窗口 + 16 KiB overlap + 四相位解码，总预算 64 MiB；payload 不再因为前缀太长
    被一起丢掉。
 
-## 2. 沙盒：结构性漏洞（已修）
+## 2. 沙盒：结构性漏洞（收口记录；复算：`python tools/guard_redteam.py` 81 例）
 
 | 攻击 | 修前读数 | 修后 |
 |---|---|---|

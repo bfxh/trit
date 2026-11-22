@@ -3,8 +3,7 @@
 > 定位：回答“这个智能体现在能不能开这么多并发/吃这么多内存”，以及“同一台机器上
 > 别的项目已经占了多少”。它补的是 `subagent_dispatch` 在调用 provider 之前的
 > **资源准入**，不是模型质量门，也不是命令沙盒。
-> 状态：**已跑通**。`python tools/capacity_lease.py --self-test` **14/14**；
-> `python tools/subagent_dispatch.py --self-test` **25/25**；全量 `selftest` 仍 **675/675**。
+> 状态：**已跑通**（复算：`python tools/capacity_lease.py --self-test` 14/14；`python tools/subagent_dispatch.py --self-test` 25/25；全量 `tools/selftest.ps1` 675/675）。
 
 ## 1. 为什么不是“CL 绿了就上”
 

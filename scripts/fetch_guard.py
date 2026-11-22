@@ -225,7 +225,7 @@ def _set_global(name: str, value):
     return old
 
 
-def _selftest() -> int:
+def self_test() -> int:
     passed = 0
     failed = 0
 
@@ -361,7 +361,7 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true", help="无网络本地自检（纯本地断言，不出网）")
     args = ap.parse_args()
     if args.selftest:
-        return _selftest()
+        return self_test()
     ap.print_help()
     return 0
 

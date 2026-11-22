@@ -83,7 +83,7 @@ ALLOW_RELAXED: dict[str, str] = {
     "crates/trit-ops/src/pool.rs": (
         "线程数配置与完成计数：单变量、无同步依赖，Relaxed 是教科书正确选择"
     ),
-    "crates/trit-orch/src/effects.rs": (
+    "crates/trit-orch/src/effects/persist.rs": (
         "SAVE_SEQ 只为台账原子写生成唯一临时名；Relaxed 只用于计数，不承担同步"
     ),
     "crates/trit-count/examples/matching_alloc_probe.rs": (
