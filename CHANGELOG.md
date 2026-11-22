@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：残差侧车负结果——k≤16 没有把 0.432 推向 0.733）
+
+- `QuantLinear` 支持 top-k 列 f32 侧车：`R = W − s·T`，按列范数保留 k 列，
+  推理时 `y = s·T x + R_k x_k`；`sidecar.rs` 扫 k=0/4/8/16，`sidecar_layer.rs` 实现。
+- 读数（`ternary-all-channel` + 侧车，STS 64 对）：
+
+  | rank | rel_l2 | cosine | Pearson | Spearman |
+  |---:|---:|---:|---:|---:|
+  | 0 | 1.2373 | 0.0100 | 0.4322 | 0.3889 |
+  | 4 | 1.2363 | 0.0116 | 0.4091 | 0.4109 |
+  | 8 | 1.2356 | 0.0128 | 0.3940 | 0.3961 |
+  | 16 | 1.2386 | 0.0077 | 0.4259 | 0.4028 |
+
+- 结论：列侧车没有提升，`rel_l2` 几乎不变；误差主导在激活三值化，不在权重残差。
+  要逼近 0.733 需要混合精度/更大 rank/激活侧改动。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
 ### Added（trit-wspace：激活 scale——per-channel 把全三值 STS 拉到 0.432）
 
 - `--activation-mode` 增加 `ternary-all-scale`（per-token absmean）与

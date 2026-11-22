@@ -1,14 +1,13 @@
 //! 线性层：f32 / 三值（absmean per-row scale + f32 bias）。
 
+use crate::sidecar_layer::Sidecar;
 use trit_wspace::safetensors::Weights;
-
 pub(crate) struct F32Linear {
     pub(crate) rows: usize,
     pub(crate) cols: usize,
     pub(crate) weight: Vec<f32>,
     pub(crate) bias: Vec<f32>,
 }
-
 impl F32Linear {
     fn forward(&self, input: &[f32], out: &mut [f32]) {
         for (row, slot) in out.iter_mut().enumerate().take(self.rows) {
@@ -20,7 +19,6 @@ impl F32Linear {
             *slot = acc as f32;
         }
     }
-
     pub(crate) fn forward_seq(&self, input: &[f32], seq: usize, out: &mut [f32]) {
         for token in 0..seq {
             self.forward(
@@ -30,17 +28,16 @@ impl F32Linear {
         }
     }
 }
-
 pub(crate) struct QuantLinear {
     rows: usize,
     cols: usize,
     trits: Vec<i8>,
     scales: Vec<f32>,
     bias: Vec<f32>,
+    sidecar: Option<Sidecar>,
 }
-
 impl QuantLinear {
-    pub(crate) fn from(linear: &F32Linear) -> Self {
+    pub(crate) fn from(linear: &F32Linear, rank: usize) -> Self {
         let weights = Weights {
             rows: linear.rows,
             cols: linear.cols,
@@ -57,15 +54,16 @@ impl QuantLinear {
                 trits.push(layer.trit(row, col).expect("trit").to_i8());
             }
         }
+        let sidecar = Sidecar::build(linear, &trits, &scales, rank);
         Self {
             rows: linear.rows,
             cols: linear.cols,
             trits,
             scales,
             bias: linear.bias.clone(),
+            sidecar,
         }
     }
-
     fn forward(&self, input: &[f32], out: &mut [f32]) {
         for (row, slot) in out.iter_mut().enumerate().take(self.rows) {
             let mut acc = 0.0f64;
@@ -73,10 +71,14 @@ impl QuantLinear {
             for (&trit, &value) in line.iter().zip(input) {
                 acc += f64::from(trit) * f64::from(value);
             }
-            *slot = (f64::from(self.scales[row]) * acc + f64::from(self.bias[row])) as f32;
+            let correction = self
+                .sidecar
+                .as_ref()
+                .map_or(0.0, |sidecar| sidecar.correction(row, input));
+            *slot =
+                (f64::from(self.scales[row]) * acc + f64::from(self.bias[row]) + correction) as f32;
         }
     }
-
     pub(crate) fn forward_seq(&self, input: &[f32], seq: usize, out: &mut [f32]) {
         for token in 0..seq {
             self.forward(
@@ -86,12 +88,10 @@ impl QuantLinear {
         }
     }
 }
-
 pub(crate) enum Linear {
     F32(F32Linear),
     Quant(QuantLinear),
 }
-
 impl Linear {
     pub(crate) fn forward_seq(&self, input: &[f32], seq: usize, out: &mut [f32]) {
         match self {
