@@ -113,40 +113,6 @@ fn dispatch_requires_prepared_intents() {
 }
 
 #[test]
-fn finish_refuses_incomplete_plans_and_reports_complete_ones() {
-    let (code, value) = run(
-        "finish",
-        &json!({
-            "tasks": [task("a")],
-            "snapshot": snapshot(&["a"]),
-            "rounds": []
-        }),
-    );
-    assert_eq!(code, 1);
-    assert_eq!(value["kind"], "incomplete", "ORCH_CLI_FINISH_GATE");
-
-    let mut settled = snapshot(&["a"]);
-    settled["observations"]["a"] = json!({
-        "phase": "Settled",
-        "epoch": 0,
-        "authorization": "True",
-        "freshness": "True",
-        "evidence": {"epoch": 0, "checks": 2, "result": "Passed"},
-        "usage": {"fresh": 10, "cached": 0, "output": 5}
-    });
-    let (code, value) = run(
-        "finish",
-        &json!({
-            "tasks": [task("a")],
-            "snapshot": settled,
-            "rounds": []
-        }),
-    );
-    assert_eq!(code, 0);
-    assert_eq!(value["summary"]["confirmed"], 1);
-}
-
-#[test]
 fn recover_classifies_durable_states() {
     let ledger = json!({"records": {
         "ready-op": {"attempt": {"operation": "ready-op", "task": "t", "epoch": 0, "attempt": 1, "fence": 1}, "state": "Prepared"},

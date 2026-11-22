@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, EvidenceVerdict, Phase, Selection, Snapshot, TaskSpec};
+use crate::Selection;
 
 /// 一轮调度的结构化记录：这一轮选中/挂起/拒绝/在途/已结算各多少。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,49 +89,8 @@ impl Progress {
             ),
         }
     }
-
-    /// 完成闸门：任何未定/未验的任务都让「做完了」判红。
-    ///
-    /// `confirmed`/`refuted` 只统计「已结算 + 当前 epoch + 输入新鲜 + 判定确定」的结果；
-    /// 其余一律计入 `inconclusive`，不带病报完成。
-    pub fn finish(&self, tasks: &[TaskSpec], snapshot: &Snapshot) -> Result<Summary, Error> {
-        let mut confirmed = 0usize;
-        let mut refuted = 0usize;
-        let mut pending = 0usize;
-        let mut in_flight = 0usize;
-        let mut inconclusive = 0usize;
-        let mut conflicts = 0usize;
-        for spec in tasks {
-            let Some(observation) = snapshot.observations.get(&spec.task.id) else {
-                pending += 1;
-                continue;
-            };
-            match observation.phase {
-                Phase::Pending => pending += 1,
-                Phase::InFlight => in_flight += 1,
-                Phase::Settled => match decisive(observation, spec) {
-                    Some(EvidenceVerdict::Proved) => confirmed += 1,
-                    Some(EvidenceVerdict::Refuted) => refuted += 1,
-                    Some(EvidenceVerdict::Conflicted) => conflicts += 1,
-                    _ => inconclusive += 1,
-                },
-            }
-        }
-        if pending + in_flight + inconclusive + conflicts > 0 {
-            return Err(Error::Incomplete {
-                pending,
-                in_flight,
-                inconclusive,
-                conflicts,
-            });
-        }
-        Ok(Summary {
-            confirmed,
-            refuted,
-            rounds: self.rounds.len(),
-        })
-    }
 }
 
 mod decisive;
+mod finish;
 pub(crate) use decisive::decisive;

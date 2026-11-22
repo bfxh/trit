@@ -1,7 +1,7 @@
 # AGENT-MODELS：子智能体的按角色模型路由
 
 > 定位：给“一个主智能体带多个子智能体”的场景选模型。不同角色（写文档、改代码、评审、
-> 沙盒实验）可以落到不同模型，不必整条链共用一个模型。
+> 沙盒实验、前端面板、后端工程）可以落到不同模型，不必整条链共用一个模型。
 > 边界：路由器只解决“选谁 + 记下选谁”，不解决“谁更聪明”；后者必须靠评测与回执。
 > 状态：**已跑通**（`tools/model_router.py --self-test` 16/16；派发器
 > `tools/subagent_dispatch.py --self-test` 25/25）。本机 `probe` 只打印
@@ -156,3 +156,20 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
    `command` provider（`codex exec` 存在但本轮调用挂起，未配置成功）。
 4. 密钥托管（现在只认环境变量；没有 keychain/secret manager 接入）。
 5. 派发器自动套 `sandbox_run`：现在 command provider 的隔离由调用者显式包裹，尚未内联。
+6. 前端/后端模型的职责清单与人类面/智能体面契约：见
+   [`AGENT-MODEL-MANIFEST.md`](AGENT-MODEL-MANIFEST.md)；清单是模板，尚未接入真实前后端模型。
+
+## 7. 前端/后端模型清单
+
+按角色选模型只解决“选谁 + 记下选谁”；“这个角色在人类面和智能体面分别承担什么义务”单独写在
+[`AGENT-MODEL-MANIFEST.md`](AGENT-MODEL-MANIFEST.md) 和
+[`agent-model-manifest.json`](agent-model-manifest.json)。
+
+最小口径：
+
+- 后端模型默认负责代码、复杂工程、高危工程、数学、失败路径；默认不负责人群面板、图表叙事、
+  论文排版、录像剪辑。需要面板时交后端产物 + handoff，不顺手把前端做了。
+- 前端模型负责人类面板、图表、论文式布局与录像；不碰内核语义和后端核心代码。
+- 人类面（README/面板）给人看；智能体面（JSON 清单/回执/`GateReport`）给宿主读。README 不是机器契约。
+- 人类视觉面要求 `text + image`；论文式证据要求 `video`，没有就标 `unrecorded`，不算完成。
+- 对比必须有图；没有数据写 `pending`，不画假图。完成裁决仍归 `trit-orch` 的完成闸门和可信回执。

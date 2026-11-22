@@ -1,6 +1,9 @@
 use serde::Deserialize;
 use trit_orch::*;
 
+mod finish;
+pub(crate) use finish::FinishInput;
+
 #[derive(Deserialize)]
 pub(crate) struct PlanInput {
     pub(crate) revision: u64,
@@ -42,14 +45,6 @@ pub(crate) struct ObligationInput {
 pub(crate) struct ShadowInput {
     pub(crate) policy: String,
     pub(crate) steps: Vec<TraceStep>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct FinishInput {
-    pub(crate) tasks: Vec<TaskSpec>,
-    pub(crate) snapshot: Snapshot,
-    #[serde(default)]
-    pub(crate) rounds: Vec<RoundReport>,
 }
 
 #[derive(Deserialize)]

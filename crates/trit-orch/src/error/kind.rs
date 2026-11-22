@@ -1,7 +1,5 @@
 use super::Error;
-
 impl Error {
-    /// 稳定的机器可读分类（CLI/宿主用它判红，不解析展示文案）。
     pub fn kind(&self) -> &'static str {
         match self {
             Error::TooManyTasks { .. } => "too_many_tasks",
@@ -33,6 +31,8 @@ impl Error {
             Error::AttemptMismatch { .. } => "attempt_mismatch",
             Error::UnknownOperation { .. } => "unknown_operation",
             Error::Incomplete { .. } => "incomplete",
+            Error::UnattestedEvidence { .. } => "unattested_evidence",
+            Error::ReceiptMismatch { .. } => "receipt_mismatch",
             Error::LedgerIo { .. } => "ledger_io",
             Error::LedgerParse { .. } => "ledger_parse",
             Error::NotPrepared { .. } => "not_prepared",

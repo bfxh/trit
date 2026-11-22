@@ -106,6 +106,13 @@
 
 ## 4. 仍存在的缺口（不修或暂不修）
 
+本轮另修一个**编排完成门**缺口：`trit-orch finish` 原先只读 snapshot 里的
+`CheckReport`，模型/宿主可伪造 `Passed` 直接报完成，不需要 executor `Receipt`。
+现已改为默认 `finish_with_receipts`：缺回执报 `unattested_evidence`，回执与
+evidence 不一致报 `receipt_mismatch`；`--allow-unattested` 只作 legacy 逃生门。
+详见 [AGENT-COMPLETION-PROVENANCE.md](AGENT-COMPLETION-PROVENANCE.md)。该门仍不
+解决“恶意宿主伪造 receipt 本身”，只封住“模型只写声明、不提供执行回执”。
+
 | 缺口 | 为什么还在 | 建议 |
 |---|---|---|
 | 开放式语义改写/未登记语言翻译 | 正则不是语义模型；81 例只覆盖登记过的形状与五种语言 | 高风险入口走 `--guard warn` + 人工复核；不要靠规则集做“内容真伪”判断 |

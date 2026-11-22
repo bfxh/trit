@@ -1991,12 +1991,20 @@
       "lines": 29
     },
     {
+      "file": "crates/trit-orch/src/bin/cli_finish/mod.rs",
+      "lines": 33
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_inputs/finish.rs",
+      "lines": 22
+    },
+    {
       "file": "crates/trit-orch/src/bin/cli_inputs/mod.rs",
-      "lines": 124
+      "lines": 119
     },
     {
       "file": "crates/trit-orch/src/bin/trit-orch.rs",
-      "lines": 320
+      "lines": 311
     },
     {
       "file": "crates/trit-orch/src/budget.rs",
@@ -2025,6 +2033,10 @@
     {
       "file": "crates/trit-orch/src/error.rs",
       "lines": 210
+    },
+    {
+      "file": "crates/trit-orch/src/error/arith.rs",
+      "lines": 9
     },
     {
       "file": "crates/trit-orch/src/error/kind.rs",
@@ -2096,11 +2108,19 @@
     },
     {
       "file": "crates/trit-orch/src/progress.rs",
-      "lines": 137
+      "lines": 96
     },
     {
       "file": "crates/trit-orch/src/progress/decisive.rs",
       "lines": 12
+    },
+    {
+      "file": "crates/trit-orch/src/progress/finish.rs",
+      "lines": 111
+    },
+    {
+      "file": "crates/trit-orch/src/progress/finish/legacy.rs",
+      "lines": 16
     },
     {
       "file": "crates/trit-orch/src/rails.rs",
@@ -2168,7 +2188,7 @@
     },
     {
       "file": "crates/trit-orch/tests/cli.rs",
-      "lines": 553
+      "lines": 519
     },
     {
       "file": "crates/trit-orch/tests/cli_support/mod.rs",
@@ -2207,6 +2227,14 @@
       "lines": 99
     },
     {
+      "file": "crates/trit-orch/tests/finish.rs",
+      "lines": 99
+    },
+    {
+      "file": "crates/trit-orch/tests/finish_receipts.rs",
+      "lines": 88
+    },
+    {
       "file": "crates/trit-orch/tests/obligations.rs",
       "lines": 550
     },
@@ -2216,7 +2244,7 @@
     },
     {
       "file": "crates/trit-orch/tests/progress.rs",
-      "lines": 192
+      "lines": 191
     },
     {
       "file": "crates/trit-orch/tests/progress_support/mod.rs",
@@ -2269,6 +2297,10 @@
     {
       "file": "crates/trit-orch/tests/trace_time.rs",
       "lines": 272
+    },
+    {
+      "file": "crates/trit-orch/tests/unauthorized_finish.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-parts/src/api.rs",

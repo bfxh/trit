@@ -20,7 +20,7 @@
 | 副作用发出去了吗？ | `effects::Ledger`：Prepared/Sending/Sent/Confirmed/Refuted/Unknown |
 | 对方收到了吗？ | `DeliveryReceipt`：Sent/Delivered/Read/Acted + Rejected/Expired |
 | 交接能不能接？ | `handoff_gate`：结构/过期/状态哈希三值判定 |
-| 做完没有？ | `Progress::finish`：未定/未验一律拒绝报完成 |
+| 做完没有？ | `Progress::finish_with_receipts`：未定/未验一律拒绝；已结算结果必须与 executor `Receipt` 重算一致 |
 
 ---
 
@@ -132,6 +132,15 @@ echo '{"ledger":{…},"action":"advance","key":"k1","state":"Delivered"}' | trit
 echo '{"packet":{…},"receiver_state_hash":"sha256:abc","now":100}' \
   | trit-orch handoff-gate
 
+# 完成门：默认要求每个 decisive task 都有 executor 回执
+echo '{"tasks":[…],"snapshot":{…},"rounds":[],
+      "receipts":{"a":{"epoch":0,"exit":{"Completed":{"code":0}},
+                     "assertions_passed":1,"assertions_failed":0}}}' \
+  | trit-orch finish
+
+# 旧快照兼容路径：显式接受无回执的 CheckReport（不用于正式完成声明）
+echo '{"tasks":[…],"snapshot":{…}}' | trit-orch finish --allow-unattested
+
 # 五门 K3 AND
 echo '{"dependencies":"True","authorization":"True","resources":"True","freshness":"True","claim":"True"}' \
   | trit-orch admit-with-claim
@@ -140,6 +149,10 @@ echo '{"dependencies":"True","authorization":"True","resources":"True","freshnes
 - 三值输入接受 `True/Unknown/False` 或 `+1/0/-1`。
 - 回执状态：`sent/delivered/read/acted`。
 - `store` / `ledger` 是上一条命令返回的对象；CLI 不自己落盘，宿主负责持久化。
+- `finish` 默认 fail-closed：snapshot 里的 `CheckReport` 只是声明，必须有同 task 的
+  executor `Receipt` 才能重算并通过；`--allow-unattested` 只用于旧快照兼容。
+- settled 任务还必须 `authorization == True`；`False` / `Unknown` 不会被算成完成。
+- `receipts` 默认 `min_assertions=1`，零断言不会被当成 `Passed`。
 
 ---
 
