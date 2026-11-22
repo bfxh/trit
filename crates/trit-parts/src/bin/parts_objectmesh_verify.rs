@@ -11,6 +11,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use trit_learn::json::Json;
+use trit_learn::verify::publish;
 use trit_parts::data::{read_npy_i32, read_rgb, write_rgb};
 use trit_parts::fuse::View;
 use trit_parts::geo::{Camera, read_npy_f32};
@@ -30,64 +32,31 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn num(j: &Json, key: &str) -> Option<f64> {
+    j.get(key).and_then(Json::as_f64)
 }
 
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
+fn text(j: &Json, key: &str) -> Option<String> {
+    j.get_str(key).map(|s| s.to_string())
 }
 
-fn nums(txt: &str, key: &str) -> Vec<f64> {
-    let pat = format!("\"{key}\": [");
-    let Some(i) = txt.find(&pat) else {
-        return Vec::new();
-    };
-    let rest = &txt[i + pat.len()..];
-    let end = rest.find(']').unwrap_or(rest.len());
-    rest[..end]
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect()
+fn nums3(j: &Json, key: &str) -> Vec<f64> {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| items.iter().filter_map(Json::as_f64).collect())
+        .unwrap_or_default()
 }
 
-fn block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let mut depth = 1usize;
-    let (mut in_str, mut esc) = (false, false);
-    for (j, ch) in rest.char_indices() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if ch == '\\' {
-                esc = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-        } else if ch == '"' {
-            in_str = true;
-        } else if ch == '{' {
-            depth += 1;
-        } else if ch == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&rest[..j]);
-            }
-        }
-    }
-    None
+fn list_usize(j: &Json, key: &str) -> Vec<usize> {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 struct Obj {
@@ -96,26 +65,25 @@ struct Obj {
     bbox_max: [f64; 3],
 }
 
-fn objects(txt: &str) -> Vec<Obj> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let lo = nums(seg, "bbox_min");
-        let hi = nums(seg, "bbox_max");
-        if lo.len() != 3 || hi.len() != 3 {
-            continue;
-        }
-        out.push(Obj {
-            id: seg
-                .split(',')
-                .next()
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0),
-            bbox_min: [lo[0], lo[1], lo[2]],
-            bbox_max: [hi[0], hi[1], hi[2]],
-        });
-    }
-    out
+fn objects(v: &Json) -> Vec<Obj> {
+    let Some(items) = v.get("objects").and_then(Json::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|e| {
+            let lo = nums3(e, "bbox_min");
+            let hi = nums3(e, "bbox_max");
+            if lo.len() != 3 || hi.len() != 3 {
+                return None;
+            }
+            Some(Obj {
+                id: num(e, "id").unwrap_or(0.0) as u32,
+                bbox_min: [lo[0], lo[1], lo[2]],
+                bbox_max: [hi[0], hi[1], hi[2]],
+            })
+        })
+        .collect()
 }
 
 struct Entry {
@@ -136,59 +104,57 @@ struct Entry {
     charts: usize,
 }
 
-fn entries(txt: &str) -> Vec<Entry> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let n = |k: &str| number(seg, k).unwrap_or(0.0) as usize;
-        out.push(Entry {
-            id: seg
-                .split(',')
-                .next()
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0),
-            obj: field(seg, "obj").unwrap_or_default(),
-            obj_sha: field(seg, "obj_sha256").unwrap_or_default(),
-            mtl: field(seg, "mtl").unwrap_or_default(),
-            mtl_sha: field(seg, "mtl_sha256").unwrap_or_default(),
-            png: field(seg, "png").unwrap_or_default(),
-            png_sha: field(seg, "png_sha256").unwrap_or_default(),
-            verts: n("verts"),
-            tris: n("tris"),
-            boundary: n("boundary"),
-            nonmanifold: n("nonmanifold"),
-            texels: n("texels"),
-            unseen: n("unseen"),
-            atlas: n("atlas"),
-            charts: n("charts"),
+fn entries(v: &Json) -> Vec<Entry> {
+    let Some(items) = v.get("objects").and_then(Json::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .map(|e| {
+            let n = |k: &str| num(e, k).unwrap_or(0.0) as usize;
+            Entry {
+                id: num(e, "id").unwrap_or(0.0) as u32,
+                obj: e.get_str("obj").unwrap_or_default().to_string(),
+                obj_sha: e.get_str("obj_sha256").unwrap_or_default().to_string(),
+                mtl: e.get_str("mtl").unwrap_or_default().to_string(),
+                mtl_sha: e.get_str("mtl_sha256").unwrap_or_default().to_string(),
+                png: e.get_str("png").unwrap_or_default().to_string(),
+                png_sha: e.get_str("png_sha256").unwrap_or_default().to_string(),
+                verts: n("verts"),
+                tris: n("tris"),
+                boundary: n("boundary"),
+                nonmanifold: n("nonmanifold"),
+                texels: n("texels"),
+                unseen: n("unseen"),
+                atlas: n("atlas"),
+                charts: n("charts"),
+            }
         })
-    }
-    out
+        .collect()
 }
 
-fn layout_rows(txt: &str) -> Vec<Placement> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let tr = nums(seg, "translate");
-        let lo = nums(seg, "bbox_min");
-        let hi = nums(seg, "bbox_max");
-        if tr.len() != 3 || lo.len() != 3 || hi.len() != 3 {
-            continue;
-        }
-        out.push(Placement {
-            id: seg
-                .split(',')
-                .next()
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0),
-            yaw: number(seg, "yaw").unwrap_or(0.0) as u32,
-            translate: [tr[0], tr[1], tr[2]],
-            bbox_min: [lo[0], lo[1], lo[2]],
-            bbox_max: [hi[0], hi[1], hi[2]],
-        });
-    }
-    out
+fn layout_rows(v: &Json) -> Vec<Placement> {
+    let Some(items) = v.get("layout").and_then(Json::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|e| {
+            let tr = nums3(e, "translate");
+            let lo = nums3(e, "bbox_min");
+            let hi = nums3(e, "bbox_max");
+            if tr.len() != 3 || lo.len() != 3 || hi.len() != 3 {
+                return None;
+            }
+            Some(Placement {
+                id: num(e, "id").unwrap_or(0.0) as u32,
+                yaw: num(e, "yaw").unwrap_or(0.0) as u32,
+                translate: [tr[0], tr[1], tr[2]],
+                bbox_min: [lo[0], lo[1], lo[2]],
+                bbox_max: [hi[0], hi[1], hi[2]],
+            })
+        })
+        .collect()
 }
 
 fn resolve(base: &Path, p: String) -> PathBuf {
@@ -221,9 +187,9 @@ fn hash(p: &Path) -> String {
     trit_core::fingerprint::file_sha256(p).unwrap_or_default()
 }
 
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {}: {e}", p.display());
+fn read(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| {
+        eprintln!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -249,7 +215,6 @@ fn stats_eq(
         && e.atlas == atlas
         && e.charts == charts
 }
-
 fn stats_match(e: &Entry, b: &trit_parts::objmesh::Built) -> bool {
     stats_eq(
         e,
@@ -275,28 +240,19 @@ fn main() {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let manifest = read(&mpath);
-    let cfg = block(&manifest, "config").unwrap_or_else(|| usage());
-    let inputs = block(&manifest, "inputs").unwrap_or_else(|| usage());
-    let oman = block(inputs, "objects_manifest").unwrap_or_else(|| usage());
-    let data = block(&manifest, "data").unwrap_or_else(|| usage());
-    let scene = PathBuf::from(field(data, "scene").unwrap_or_else(|| usage()));
-    let frames: Vec<usize> = {
-        let pat = "\"frames\": [";
-        let i = cfg.find(pat).unwrap_or_else(|| usage()) + pat.len();
-        let rest = &cfg[i..];
-        let end = rest.find(']').unwrap_or(rest.len());
-        rest[..end]
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect()
-    };
-    let cell = number(cfg, "cell").unwrap_or(0.01) as f32;
-    let atlas = number(cfg, "atlas").unwrap_or(512.0) as usize;
-    let deg = number(cfg, "atlas_deg").unwrap_or(45.0) as f32;
+    let cfg = manifest.get("config").unwrap_or_else(|| usage());
+    let inputs = manifest.get("inputs").unwrap_or_else(|| usage());
+    let oman = inputs.get("objects_manifest").unwrap_or_else(|| usage());
+    let data = manifest.get("data").unwrap_or_else(|| usage());
+    let scene = PathBuf::from(data.get_str("scene").unwrap_or_else(|| usage()));
+    let frames = list_usize(cfg, "frames");
+    let cell = num(cfg, "cell").unwrap_or(0.01) as f32;
+    let atlas = num(cfg, "atlas").unwrap_or(512.0) as usize;
+    let deg = num(cfg, "atlas_deg").unwrap_or(45.0) as f32;
     let want = entries(&manifest);
 
-    let ompath = resolve(&base, field(oman, "path").unwrap_or_else(|| usage()));
-    let ok_oman = field(oman, "sha256")
+    let ompath = resolve(&base, text(oman, "path").unwrap_or_else(|| usage()));
+    let ok_oman = text(oman, "sha256")
         .map(|s| s == hash(&ompath))
         .unwrap_or(false);
     let om = read(&ompath);
@@ -320,10 +276,11 @@ fn main() {
         eprintln!("语料指纹失败: {e}");
         std::process::exit(2);
     });
-    let ok_data = manifest.contains("\"algo\": \"sha256-content-v1\"")
-        && field(data, "hash") == Some(format!("sha256:{}", fp.hash))
-        && number(data, "files") == Some(fp.files as f64)
-        && number(data, "bytes") == Some(fp.bytes as f64);
+    let want_hash = format!("sha256:{}", fp.hash);
+    let ok_data = data.get_str("algo") == Some("sha256-content-v1")
+        && data.get_str("hash") == Some(want_hash.as_str())
+        && num(data, "files") == Some(fp.files as f64)
+        && num(data, "bytes") == Some(fp.bytes as f64);
 
     let views: Vec<View> = frames.iter().map(|&f| load_view(&scene, f)).collect();
     let rgbs: Vec<Vec<f32>> = frames.iter().map(|&f| load_rgb(&scene, f)).collect();
@@ -369,12 +326,12 @@ fn main() {
     let ok_set = built_ids == want_ids && !built.is_empty();
 
     // 场景 OBJ/MTL（可选）
-    let scene_block = block(&manifest, "scene");
-    let layout_in = block(inputs, "layout");
+    let scene_block = &manifest.get("scene");
+    let layout_in = inputs.get("layout");
     let mut ok_scene = true;
     if let Some(lb) = layout_in {
-        let lp = resolve(&base, field(lb, "path").unwrap_or_else(|| usage()));
-        ok_scene &= field(lb, "sha256").map(|s| s == hash(&lp)).unwrap_or(false);
+        let lp = resolve(&base, text(lb, "path").unwrap_or_else(|| usage()));
+        ok_scene &= text(lb, "sha256").map(|s| s == hash(&lp)).unwrap_or(false);
         let lt = read(&lp);
         let mut places: HashMap<u32, Placement> = HashMap::new();
         for pl in layout_rows(&lt) {
@@ -387,10 +344,14 @@ fn main() {
             .collect();
         write_scene(&tmp, &parts, &items, &places).unwrap_or_else(|e| fail(&e));
         let sb = scene_block.unwrap_or_else(|| usage());
-        ok_scene &= field(sb, "obj_sha256") == Some(hash(&tmp.join("scene.obj")))
-            && field(sb, "mtl_sha256") == Some(hash(&tmp.join("scene.mtl")))
-            && field(sb, "obj_sha256") == Some(hash(&base.join("scene.obj")))
-            && field(sb, "mtl_sha256") == Some(hash(&base.join("scene.mtl")));
+        let obj_sha = hash(&tmp.join("scene.obj"));
+        let mtl_sha = hash(&tmp.join("scene.mtl"));
+        let base_obj = hash(&base.join("scene.obj"));
+        let base_mtl = hash(&base.join("scene.mtl"));
+        ok_scene &= sb.get_str("obj_sha256") == Some(obj_sha.as_str())
+            && sb.get_str("mtl_sha256") == Some(mtl_sha.as_str())
+            && sb.get_str("obj_sha256") == Some(base_obj.as_str())
+            && sb.get_str("mtl_sha256") == Some(base_mtl.as_str());
     } else if scene_block.is_some() {
         ok_scene = false; // 清单说有场景但没布局输入
     }
@@ -438,24 +399,8 @@ fn main() {
         if pass { "pass" } else { "reject" }
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        base.join(if pass {
-            "objects-mesh.verify.json"
-        } else {
-            "objects-mesh.verify.reject.json"
-        })
-    });
-    if custom.is_none() {
-        let _ = std::fs::remove_file(base.join(if pass {
-            "objects-mesh.verify.reject.json"
-        } else {
-            "objects-mesh.verify.json"
-        }));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
-        std::process::exit(2);
-    });
+    let vp =
+        publish(&base, "objects-mesh", pass, custom.as_deref(), &body).unwrap_or_else(|e| fail(&e));
     let _ = std::fs::remove_dir_all(&tmp);
     println!(
         "复核记录 {}（{}）",
@@ -479,20 +424,21 @@ mod tests {
     #[test]
     fn parses_nested_inputs_and_entries() {
         let man = "{\"config\": {\"frames\": [0, 1], \"cell\": 0.01, \"atlas\": 512, \"atlas_deg\": 45}, \"inputs\": {\"objects_manifest\": {\"path\": \"o/objects.manifest.json\", \"sha256\": \"om\"}, \"layout\": {\"path\": \"c/compose.manifest.json\", \"sha256\": \"lm\"}}, \"objects\": [{\"id\": 1, \"obj\": \"obj-1.obj\", \"obj_sha256\": \"a\", \"obj_bytes\": 10, \"mtl\": \"obj-1.mtl\", \"mtl_sha256\": \"b\", \"png\": \"obj-1.png\", \"png_sha256\": \"c\", \"png_bytes\": 20, \"verts\": 3, \"tris\": 1, \"boundary\": 0, \"nonmanifold\": 0, \"texels\": 9, \"unseen\": 1, \"atlas\": 512, \"charts\": 2}], \"scene\": {\"obj\": \"scene.obj\", \"obj_sha256\": \"so\", \"mtl\": \"scene.mtl\", \"mtl_sha256\": \"sm\", \"objects\": 1}}";
-        let inputs = block(man, "inputs").unwrap();
+        let m = Json::parse(man).unwrap();
+        let inputs = m.get("inputs").unwrap();
         assert_eq!(
-            field(block(inputs, "layout").unwrap(), "sha256").as_deref(),
+            text(inputs.get("layout").unwrap(), "sha256").as_deref(),
             Some("lm")
         );
-        let e = entries(man);
+        let e = entries(&m);
         assert_eq!(e.len(), 1);
         assert_eq!(e[0].id, 1);
         assert_eq!(e[0].obj_sha, "a");
         assert_eq!((e[0].verts, e[0].tris, e[0].boundary), (3, 1, 0));
         assert_eq!((e[0].texels, e[0].unseen, e[0].charts), (9, 1, 2));
-        let sb = block(man, "scene").unwrap();
-        assert_eq!(field(sb, "mtl_sha256").as_deref(), Some("sm"));
-        assert_eq!(number(block(man, "config").unwrap(), "atlas"), Some(512.0));
+        let sb = m.get("scene").unwrap();
+        assert_eq!(text(sb, "mtl_sha256").as_deref(), Some("sm"));
+        assert_eq!(num(m.get("config").unwrap(), "atlas"), Some(512.0));
     }
 
     #[test]
@@ -509,7 +455,8 @@ mod tests {
     #[test]
     fn stats_comparison_is_deciding() {
         let man = "{\"objects\": [{\"id\": 1, \"verts\": 3, \"tris\": 1, \"boundary\": 0, \"nonmanifold\": 0, \"texels\": 9, \"unseen\": 1, \"atlas\": 512, \"charts\": 2}]}";
-        let e = entries(man).remove(0);
+        let m = Json::parse(man).unwrap();
+        let e = entries(&m).remove(0);
         assert!(stats_eq(&e, 3, 1, 0, 0, 9, 1, 512, 2));
         assert!(!stats_eq(&e, 4, 1, 0, 0, 9, 1, 512, 2), "顶点数变必须判红");
         assert!(

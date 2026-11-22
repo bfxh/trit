@@ -10,6 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
+use trit_learn::json::Json;
+use trit_learn::verify::publish;
 use trit_parts::data::{read_npy_i32, read_rgb};
 use trit_parts::fuse::View;
 use trit_parts::geo::{Camera, read_npy_f32};
@@ -30,43 +32,27 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn num(j: &Json, key: &str) -> Option<f64> {
+    j.get(key).and_then(Json::as_f64)
 }
 
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
+fn nums3(j: &Json, key: &str) -> Vec<f64> {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| items.iter().filter_map(Json::as_f64).collect())
+        .unwrap_or_default()
 }
 
-/// `"key": [a, b, c]`（只取数字）。
-fn nums(txt: &str, key: &str) -> Vec<f64> {
-    let pat = format!("\"{key}\": [");
-    let Some(i) = txt.find(&pat) else {
-        return Vec::new();
-    };
-    let rest = &txt[i + pat.len()..];
-    let end = rest.find(']').unwrap_or(rest.len());
-    rest[..end]
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect()
-}
-
-fn block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    Some(&rest[..rest.find('}')?])
+fn list_usize(j: &Json, key: &str) -> Vec<usize> {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone)]
@@ -86,38 +72,36 @@ struct Obj {
     diag_ratio: Option<f64>,
 }
 
-fn objects(txt: &str) -> Vec<Obj> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let id = seg
-            .split(',')
-            .next()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0);
-        let bx = nums(seg, "bbox_min");
-        let bh = nums(seg, "bbox_max");
-        let ce = nums(seg, "centroid");
-        if bx.len() != 3 || bh.len() != 3 || ce.len() != 3 {
-            continue;
-        }
-        out.push(Obj {
-            id,
-            path: field(seg, "path").unwrap_or_default(),
-            sha: field(seg, "sha256").unwrap_or_default(),
-            bytes: number(seg, "bytes").unwrap_or(0.0) as u64,
-            count: number(seg, "count").unwrap_or(0.0) as usize,
-            bbox_min: [bx[0], bx[1], bx[2]],
-            bbox_max: [bh[0], bh[1], bh[2]],
-            centroid: [ce[0], ce[1], ce[2]],
-            kind: field(seg, "kind"),
-            gt_center: nums(seg, "gt_center"),
-            centroid_error: number(seg, "centroid_error"),
-            gt_diag: number(seg, "gt_diag"),
-            diag_ratio: number(seg, "diag_ratio"),
+fn objects(v: &Json) -> Vec<Obj> {
+    let Some(items) = v.get("objects").and_then(Json::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|e| {
+            let bx = nums3(e, "bbox_min");
+            let bh = nums3(e, "bbox_max");
+            let ce = nums3(e, "centroid");
+            if bx.len() != 3 || bh.len() != 3 || ce.len() != 3 {
+                return None;
+            }
+            Some(Obj {
+                id: num(e, "id").unwrap_or(0.0) as u32,
+                path: e.get_str("path").unwrap_or_default().to_string(),
+                sha: e.get_str("sha256").unwrap_or_default().to_string(),
+                bytes: num(e, "bytes").unwrap_or(0.0) as u64,
+                count: num(e, "count").unwrap_or(0.0) as usize,
+                bbox_min: [bx[0], bx[1], bx[2]],
+                bbox_max: [bh[0], bh[1], bh[2]],
+                centroid: [ce[0], ce[1], ce[2]],
+                kind: e.get_str("kind").map(|s| s.to_string()),
+                gt_center: nums3(e, "gt_center"),
+                centroid_error: num(e, "centroid_error"),
+                gt_diag: num(e, "gt_diag"),
+                diag_ratio: num(e, "diag_ratio"),
+            })
         })
-    }
-    out
+        .collect()
 }
 
 /// 清单里的标签三件套（kind / gt_center / centroid_error）必须与 GT 和重算值一致。
@@ -211,9 +195,9 @@ fn hash(p: &Path) -> String {
     trit_core::fingerprint::file_sha256(p).unwrap_or_default()
 }
 
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {}: {e}", p.display());
+fn read(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| {
+        eprintln!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -231,27 +215,18 @@ fn main() {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let manifest = read(&mpath);
-    let data = block(&manifest, "data").unwrap_or_else(|| usage());
-    let cfg = block(&manifest, "config").unwrap_or_else(|| usage());
-    let scene = PathBuf::from(field(data, "scene").unwrap_or_else(|| usage()));
-    let frames: Vec<usize> = {
-        let pat = "\"frames\": [";
-        let i = cfg.find(pat).unwrap_or_else(|| usage()) + pat.len();
-        let rest = &cfg[i..];
-        let end = rest.find(']').unwrap_or(rest.len());
-        rest[..end]
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect()
-    };
+    let data = manifest.get("data").unwrap_or_else(|| usage());
+    let cfg = manifest.get("config").unwrap_or_else(|| usage());
+    let scene = PathBuf::from(data.get_str("scene").unwrap_or_else(|| usage()));
+    let frames = list_usize(cfg, "frames");
     if frames.is_empty() {
         eprintln!("清单缺 frames");
         std::process::exit(2);
     }
-    let cell = number(cfg, "cell").unwrap_or(0.01) as f32;
-    let scale_k = number(cfg, "scale_k").unwrap_or(0.6) as f32;
-    let alpha = number(cfg, "alpha").unwrap_or(0.8) as f32;
-    let labels = field(cfg, "scenes").map(|root| {
+    let cell = num(cfg, "cell").unwrap_or(0.01) as f32;
+    let scale_k = num(cfg, "scale_k").unwrap_or(0.6) as f32;
+    let alpha = num(cfg, "alpha").unwrap_or(0.8) as f32;
+    let labels = cfg.get_str("scenes").map(|root| {
         let name = scene
             .file_name()
             .and_then(|s| s.to_str())
@@ -265,11 +240,12 @@ fn main() {
         eprintln!("语料指纹失败: {e}");
         std::process::exit(2);
     });
-    let ok_data = manifest.contains("\"kind\": \"extract-objects\"")
-        && manifest.contains("\"algo\": \"sha256-content-v1\"")
-        && field(data, "hash") == Some(format!("sha256:{}", fp.hash))
-        && number(data, "files") == Some(fp.files as f64)
-        && number(data, "bytes") == Some(fp.bytes as f64);
+    let want_hash = format!("sha256:{}", fp.hash);
+    let ok_data = manifest.get_str("kind") == Some("extract-objects")
+        && data.get_str("algo") == Some("sha256-content-v1")
+        && data.get_str("hash") == Some(want_hash.as_str())
+        && num(data, "files") == Some(fp.files as f64)
+        && num(data, "bytes") == Some(fp.bytes as f64);
 
     let views: Vec<View> = frames.iter().map(|&f| load_view(&scene, f)).collect();
     let rgbs: Vec<Vec<f32>> = frames
@@ -282,11 +258,21 @@ fn main() {
         .collect();
 
     // 清单里声明的对象必须一个不少、并且覆盖分割里出现的全部 id（否则删一条也算 PASS）
-    let declared = manifest.matches("{\"id\": ").count();
-    let skipped: Vec<u32> = nums(&manifest, "skipped")
-        .iter()
-        .map(|v| *v as u32)
-        .collect();
+    let declared = manifest
+        .get("objects")
+        .and_then(Json::as_array)
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let skipped: Vec<u32> = manifest
+        .get("skipped")
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                .collect()
+        })
+        .unwrap_or_default();
     let seen: std::collections::BTreeSet<u32> = want_objects.iter().map(|o| o.id).collect();
     let seg_ids: std::collections::BTreeSet<u32> = views
         .iter()
@@ -373,24 +359,8 @@ fn main() {
         if ok_all { "pass" } else { "reject" }
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        base.join(if ok_all {
-            "objects.verify.json"
-        } else {
-            "objects.verify.reject.json"
-        })
-    });
-    if custom.is_none() {
-        let _ = std::fs::remove_file(base.join(if ok_all {
-            "objects.verify.reject.json"
-        } else {
-            "objects.verify.json"
-        }));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
-        std::process::exit(2);
-    });
+    let vp =
+        publish(&base, "objects", ok_all, custom.as_deref(), &body).unwrap_or_else(|e| fail(&e));
     println!(
         "复核记录 {}（{}）",
         vp.display(),
@@ -423,7 +393,8 @@ mod tests {
 
     #[test]
     fn parses_objects_and_stats() {
-        let objs = objects(MAN);
+        let m = Json::parse(MAN).unwrap();
+        let objs = objects(&m);
         assert_eq!(objs.len(), 2);
         assert_eq!(objs[0].id, 1);
         assert_eq!(objs[0].path, "obj-1.ply");
@@ -431,7 +402,7 @@ mod tests {
         assert_eq!(objs[1].id, 5);
         assert_eq!(objs[1].bbox_max, [2.0, 1.0, 1.0]);
         assert_eq!(objs[1].centroid, [1.5, 0.5, 0.5]);
-        assert_eq!(number(block(MAN, "config").unwrap(), "alpha"), Some(0.8));
+        assert_eq!(num(m.get("config").unwrap(), "alpha"), Some(0.8));
     }
 
     #[test]

@@ -10,6 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
+use trit_learn::json::Json;
+use trit_learn::verify::publish_base;
 use trit_parts::data::{read_npy_i32, read_rgb};
 use trit_parts::fuse::View;
 use trit_parts::geo::{Camera, read_npy_f32};
@@ -28,43 +30,20 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn num(j: &Json, key: &str) -> Option<f64> {
+    j.get(key).and_then(Json::as_f64)
 }
 
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
-fn list(txt: &str, key: &str) -> Option<Vec<usize>> {
-    let pat = format!("\"{key}\": [");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find(']')?;
-    Some(
-        rest[..end]
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect(),
-    )
-}
-
-/// 取 `"key": { ... }` 的对象体（清单里的对象都不嵌套）。
-fn block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    Some(&rest[..rest.find('}')?])
+fn list(j: &Json, key: &str) -> Vec<usize> {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn psnr_matches(want: f64, got: f64) -> bool {
@@ -104,9 +83,9 @@ fn mean_psnr(splats: &[trit_parts::splat::Splat], scene: &Path, frames: &[usize]
     f.iter().sum::<f64>() / f.len().max(1) as f64
 }
 
-fn read_manifest(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了清单 {}: {e}", p.display());
+fn read_manifest(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| {
+        eprintln!("读不了清单 {e}");
         std::process::exit(2);
     })
 }
@@ -132,25 +111,25 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(mp));
     let manifest = read_manifest(&mpath);
-
-    let data = block(&manifest, "data").unwrap_or_else(|| usage());
-    let splat = block(&manifest, "splat").unwrap_or_else(|| usage());
-    let metrics = block(&manifest, "metrics").unwrap_or_else(|| usage());
-    let scene = PathBuf::from(field(data, "scene").unwrap_or_else(|| usage()));
-    let fit_frames = list(&manifest, "fit_frames").unwrap_or_default();
-    let eval_frames = list(&manifest, "eval_frames").unwrap_or_default();
+    let data = manifest.get("data").unwrap_or_else(|| usage());
+    let splat = manifest.get("splat").unwrap_or_else(|| usage());
+    let metrics = manifest.get("metrics").unwrap_or_else(|| usage());
+    let config = manifest.get("config").unwrap_or_else(|| usage());
+    let scene = PathBuf::from(data.get_str("scene").unwrap_or_else(|| usage()));
+    let fit_frames = list(config, "fit_frames");
+    let eval_frames = list(config, "eval_frames");
     if fit_frames.is_empty() || eval_frames.is_empty() {
         eprintln!("清单缺 fit_frames / eval_frames");
         std::process::exit(2);
     }
-    let want_hash = field(data, "hash").unwrap_or_default();
-    let want_files = number(data, "files").unwrap_or(-1.0);
-    let want_bytes = number(data, "bytes").unwrap_or(-1.0);
-    let want_sha = field(splat, "sha256").unwrap_or_default();
-    let want_bytes_file = number(splat, "bytes").unwrap_or(-1.0);
-    let want_count = number(splat, "count").unwrap_or(-1.0);
-    let want_fit = number(metrics, "fit_psnr_after").unwrap_or(f64::NAN);
-    let want_eval = number(metrics, "eval_psnr_after").unwrap_or(f64::NAN);
+    let want_hash = data.get_str("hash").unwrap_or_default();
+    let want_files = num(data, "files").unwrap_or(-1.0);
+    let want_bytes = num(data, "bytes").unwrap_or(-1.0);
+    let want_sha = splat.get_str("sha256").unwrap_or_default();
+    let want_bytes_file = num(splat, "bytes").unwrap_or(-1.0);
+    let want_count = num(splat, "count").unwrap_or(-1.0);
+    let want_fit = num(metrics, "fit_psnr_after").unwrap_or(f64::NAN);
+    let want_eval = num(metrics, "eval_psnr_after").unwrap_or(f64::NAN);
 
     let mut all: Vec<usize> = fit_frames.iter().chain(&eval_frames).copied().collect();
     all.sort_unstable();
@@ -159,14 +138,14 @@ fn main() {
         eprintln!("语料指纹失败: {e}");
         std::process::exit(2);
     });
-    let ok_data = manifest.contains("\"algo\": \"sha256-content-v1\"")
+    let ok_data = data.get_str("algo") == Some("sha256-content-v1")
         && want_hash == format!("sha256:{}", fp.hash)
         && want_files == fp.files as f64
         && want_bytes == fp.bytes as f64;
 
     let file_sha = hash(&ply);
     let file_bytes = std::fs::metadata(&ply).map(|m| m.len()).unwrap_or(0) as f64;
-    let ok_file = manifest.contains("\"kind\": \"extract-splat\"")
+    let ok_file = manifest.get_str("kind") == Some("extract-splat")
         && want_sha == file_sha
         && (want_bytes_file < 0.0 || want_bytes_file == file_bytes);
     let splats = read_ply_3dgs(&ply).unwrap_or_else(|e| {
@@ -215,28 +194,7 @@ fn main() {
     );
     // 只有写默认位置时才维护 PASS/reject 互斥；--json-out 是旁路记录。
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        let mut s = ply.as_os_str().to_owned();
-        s.push(if pass {
-            ".verify.json"
-        } else {
-            ".verify.reject.json"
-        });
-        PathBuf::from(s)
-    });
-    if custom.is_none() {
-        let mut s = ply.as_os_str().to_owned();
-        s.push(if pass {
-            ".verify.reject.json"
-        } else {
-            ".verify.json"
-        });
-        let _ = std::fs::remove_file(PathBuf::from(s));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
-        std::process::exit(2);
-    });
+    let vp = publish_base(&ply, pass, custom.as_deref(), &body).unwrap_or_else(|e| fail(&e));
     println!(
         "复核记录 {}（{}）",
         vp.display(),
@@ -261,24 +219,26 @@ mod tests {
 
     #[test]
     fn parses_manifest_fields() {
-        let data = block(MAN, "data").unwrap();
-        let splat = block(MAN, "splat").unwrap();
-        let metrics = block(MAN, "metrics").unwrap();
-        assert_eq!(field(data, "scene").as_deref(), Some("D:/r/scene0084"));
-        assert_eq!(field(data, "hash").as_deref(), Some("sha256:ab"));
-        assert_eq!(field(splat, "sha256").as_deref(), Some("cd"));
-        assert_eq!(number(data, "bytes"), Some(900.0));
+        let m = Json::parse(MAN).unwrap();
+        let data = m.get("data").unwrap();
+        let splat = m.get("splat").unwrap();
+        let metrics = m.get("metrics").unwrap();
+        let config = m.get("config").unwrap();
+        assert_eq!(data.get_str("scene"), Some("D:/r/scene0084"));
+        assert_eq!(data.get_str("hash"), Some("sha256:ab"));
+        assert_eq!(splat.get_str("sha256"), Some("cd"));
+        assert_eq!(num(data, "bytes"), Some(900.0));
         assert_eq!(
-            number(splat, "bytes"),
+            num(splat, "bytes"),
             Some(100.0),
             "data/splat 的 bytes 必须分开读"
         );
-        assert_eq!(number(splat, "count"), Some(7.0));
-        assert_eq!(number(metrics, "fit_psnr_after"), Some(26.5));
-        assert_eq!(list(MAN, "fit_frames"), Some(vec![0, 2]));
-        assert_eq!(list(MAN, "eval_frames"), Some(vec![1, 3]));
-        assert_eq!(list(MAN, "nope"), None);
-        assert!(MAN.contains("\"kind\": \"extract-splat\""));
+        assert_eq!(num(splat, "count"), Some(7.0));
+        assert_eq!(num(metrics, "fit_psnr_after"), Some(26.5));
+        assert_eq!(list(config, "fit_frames"), vec![0, 2]);
+        assert_eq!(list(config, "eval_frames"), vec![1, 3]);
+        assert!(list(config, "nope").is_empty());
+        assert_eq!(m.get_str("kind"), Some("extract-splat"));
     }
 
     #[test]

@@ -9,6 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
+use trit_learn::json::Json;
+use trit_learn::verify::publish;
 use trit_parts::data::read_rgb;
 use trit_parts::partsrun::{created_unix, git_out, json_str};
 use trit_parts::scenefp::norm_root;
@@ -28,64 +30,15 @@ fn die(msg: String, code: i32) -> ! {
     std::process::exit(code)
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn num(j: &Json, key: &str) -> Option<f64> {
+    j.get(key).and_then(Json::as_f64)
 }
 
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
-fn nums(txt: &str, key: &str) -> Vec<f64> {
-    let pat = format!("\"{key}\": [");
-    let Some(i) = txt.find(&pat) else {
-        return Vec::new();
-    };
-    let rest = &txt[i + pat.len()..];
-    let end = rest.find(']').unwrap_or(rest.len());
-    rest[..end]
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect()
-}
-
-fn block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let mut depth = 1usize;
-    let (mut in_str, mut esc) = (false, false);
-    for (j, ch) in rest.char_indices() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if ch == '\\' {
-                esc = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-        } else if ch == '"' {
-            in_str = true;
-        } else if ch == '{' {
-            depth += 1;
-        } else if ch == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&rest[..j]);
-            }
-        }
-    }
-    None
+fn nums3(j: &Json, key: &str) -> Vec<f64> {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| items.iter().filter_map(Json::as_f64).collect())
+        .unwrap_or_default()
 }
 
 struct Frame {
@@ -95,22 +48,19 @@ struct Frame {
     sha: String,
 }
 
-fn frames(txt: &str) -> Vec<Frame> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"i\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        out.push(Frame {
-            i: seg
-                .split(',')
-                .next()
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0),
-            yaw: number(seg, "yaw").unwrap_or(0.0) as f32,
-            path: field(seg, "path").unwrap_or_default(),
-            sha: field(seg, "sha256").unwrap_or_default(),
-        });
-    }
-    out
+fn frames(v: &Json) -> Vec<Frame> {
+    let Some(items) = v.get("frames").and_then(Json::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .map(|e| Frame {
+            i: num(e, "i").unwrap_or(0.0) as usize,
+            yaw: num(e, "yaw").unwrap_or(0.0) as f32,
+            path: e.get_str("path").unwrap_or_default().to_string(),
+            sha: e.get_str("sha256").unwrap_or_default().to_string(),
+        })
+        .collect()
 }
 
 fn max_diff(a: &[f32], b: &[f32]) -> f32 {
@@ -136,8 +86,8 @@ fn hash(p: &Path) -> String {
     trit_core::fingerprint::file_sha256(p).unwrap_or_default()
 }
 
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| die(format!("读不了 {}: {e}", p.display()), 2))
+fn read(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| die(format!("读不了 {e}"), 2))
 }
 
 fn main() {
@@ -152,30 +102,34 @@ fn main() {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let manifest = read(&mpath);
-    let cfg = block(&manifest, "config").unwrap_or_else(|| usage());
-    let src = block(&manifest, "source").unwrap_or_else(|| usage());
-    let bnd = block(&manifest, "bounds").unwrap_or_else(|| usage());
-    let sh = block(&manifest, "sheet").unwrap_or_else(|| usage());
-    let views = number(cfg, "views").unwrap_or(0.0) as usize;
-    let res = number(cfg, "res").unwrap_or(0.0) as usize;
-    let elev = number(cfg, "elev").unwrap_or(20.0) as f32;
-    let fov = number(cfg, "fov").unwrap_or(40.0) as f32;
-    let cols = number(cfg, "cols").unwrap_or(4.0) as usize;
+    let cfg = manifest.get("config").unwrap_or_else(|| usage());
+    let src = manifest.get("source").unwrap_or_else(|| usage());
+    let bnd = manifest.get("bounds").unwrap_or_else(|| usage());
+    let sh = manifest.get("sheet").unwrap_or_else(|| usage());
+    let views = num(cfg, "views").unwrap_or(0.0) as usize;
+    let res = num(cfg, "res").unwrap_or(0.0) as usize;
+    let elev = num(cfg, "elev").unwrap_or(20.0) as f32;
+    let fov = num(cfg, "fov").unwrap_or(40.0) as f32;
+    let cols = num(cfg, "cols").unwrap_or(4.0) as usize;
     if !(16..=2048).contains(&res) || !(1..=64).contains(&cols) {
         die(format!("清单 res/cols 越界（实得 {res}/{cols}）"), 1)
     }
-    let bg = number(cfg, "bg").unwrap_or(0.0) as f32;
-    let radius = number(cfg, "radius").unwrap_or(0.0) as f32;
+    let bg = num(cfg, "bg").unwrap_or(0.0) as f32;
+    let radius = num(cfg, "radius").unwrap_or(0.0) as f32;
 
-    let ply = arg(&argv, "--splat")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| resolve(&base, field(src, "path").unwrap_or_else(|| usage())));
+    let ply = arg(&argv, "--splat").map(PathBuf::from).unwrap_or_else(|| {
+        resolve(
+            &base,
+            src.get_str("path").unwrap_or_else(|| usage()).to_string(),
+        )
+    });
     let splats = read_ply_3dgs(&ply).unwrap_or_else(|e| die(format!("读 PLY 失败: {e}"), 2));
-    let ok_src = field(src, "sha256") == Some(hash(&ply))
-        && number(src, "count") == Some(splats.len() as f64);
+    let ply_sha = hash(&ply);
+    let ok_src = src.get_str("sha256") == Some(ply_sha.as_str())
+        && num(src, "count") == Some(splats.len() as f64);
     let (lo, hi) = bounds(&splats);
-    let want_lo = nums(bnd, "min");
-    let want_hi = nums(bnd, "max");
+    let want_lo = nums3(bnd, "min");
+    let want_hi = nums3(bnd, "max");
     let ok_bounds = want_lo.len() == 3
         && want_hi.len() == 3
         && near3(
@@ -215,13 +169,14 @@ fn main() {
     }
     let (sw, wh, sheet) =
         contact_sheet(&imgs, res, cols).unwrap_or_else(|e| die(format!("拼图尺寸非法: {e}"), 1));
-    let got_sheet = read_rgb(&base.join(field(sh, "path").unwrap_or_default()))
+    let got_sheet = read_rgb(&base.join(sh.get_str("path").unwrap_or_default()))
         .map(|(_, _, p)| p)
         .unwrap_or_default();
     let sheet_diff = max_diff(&sheet, &got_sheet);
-    let ok_sheet = number(sh, "w") == Some(sw as f64)
-        && number(sh, "h") == Some(wh as f64)
-        && field(sh, "sha256") == Some(hash(&base.join("preview.png")))
+    let sheet_sha = hash(&base.join("preview.png"));
+    let ok_sheet = num(sh, "w") == Some(sw as f64)
+        && num(sh, "h") == Some(wh as f64)
+        && sh.get_str("sha256") == Some(sheet_sha.as_str())
         && sheet_diff <= 0.005;
     let ok_frames = !rows.is_empty() && rows.len() == views && bad.is_empty();
     let pass = ok_src && ok_bounds && ok_frames && ok_sheet;
@@ -260,22 +215,8 @@ fn main() {
         if pass { "pass" } else { "reject" }
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        base.join(if pass {
-            "preview.verify.json"
-        } else {
-            "preview.verify.reject.json"
-        })
-    });
-    if custom.is_none() {
-        let _ = std::fs::remove_file(base.join(if pass {
-            "preview.verify.reject.json"
-        } else {
-            "preview.verify.json"
-        }));
-    }
-    std::fs::write(&vp, body)
-        .unwrap_or_else(|e| die(format!("写复核记录 {}: {e}", vp.display()), 2));
+    let vp =
+        publish(&base, "preview", pass, custom.as_deref(), &body).unwrap_or_else(|e| die(e, 2));
     println!(
         "复核记录 {}（{}）",
         vp.display(),
@@ -294,18 +235,20 @@ mod tests {
 
     #[test]
     fn parses_preview_manifest() {
-        assert_eq!(number(block(MAN, "config").unwrap(), "views"), Some(2.0));
-        assert_eq!(number(block(MAN, "config").unwrap(), "radius"), Some(3.0));
-        let src = block(MAN, "source").unwrap();
-        assert_eq!(field(src, "sha256").as_deref(), Some("ab"));
-        assert_eq!(number(src, "count"), Some(9.0));
-        let b = block(MAN, "bounds").unwrap();
-        assert_eq!(nums(b, "min"), vec![-1.0, 0.0, -1.0]);
-        let rows = frames(MAN);
+        let m = Json::parse(MAN).unwrap();
+        let cfg = m.get("config").unwrap();
+        assert_eq!(num(cfg, "views"), Some(2.0));
+        assert_eq!(num(cfg, "radius"), Some(3.0));
+        let src = m.get("source").unwrap();
+        assert_eq!(src.get_str("sha256"), Some("ab"));
+        assert_eq!(num(src, "count"), Some(9.0));
+        let b = m.get("bounds").unwrap();
+        assert_eq!(nums3(b, "min"), vec![-1.0, 0.0, -1.0]);
+        let rows = frames(&m);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[1].yaw, 180.0);
         assert_eq!(rows[1].sha, "f1");
-        assert_eq!(number(block(MAN, "sheet").unwrap(), "w"), Some(32.0));
+        assert_eq!(num(m.get("sheet").unwrap(), "w"), Some(32.0));
     }
 
     #[test]

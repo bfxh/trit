@@ -2900,7 +2900,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_glb_verify.rs",
-      "lines": 264
+      "lines": 193
     },
     {
       "file": "crates/trit-parts/src/bin/parts_glb_verify/chunks.rs",
@@ -2920,11 +2920,11 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_objectmesh_verify.rs",
-      "lines": 528
+      "lines": 475
     },
     {
       "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
-      "lines": 519
+      "lines": 490
     },
     {
       "file": "crates/trit-parts/src/bin/parts_ood.rs",
@@ -2936,15 +2936,15 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_preview_verify.rs",
-      "lines": 331
+      "lines": 274
     },
     {
       "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
-      "lines": 526
+      "lines": 438
     },
     {
       "file": "crates/trit-parts/src/bin/parts_splat_verify.rs",
-      "lines": 300
+      "lines": 260
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train.rs",
