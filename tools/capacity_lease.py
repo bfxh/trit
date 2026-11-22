@@ -999,8 +999,11 @@ def self_test():
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
     passed = sum(1 for _, ok, _ in checks if ok)
+    # 只打印失败项：checks.sh 截断到窗口尾部时，18 行 ok 会把真正失败的两项挤出日志。
     for name, ok, detail in checks:
-        print(("ok   " if ok else "FAIL ") + name + (("  [" + detail + "]") if detail and not ok else ""))
+        if ok:
+            continue
+        print("FAIL " + name + (("  [" + detail + "]") if detail else ""))
     print(f"capacity-lease self-test: {passed}/{len(checks)} passed")
     return 0 if passed == len(checks) else 1
 
