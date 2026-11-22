@@ -48,7 +48,7 @@ fn check_bipolar(a: &[u64], b: &[u64], len: usize) -> Result<(), DotError> {
 /// 与三值路径一样走硬件 `popcnt` 派发——对照必须同待遇，不然比的不是编码而是
 /// 谁碰巧拿到了指令。
 ///
-/// 长度不满足 [`check_bipolar`] 的契约时返回 [`DotError::LengthMismatch`]，
+/// 长度不满足 `check_bipolar` 的契约时返回 [`DotError::LengthMismatch`]，
 /// 不再按较短平面静默截断（#590）。
 pub fn bipolar_dot(a: &[u64], b: &[u64], len: usize) -> Result<i64, DotError> {
     check_bipolar(a, b, len)?;
