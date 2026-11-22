@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：真实激活校准——随机输入低估只在 output 段成立）
+
+- `bias_e2e` 新增 `--activations-dir`，读取 `WSPACT1` 真实激活；新增
+  `activations::read_matrix`（魔数/长度/上限校验）与 `tests/activations.rs`。
+- 导出脚本 `examples/export_bias_activations.py`：MiniLM 第 0 层三段、STS test 512 句、
+  256 个 token 向量（只作对齐基线，不参与交付）。
+- 读数（真实激活 / 随机，`rel_l2` 比值）：query **1.02/1.02/0.98**、
+  intermediate **0.90/0.90/0.87**、output **1.72/1.72/1.73**；output 的 cosine
+  从随机 0.85 掉到真实 0.10。**“随机输入低估 1.5–3×”只对 output 段成立**，
+  query 不低估、intermediate 反而高估 10–13%。
+- f32 bias 真实激活收益：query −18.4%、intermediate −10.3%、output −0.06%
+  （随机输入下分别是 −14.4% / −7.2% / −0.8%）。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers` 绿。详见 `docs/research/WSP-E2E-REAL-ACT.md`。
+
 ### Changed（trit-wspace：补丁事实覆盖 tile / 行级编辑）
 
 - `certify::patch_facts` 的 `noop` 现在识别 `NegateRow` 全零行、`SetTile`/`FillTile` 目标

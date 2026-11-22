@@ -6,7 +6,7 @@
 
 | 项 | 现状 | 补证 |
 |---|---|---|
-| f32 bias 的端到端收益 | `bias_e2e` 只用随机 `uniform(-1,1)` 输入，测 MiniLM 第 0 层线性三段；级联 cosine ~0.44 | tokenizer + 真实激活跑完整 6 层；在检索/分类任务上测 |
+| f32 bias 的端到端收益 | 第 0 层三段已用 STS 真实激活复测（[WSP-E2E-REAL-ACT.md](WSP-E2E-REAL-ACT.md)）：query −18.4%、intermediate −10.3%、output −0.06%；级联仍用随机链 | 跑完整 6 层（attention/LN/GELU/残差）；检索/分类任务 |
 | WSP4 的更大模型 | 只在 all-MiniLM-L6-v2（103 张量，5,985,699 B）上测；82.7% of WSP2 | 更大模型/GPU；不同稀疏度 |
 | DARE 块级重标度 | `dare` 覆盖坐标/行/层/块丢弃与报告（`crates/trit-wspace/src/dare.rs`）；块级重标度细节未证 | 在真实任务向量上对拍 |
 | 学习式提议器 | 4→8→1 随机网络 + 采样 oracle；单工件内留出编辑 | 跨任务/跨工件留出；真实任务 oracle |

@@ -3503,8 +3503,12 @@
       "lines": 51
     },
     {
-      "file": "crates/trit-wspace/examples/bias_e2e.rs",
-      "lines": 417
+      "file": "crates/trit-wspace/examples/bias_e2e/main.rs",
+      "lines": 188
+    },
+    {
+      "file": "crates/trit-wspace/examples/bias_e2e/model.rs",
+      "lines": 313
     },
     {
       "file": "crates/trit-wspace/examples/bias_error.rs",
@@ -3683,6 +3687,10 @@
       "lines": 727
     },
     {
+      "file": "crates/trit-wspace/src/activations.rs",
+      "lines": 55
+    },
+    {
       "file": "crates/trit-wspace/src/analyze.rs",
       "lines": 365
     },
@@ -3840,7 +3848,7 @@
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
-      "lines": 173
+      "lines": 172
     },
     {
       "file": "crates/trit-wspace/src/localize.rs",
@@ -4037,6 +4045,10 @@
     {
       "file": "crates/trit-wspace/src/wspm/mod.rs",
       "lines": 264
+    },
+    {
+      "file": "crates/trit-wspace/tests/activations.rs",
+      "lines": 60
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",

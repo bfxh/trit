@@ -75,6 +75,7 @@
 | [WSP-INTERNAL-LOGIC.md](research/WSP-INTERNAL-LOGIC.md) | 从「读特征」升级到「读程序」：最小自动机提取、轨迹承重、Tracr 反向闭环的判据与 M0 |
 | [WSP-INTERNAL-LOGIC-RESULTS.md](research/WSP-INTERNAL-LOGIC-RESULTS.md) | M0 读数：三值网络 → 最小 DFA 的提取与参考对拍（DIFF=0，7/7 状态） |
 | [WSP-LIMITS.md](research/WSP-LIMITS.md) | `trit-wspace` 未证栏汇总（每条给来源与补证所需） |
+| [WSP-E2E-REAL-ACT.md](research/WSP-E2E-REAL-ACT.md) | 真实激活校准：MiniLM 第 0 层三段的随机 vs 真实输入对照 |
 | [WSP-BLOCK-INDEX.md](research/WSP-BLOCK-INDEX.md) | WSP2 块索引与随机访问 |
 | [WSP-WRITE-LOCK.md](research/WSP-WRITE-LOCK.md) | CLI 并发写锁（`--out` / `--log` 分发前加锁） |
 | [WSP-TILE-EDIT.md](research/WSP-TILE-EDIT.md) | WSP1 tile 编辑：任意矩形块的事务编辑与审计 |
