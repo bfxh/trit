@@ -12,6 +12,8 @@ mod dispatch;
 mod gate;
 #[path = "json.rs"]
 mod json;
+#[path = "label.rs"]
+mod label;
 #[path = "lang.rs"]
 mod lang;
 #[path = "lang_opts.rs"]

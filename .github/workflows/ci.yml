@@ -253,6 +253,16 @@ jobs:
           echo "::warning::scope 内 doctest 不可用或失败，退化为全量 doctest 复核"
           cargo test --workspace --locked --doc
 
+      # 三进制专项复核：codec_verify（58,323 例）+ gguf_verify（237 例），
+      # 两个确定性复核器本机实测合计 <0.5s（不含编译）；这里把它变成每次 PR 的硬门，
+      # 让「全绿」不再是一次性读数。失败退出码 2，step 直接红。
+      - name: Audit (ternary codec + gguf verify)
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        run: |
+          cargo run --locked -q -p trit-codec --bin codec_verify
+          cargo run --locked -q -p trit-export --bin gguf_verify
+
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
       # 收窄后只在闭包真含 trit-texture 时才跑，否则这条 step 白等一趟编译。
       - name: Test (trit-texture png feature)

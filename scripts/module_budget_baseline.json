@@ -1039,6 +1039,14 @@
       "lines": 21
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/label.rs",
+      "lines": 464
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/label_csv.rs",
+      "lines": 124
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/label_opts.rs",
       "lines": 56
     },
@@ -1132,7 +1140,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/rewrite.rs",
-      "lines": 214
+      "lines": 213
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/rewrite_opts.rs",
@@ -1437,6 +1445,10 @@
     {
       "file": "crates/trit-data/src/style.rs",
       "lines": 221
+    },
+    {
+      "file": "crates/trit-data/tests/rewrite_cli.rs",
+      "lines": 198
     },
     {
       "file": "crates/trit-dot/src/bipolar.rs",

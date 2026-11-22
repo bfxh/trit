@@ -97,8 +97,7 @@ pub fn run(argv: &[String]) {
             }
             Ok((_, fid, _)) => {
                 counts.fidelity_failed += 1;
-                let mut rec = failed(line, "fidelity", "");
-                rec = rec.put(
+                let rec = Json::obj().put("raw", line).put(
                     "rewrite",
                     Json::obj()
                         .put("ok", false)

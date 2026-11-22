@@ -122,7 +122,7 @@
 ## 6. 实施顺序
 
 - **M0（本轮）**：`crates/trit-data`：schema + 硬门 + 软门 + 三支决策 + 清单；CLI `gate`；单测。
-- **M1**：语言门特征（教育性/信息密度/语言纯净度）+ 重写闭环 + judge 对拍脚本。
+- **M1**：语言门特征（教育性/信息密度/语言纯净度）+ 重写闭环 + 标注包导出（`label`）与 judge 对拍（`compare`）。
 - **M2**：配比与消融、去污染、数据卡发布；与 `trit-orch` 轨迹（TraceEvent/CAS）对接，直接吃真实运行轨迹。
 
 ## 7. 边界与风险
@@ -158,8 +158,28 @@
   - 读数（输入为上面默认策略的 `deferred.jsonl`，1 条 Bad 轨迹）：keep → rewritten 1 / accepted 1（`rewrite.ok=true`、
     `orig_sha256` 留存）；`-Mode drop` → fidelity_failed 1（`length_ratio_ok=false`）；`-Mode sleep` + `--timeout 1`
     → failed 1（`reason=timeout`、`detail=timeout: 超过 1s`）。
+- **κ 标注包（复算：`trit-data label ...`）**：
+  - `label --jsonl <records.jsonl|目录> --sample 500 [--seed 0x…] [--out <dir>]`：每行先过默认门，
+    按 `decision:主原因` 分层，比例配额 + 最大余数（每层不超过可用数），层内按 `seed ^ FNV(层名)` 洗牌取前 k；
+    输出 `label.csv`（表头 `id,task_id,model_decision,reasons,human_decision,human_note,text`，人工三列留空）
+    + `label.report.json`（输入 sha256、seed、抽样规则、strata、counts）。
+  - `label --apply <label.csv> --out <dir>`：`human_decision` 只接受 `accept|defer|reject`，空值不默认
+    （计入 `skipped_empty` 后整体报错）；写 `model.jsonl` / `human.jsonl`（顺序一致）与
+    `label.apply.json{rows,skipped_empty,n,agreement,mismatches}`，并打印 `compare` 的下一步命令。
+  - 读数（3 条 demo，`--sample 2`）：抽 2 条（2 层），`accept` 可用 2 / 抽 1、`defer:language` 可用 1 / 抽 1；
+    手填 2 行（一致 1 / 不一致 1）→ `label.apply.json agreement=0.5`；接 `compare` 得
+    `n=2, observed=0.5000, κ=0.0000`。样本只验证 CSV→JSONL→κ 链路，**不构成 κ 验收读数**。
+- **CI 门（每次 PR）**：`ci.yml` 的 `check` job 在 doctest 之后加 `Audit (ternary codec + gguf verify)`
+  step，跑 `codec_verify`（17 项 58,323 例）与 `gguf_verify`（4 项 237 例）；本机两二进制运行合计 <0.5s
+  （不含编译），任一失败退出码 2 → step 直接红。`quality.yml` 仍是手工/周跑，不是 PR 门。
+- **rewrite 集成测试（复算：`cargo test -p trit-data --test rewrite_cli`）**：`tests/rewrite_cli.rs`
+  用平台原生 shell 夹具（Linux `sh` / Windows `powershell`）锁死 keep（rewritten 1）、保真失败
+  （`reason=fidelity`、`length_ratio_ok=false`）、超时（`--timeout 1` → `reason=timeout`）三支。
+  该测试顺带抓到并修掉一个真实 bug：保真失败记录曾重复写 `rewrite` 键（`failed(...)` 后又 `put`），
+  导致 `rewrite.failed.jsonl` 出现同名字段两次。
 - **仍是缺口（不宣称）**：500 条人工/LLM judge 标注语料尚未提供，软门 vs judge 的 Cohen's κ 与硬门一致率
-  没有对拍读数；`compare` 工具已就绪，拿到语料即可跑，低于 κ≥0.6 不得宣称有效。
+  没有对拍读数；`label`（导出标注包）与 `compare`（算 κ）工具已就绪，填完 `human_decision` 即可跑，
+  低于 κ≥0.6 不得宣称有效。
 
 - **M2 CLI 与数据卡（复算：`trit-data decontaminate ...`、`trit-data mix ...`）**：
   - `trit-data decontaminate --jsonl <in> --bench <bench.jsonl> [--ngram 13] [--threshold 0.2] [--out <dir>]`：

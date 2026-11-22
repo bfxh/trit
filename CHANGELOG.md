@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added（M1 外部依赖铺路：κ 标注包 `label` + 把三进制复核接进 PR CI + rewrite 集成门）
+
+- `trit-data label`（`label.rs` + `label_csv.rs`，纯 Rust 手写 CSV 编解码）：
+  - `label --jsonl <records.jsonl|目录> --sample 500 [--seed 0x…] [--out <dir>]`：先过默认门，
+    按 `decision:主原因` 分层；配额按比例 + 最大余数（每层不超过可用数），
+    层内按 `seed ^ FNV(层名)` 洗牌取前 k，输出按 id 升序。
+    产物 `label.csv`（表头 `id,task_id,model_decision,reasons,human_decision,human_note,text`，
+    人工三列留空；text 含换行按 RFC 4180 加引号）+ `label.report.json`（输入 sha256、
+    seed、抽样规则、strata、counts）。
+  - `label --apply <label.csv> --out <dir>`：`human_decision` 只认 `accept|defer|reject`，
+    空值不默认（`skipped_empty` 计数后整体报错）；写 `model.jsonl` / `human.jsonl`（顺序一致）
+    与 `label.apply.json{rows,skipped_empty,n,agreement,mismatches,human_decisions}`，
+    并打印 `compare` 下一步命令。
+  - 读数（3 条 demo）：`--sample 2` → 2 层 2 条；手填 2 行 → `agreement=0.5`；
+    `compare` → `n=2, observed=0.5000, expected=0.5000, κ=0.0000`（只验证链路，不是 κ 读数）。
+- CI：`.github/workflows/ci.yml` 的 `check` job（`fmt + clippy + test`）在 doctest 之后新增
+  `Audit (ternary codec + gguf verify)` step，每次 PR 跑 `codec_verify`（17 项 58,323 例）
+  与 `gguf_verify`（4 项 237 例）；本机实测两二进制运行合计 <0.5s（不含编译），失败退出码 2 → 红。
+  `quality.yml` 仍只做 cargo-audit / fuzz-smoke（手工 + 周跑），未改为 PR 门。
+- `tests/rewrite_cli.rs`：keep / 保真失败 / 超时三支的端到端门（Linux `sh`、Windows `powershell` 夹具；
+  断言读 `rewrite.report.json` 与 `rewrite.failed.jsonl`，不依赖 stdout 文案）。
+- 修复：`rewrite` 保真失败记录曾重复写 `rewrite` 键（先 `failed()` 再 `put` 同名键），
+  导致 `rewrite.failed.jsonl` 里出现两个 `"rewrite"` 字段；改为一次性构造。
+
 ### Added（三进制专项评估：编码可逆与逐位一致的独立复核）
 
 - `codec_verify`（`crates/trit-codec/src/bin/`）：9 形态 × 25 长度的确定性语料
