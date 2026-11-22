@@ -1,14 +1,10 @@
 //! 可复算质量门：硬门 → reject，软门 → defer，否则 accept。
-
 use std::collections::BTreeSet;
-
 use trit_core::fingerprint::sha256_hex;
-
 use crate::content::LabelFilter;
 use crate::language::{LangClass, Limits, classify, features};
 use crate::schema::Trajectory;
 use crate::script::{primary_language, trajectory_text};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
     Accept,
@@ -46,6 +42,8 @@ pub struct Config {
     pub code_threshold: f64,
     pub style: LabelFilter,
     pub semantics: LabelFilter,
+    pub code_quality: bool,
+    pub edu_min: f64,
     pub language_gate: bool,
     pub lang_allow: Option<Vec<String>>,
     pub lang_deny: Vec<String>,
@@ -68,6 +66,8 @@ impl Default for Config {
             code_threshold: 0.5,
             style: LabelFilter::default(),
             semantics: LabelFilter::default(),
+            code_quality: false,
+            edu_min: 0.0,
             language_gate: true,
             lang_allow: None,
             lang_deny: Vec::new(),

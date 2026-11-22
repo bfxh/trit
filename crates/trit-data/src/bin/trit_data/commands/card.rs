@@ -1,12 +1,13 @@
 //! 数据卡统计：来源 / 许可证 / 标签 / 重写标记。
+use self::card_labels::ContentStats;
 use self::counts::map_json;
 use std::collections::BTreeMap;
 use trit_data::schema::Trajectory;
-use trit_data::script::{primary_language, trajectory_text};
 use trit_learn::json::Json;
+#[path = "card_labels.rs"]
+mod card_labels;
 #[path = "counts.rs"]
 mod counts;
-
 #[derive(Default)]
 pub struct Card {
     pub sources: BTreeMap<String, usize>,
@@ -14,7 +15,7 @@ pub struct Card {
     pub labels: BTreeMap<String, usize>,
     pub provenance_missing: usize,
     pub rewritten: usize,
-    pub languages: BTreeMap<String, usize>,
+    pub content_stats: ContentStats,
 }
 
 impl Card {
@@ -35,10 +36,7 @@ impl Card {
         {
             self.rewritten += 1;
         }
-        *self
-            .languages
-            .entry(primary_language(&trajectory_text(t)).to_string())
-            .or_insert(0) += 1;
+        self.content_stats.add(t);
     }
 
     pub fn json(&self) -> Json {
@@ -48,6 +46,8 @@ impl Card {
             .put("labels", map_json(&self.labels))
             .put("provenance_missing", self.provenance_missing as u64)
             .put("rewritten", self.rewritten as u64)
-            .put("languages", map_json(&self.languages))
+            .put("languages", map_json(&self.content_stats.languages))
+            .put("styles", map_json(&self.content_stats.styles))
+            .put("semantics", map_json(&self.content_stats.semantics))
     }
 }

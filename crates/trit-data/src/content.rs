@@ -166,83 +166,7 @@ fn is_code_line(t: &str) -> bool {
     starts || KW.iter().any(|k| t.starts_with(k) || t.contains(k))
 }
 
-pub fn code_languages(text: &str) -> Vec<&'static str> {
-    let t = text.to_lowercase();
-    let probes: &[(&str, &[&str])] = &[
-        (
-            "python",
-            &["def ", "import ", "print(", "self.", "__init__", "elif "],
-        ),
-        (
-            "javascript",
-            &[
-                "function ",
-                "=>",
-                "const ",
-                "console.log",
-                "require(",
-                "document.",
-            ],
-        ),
-        (
-            "typescript",
-            &["interface ", ": string", ": number", "enum ", "as const"],
-        ),
-        (
-            "rust",
-            &["fn ", "let mut", "impl ", "trait ", "cargo ", "-> "],
-        ),
-        (
-            "java",
-            &[
-                "public class",
-                "system.out",
-                "import java",
-                "@override",
-                "void ",
-            ],
-        ),
-        (
-            "c",
-            &["#include", "int main", "printf(", "malloc(", "stdio.h"],
-        ),
-        (
-            "cpp",
-            &["std::", "template<", "cout <<", "namespace ", "vector<"],
-        ),
-        (
-            "csharp",
-            &[
-                "using system",
-                "namespace ",
-                "console.writeline",
-                "public class",
-            ],
-        ),
-        ("go", &["package ", "func ", "fmt.", ":="]),
-        ("php", &["<?php", "echo ", "$this", "function "]),
-        ("ruby", &["def ", "puts ", "require '", "end"]),
-        (
-            "sql",
-            &["select ", "from ", "where ", "join ", "insert into"],
-        ),
-        ("html", &["<html", "<div", "</", "<!doctype"]),
-        ("css", &["color:", "margin:", "@media", "display:"]),
-        (
-            "shell",
-            &["#!/", "echo ", "export ", "sudo ", "apt ", "npm ", "pip "],
-        ),
-        ("kotlin", &["fun ", "val ", "when ("]),
-        ("swift", &["func ", "guard ", "import foundation"]),
-        ("scala", &["case class", "object ", "def "]),
-        ("vue", &["<template>", "v-if", "v-for"]),
-    ];
-    probes
-        .iter()
-        .filter(|(_, keys)| keys.iter().any(|k| t.contains(k)))
-        .map(|(lang, _)| *lang)
-        .collect()
-}
+pub use crate::code_langs::code_languages;
 
 #[derive(Debug, Clone, Default)]
 pub struct LabelFilter {
@@ -272,6 +196,8 @@ pub struct ContentFilter {
     pub lang: LangFilter,
     pub style: LabelFilter,
     pub semantics: LabelFilter,
+    pub code_quality: bool,
+    pub edu_min: f64,
 }
 
 impl Default for ContentFilter {
@@ -286,6 +212,8 @@ impl Default for ContentFilter {
             },
             style: LabelFilter::default(),
             semantics: LabelFilter::default(),
+            code_quality: false,
+            edu_min: 0.0,
         }
     }
 }
@@ -300,6 +228,8 @@ pub struct ContentVerdict {
     pub lang_denied: bool,
     pub style_filtered: bool,
     pub semantics_filtered: bool,
+    pub code_quality_filtered: bool,
+    pub edu_filtered: bool,
 }
 
 impl ContentVerdict {
@@ -309,6 +239,8 @@ impl ContentVerdict {
             || self.lang_denied
             || self.style_filtered
             || self.semantics_filtered
+            || self.code_quality_filtered
+            || self.edu_filtered
     }
 }
 
@@ -322,6 +254,10 @@ impl ContentFilter {
         let semantics = detect_semantics(text);
         let style_filtered = self.style.denied(style.as_str());
         let semantics_filtered = self.semantics.denied(semantics.as_str());
+        let code_quality_filtered = self.code_quality
+            && content.code_ratio >= self.threshold
+            && !crate::code_quality::check(text).ok;
+        let edu_filtered = self.edu_min > 0.0 && crate::edu::score(text) < self.edu_min;
         ContentVerdict {
             content,
             style,
@@ -331,6 +267,8 @@ impl ContentFilter {
             lang_denied,
             style_filtered,
             semantics_filtered,
+            code_quality_filtered,
+            edu_filtered,
         }
     }
 }
