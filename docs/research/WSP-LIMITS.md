@@ -6,7 +6,7 @@
 
 | 项 | 现状 | 补证 |
 |---|---|---|
-| f32 bias 的端到端收益 | 第 0 层三段已用 STS 真实激活复测（[WSP-E2E-REAL-ACT.md](WSP-E2E-REAL-ACT.md)）：query −18.4%、intermediate −10.3%、output −0.06%；完整 6 层 f32/三值前向已落地（[WSP-BERT6-RESULTS.md](WSP-BERT6-RESULTS.md)），真实输入 `rel_l2 1.16 / cos 0.47`；STS 64 对 Pearson 0.733 / 0.546 / 0.247（仅线性 / LN 三值 / 全三值）；per-channel scale 拉到 0.432；top-k 列侧车 k≤16 无提升 | 混合精度（LN/残差 f32）；更大 rank；QAT；更大 STS 子集 |
+| f32 bias 的端到端收益 | 第 0 层三段已用 STS 真实激活复测（[WSP-E2E-REAL-ACT.md](WSP-E2E-REAL-ACT.md)）：query −18.4%、intermediate −10.3%、output −0.06%；完整 6 层 f32/三值前向已落地（[WSP-BERT6-RESULTS.md](WSP-BERT6-RESULTS.md)），真实输入 `rel_l2 1.16 / cos 0.47`；STS 64 对 Pearson 0.733 / 0.546 / 0.247（仅线性 / LN 三值 / 全三值）；per-channel scale 拉到 0.432；top-k 列侧车 k≤16 无提升；matmul 输入三值的混合精度只有 0.219 | 输入保 f32/8-bit 的真混合精度；GPTQ；更大 rank；更大 STS 子集 |
 | WSP4 的更大模型 | 只在 all-MiniLM-L6-v2（103 张量，5,985,699 B）上测；82.7% of WSP2 | 更大模型/GPU；不同稀疏度 |
 | DARE 块级重标度 | `dare` 覆盖坐标/行/层/块丢弃与报告（`crates/trit-wspace/src/dare.rs`）；块级重标度细节未证 | 在真实任务向量上对拍 |
 | 学习式提议器 | 4→8→1 随机网络 + 采样 oracle；单工件内留出编辑 | 跨任务/跨工件留出；真实任务 oracle |

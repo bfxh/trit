@@ -13,8 +13,9 @@ pub(crate) enum ActivationMode {
     TernaryAllScale,
     /// 同 `TernaryAll`，但用 f32 校准的 per-channel absmean 作为 scale。
     TernaryAllChannel,
+    /// 混合精度：LN/残差流保持 f32，只把 matmul 的输入三值化（权重仍三值）。
+    Mixed,
 }
-
 /// 每层三处激活的 per-channel scale（LN1 / GELU 后 / LN2）。
 #[derive(Clone)]
 pub(crate) struct LayerScales {
@@ -22,7 +23,6 @@ pub(crate) struct LayerScales {
     pub(crate) ffn: Vec<f32>,
     pub(crate) norm2: Vec<f32>,
 }
-
 impl ActivationMode {
     pub(crate) fn parse(value: &str) -> Self {
         match value {
@@ -31,12 +31,12 @@ impl ActivationMode {
             "ternary-all" => Self::TernaryAll,
             "ternary-all-scale" => Self::TernaryAllScale,
             "ternary-all-channel" => Self::TernaryAllChannel,
+            "mixed" => Self::Mixed,
             other => panic!(
-                "未知 activation mode {other}（f32|ternary-ln|ternary-all|ternary-all-scale|ternary-all-channel）"
+                "未知 activation mode {other}（f32|ternary-ln|ternary-all|ternary-all-scale|ternary-all-channel|mixed）"
             ),
         }
     }
-
     pub(crate) fn key(self) -> &'static str {
         match self {
             Self::F32 => "f32",
@@ -44,28 +44,28 @@ impl ActivationMode {
             Self::TernaryAll => "ternary-all",
             Self::TernaryAllScale => "ternary-all-scale",
             Self::TernaryAllChannel => "ternary-all-channel",
+            Self::Mixed => "mixed",
         }
     }
-
     fn ternary_norm(self) -> bool {
         matches!(
             self,
             Self::TernaryLn | Self::TernaryAll | Self::TernaryAllScale | Self::TernaryAllChannel
         )
     }
-
     pub(crate) fn ternary_activation(self) -> bool {
         matches!(
             self,
             Self::TernaryAll | Self::TernaryAllScale | Self::TernaryAllChannel
         )
     }
+    pub(crate) fn matmul_input(self) -> bool {
+        self == Self::Mixed
+    }
 }
-
 #[path = "norm.rs"]
 mod norm;
 pub(crate) use norm::NormKind;
-
 /// 激活三值化：纯 sign，或 sign × per-token absmean（`TernaryAllScale`）。
 pub(crate) fn quantize_activation(
     values: &mut [f32],

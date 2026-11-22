@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：混合精度负结果——matmul 输入三值反而更差）
+
+- `--activation-mode mixed`：LN/残差流保持 f32，权重三值，Q/K/V、intermediate、FFN 输出的
+  matmul 输入符号三值化；attention context 保持 f32。
+- 读数（STS 64 对）：mixed `rel_l2 1.6053 / cosine 0.0082 / Pearson 0.2191 / Spearman 0.1896`；
+  对照全三值 + per-channel 0.4322/0.3889，仅线性权重 0.7330/0.7437。
+- 结论：只量化 matmul 输入、LN/残差保 f32，Pearson 0.219，比全三值 0.247 还低；瓶颈是
+  matmul 输入三值化本身。真正可用的混合精度是仅权重三值 + 激活 f32（0.733）；要接近
+  PyTorch 0.923 需要权重侧精度或 8-bit 激活，不是三值输入。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
 ### Added（trit-wspace：残差侧车负结果——k≤16 没有把 0.432 推向 0.733）
 
 - `QuantLinear` 支持 top-k 列 f32 侧车：`R = W − s·T`，按列范数保留 k 列，

@@ -9,7 +9,6 @@ use crate::stats::{input_stats, random_like};
 use crate::sts::{load_pairs, metrics, sentence_vectors};
 use serde_json::{Map, json};
 use trit_wspace::activations;
-
 pub(crate) fn run() {
     let mut file = String::new();
     let mut data_dir = String::new();
@@ -31,7 +30,6 @@ pub(crate) fn run() {
         !file.is_empty() && !data_dir.is_empty(),
         "--file/--data-dir 必填"
     );
-
     let (batch, seq, mask) = activations::read_mask(format!("{data_dir}/mask.u8")).expect("mask");
     let (input_rows, hidden, input) =
         activations::read_matrix(format!("{data_dir}/input.f32")).expect("input");
@@ -40,7 +38,6 @@ pub(crate) fn run() {
     assert_eq!(input_rows, batch * seq);
     assert_eq!(ref_rows, batch * seq);
     assert_eq!(ref_cols, hidden);
-
     let pairs = load_pairs(&data_dir);
     let scales = load_scales(&data_dir);
     let (heads, eps) = (12usize, 1e-12f32);
@@ -65,7 +62,6 @@ pub(crate) fn run() {
     );
     let random_input = random_like(&input, seed);
     let (f32_random, _, _) = f32_bert.forward(&random_input, &mask, batch, seq, false);
-
     let mut modes = Map::new();
     let mut all_stages = None;
     for mode in [
@@ -74,6 +70,7 @@ pub(crate) fn run() {
         ActivationMode::TernaryAll,
         ActivationMode::TernaryAllScale,
         ActivationMode::TernaryAllChannel,
+        ActivationMode::Mixed,
     ] {
         if requested.is_some_and(|wanted| wanted != mode) {
             continue;
@@ -109,22 +106,25 @@ pub(crate) fn run() {
             all_stages = Some((real_stages, random_stages));
         }
     }
-
     let layer_refs = layer_refs(&data_dir, &f32_layers, &mask, hidden);
-    let sidecar = sidecar::run(
-        &file,
-        &input,
-        &mask,
-        &f32_out,
-        &scales,
-        &pairs,
-        batch,
-        seq,
-        hidden,
-        heads,
-        eps,
-        &[0, 4, 8, 16],
-    );
+    let sidecar = if activation_arg == "all" {
+        sidecar::run(
+            &file,
+            &input,
+            &mask,
+            &f32_out,
+            &scales,
+            &pairs,
+            batch,
+            seq,
+            hidden,
+            heads,
+            eps,
+            &[0, 4, 8, 16],
+        )
+    } else {
+        json!(null)
+    };
     let report = json!({
         "source": {
             "seq": seq,
