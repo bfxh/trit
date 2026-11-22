@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：int8 激活——权重三值 + 8-bit 输入，STS 0.7331）
+
+- `--activation-mode int8`：权重三值，LN/残差 f32，matmul 输入 per-token 对称 int8
+  （scale = max|x|/127，反量化后参与 matmul）；`int8.rs` 实现，`quantize_input.rs` 统一
+  三值/int8 两条输入路径。
+- 读数（STS 64 对）：int8 `rel_l2 1.1660 / cosine 0.4695 / Pearson 0.7331 / Spearman 0.7446`；
+  与 f32 激活（0.7330/0.7437）几乎完全相同。
+- 结论：8-bit 激活不损失精度，**激活带宽不是瓶颈**；权重三值化本身把 0.923 拉到 0.733。
+  要接近 0.923 必须做权重侧精度（GPTQ/更大 rank/混合权重），三值激活这条线已到顶。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
 ### Added（trit-wspace：混合精度负结果——matmul 输入三值反而更差）
 
 - `--activation-mode mixed`：LN/残差流保持 f32，权重三值，Q/K/V、intermediate、FFN 输出的
