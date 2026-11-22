@@ -9,8 +9,8 @@
 //!   三元的实际存储是双导轨 2 bit/trit，因此 2-bit 基线是**同比特预算**；
 //!   打包后的 1.6 bit/trit 另给每比特折算值，不混为一谈。
 //!
-//! 归类见 `docs/research/TERNARY-AUDIT.md`：这是 **[B]**（二进制宿主上的模拟税），
-//! 不是 [A] 的原生红利。
+//! 归类见 `docs/research/TERNARY-AUDIT.md`：这是 **`[B]`**（二进制宿主上的模拟税），
+//! 不是 `[A]` 的原生红利。
 
 use trit_codec::quantize::{self, dequantize};
 use trit_core::value::Ternary;

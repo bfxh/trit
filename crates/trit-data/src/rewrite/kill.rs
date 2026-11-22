@@ -7,11 +7,6 @@
 
 use std::process::{Child, Command};
 
-#[cfg(unix)]
-unsafe extern "C" {
-    fn kill(pid: i32, sig: i32) -> i32;
-}
-
 /// 构造外部命令；Unix 上放进独立进程组，便于整组终止。
 pub fn command(prog: &str, args: &[String]) -> Command {
     let mut cmd = Command::new(prog);
@@ -37,11 +32,14 @@ pub fn tree(child: &mut Child) {
     }
     #[cfg(unix)]
     {
-        // 负 PID = 整个进程组；SIGKILL = 9。即使组已空，后面的 child.kill 兜底。
-        // SAFETY: 只传本进程刚 spawn 出的合法 pid 与常量信号；返回值被忽略。
-        unsafe {
-            kill(-(pid as i32), 9);
-        }
+        // 负 PID = 整个进程组；走 shell 内建 kill（POSIX 语义），避免 unsafe。
+        use std::process::Stdio;
+        let signal = format!("kill -9 -{pid}");
+        let _ = Command::new("sh")
+            .args(["-c", &signal])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
     let _ = child.kill();
     let _ = child.wait();
