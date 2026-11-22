@@ -892,11 +892,27 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit-data.rs",
-      "lines": 185
+      "lines": 41
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/compare.rs",
+      "lines": 60
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/gate.rs",
+      "lines": 162
+    },
+    {
+      "file": "crates/trit-data/src/compare.rs",
+      "lines": 91
     },
     {
       "file": "crates/trit-data/src/gate.rs",
       "lines": 307
+    },
+    {
+      "file": "crates/trit-data/src/language.rs",
+      "lines": 248
     },
     {
       "file": "crates/trit-data/src/lib.rs",
@@ -905,6 +921,10 @@
     {
       "file": "crates/trit-data/src/manifest.rs",
       "lines": 44
+    },
+    {
+      "file": "crates/trit-data/src/rewrite.rs",
+      "lines": 184
     },
     {
       "file": "crates/trit-data/src/schema.rs",

@@ -131,3 +131,16 @@
 - 不把 benchmark 题目/答案混入训练；去污染是硬门的一部分。
 - 许可证不明或来源不可追溯的数据只能 `defer`，不能 `accept`。
 - 长尾/失败轨迹不丢：reject 是训练信号（Agent Q），不是垃圾。
+
+## 8. 实现进度（2026-11-23）
+
+- **M0 已落地**：`crates/trit-data` 的 schema、7 条硬门、6 条软门、三支决策、数据清单；
+  CLI `trit-data gate`。
+- **M1 已落地（库 + 对拍）**：
+  - `language.rs`：可复算文本特征与 `Good / Uncertain / Bad` 三值分类；
+  - `rewrite.rs`：数字/URL/代码/引用锚点提取、保真检查（缺失 + 长度比）、重写后送回同一门；
+  - `compare.rs`：多类 Cohen's κ；CLI `trit-data compare --a --b`。
+- **M1 未接**：`gate` 主决策仍用内嵌语言规则，尚未把 `LangClass` 接入
+  accept/defer 映射；CLI 尚无 `rewrite` 子命令（需要外部 rewriter 命令与超时/失败回退）。
+- **下一步**：把 `LangClass` 接进 gate（Uncertain → defer，Bad → 可配置 reject/defer），
+  实现 `rewrite --cmd`，并用 500 条人工/LLM judge 标注跑 κ 与硬门一致率。
