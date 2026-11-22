@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,21 @@ def is_publishable(package: dict) -> bool:
     return publish is None or (isinstance(publish, list) and len(publish) > 0)
 
 
+def vendored(dependency: dict) -> bool:
+    """third_party/ 下的 vendored crate（publish = false）不进发布链，也不要求 workspace 成员。"""
+    path = dependency.get("path")
+    if not path:
+        return False
+    root = Path(path)
+    if "third_party" not in root.parts:
+        return False
+    try:
+        text = (root / "Cargo.toml").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return re.search(r"^\s*publish\s*=\s*false\s*$", text, re.M) is not None
+
+
 def check(manifest_path: Path) -> list[str]:
     data = metadata(manifest_path)
     by_name = {package["name"]: package for package in data["packages"]}
@@ -79,6 +95,8 @@ def check(manifest_path: Path) -> list[str]:
                 continue
             target = by_name.get(dependency["name"])
             if target is None:
+                if vendored(dependency):
+                    continue
                 failures.append(
                     f"UNRESOLVED: {package['name']} -> {dependency['name']} 有路径但不在 workspace 里"
                 )
