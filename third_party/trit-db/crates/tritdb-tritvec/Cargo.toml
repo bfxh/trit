@@ -1,0 +1,17 @@
+[package]
+name = "tritdb-tritvec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Packed ternary vectors and balanced-ternary integers for trit-db"
+
+[dependencies]
+tritdb-radix.workspace = true
+
+[dev-dependencies]
+tritdb-testkit.workspace = true
+
+[lints]
+workspace = true

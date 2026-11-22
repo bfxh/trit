@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 # cargo-fuzz 需要 nightly 与独立 target，不并入 workspace。
-exclude = ["fuzz", "t3", "benchmarks/dot_variants"]
+exclude = ["fuzz", "t3", "benchmarks/dot_variants", "vendor", "third_party"]
 members = [
     "crates/trit-bench",
     "crates/trit-fuzz",

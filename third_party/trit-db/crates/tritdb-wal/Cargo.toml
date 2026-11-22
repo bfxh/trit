@@ -1,0 +1,17 @@
+[package]
+name = "tritdb-wal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "TRWL write-ahead log: 32-byte segment/record headers + CRC32"
+
+[dependencies]
+tritdb-page.workspace = true
+
+[dev-dependencies]
+tritdb-testkit.workspace = true
+
+[lints]
+workspace = true

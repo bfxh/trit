@@ -2619,12 +2619,10 @@ dependencies = [
 [[package]]
 name = "tritdb-cas"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 
 [[package]]
 name = "tritdb-exec"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 dependencies = [
  "tritdb-tritvec",
 ]
@@ -2632,12 +2630,10 @@ dependencies = [
 [[package]]
 name = "tritdb-page"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 
 [[package]]
 name = "tritdb-pgwire"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 dependencies = [
  "base64",
  "const-oid 0.9.6",
@@ -2661,12 +2657,10 @@ dependencies = [
 [[package]]
 name = "tritdb-radix"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 
 [[package]]
 name = "tritdb-sql"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 dependencies = [
  "tritdb-exec",
  "tritdb-txn",
@@ -2675,7 +2669,6 @@ dependencies = [
 [[package]]
 name = "tritdb-tritvec"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 dependencies = [
  "tritdb-radix",
 ]
@@ -2683,7 +2676,6 @@ dependencies = [
 [[package]]
 name = "tritdb-txn"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 dependencies = [
  "tritdb-page",
  "tritdb-wal",
@@ -2692,7 +2684,6 @@ dependencies = [
 [[package]]
 name = "tritdb-wal"
 version = "0.0.1"
-source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
 dependencies = [
  "tritdb-page",
 ]

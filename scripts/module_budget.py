@@ -37,8 +37,18 @@ BASELINE = ROOT / "scripts" / "module_budget_baseline.json"
 # 单个源文件的硬预算：新建文件超过它就是"上帝对象"，登记会被拒绝。
 LIMIT = 800
 
-# 扫描跳过这些目录名（构建产物 / 版本库 / 缓存）——与 BSHSQ 的 gates_common 同口径。
-EXCLUDE_DIRS = {"target", ".git", "__pycache__", "node_modules", ".venv", "venv"}
+# 扫描跳过这些目录名（构建产物 / 版本库 / 缓存 / 第三方源码副本）。
+# `vendor/` 是上游 trit-db 的源码副本，不按本仓预算拆分（见 vendor/trit-db/README.md）。
+EXCLUDE_DIRS = {
+    "target",
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "vendor",
+    "third_party",
+}
 
 
 def scan(root: Path) -> dict[str, int]:

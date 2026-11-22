@@ -1,0 +1,11 @@
+[package]
+name = "tritdb-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "trit-db 测试工具：临时目录、确定性随机、hex"
+
+[lints]
+workspace = true

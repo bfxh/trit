@@ -2344,23 +2344,31 @@
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/cas.rs",
-      "lines": 16
+      "lines": 13
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/cas_anchor.rs",
       "lines": 71
     },
     {
+      "file": "crates/trit-orch/src/tritdb_backend/cas_chain.rs",
+      "lines": 151
+    },
+    {
       "file": "crates/trit-orch/src/tritdb_backend/cas_restore.rs",
-      "lines": 61
+      "lines": 53
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/cas_snapshot.rs",
-      "lines": 56
+      "lines": 54
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/pgwire.rs",
-      "lines": 24
+      "lines": 5
+    },
+    {
+      "file": "crates/trit-orch/src/tritdb_backend/pgwire_serve.rs",
+      "lines": 84
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/sql.rs",
@@ -2557,6 +2565,10 @@
     {
       "file": "crates/trit-orch/tests/trace_cas/core.rs",
       "lines": 56
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_cas/delta.rs",
+      "lines": 32
     },
     {
       "file": "crates/trit-orch/tests/trace_ecc.rs",

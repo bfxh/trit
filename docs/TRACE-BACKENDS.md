@@ -68,16 +68,21 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 - `tritdb-sql`：事件先按 `chain_seq` 增量物化进 `trit_trace`（每个 trace 记水位，
   只插更新的行），再执行查询；重复查询不会重复插入，事件只读一遍。
 - `tritdb-pgwire`：`trace serve` 先做一次物化，再在 `listen` 上起 pgwire 服务；
-  服务期间新写入的事件不会自动同步，需要重启或再跑一次同步。
+  之后按 `TRIT_TRACE_SYNC_SECS`（默认 `5` 秒，`0` 关闭）在后台刷新。刷新线程与
+  查询引擎并发写同一个 WAL，靠 `tritdb-txn` 的事务冲突重试（3 次、50 ms 起指数
+  退避），仍失败只记日志，不影响已建立的服务。
 
 ## CAS 快照与 anchor 链
 
-- `snapshot` 把 WAL 当前 KV 全量写进 `ChunkStore`，manifest 以上一次 anchor 头作
-  `parent`，然后把新头原子写进 `cas_root/trit-trace.anchor`；设
-  `TRIT_TRACE_CAS_KEY` 时 anchor 带 HMAC-SHA256，读取时校验。
+- `snapshot` 是**增量**的：manifest 只记相对上一次 anchor 的变化条目，删除用
+  `!del:<key>` 标记（值固定为 `Hash::of(b"trit-trace:deleted")`）；WAL 内容没变时
+  不写新层，返回的 `parent` 为 `None`。chunk 层本身内容寻址，相同 value 不会重复
+  存。新头原子写进 `cas_root/trit-trace.anchor`；设 `TRIT_TRACE_CAS_KEY` 时 anchor
+  带 HMAC-SHA256，读取时校验。
 - `restore` 不给 `head` 时从 anchor 取头；给了 `head` 且设了 key 时要求它与 anchor
   一致，否则 `trace_anchor_mismatch`。恢复前用 `verify_chain` 验整条 manifest 链，
-  再用单事务改 WAL。
+  再沿 `parent` 把各层合并成完整快照（子层覆盖父层，tombstone 剔除对应键），最后
+  用单事务改 WAL。旧的全量 manifest 也能沿链合并（后层覆盖前层）。
 
 ## 两种后端的分工
 
@@ -92,11 +97,15 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 
 ## 边界
 
-- `tritdb-txn` 是可选 git 依赖（固定 rev）；不启用 feature 时不会编译它，但 Cargo
-  仍会解析/拉取该 git 源。离线构建请预先 vendor 或关闭该 feature。若本机 Cargo
-  libgit2 在代理下报 `failed to connect ... Invalid argument`，设置
-  `CARGO_NET_GIT_FETCH_WITH_CLI=true`（本机 `.cargo/config.toml` 已设置；该文件被
-  仓库 `.gitignore` 忽略，不会提交）。
+- `tritdb-*` 依赖已 **vendor** 进仓库（`third_party/trit-db`，固定 rev `aca71888`，
+  MIT OR Apache-2.0）；`crates/trit-orch/Cargo.toml` 用 `path` 引用，所以
+  `cargo build --offline` 不需要网络或 git 凭据。更新 vendor 用
+  `scripts/vendor-tritdb.sh <rev>`（见 `third_party/trit-db/README.md`）。
+- **anchor 可被回滚**：不设 `TRIT_TRACE_CAS_KEY` 时 anchor 没有完整性保护，
+  能改文件的人可以把 `trit-trace.anchor` 指回一个旧 manifest 头，`restore` 会
+  照着旧头恢复——这是「只防改数据库文件的攻击者」的边界，不是 bug。设了 key
+  后改 anchor 会被 HMAC 发现，但持有 key 的宿主仍可重写。需要抵抗回滚时，把
+  anchor 放到攻击者写不到的位置，或由外部 KMS/透明日志跨系统锚定。
 - `TritDbTraceStore` 的 `load` 会重算内容摘要、验证每个 trace 的写入序与元数据；
   元数据 HMAC 只防“改数据库文件”的攻击者，拥有密钥的宿主仍可重写。
 - 两个后端都建立在“宿主可信”的模型上；执行器/模型自报问题仍由完成闸的
@@ -106,4 +115,7 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 
 ```bash
 cargo test -p trit-orch --features tritdb --test trace_tritdb
+cargo test --offline -p trit-orch --features tritdb-pgwire --lib
+cargo test --offline -p trit-orch --features tritdb-cas --test trace_cas
+cargo test --offline -p trit-orch --features tritdb-sql --test trace_sql
 ```

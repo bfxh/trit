@@ -1,0 +1,42 @@
+# trit-db 源码 vendor（离线构建用）。
+#
+# 来源：https://github.com/bfxh/trit-db @ aca718880e0d918a064c878b39564225e46db80a
+# 只保留 trit-orch 的 tritdb-* 依赖闭包；重新生成见 scripts/vendor-tritdb.sh。
+# 上游许可证：MIT OR Apache-2.0（上游 Cargo.toml 声明；本目录仅附 NOTICE.md）。
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/tritdb-radix",
+    "crates/tritdb-page",
+    "crates/tritdb-wal",
+    "crates/tritdb-txn",
+    "crates/tritdb-exec",
+    "crates/tritdb-sql",
+    "crates/tritdb-testkit",
+    "crates/tritdb-cas",
+    "crates/tritdb-pgwire",
+    "crates/tritdb-tritvec",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bfxh/trit-db"
+
+[workspace.dependencies]
+tritdb-radix = { path = "crates/tritdb-radix" }
+tritdb-page = { path = "crates/tritdb-page" }
+tritdb-wal = { path = "crates/tritdb-wal" }
+tritdb-txn = { path = "crates/tritdb-txn" }
+tritdb-exec = { path = "crates/tritdb-exec" }
+tritdb-sql = { path = "crates/tritdb-sql" }
+tritdb-testkit = { path = "crates/tritdb-testkit" }
+tritdb-cas = { path = "crates/tritdb-cas" }
+tritdb-pgwire = { path = "crates/tritdb-pgwire" }
+tritdb-tritvec = { path = "crates/tritdb-tritvec" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

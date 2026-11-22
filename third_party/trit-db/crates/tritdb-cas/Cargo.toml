@@ -1,0 +1,13 @@
+[package]
+name = "tritdb-cas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Content-addressed chunks and hash-chain manifests"
+
+[dependencies]
+
+[lints]
+workspace = true

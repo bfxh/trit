@@ -22,8 +22,12 @@
   `tritdb-txn` 单事务）；见 `docs/TRACE-BACKENDS.md`。
 - CLI `trace`：`--trace-backend jsonl|tritdb`，append/load/check；可选
   `tritdb-sql`（按 `chain_seq` 增量物化后查询 `trit_trace`，重复查询不重复插入）、
-  `tritdb-cas`（快照/恢复 WAL，manifest parent 链 + anchor 可选 HMAC）与
-  `tritdb-pgwire`（pgwire 远程查询物化表；服务期间不自动同步新事件）。
+  `tritdb-cas`（**增量**快照/恢复：manifest 只记变化条目 + `!del:` tombstone，
+  沿 parent 链合并，anchor 可选 HMAC）与 `tritdb-pgwire`（pgwire 远程查询；
+  后台按 `TRIT_TRACE_SYNC_SECS` 刷新，默认 5 秒，`0` 关闭）。
+- `tritdb-*` 依赖改为 **vendored 源码**（`third_party/trit-db`，rev `aca71888`，
+  MIT OR Apache-2.0）：`cargo build --offline` 不再需要 git 网络或凭据；
+  `scripts/vendor-tritdb.sh <rev>` 负责重新导出。
 - 兼容性：`Receipt`/`TraceEvent`/`HandoffPacket` 新增字段均有 serde 默认，旧 JSON 可读；
   源码字面量构造需补字段，推荐用 `Receipt::host_measured` / `TraceEvent::new` 等构造器；
   `Error` 新增变体，下游穷尽 `match` 需补分支。
