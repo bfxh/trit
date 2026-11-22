@@ -11,7 +11,6 @@ pub enum Decision {
     Reject,
     Defer,
 }
-
 impl Decision {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -21,13 +20,11 @@ impl Decision {
         }
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verdict {
     pub decision: Decision,
     pub reasons: Vec<&'static str>,
 }
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub require_verified: bool,
@@ -42,7 +39,9 @@ pub struct Config {
     pub code_threshold: f64,
     pub style: LabelFilter,
     pub semantics: LabelFilter,
+    pub formats: LabelFilter,
     pub code_quality: bool,
+    pub code_quality_limits: crate::code_quality::Limits,
     pub edu_min: f64,
     pub language_gate: bool,
     pub lang_allow: Option<Vec<String>>,
@@ -50,7 +49,6 @@ pub struct Config {
     pub dedup: bool,
     pub loop_gate: bool,
 }
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -66,7 +64,9 @@ impl Default for Config {
             code_threshold: 0.5,
             style: LabelFilter::default(),
             semantics: LabelFilter::default(),
+            formats: LabelFilter::default(),
             code_quality: false,
+            code_quality_limits: crate::code_quality::Limits::default(),
             edu_min: 0.0,
             language_gate: true,
             lang_allow: None,

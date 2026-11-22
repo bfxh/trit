@@ -5,7 +5,7 @@ use crate::gate::Config;
 pub fn apply(cfg: &Config, text: &str, soft: &mut Vec<&'static str>) {
     if cfg.code_quality
         && crate::content::analyze(text).code_ratio >= cfg.code_threshold
-        && !crate::code_quality::check(text).ok
+        && !crate::code_quality::check_with(text, &cfg.code_quality_limits).ok
     {
         soft.push("code_quality_filtered");
     }

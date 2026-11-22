@@ -1,6 +1,5 @@
 //! gate 的内容 / 风格 / 语义筛选。
 use crate::gate::Config;
-
 pub fn apply(cfg: &Config, text: &str, soft: &mut Vec<&'static str>) {
     if cfg.code_filter || cfg.natural_filter {
         let content = crate::content::analyze(text);
@@ -20,4 +19,5 @@ pub fn apply(cfg: &Config, text: &str, soft: &mut Vec<&'static str>) {
         soft.push("semantics_filtered");
     }
     crate::gate_quality::apply(cfg, text, soft);
+    crate::gate_format::apply(cfg, text, soft);
 }

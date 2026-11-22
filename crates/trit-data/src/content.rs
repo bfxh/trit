@@ -168,25 +168,7 @@ fn is_code_line(t: &str) -> bool {
 
 pub use crate::code_langs::code_languages;
 
-#[derive(Debug, Clone, Default)]
-pub struct LabelFilter {
-    pub enabled: bool,
-    pub allow: Option<Vec<String>>,
-    pub deny: Vec<String>,
-}
-
-impl LabelFilter {
-    pub fn denied(&self, label: &str) -> bool {
-        if !self.enabled {
-            return false;
-        }
-        self.deny.iter().any(|x| x == label)
-            || self
-                .allow
-                .as_ref()
-                .is_some_and(|a| !a.iter().any(|x| x == label))
-    }
-}
+pub use crate::label_filter::LabelFilter;
 
 #[derive(Debug, Clone)]
 pub struct ContentFilter {
@@ -196,7 +178,9 @@ pub struct ContentFilter {
     pub lang: LangFilter,
     pub style: LabelFilter,
     pub semantics: LabelFilter,
+    pub formats: LabelFilter,
     pub code_quality: bool,
+    pub code_quality_limits: crate::code_quality::Limits,
     pub edu_min: f64,
 }
 
@@ -212,7 +196,9 @@ impl Default for ContentFilter {
             },
             style: LabelFilter::default(),
             semantics: LabelFilter::default(),
+            formats: LabelFilter::default(),
             code_quality: false,
+            code_quality_limits: crate::code_quality::Limits::default(),
             edu_min: 0.0,
         }
     }
@@ -230,6 +216,8 @@ pub struct ContentVerdict {
     pub semantics_filtered: bool,
     pub code_quality_filtered: bool,
     pub edu_filtered: bool,
+    pub formats: Vec<&'static str>,
+    pub format_filtered: bool,
 }
 
 impl ContentVerdict {
@@ -241,6 +229,7 @@ impl ContentVerdict {
             || self.semantics_filtered
             || self.code_quality_filtered
             || self.edu_filtered
+            || self.format_filtered
     }
 }
 
@@ -256,8 +245,10 @@ impl ContentFilter {
         let semantics_filtered = self.semantics.denied(semantics.as_str());
         let code_quality_filtered = self.code_quality
             && content.code_ratio >= self.threshold
-            && !crate::code_quality::check(text).ok;
+            && !crate::code_quality::check_with(text, &self.code_quality_limits).ok;
         let edu_filtered = self.edu_min > 0.0 && crate::edu::score(text) < self.edu_min;
+        let formats = crate::format::detect(text);
+        let format_filtered = formats.iter().any(|f| self.formats.denied(f));
         ContentVerdict {
             content,
             style,
@@ -269,6 +260,8 @@ impl ContentFilter {
             semantics_filtered,
             code_quality_filtered,
             edu_filtered,
+            formats,
+            format_filtered,
         }
     }
 }
