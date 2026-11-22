@@ -1,5 +1,3 @@
-//! `gate` 子命令。
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use trit_core::fingerprint::file_sha256;

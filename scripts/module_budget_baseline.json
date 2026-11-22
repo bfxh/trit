@@ -911,8 +911,12 @@
       "lines": 13
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/decon_report.rs",
+      "lines": 40
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/decontaminate.rs",
-      "lines": 135
+      "lines": 131
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/dispatch.rs",
@@ -920,7 +924,11 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate.rs",
-      "lines": 136
+      "lines": 134
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/gate_lang_opts.rs",
+      "lines": 65
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_opts.rs",
@@ -928,7 +936,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_opts_parse.rs",
-      "lines": 71
+      "lines": 52
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/json.rs",
@@ -943,12 +951,16 @@
       "lines": 37
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/lang_opts_content.rs",
+      "lines": 39
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/mix.rs",
       "lines": 63
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/mix_opts.rs",
-      "lines": 70
+      "lines": 65
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/project.rs",
@@ -961,6 +973,10 @@
     {
       "file": "crates/trit-data/src/compare.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-data/src/content.rs",
+      "lines": 389
     },
     {
       "file": "crates/trit-data/src/decontaminate.rs",
@@ -976,7 +992,7 @@
     },
     {
       "file": "crates/trit-data/src/lang_filter.rs",
-      "lines": 81
+      "lines": 80
     },
     {
       "file": "crates/trit-data/src/language.rs",

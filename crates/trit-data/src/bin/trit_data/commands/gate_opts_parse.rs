@@ -33,18 +33,6 @@ pub fn parse(argv: &[String]) -> Opts {
                     .unwrap_or_else(|| die("--min-thought 需要小数"));
                 i += 2;
             }
-            "--no-language" => {
-                cfg.language_gate = false;
-                i += 1;
-            }
-            "--lang-allow" => {
-                cfg.lang_allow = Some(list(argv, i));
-                i += 2;
-            }
-            "--lang-deny" => {
-                cfg.lang_deny = list(argv, i);
-                i += 2;
-            }
             "--no-dedup" => {
                 cfg.dedup = false;
                 i += 1;
@@ -53,19 +41,12 @@ pub fn parse(argv: &[String]) -> Opts {
                 cfg.loop_gate = false;
                 i += 1;
             }
-            other => die(&format!("未知参数 {other}")),
+            other => {
+                if !super::gate_lang_opts::apply(&mut cfg, other, argv, &mut i) {
+                    die(&format!("未知参数 {other}"));
+                }
+            }
         }
     }
     Opts { jsonl, out, cfg }
-}
-
-fn list(argv: &[String], i: usize) -> Vec<String> {
-    argv.get(i + 1)
-        .map(|s| {
-            s.split(',')
-                .map(|x| x.trim().to_string())
-                .filter(|x| !x.is_empty())
-                .collect()
-        })
-        .unwrap_or_else(|| die("语言列表形如 zh,en"))
 }

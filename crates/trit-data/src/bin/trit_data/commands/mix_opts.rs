@@ -1,20 +1,15 @@
 //! `mix` 参数解析。
-
+use crate::commands::{die, lang_opts};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-
-use trit_data::lang_filter::LangFilter;
-
-use crate::commands::die;
-
-use crate::commands::lang_opts;
+use trit_data::content::ContentFilter;
 
 pub struct Opts {
     pub jsonl: Option<PathBuf>,
     pub out: Option<PathBuf>,
     pub total: usize,
     pub weights: BTreeMap<String, f64>,
-    pub filter: LangFilter,
+    pub filter: ContentFilter,
 }
 
 pub fn parse(argv: &[String]) -> Opts {
@@ -22,7 +17,7 @@ pub fn parse(argv: &[String]) -> Opts {
     let mut out: Option<PathBuf> = None;
     let mut total = 1000usize;
     let mut weights: BTreeMap<String, f64> = BTreeMap::new();
-    let mut filter = LangFilter::default();
+    let mut filter = ContentFilter::default();
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {

@@ -23,7 +23,7 @@ pub fn run(argv: &[String]) {
         let j = Json::parse(line).unwrap_or_else(|e| die(&format!("{}: {e}", jsonl.display())));
         let t =
             Trajectory::from_json(&j).unwrap_or_else(|e| die(&format!("{}: {e}", jsonl.display())));
-        if opts.filter.eval(&trajectory_text(&t)).1 {
+        if opts.filter.eval(&trajectory_text(&t)).filtered() {
             skipped += 1;
             continue;
         }
@@ -50,7 +50,7 @@ pub fn run(argv: &[String]) {
         .put("kind", "trit-data-mix")
         .put("total", opts.total as u64)
         .put("quotas", Json::arr(arr))
-        .put("skipped_language", skipped as u64);
+        .put("skipped_content", skipped as u64);
     if let Some(dir) = opts.out {
         std::fs::create_dir_all(&dir)
             .unwrap_or_else(|e| die(&format!("建不了 {}: {e}", dir.display())));

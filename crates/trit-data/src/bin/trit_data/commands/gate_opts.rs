@@ -1,9 +1,9 @@
-//! `gate` 的参数。
-
 use std::path::PathBuf;
 
 use trit_data::gate::Config;
 
+#[path = "gate_lang_opts.rs"]
+mod gate_lang_opts;
 #[path = "gate_opts_parse.rs"]
 mod parse;
 
