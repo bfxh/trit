@@ -1,10 +1,7 @@
 //! MiniLM BERT 6 层的 f32 / 三值前向（只三值化线性权重，LN/GELU/softmax 保持 f32）。
-
-use trit_wspace::safetensors;
-
 use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
-
 use crate::linear::{F32Linear, Linear, QuantLinear};
+use trit_wspace::safetensors;
 pub(crate) struct BertLayer {
     query: Linear,
     key: Linear,
@@ -16,7 +13,6 @@ pub(crate) struct BertLayer {
     norm2: NormKind,
     activation: ActivationMode,
 }
-
 pub(crate) struct BertConfig {
     pub(crate) layers: usize,
     pub(crate) hidden: usize,
@@ -27,7 +23,6 @@ pub(crate) struct BertConfig {
     pub(crate) activation: ActivationMode,
     pub(crate) sidecar_rank: usize,
 }
-
 pub(crate) struct Bert {
     hidden: usize,
     heads: usize,
@@ -35,7 +30,6 @@ pub(crate) struct Bert {
     layers: Vec<BertLayer>,
     scales: Option<Vec<LayerScales>>,
 }
-
 impl Bert {
     pub(crate) fn load(file: &str, config: BertConfig) -> Self {
         let BertConfig {
@@ -98,11 +92,9 @@ impl Bert {
             scales: None,
         }
     }
-
     pub(crate) fn set_scales(&mut self, scales: Vec<LayerScales>) {
         self.scales = Some(scales);
     }
-
     /// 前向；`capture` 为真时返回每层 FFN 输出段（GELU 后）的输入快照。
     pub(crate) fn forward(
         &self,
@@ -144,7 +136,6 @@ impl Bert {
         (output, snapshots, layer_outputs)
     }
 }
-
 impl BertLayer {
     #[allow(clippy::too_many_arguments)]
     fn forward(
@@ -157,13 +148,22 @@ impl BertLayer {
         head_dim: usize,
         scales: Option<&LayerScales>,
     ) -> Vec<f32> {
+        let quantized = |values: &[f32], scales: Option<&[f32]>| -> Vec<f32> {
+            if self.activation.matmul_input() {
+                let mut copy = values.to_vec();
+                quantize_activation(&mut copy, ActivationMode::TernaryAllChannel, scales);
+                copy
+            } else {
+                values.to_vec()
+            }
+        };
+        let xq = quantized(x, None);
         let mut q = vec![0.0f32; seq * hidden];
         let mut k = vec![0.0f32; seq * hidden];
         let mut v = vec![0.0f32; seq * hidden];
-        self.query.forward_seq(x, seq, &mut q);
-        self.key.forward_seq(x, seq, &mut k);
-        self.value.forward_seq(x, seq, &mut v);
-
+        self.query.forward_seq(&xq, seq, &mut q);
+        self.key.forward_seq(&xq, seq, &mut k);
+        self.value.forward_seq(&xq, seq, &mut v);
         let scale = 1.0 / (head_dim as f32).sqrt();
         let mut context = vec![0.0f32; seq * hidden];
         let mut scores = vec![0.0f32; seq];
@@ -191,7 +191,6 @@ impl BertLayer {
                 }
             }
         }
-
         let mut projected = vec![0.0f32; seq * hidden];
         self.output.forward_seq(&context, seq, &mut projected);
         for index in 0..seq * hidden {
@@ -199,10 +198,10 @@ impl BertLayer {
         }
         self.norm1
             .forward_seq(x, seq, self.activation, scales.map(|s| s.norm1.as_slice()));
-
         let intermediate = hidden * 4;
+        let xq_ffn = quantized(x, scales.map(|s| s.norm1.as_slice()));
         let mut ffn = vec![0.0f32; seq * intermediate];
-        self.intermediate.forward_seq(x, seq, &mut ffn);
+        self.intermediate.forward_seq(&xq_ffn, seq, &mut ffn);
         for value in &mut ffn {
             *value = gelu(*value);
         }
@@ -210,8 +209,9 @@ impl BertLayer {
             quantize_activation(&mut ffn, self.activation, scales.map(|s| s.ffn.as_slice()));
         }
         let snapshot = ffn.clone();
+        let ffnq = quantized(&ffn, scales.map(|s| s.ffn.as_slice()));
         let mut out = vec![0.0f32; seq * hidden];
-        self.ffn_output.forward_seq(&ffn, seq, &mut out);
+        self.ffn_output.forward_seq(&ffnq, seq, &mut out);
         for index in 0..seq * hidden {
             x[index] += out[index];
         }
@@ -220,7 +220,6 @@ impl BertLayer {
         snapshot
     }
 }
-
 fn softmax(values: &mut [f32]) {
     let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let mut sum = 0.0f32;

@@ -3516,7 +3516,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 251
+      "lines": 250
     },
     {
       "file": "crates/trit-wspace/examples/bert6/norm.rs",
