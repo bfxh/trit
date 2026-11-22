@@ -236,8 +236,8 @@
   {
     "name": "orch: corrupt ledger must be reported",
     "file": "crates/trit-orch/src/effects/persist/load.rs",
-    "old": "            Ok(text) => Ledger::from_json(&text),",
-    "new": "            Ok(text) => Ok(Ledger::from_json(&text).unwrap_or_default()),",
+    "old": "                Ledger::from_json(&text).or_else(|primary| self.load_backup().or(Err(primary)))",
+    "new": "                Ok(Ledger::from_json(&text).unwrap_or_default())",
     "pkg": "trit-orch",
     "filter": "corrupt_ledger_is_reported_not_guessed",
     "diagnostic": "ORCH_LEDGER_PARSE"
