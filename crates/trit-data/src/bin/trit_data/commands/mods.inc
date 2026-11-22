@@ -16,6 +16,10 @@ mod lang;
 mod lang_opts;
 #[path = "mix.rs"]
 mod mix;
+#[path = "pipeline.rs"]
+mod pipeline;
+#[path = "pipeline_report.rs"]
+mod pipeline_report;
 #[path = "project.rs"]
 mod project;
 #[path = "shared.rs"]

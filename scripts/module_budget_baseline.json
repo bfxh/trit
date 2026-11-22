@@ -1031,6 +1031,14 @@
       "lines": 65
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/pipeline.rs",
+      "lines": 103
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/pipeline_report.rs",
+      "lines": 145
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/project.rs",
       "lines": 52
     },
@@ -1285,6 +1293,10 @@
     {
       "file": "crates/trit-data/src/repo/paths_tests.rs",
       "lines": 47
+    },
+    {
+      "file": "crates/trit-data/src/repo_gate.rs",
+      "lines": 182
     },
     {
       "file": "crates/trit-data/src/repo_tests.rs",

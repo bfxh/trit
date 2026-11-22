@@ -69,3 +69,38 @@ trit-fabric `missing` 37（仓库根没有 LICENSE/COPYING/NOTICE，扫描不向
   另有 docs 计划与 repo_opts.rs），2 个依赖闭包补入（`repo.rs`、`code_quality.rs`）。
 - `bundle_sha256` 对入选文件的「路径 + 内容」做内容级指纹，同一查询复算可比对。
 - 预算按词级 token 数计，超预算的命中/依赖跳过，不截断文件内容。
+
+## 数据管线（2026-11-23）
+
+```bash
+cargo run -q --release -p trit-data --bin trit-data -- pipeline --repo <目录> --out <目录>
+```
+
+流程：`repo` 扫描 → 仓库级质量门（`repo_gate`）→ `accepted/deferred/rejected.jsonl`
++ `pipeline.report.json` + `dataset_card.json` + `manifest.json`（内容级清单）。
+
+仓库级门：
+
+| 门 | 类型 | 判据 |
+|---|---|---|
+| `schema` | reject | path/lang 为空或 bytes=0 |
+| `unknown_lang` | reject | 无法识别语言 |
+| `generated` | reject | 自动生成标记（可 `--allow-generated` 关掉） |
+| `duplicate` | reject | 精确/近似重复组内非首份（可 `--allow-duplicates` 关掉） |
+| `license` | reject/defer | `--strict-license` 拒绝；`--require-license` 降级为 defer |
+| `imports_unknown` | defer | 语言无 import 语法（markdown/toml 等） |
+| `no_test` | defer | `--require-tests` 且无测试关联 |
+| `too_large` | defer | >1MB |
+
+实测（本仓库，1830 文件，1.1s）：
+
+```json
+{"files": 1830, "decisions": {"accept": 372, "defer": 1440, "reject": 18},
+ "reasons": {"duplicate": 5, "generated": 13, "imports_unknown": 331, "no_test": 1435}}
+```
+
+- `no_test` 占多数：本仓库大量文件没有同名/同 crate 测试关联（R2 的测试匹配只认约定）。
+- `duplicate` 5 与 `repo.dup.json` 的 2 组精确 + 2 组近似一致（组内除首份全部拒绝）。
+- 数据卡记录 `sources / licenses / languages / coverage / deps / duplicates`；
+  `manifest.hash` 对输出文件集合做内容级指纹，重跑可复算。
+- `--repo .` 时数据卡的 source 名是 `.`（basename 为空），用目录名或绝对路径可得到可读名。
