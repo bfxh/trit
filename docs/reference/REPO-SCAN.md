@@ -79,6 +79,19 @@ cargo run -q --release -p trit-data --bin trit-data -- pipeline --repo <目录> 
 流程：`repo` 扫描 → 仓库级质量门（`repo_gate`）→ `accepted/deferred/rejected.jsonl`
 + `pipeline.report.json` + `dataset_card.json` + `manifest.json`（内容级清单）。
 
+轨迹级同一入口（2026-11-23）：
+
+```bash
+cargo run -q --release -p trit-data --bin trit-data -- pipeline \
+  --trajectories crates/trit-data/testdata/trajectories.jsonl \
+  --out pipelines-out/trajectories --no-lang-quality \
+  --cmd "sed s/^/first/" --mix-total 2
+```
+
+`--trajectories` 递归收 `*.jsonl`，串起 gate 三支 → 可选 rewrite（只送 deferred）→
+按标签配额 mix，产物含 `trajectory.pipeline.report.json` 与 `mixed.jsonl`；
+`.github/workflows/data-pipeline.yml` 每轮会跑一次这条命令并把报告贴进摘要。
+
 仓库级门：
 
 | 门 | 类型 | 判据 |

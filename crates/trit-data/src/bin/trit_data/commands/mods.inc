@@ -28,10 +28,16 @@ mod pipeline_batch;
 mod pipeline_diff;
 #[path = "pipeline_report.rs"]
 mod pipeline_report;
+#[path = "pipeline_opts.rs"]
+mod pipeline_opts;
+#[path = "pipeline_trajectories.rs"]
+mod pipeline_trajectories;
 #[path = "project.rs"]
 mod project;
 #[path = "shared.rs"]
 mod shared;
+#[path = "usage.rs"]
+mod usage;
 #[path = "pipeline_run.rs"]
 mod pipeline_run;
 #[path = "repo.rs"]

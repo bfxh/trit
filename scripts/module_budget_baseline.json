@@ -1096,7 +1096,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/pipeline.rs",
-      "lines": 73
+      "lines": 50
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/pipeline_batch.rs",
@@ -1107,12 +1107,20 @@
       "lines": 131
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/pipeline_opts.rs",
+      "lines": 164
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/pipeline_report.rs",
       "lines": 145
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/pipeline_run.rs",
       "lines": 68
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/pipeline_trajectories.rs",
+      "lines": 568
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/project.rs",
@@ -1176,7 +1184,11 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/shared.rs",
-      "lines": 34
+      "lines": 29
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/usage.rs",
+      "lines": 10
     },
     {
       "file": "crates/trit-data/src/bits.rs",
@@ -1452,7 +1464,7 @@
     },
     {
       "file": "crates/trit-data/src/rewrite/kill.rs",
-      "lines": 48
+      "lines": 46
     },
     {
       "file": "crates/trit-data/src/rewrite/tests.rs",
@@ -1473,6 +1485,10 @@
     {
       "file": "crates/trit-data/src/style.rs",
       "lines": 221
+    },
+    {
+      "file": "crates/trit-data/tests/pipeline_trajectories.rs",
+      "lines": 144
     },
     {
       "file": "crates/trit-data/tests/rewrite_cli.rs",
@@ -5060,7 +5076,15 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
-      "lines": 161
+      "lines": 61
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_gguf_audit.rs",
+      "lines": 198
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_gguf_io.rs",
+      "lines": 144
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gradient.rs",
@@ -5441,6 +5465,10 @@
     {
       "file": "crates/trit-wspace/tests/explain.rs",
       "lines": 105
+    },
+    {
+      "file": "crates/trit-wspace/tests/gguf_audit.rs",
+      "lines": 68
     },
     {
       "file": "crates/trit-wspace/tests/gguf_cli.rs",

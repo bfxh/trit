@@ -1,66 +1,43 @@
-//! `pipeline` 子命令：单仓库质量门，或按配置批量跑并与基线对比。
+//! `pipeline` 子命令：单仓库质量门、轨迹级 gate→rewrite→mix，或按配置批量跑并与基线对比。
 
-use std::path::PathBuf;
-
-use trit_data::repo_gate::Config;
-
-use super::{die, pipeline_batch, pipeline_run, usage};
+use super::{die, pipeline_batch, pipeline_opts, pipeline_run, pipeline_trajectories, usage};
 
 pub fn run(argv: &[String]) {
-    let mut root: Option<PathBuf> = None;
-    let mut out: Option<PathBuf> = None;
-    let mut config: Option<PathBuf> = None;
-    let mut promote = false;
-    let mut cfg = Config::default();
-    let mut i = 0;
-    while i < argv.len() {
-        match argv[i].as_str() {
-            "--repo" => {
-                root = argv.get(i + 1).map(PathBuf::from);
-                i += 2;
-            }
-            "--out" => {
-                out = argv.get(i + 1).map(PathBuf::from);
-                i += 2;
-            }
-            "--config" => {
-                config = argv.get(i + 1).map(PathBuf::from);
-                i += 2;
-            }
-            "--promote" => {
-                promote = true;
-                i += 1;
-            }
-            "--require-license" => {
-                cfg.require_license = true;
-                i += 1;
-            }
-            "--strict-license" => {
-                cfg.reject_missing_license = true;
-                i += 1;
-            }
-            "--require-tests" => {
-                cfg.require_tests = true;
-                i += 1;
-            }
-            "--allow-generated" => {
-                cfg.reject_generated = false;
-                i += 1;
-            }
-            "--allow-duplicates" => {
-                cfg.reject_duplicates = false;
-                i += 1;
-            }
-            other => die(&format!("未知参数 {other}")),
-        }
-    }
-    let dir = out.unwrap_or_else(|| PathBuf::from("pipeline-out"));
-    if let Some(path) = config {
-        pipeline_batch::run(&path, &dir, promote).unwrap_or_else(|e| die(&e));
+    let opts = pipeline_opts::parse(argv);
+    if let Some(trajectory) = opts.trajectory {
+        let t = pipeline_trajectories::Opts {
+            gate: trajectory.gate,
+            rewrite_cmd: trajectory.rewrite_cmd,
+            rewrite_timeout: trajectory.rewrite_timeout,
+            mix_total: trajectory.mix_total,
+            mix_weights: trajectory.mix_weights,
+        };
+        let summary = pipeline_trajectories::execute(&trajectory.input, &opts.dir, &t)
+            .unwrap_or_else(|e| die(&e));
+        println!(
+            "轨迹管线 {}：{} 个文件 / {} 条 → accept {} / defer {} / reject {}；重写 {}；混样 {}（{}）",
+            trajectory.input.display(),
+            summary.input_files,
+            summary.records,
+            summary.accept,
+            summary.defer,
+            summary.reject,
+            if summary.rewrite_enabled {
+                format!("{} 条", summary.rewritten)
+            } else {
+                "未启用".to_string()
+            },
+            summary.mixed,
+            opts.dir.display()
+        );
         return;
     }
-    let root = root.unwrap_or_else(|| usage());
-    let s = pipeline_run::execute(&root, &dir, &cfg).unwrap_or_else(|e| die(&e));
+    if let Some(path) = opts.config {
+        pipeline_batch::run(&path, &opts.dir, opts.promote).unwrap_or_else(|e| die(&e));
+        return;
+    }
+    let root = opts.root.unwrap_or_else(|| usage());
+    let s = pipeline_run::execute(&root, &opts.dir, &opts.repo_cfg).unwrap_or_else(|e| die(&e));
     println!(
         "管线 {}：{} 文件 → accept {} / defer {} / reject {}（{}）",
         root.display(),
@@ -68,6 +45,6 @@ pub fn run(argv: &[String]) {
         s.accept,
         s.defer,
         s.reject,
-        dir.display()
+        opts.dir.display()
     );
 }

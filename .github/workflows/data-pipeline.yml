@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   pipeline:
-    name: repo → gate → 数据卡
+    name: repo 管线 + 轨迹 gate→rewrite→mix → 数据卡
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -39,11 +39,24 @@ jobs:
       - name: 跑管线（对比基线并提升）
         run: ./target/release/trit-data pipeline --config .github/data-pipeline.json --out data-pipeline-out --promote
 
+      - name: 跑轨迹管线（gate → rewrite → mix）
+        run: |
+          ./target/release/trit-data pipeline \
+            --trajectories crates/trit-data/testdata/trajectories.jsonl \
+            --out data-pipeline-out/trajectories \
+            --no-lang-quality \
+            --cmd "sed s/^/first/" \
+            --mix-total 2
+
       - name: 摘要
         run: |
           echo '### data-pipeline' >> "$GITHUB_STEP_SUMMARY"
           echo '```json' >> "$GITHUB_STEP_SUMMARY"
           cat data-pipeline-out/batch.report.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '#### 轨迹管线' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat data-pipeline-out/trajectories/trajectory.pipeline.report.json >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           for f in data-pipeline-out/*/changes.json; do
             [ -f "$f" ] || continue

@@ -127,10 +127,34 @@ cargo run -q -p trit-codec --bin codec_verify -- --corpus target/ternary-corpus
 - `external.balanced_corpus`：85 行同时过独立文本解析、库解码、库重新编码三条；
 - 带 `--corpus` 时总计 **24 项检查 / 58,945 例 / 0 失败**；不带时 21 项 / 58,517 例。
 
+### 3.3 WSP 模型级 GGUF 复验（新增）
+
+`gguf_verify` 只审 `trit-export` 的合成张量（导出层）；模型级 67/103 的旧账由
+`trit-wspace gguf-audit` 复验（同一 all-MiniLM-L6-v2，103 个 2D 张量）：
+
+```bash
+trit-wspace gguf-audit <wsp1-dir> --out target/gguf-audit.json
+```
+
+| 读数 | 值 |
+|---|---:|
+| 张量数（导入 / 往返后） | 103 / 103 |
+| 逐字节一致 `.wsp` | 67 / 103 |
+| 语义核心一致（trits / 三值 bias / scale 位模式） | 103 / 103 |
+| `biasf` 丢失 | 36 / 103 |
+| manifest `vector` 标记保留 | 0 / 63 |
+| manifest `bias` 标记保留 | 0 / 37 |
+| GGUF 字节 / 有效张量字节 | 4,772,288 / 4,762,066 |
+
+`ok=true` 只到语义核心；逐字节 67/103 与 36 个 `biasf` 丢失是预期损失，审计列入
+`biasf_mismatches` 而不是判红。manifest 的 `vector` / `bias` 标记不写回，属于 import 侧
+元数据缺口，不能把「导出层 4 项全绿」当成模型层全绿。
+
 ## 4. 归类与二进制基线（按 TERNARY-BOUNDARIES 规则先归类）
 
 - **往返 / 纠错 / 检错 / 边界拒绝 / 语料完整性**：`[D]` 基数无关的复杂度——二进制同样要付，
-  这些读数不能记进「三进制红利」。
+  这些读数不能记进「三进制红利」。GGUF 模型级的 67/103 逐字节一致与 `biasf` 丢失同样归 `[D]`：
+  这是容器表达力/宿主 f32 附件的取舍，与进制基数无关；语义核心 103/103 才是行为口径。
 - **5 trits/byte 的 1.6 bit/trit**：`[B]` 宿主二进制上的编码税，不是三进制本身的缺陷。
   二进制基线：1 bit/值；三元 1.6 bit/trit，对比 `log2(3) ≈ 1.58496 bit/trit` 的信息上界，
   达成率约 **99.06%**。省的是**存储与带宽**，不省指令数。
@@ -163,5 +187,5 @@ cargo run -q -p trit-export --bin gguf_verify -- --json
   不是全穷举；更大规模（>1024 trit）没有专门语料。
 - **跨语言差分只走到「有消费者」**：`--corpus` 会复核 CSV 的语义与格式，但第三方语言
   实现尚未实际接入跑差分；这仍是外部动作，不能记成对拍读数。
-- **容器上限**：GGUF 最大只审到 33×129（4,257 trit）；32 字节对齐的边界、超大张量、
-  以及 `trit-wspace` 的模型级落点不在本次范围。
+- **容器上限**：合成张量只审到 33×129（4,257 trit）；模型级已审 all-MiniLM-L6-v2 的 103 个
+  张量（最大 30522×384），但更大模型、32 字节对齐边界与超大张量仍未覆盖。

@@ -2,13 +2,41 @@
 
 ## [Unreleased]
 
+### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
+
+- `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]
+  [--mix-total N] [--mix-weights …] [--out <dir>] [gate 参数…]`：一条命令串起
+  `gate` 三支 → 可选 `rewrite`（只送 deferred）→ 按标签配额 `mix`，输出
+  `accepted/deferred/rejected.jsonl`、`rewritten.*`、`mix.json`、`mixed.jsonl`、
+  `trajectory.pipeline.report.json` 与 `manifest.json`。目录输入递归收 `*.jsonl`。
+  读数（`testdata/trajectories.jsonl` 4 条，Windows PowerShell 前缀重写器）：
+  gate accept 2 / defer 1 / reject 1；rewrite 1 条 deferred → accept 1、保真通过率 100%；
+  `--mix-total 2` → 可用 3 / 选中 2（`code 2→1`、`writing 1→1`），manifest 9 个数据文件。
+- `.github/workflows/data-pipeline.yml` 在仓库级管线后跑同一条轨迹管线
+  （`--cmd "sed s/^/first/" --mix-total 2`），并把 `trajectory.pipeline.report.json` 贴进摘要。
+- `trit-wspace gguf-audit <dir> [--out <json>]`：模型级 GGUF 复验。逐张量比较 WSP1 字节、
+  语义核心（trits / 三值 bias / scale 位模式），并显式列出 `biasf`、manifest `vector`/`bias`
+  标记丢失；`ok=true` 只声明语义核心，不把已知损失判红。
+  真实 all-MiniLM-L6-v2（103 张量）复验：逐字节 **67/103**、语义核心 **103/103**、
+  `biasf` 丢失 **36**、manifest `vector` **0/63** 保留、`bias` **0/37** 保留；
+  GGUF 4,772,288 B / 有效张量 4,762,066 B。旧账与现状一致，导出层 4 项全绿不再冒充模型层全绿。
+  模块拆分后测试：`pipeline_trajectories` **2 passed**；`gguf_cli` **6 passed** +
+  `gguf_audit` **1 passed**；`cargo test --workspace` **3418 passed / 0 failed**（378 个 test binary）。
+- 文档：`docs/research/GGUF-TRIT.md` 更新模型级读数表与复算命令；
+  `docs/research/TERNARY-AUDIT.md` 增加 §3.3 与 `[D]` 归类；`docs/reference/AGENT-DATA.md`
+  增加轨迹管线口径；`docs/reference/REPO-SCAN.md` 增加轨迹级入口。
+- 修复（承上一轮）：Unix 超时进程组终止改为 `sh -c "kill -9 -<pid>"`，去掉 `unsafe extern`，
+  通过 `trit-data` 的 `#![deny(unsafe_code)]`。
+- 测试修复：`trit-learn` 的 manifest 临时目录只按 PID 命名，两个用例并行时互删同一路径；
+  改为按线程 ID 唯一后 `cargo test -p trit-learn` **46 passed**。
+
 ### Added（复核二期：rewrite 聚合读数 + 超时进程树 + 量化有损审计 + 黄金语料回灌）
 
 - `rewrite.report.json` 新增 `metrics`（stdout 同步打印）：
   `fidelity{attempted,passed,rate}`、`gate_decisions{accept,defer,reject,accept_share,defer_share}`、
   `length_ratio{p10,p50,p90,samples}`、`failure_reasons[{reason,count}]`。
   3 条 demo：keep → 保真通过率 100%、长度 p50=1.0000；`drop` → 0%、`fidelity=3`。
-- 超时终止进程树：Unix `process_group(0)` + `kill(-pgid)`；Windows `taskkill /PID <pid> /T /F`，
+- 超时终止进程树：Unix `process_group(0)` + `sh -c "kill -9 -<pid>"`（纯 safe）；Windows `taskkill /PID <pid> /T /F`，
   失败再退回 `Child::kill`。新增 `tests/rewrite_kill.rs`（Windows）：包装器拉起
   `Start-Sleep 20` 孙进程，`--timeout 2` 后孙进程必须消失（1 passed）。
 - `codec_verify` 新增量化审计（4 项 / 194 例）：逐元素误差界

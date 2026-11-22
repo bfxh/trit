@@ -162,9 +162,25 @@
     `gate_decisions{accept,defer,reject,accept_share,defer_share}`、`length_ratio{p10,p50,p90,samples}`、
     `failure_reasons[{reason,count}]`；只有 counts 看不出“重写值不值得”的问题由此关闭。
     3 条 demo：keep → 保真通过率 100%、长度 p50=1.0000；`drop` → 0%、`failure_reasons` 为 `fidelity=3`。
-  - 超时终止**进程树**：Unix 先 `process_group(0)` 再 `kill(-pgid)`；Windows 用 `taskkill /PID <pid> /T /F`，
-    失败才退回 `Child::kill`。回归 `cargo test -p trit-data --test rewrite_kill`（Windows）：
+  - 超时终止**进程树**：Unix 先 `process_group(0)`，再用 `sh -c "kill -9 -<pid>"` 按进程组终止
+    （纯 safe，不用 FFI）；Windows 用 `taskkill /PID <pid> /T /F`，失败才退回 `Child::kill`。
+    回归 `cargo test -p trit-data --test rewrite_kill`（Windows）：
     孙进程 `Start-Sleep 20` 在 `--timeout 2` 后消失。
+- **轨迹级一条命令（复算：`cargo test -p trit-data --test pipeline_trajectories`）**：
+  - `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]
+    [--mix-total N] [--mix-weights code=0.7,writing=0.3] [--out <dir>] [gate 参数…]`：
+    目录输入会递归收集 `*.jsonl`；先跑 gate 三支，再把 `deferred` 送可选 rewrite，最后对
+    `gate.accepted + rewritten.accepted` 按标签配额混样。
+  - 产物：`accepted/deferred/rejected.jsonl`、`rewritten.{accepted,deferred,rejected}.jsonl`
+    （启用 rewrite 时）、`rewrite.failed.jsonl`、`mix.json`、`mixed.jsonl`、
+    `trajectory.pipeline.report.json`（输入指纹、gate 原因/比率、rewrite fidelity/长度分位、
+    mix 配额）与 `manifest.json`；`mixed.jsonl` 按输入顺序取，不是重新排序。
+  - 读数（`testdata/trajectories.jsonl` 4 条 + Windows PowerShell 前缀重写器）：gate
+    accept 2 / defer 1 / reject 1；rewrite 1 条 deferred → accept 1、保真通过率 100%；
+    `--mix-total 2` → 可用 3 / 选中 2，配额 `code 2→1`、`writing 1→1`；manifest 9 个数据文件。
+  - CI：`data-pipeline.yml` 在仓库级管线后跑同一条命令（`--cmd "sed s/^/first/" --mix-total 2`），
+    摘要同时贴 `trajectory.pipeline.report.json`。模块拆分后
+    `cargo test -p trit-data --test pipeline_trajectories` **2 passed**。
 - **κ 标注包（复算：`trit-data label ...`）**：
   - `label --jsonl <records.jsonl|目录> --sample 500 [--seed 0x…] [--out <dir>]`：每行先过默认门，
     按 `decision:主原因` 分层，比例配额 + 最大余数（每层不超过可用数），层内按 `seed ^ FNV(层名)` 洗牌取前 k；
