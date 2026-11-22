@@ -1,11 +1,9 @@
 //! top-k 列 f32 侧车：扫 rank 对 STS 的影响。
-
-use serde_json::{Value, json};
-
 use crate::activation::{ActivationMode, LayerScales};
 use crate::model::{Bert, BertConfig};
 use crate::report::compare;
 use crate::sts::{Pair, metrics, sentence_vectors};
+use serde_json::{Value, json};
 
 /// 对每个 rank 构建三值模型（全三值激活 + per-channel scale + 侧车），输出 STS。
 #[allow(clippy::too_many_arguments)]
