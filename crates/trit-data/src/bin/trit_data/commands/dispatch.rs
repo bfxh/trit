@@ -1,6 +1,4 @@
-//! 子命令调度。
-
-use super::{compare, decontaminate, gate, lang, mix, project, usage};
+use super::{compare, decontaminate, gate, lang, mix, project, repo, usage};
 
 pub fn run() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -11,6 +9,7 @@ pub fn run() {
         Some("mix") => mix::run(&argv[1..]),
         Some("project") => project::run(&argv[1..]),
         Some("lang") => lang::run(&argv[1..]),
+        Some("repo") => repo::run(&argv[1..]),
         _ => usage(),
     }
 }

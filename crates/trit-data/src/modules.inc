@@ -15,6 +15,7 @@ pub mod manifest;
 pub mod mix;
 pub mod project;
 pub mod radix;
+pub mod repo;
 pub mod rewrite;
 pub mod schema;
 pub mod script;

@@ -896,7 +896,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands.rs",
-      "lines": 25
+      "lines": 5
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/bits_opts.rs",
@@ -944,7 +944,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/dispatch.rs",
-      "lines": 16
+      "lines": 15
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/format_opts.rs",
@@ -1029,6 +1029,10 @@
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/quality_opts.rs",
       "lines": 29
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo.rs",
+      "lines": 99
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/shared.rs",
@@ -1153,6 +1157,14 @@
     {
       "file": "crates/trit-data/src/radix.rs",
       "lines": 141
+    },
+    {
+      "file": "crates/trit-data/src/repo.rs",
+      "lines": 273
+    },
+    {
+      "file": "crates/trit-data/src/repo_tests.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-data/src/rewrite.rs",
