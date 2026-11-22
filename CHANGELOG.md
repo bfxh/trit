@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（容量租约：硬件探针 + 跨项目协调 + provider 前准入）
+
+- `tools/capacity_lease.py`（stdlib only，新建）：`probe/status/reserve/release/renew/contract`；
+  逻辑核/load/可用内存/磁盘探针，共享租约目录（Windows byte-range / Unix flock 跨进程锁）
+  + TTL + 过期清理；坏租约 `capacity-unreadable` fail-closed；不把“读不出”当“没占用”。
+- `tools/subagent_dispatch.py`：`--capacity off|auto|enforce`，默认 `auto` 只在
+  `--parallel > 2` 启用；provider 调用前申请 `--parallel` 个 worker + 内存租约，失败整批
+  `capacity-refused`（exit 2），批准后把 worker/内存/deadline 写成 CAPACITY CONTRACT 注入
+  每条 prompt；`finally` 释放，释放失败标 `capacity-release-failed`（exit 1）。
+- `C047` 钉住 `capacity_lease.py --self-test`：14/14（含 8 进程抢 4 个租约、过期/坏租约、
+  dispatch 契约注入、占满时 provider 前拒绝）；`subagent_dispatch` 25/25 未回退，全量
+  `selftest` 仍 675/675。
+- 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
+  `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。
+
 ### Added（入口加固第二轮：长 base64、跨段/多语言、二进制与宿主内容哈希）
 
 - `tools/context_guard.py`：base64 超过旧 256 KiB 阈值不再整段跳过，改按 256 KiB

@@ -5,6 +5,8 @@
 > 边界：只覆盖宿主侧 `tools/agent_verify.py` 的 `--claim-gate` / `--handoff` 与
 > `tools/handoff.py`；不覆盖跨机信封、分布式锁、DeliveryReceipt 四态推进。
 > 状态：**已跑通**（`tools/selftest.ps1` 675/675 全绿，其中 AF23/AF24 共 8 条断言）。
+> 容量/并发协调另见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)：硬件探针 + 跨项目租约 +
+> `subagent_dispatch --capacity auto|enforce` 的 provider 前准入。本文只覆盖认领与交接。
 
 ## 1. 为什么是这两道门
 
@@ -111,6 +113,7 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
 2. 认领生命周期自动化：dispatch 前自动 claim、收工自动 release；现在是调用者手动两步。
 3. 调度环 `plan/select/dispatch` 的宿主侧驱动：Rust CLI 有原语，Python 还没有通用循环；
    `tools/subagent_dispatch.py` 只是“按 role 分模型并行调用”的模型派发环，不消费
-   `trit-orch` 的 `Plan::select`，也不自动 claim/release。
+   `trit-orch` 的 `Plan::select`，也不自动 claim/release；容量准入已在 provider 前
+   接入（`tools/capacity_lease.py`，见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)）。
 4. 跨机包传输与签名：现在只能 `--out` 到共享盘，没有来源认证。
 5. 把 `--claim-gate` 从 opt-in 提升为默认（需先量旧夹具/旧命令的兼容成本）。

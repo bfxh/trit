@@ -125,6 +125,12 @@
   在调用前隔离被 `context_guard` 判 `quarantine` 的 prompt，并在返回后隔离高风险
   产物；`warn` 只留痕。它只负责“谁用什么模型、产出哪个文件”；验证仍走 `agent_verify`，
   命令沙盒仍走 `sandbox_run`。
+- 容量协调（2026-11-22）：高并发前先看机器和别的项目，不要拿“CL 绿了”当资源许可。
+  `python tools/capacity_lease.py probe/status --json` 读逻辑核/load/可用内存与跨项目租约；
+  `subagent_dispatch` 用 `--capacity auto|enforce` 在 provider 调用前申请 `--parallel`
+  个 worker + 内存租约，失败整批拒绝，并把 worker/内存/deadline 写成 CAPACITY CONTRACT
+  注入 prompt。租约 TTL 用 `renew` 续、收工 `release`；`auto` 只在 `--parallel > 2` 启用，
+  高价值/长任务显式 `enforce`。边界见 `docs/engineering/AGENT-CAPACITY.md`。
 - 子智能体命令沙盒（2026-11-22）：不要直接让子智能体在仓库根跑长命令；用
   `python tools/sandbox_run.py -Root . -Copy <相对输入> -- <命令>`，默认 cwd 在宿主外、
   policy 先拒、run_caps 兜底；宿主指纹变了且没开 `-AllowHostWrite` 就 exit 3。
