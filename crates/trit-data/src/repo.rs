@@ -4,16 +4,7 @@ use std::path::Path;
 
 use crate::code_quality::check;
 
-pub mod deps;
-mod deps_report;
-mod imports;
-mod imports_lang;
-mod imports_rust;
-mod kind;
-mod lang_map;
-mod license;
-pub mod paths;
-mod paths_targets;
+include!("repo/mods.inc");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
@@ -147,16 +138,3 @@ fn is_test_path(p: &Path) -> bool {
     let s = norm_path(p);
     TEST_MARKS.iter().any(|m| s.contains(m))
 }
-
-#[cfg(test)]
-#[path = "repo_tests.rs"]
-mod tests;
-
-#[cfg(test)]
-mod deps_tests;
-#[cfg(test)]
-mod graph_tests;
-#[cfg(test)]
-mod imports_tests;
-#[cfg(test)]
-mod paths_tests;

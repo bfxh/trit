@@ -22,10 +22,16 @@ mod project;
 mod shared;
 #[path = "repo.rs"]
 mod repo;
+#[path = "repo_dup.rs"]
+mod repo_dup;
 #[path = "repo_json.rs"]
 mod repo_json;
 #[path = "repo_opts.rs"]
 mod repo_opts;
+#[path = "repo_out.rs"]
+mod repo_out;
+#[path = "repo_show.rs"]
+mod repo_show;
 #[path = "repo_stats.rs"]
 mod repo_stats;
 #[path = "report_extra.rs"]

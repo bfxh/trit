@@ -1040,7 +1040,11 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo.rs",
-      "lines": 42
+      "lines": 21
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_dup.rs",
+      "lines": 29
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo_json.rs",
@@ -1049,6 +1053,14 @@
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo_opts.rs",
       "lines": 34
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_out.rs",
+      "lines": 32
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_show.rs",
+      "lines": 38
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo_stats.rs",
@@ -1196,7 +1208,7 @@
     },
     {
       "file": "crates/trit-data/src/repo.rs",
-      "lines": 162
+      "lines": 140
     },
     {
       "file": "crates/trit-data/src/repo/deps.rs",
@@ -1209,6 +1221,14 @@
     {
       "file": "crates/trit-data/src/repo/deps_tests.rs",
       "lines": 95
+    },
+    {
+      "file": "crates/trit-data/src/repo/dup.rs",
+      "lines": 247
+    },
+    {
+      "file": "crates/trit-data/src/repo/dup_tests.rs",
+      "lines": 55
     },
     {
       "file": "crates/trit-data/src/repo/graph_tests.rs",
