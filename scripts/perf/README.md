@@ -50,6 +50,7 @@ node --version
 | `scale.py --clients 64`（python） | 24,655 QPS（GIL 限制） |
 | `node_client.js --clients 8` | 48,939 QPS、p999 0.596ms |
 | `soak.py --duration 120` | 397 万请求 0 失败，RSS 8876 → 8828 KB |
+| `soak.py --duration 3600` | **1.135 亿请求 0 失败**，qps 31,417；p50 0.241ms / p99 0.496ms / p999 0.726ms；RSS 8864 → 2800 KB（峰值 8864，120 次采样，无缓慢增长） |
 | `deep.py --rows 2000 --payload 10000` | 点查 0.1ms；全表扫描 2–4ms |
 
 ## 已知边界（没测的别当测过）
@@ -58,5 +59,5 @@ node --version
 - **跨机网络**：只测了同机 LAN 地址（与 loopback 无显著差异），真实跨机未测。
 - **复杂 SQL**：只覆盖 `count(*)`、`WHERE`、`GROUP BY`、`ORDER BY`、`LIMIT`；
   没有 JOIN、子查询、窗口函数。
-- **小时级 RSS**：`soak.py --duration 3600` 可跑，但需要机器空闲 1 小时。
+- **小时级 RSS**：2026-11-23 已实测 `soak.py --duration 3600`（8 并发、3613s）：1.135 亿请求 0 失败，RSS 8864 → 2800 KB，无缓慢增长。
 - 服务端是**只读** pgwire：写语句返回 `0A000`，且不支持扩展查询协议（Parse/Bind/Execute）。
