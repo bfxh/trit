@@ -67,7 +67,7 @@ pub fn card(
             .or_insert(0) += 1;
         *languages.entry(u.lang.clone()).or_insert(0) += 1;
         licensed += usize::from(u.license.is_some());
-        tested += usize::from(!u.is_test && !u.tests.is_empty());
+        tested += usize::from(!u.is_test && (!u.tests.is_empty() || u.inline_tests));
         resolved += usize::from(!u.imports_resolved.is_empty());
         generated += usize::from(u.generated);
     }

@@ -26,7 +26,7 @@ pub fn summarize(units: &[Unit]) -> Summary {
         imports_dynamic: units.iter().map(|u| u.imports_dynamic.len()).sum(),
         tested_sources: units
             .iter()
-            .filter(|u| !u.is_test && !u.tests.is_empty())
+            .filter(|u| !u.is_test && (!u.tests.is_empty() || u.inline_tests))
             .count(),
         test_links: units.iter().map(|u| u.tests_for.len()).sum(),
         cyclic: cyclic_nodes(units),

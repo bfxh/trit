@@ -8,18 +8,10 @@ pub fn unit(path: &str, lang: &str, imports: &[&str], is_test: bool) -> Unit {
         repo: "r".into(),
         path: path.into(),
         lang: lang.into(),
-        bytes: 0,
-        generated: false,
-        license: None,
         imports: imports.iter().map(|s| s.to_string()).collect(),
         imports_known: true,
-        imports_external: Vec::new(),
-        imports_dynamic: Vec::new(),
-        imports_resolved: Vec::new(),
-        unresolved: Vec::new(),
-        tests: Vec::new(),
-        tests_for: Vec::new(),
         is_test,
+        ..Default::default()
     }
 }
 

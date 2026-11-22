@@ -47,8 +47,7 @@ pub fn duplicate_paths(dup: &Dup) -> BTreeSet<String> {
 }
 
 pub fn evaluate(u: &Unit, cfg: &Config, dup: &BTreeSet<String>) -> Verdict {
-    let mut reject = Vec::new();
-    let mut defer = Vec::new();
+    let (mut reject, mut defer) = (Vec::new(), Vec::new());
     if u.path.is_empty() || u.lang.is_empty() || u.bytes == 0 {
         reject.push("schema");
     }
@@ -70,7 +69,7 @@ pub fn evaluate(u: &Unit, cfg: &Config, dup: &BTreeSet<String>) -> Verdict {
     if !u.imports_known {
         defer.push("imports_unknown");
     }
-    if cfg.require_tests && !u.is_test && u.tests.is_empty() {
+    if cfg.require_tests && !u.is_test && u.tests.is_empty() && !u.inline_tests {
         defer.push("no_test");
     }
     if u.bytes > cfg.max_bytes {
@@ -104,17 +103,8 @@ mod tests {
             path: path.into(),
             lang: lang.into(),
             bytes: 10,
-            generated: false,
-            license: None,
-            imports: Vec::new(),
             imports_known: true,
-            imports_external: Vec::new(),
-            imports_dynamic: Vec::new(),
-            imports_resolved: Vec::new(),
-            unresolved: Vec::new(),
-            tests: Vec::new(),
-            tests_for: Vec::new(),
-            is_test: false,
+            ..Default::default()
         }
     }
 

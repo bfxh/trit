@@ -6,7 +6,7 @@ use crate::code_quality::check;
 
 include!("repo/mods.inc");
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Unit {
     pub repo: String,
     pub path: String,
@@ -23,6 +23,7 @@ pub struct Unit {
     pub tests: Vec<String>,
     pub tests_for: Vec<String>,
     pub is_test: bool,
+    pub inline_tests: bool,
 }
 
 pub fn scan(root: &Path) -> Result<Vec<Unit>, String> {
@@ -45,14 +46,6 @@ const SKIP: &[&str] = &[
     "__pycache__", ".next", ".cache", ".turbo", "coverage",
 ];
 
-const EXTS: &[&str] = &[
-    "rs", "py", "js", "ts", "tsx", "jsx", "go", "java", "c", "h", "cc", "cpp", "hpp", "cs", "php",
-    "rb", "swift", "kt", "scala", "sql", "sh", "bash", "zsh", "fish", "ps1", "psm1", "lua", "r",
-    "jl", "hs", "ex", "exs", "erl", "ml", "lean", "glsl", "hlsl", "wgsl", "cu", "cl", "metal",
-    "asm", "s", "v", "sv", "vhd", "vhdl", "md", "markdown", "toml", "yaml", "yml", "tex", "rst",
-    "proto", "graphql",
-];
-
 fn walk(
     root: &Path,
     dir: &Path,
@@ -72,17 +65,18 @@ fn walk(
                 continue;
             }
             walk(root, &p, repo, license, out)?;
-        } else if is_source(&p) {
+        } else if marks::is_source(&p) {
             let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
             let head = read_head(&p, 64 * 1024);
             let lang = lang_map::detect(&p, &head);
             let q = check(&head);
-            let generated = q.auto_generated || is_generated_path(&p);
+            let generated = q.auto_generated || marks::is_generated_path(&p);
             let parsed = imports::parse(&head, &lang);
-            let is_test = is_test_path(&p);
+            let is_test = marks::is_test_path(&p);
+            let inline_tests = lang == "rust" && read_head(&p, 1 << 20).contains("#[cfg(test)]");
             out.push(Unit {
                 repo: repo.to_string(),
-                path: rel(root, &p),
+                path: marks::rel(root, &p),
                 lang,
                 bytes,
                 generated,
@@ -96,45 +90,14 @@ fn walk(
                 tests: Vec::new(),
                 tests_for: Vec::new(),
                 is_test,
+                inline_tests,
             });
         }
     }
     Ok(())
 }
 
-fn is_source(p: &Path) -> bool {
-    let name = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
-    if name == "Dockerfile" || name == "Makefile" {
-        return true;
-    }
-    p.extension()
-        .and_then(|x| x.to_str())
-        .is_some_and(|x| EXTS.contains(&x.to_lowercase().as_str()))
-}
-
-fn rel(root: &Path, p: &Path) -> String {
-    p.strip_prefix(root)
-        .unwrap_or(p)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
 pub(crate) fn read_head(p: &Path, n: usize) -> String {
     let data = std::fs::read(p).unwrap_or_default();
     String::from_utf8_lossy(&data[..data.len().min(n)]).into_owned()
-}
-
-const GENERATED_MARKS: &[&str] = &["/generated/", "_generated.", ".gen.", ".pb.go", "_pb2.py"];
-const TEST_MARKS: &[&str] = &["/test/", "/tests/", "_test.", ".test.", ".spec.", "/spec/"];
-
-fn norm_path(p: &Path) -> String { p.to_string_lossy().to_lowercase().replace('\\', "/") }
-
-fn is_generated_path(p: &Path) -> bool {
-    let s = norm_path(p);
-    GENERATED_MARKS.iter().any(|m| s.contains(m))
-}
-
-fn is_test_path(p: &Path) -> bool {
-    let s = norm_path(p);
-    TEST_MARKS.iter().any(|m| s.contains(m))
 }
