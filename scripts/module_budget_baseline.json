@@ -2040,7 +2040,11 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_trace/mod.rs",
-      "lines": 152
+      "lines": 148
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_trace/route.rs",
+      "lines": 28
     },
     {
       "file": "crates/trit-orch/src/bin/trit-orch.rs",

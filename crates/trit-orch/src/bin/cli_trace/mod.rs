@@ -5,8 +5,11 @@ use trit_orch::{Error, TraceEvent, TraceEventStore, TraceLog, check_trace};
 #[cfg(feature = "tritdb")]
 use trit_orch::tritdb_backend::TritDbTraceStore;
 
+#[cfg(feature = "tritdb")]
+#[path = "route.rs"]
+mod route;
+
 mod actions;
-use actions::{restore_action, serve_action, snapshot_action, sql_action};
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -92,10 +95,7 @@ pub(crate) fn run(input: &str) -> Result<Value, Error> {
     match backend.as_str() {
         "jsonl" => run_with(Backend::Jsonl(TraceEventStore::new(&path)), &request),
         #[cfg(feature = "tritdb")]
-        "tritdb" => run_with(
-            Backend::TritDb(Box::new(TritDbTraceStore::open(&path)?)),
-            &request,
-        ),
+        "tritdb" => route::run(&path, &request),
         other => Err(Error::InputParse {
             message: format!("未知 trace backend {other:?}（可用：jsonl/tritdb）"),
         }),
@@ -139,10 +139,6 @@ fn run_with(backend: Backend, request: &TraceInput) -> Result<Value, Error> {
                 "violations": report.violations,
             }))
         }
-        "sql" => sql_action(request),
-        "snapshot" => snapshot_action(request),
-        "restore" => restore_action(request),
-        "serve" => serve_action(request),
         other => Err(Error::InputParse {
             message: format!(
                 "未知 trace action {other:?}（可用：append/load/check/sql/snapshot/restore/serve）"

@@ -21,9 +21,7 @@ pub fn snapshot_wal(db: &Path, cas_root: &Path) -> Result<String, Error> {
     snapshot_wal_with_key(db, cas_root, None).map(|info| info.head)
 }
 
-/// 把 WAL 相对上一次 anchor 的变化写成新层，并把新头写进 anchor（可选 HMAC）。
-///
-/// 没有变化时不写新层，直接返回当前头。
+/// 把 WAL 相对上一次 anchor 的变化写成新层（无变化则不写），并把新头写进 anchor。
 pub fn snapshot_wal_with_key(
     db: &Path,
     cas_root: &Path,
@@ -37,8 +35,10 @@ pub fn snapshot_wal_with_key(
         Some(head) => chain::delta(&chunks, &head, &current)?,
         None => current,
     };
-    let (head, parent_of_new) = if entries.is_empty() && parent.is_some() {
-        (parent.expect("checked above"), None)
+    let (head, parent_of_new) = if entries.is_empty()
+        && let Some(previous) = parent
+    {
+        (previous, None)
     } else {
         let head = Manifest::new(parent, entries)
             .store(&chunks)
