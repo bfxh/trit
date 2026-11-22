@@ -111,7 +111,7 @@ fn bench(args: &[String]) -> Result<(), String> {
     let sparse = sparse_bits_a.dot_sparse(&sparse_bits_b).expect("同长度");
     let sparse_expected = scalar_dot(&sparse_a, &sparse_b);
     let block_expected = scalar_dot(&block_sparse, &b);
-    let bipolar = bipolar_dot(&packed_a, &packed_b, len).expect("同长度");
+    let bipolar = bipolar_dot(&packed_a, &packed_b).expect("同长度");
     let bipolar_expected = scalar_dot(&bipolar_a, &bipolar_b);
     let block_sparse_result = block_bits_a.dot_sparse(&block_bits_b).expect("同长度");
     if dense != expected
@@ -136,11 +136,9 @@ fn bench(args: &[String]) -> Result<(), String> {
     let ns_block_sparse = time(iters, || {
         block_bits_a.dot_sparse(&block_bits_b).expect("同长度")
     });
-    let ns_bipolar = time(iters, || {
-        bipolar_dot(&packed_a, &packed_b, len).expect("同长度")
-    });
+    let ns_bipolar = time(iters, || bipolar_dot(&packed_a, &packed_b).expect("同长度"));
     let ns_bipolar_portable = time(iters, || {
-        bipolar_dot_portable(&packed_a, &packed_b, len).expect("同长度")
+        bipolar_dot_portable(&packed_a, &packed_b).expect("同长度")
     });
     let ns_float = time(iters, || float_dot(&float_a, &float_b));
     let ns_float4 = time(iters, || float_dot_4acc(&float_a, &float_b));

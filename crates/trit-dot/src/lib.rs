@@ -17,7 +17,9 @@ use trit_core::value::Ternary;
 pub mod cli;
 
 mod bipolar;
-pub use bipolar::{bipolar_dot, bipolar_dot_portable, pack_bipolar};
+mod packed;
+pub use bipolar::{bipolar_dot, bipolar_dot_portable};
+pub use packed::{PackedBipolar, pack_bipolar};
 
 /// 一个块有多少位。
 pub const BLOCK_BITS: usize = 64;
@@ -430,9 +432,6 @@ mod tests {
         fn ternary(&mut self) -> i32 {
             (self.next() % 3) as i32 - 1
         }
-        fn bipolar(&mut self) -> i32 {
-            if self.next().is_multiple_of(2) { 1 } else { -1 }
-        }
     }
 
     #[test]
@@ -457,29 +456,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn bipolar_dot_matches_scalar() {
-        for len in [1usize, 64, 129] {
-            let mut rng = Rng(7);
-            let a: Vec<i32> = (0..len).map(|_| rng.bipolar()).collect();
-            let b: Vec<i32> = (0..len).map(|_| rng.bipolar()).collect();
-            let packed_a = pack_bipolar(&a);
-            let packed_b = pack_bipolar(&b);
-            assert_eq!(
-                bipolar_dot(&packed_a, &packed_b, len).expect("同长度"),
-                scalar_dot(&a, &b)
-            );
-        }
-    }
-
-    #[test]
-    fn bipolar_formula_is_n_minus_twice_mismatches() {
-        let a = pack_bipolar(&[1, 1, 1, 1]);
-        let b = pack_bipolar(&[1, -1, 1, -1]);
-        // 两处不同：4 - 2*2 = 0。
-        assert_eq!(bipolar_dot(&a, &b, 4).expect("同长度"), 0);
     }
 
     #[test]
@@ -571,39 +547,14 @@ mod tests {
                         .expect("同长度"),
                     "blocks={blocks} seed={seed}"
                 );
+                let pa = PackedBipolar::from_words(bits_a.pos().to_vec(), len).expect("字数对齐");
+                let pb = PackedBipolar::from_words(bits_b.pos().to_vec(), len).expect("字数对齐");
                 assert_eq!(
-                    bipolar_dot(bits_a.pos(), bits_b.pos(), len).expect("同长度"),
-                    bipolar_dot_portable(bits_a.pos(), bits_b.pos(), len).expect("同长度")
+                    bipolar_dot(&pa, &pb).expect("同长度"),
+                    bipolar_dot_portable(&pa, &pb).expect("同长度")
                 );
             }
         }
-    }
-
-    #[test]
-    fn bipolar_length_contract_is_enforced() {
-        // 2 个 u64 覆盖 128 位；len 超过覆盖范围必须报错，而不是按 zip 截断（#590）。
-        let a = vec![u64::MAX; 2];
-        let b = vec![u64::MAX; 2];
-        assert_eq!(bipolar_dot(&a, &b, 128), Ok(128));
-        assert_eq!(
-            bipolar_dot(&a, &b, 129),
-            Err(DotError::LengthMismatch {
-                left: 128,
-                right: 129
-            })
-        );
-        // 两个平面不等长同样拒绝。
-        assert_eq!(
-            bipolar_dot(&a, &b[..1], 64),
-            Err(DotError::LengthMismatch { left: 2, right: 1 })
-        );
-        assert_eq!(
-            bipolar_dot_portable(&a, &b, 129),
-            Err(DotError::LengthMismatch {
-                left: 128,
-                right: 129
-            })
-        );
     }
 
     #[test]

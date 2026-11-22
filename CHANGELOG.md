@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed（#590 根治：`PackedBipolar` 把长度与字平面绑在一起）
+
+- `pack_bipolar` 返回 `PackedBipolar { words, len }`；`bipolar_dot` / `bipolar_dot_portable`
+  只接受该类型，`from_words(words, len)` 校验 `words.len() == len.div_ceil(64)`。
+  调用方不再有机会传与数据不符的 `len`——旧 API 的「65 trit / `len=128`」复现在类型层面不可表达。
+- 测试迁到 `tests/bipolar.rs`（4 条）：65 trit / 2 words 的内建长度、跨块对拍、
+  `from_words` 字数必须精确、不同长度拒绝。`cargo test -p trit-dot` 全绿（lib 6 + bipolar 4 + cli 3 + stress 5）。
+- C047 同步改为检查 `PackedBipolar` / `from_words`。
+
 ### Fixed（第 38 轮 9 条报告：#588–#596）
 
 - **#588 `trit-ops::bench::gemv_*` 长度不校验**：入口先 `checked_mul` 再断言权重/激活/输出
