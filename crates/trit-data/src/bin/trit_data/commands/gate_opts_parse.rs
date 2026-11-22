@@ -1,7 +1,5 @@
 //! `gate` 参数解析。
-
 use std::path::PathBuf;
-
 use trit_data::gate::Config;
 
 use super::super::die;
@@ -42,7 +40,9 @@ pub fn parse(argv: &[String]) -> Opts {
                 i += 1;
             }
             other => {
-                if !super::gate_lang_opts::apply(&mut cfg, other, argv, &mut i) {
+                if !super::gate_lang_opts::apply(&mut cfg, other, argv, &mut i)
+                    && !super::gate_label_opts::apply(&mut cfg, other, argv, &mut i)
+                {
                     die(&format!("未知参数 {other}"));
                 }
             }

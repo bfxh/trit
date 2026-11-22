@@ -927,6 +927,10 @@
       "lines": 134
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/gate_label_opts.rs",
+      "lines": 56
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_lang_opts.rs",
       "lines": 65
     },
@@ -941,6 +945,10 @@
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/json.rs",
       "lines": 21
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/label_opts.rs",
+      "lines": 56
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/lang.rs",
@@ -976,7 +984,11 @@
     },
     {
       "file": "crates/trit-data/src/content.rs",
-      "lines": 389
+      "lines": 340
+    },
+    {
+      "file": "crates/trit-data/src/content_tests.rs",
+      "lines": 93
     },
     {
       "file": "crates/trit-data/src/decontaminate.rs",
@@ -984,7 +996,11 @@
     },
     {
       "file": "crates/trit-data/src/gate.rs",
-      "lines": 235
+      "lines": 231
+    },
+    {
+      "file": "crates/trit-data/src/gate_content.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-data/src/gate_tests.rs",
@@ -1025,6 +1041,14 @@
     {
       "file": "crates/trit-data/src/script.rs",
       "lines": 116
+    },
+    {
+      "file": "crates/trit-data/src/semantics.rs",
+      "lines": 245
+    },
+    {
+      "file": "crates/trit-data/src/style.rs",
+      "lines": 221
     },
     {
       "file": "crates/trit-dot/src/lib.rs",

@@ -1,8 +1,8 @@
 //! 内容过滤参数（code / natural / threshold）。
-
-use trit_data::content::ContentFilter;
-
 use crate::commands::die;
+use trit_data::content::ContentFilter;
+#[path = "label_opts.rs"]
+mod label_opts;
 
 pub fn apply(filter: &mut ContentFilter, flag: &str, argv: &[String], i: &mut usize) -> bool {
     match flag {
@@ -34,6 +34,6 @@ pub fn apply(filter: &mut ContentFilter, flag: &str, argv: &[String], i: &mut us
             *i += 2;
             true
         }
-        _ => false,
+        _ => label_opts::apply(filter, flag, argv, i),
     }
 }

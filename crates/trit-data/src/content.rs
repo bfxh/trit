@@ -5,6 +5,8 @@
 
 use crate::lang_filter::LangFilter;
 use crate::script::primary_language;
+use crate::semantics::{SemanticKind, detect as detect_semantics};
+use crate::style::{StyleKind, detect as detect_style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentKind {
@@ -242,12 +244,34 @@ pub fn code_languages(text: &str) -> Vec<&'static str> {
         .collect()
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LabelFilter {
+    pub enabled: bool,
+    pub allow: Option<Vec<String>>,
+    pub deny: Vec<String>,
+}
+
+impl LabelFilter {
+    pub fn denied(&self, label: &str) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        self.deny.iter().any(|x| x == label)
+            || self
+                .allow
+                .as_ref()
+                .is_some_and(|a| !a.iter().any(|x| x == label))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ContentFilter {
     pub code: bool,
     pub natural: bool,
     pub threshold: f64,
     pub lang: LangFilter,
+    pub style: LabelFilter,
+    pub semantics: LabelFilter,
 }
 
 impl Default for ContentFilter {
@@ -260,6 +284,8 @@ impl Default for ContentFilter {
                 enabled: false,
                 ..Default::default()
             },
+            style: LabelFilter::default(),
+            semantics: LabelFilter::default(),
         }
     }
 }
@@ -267,14 +293,22 @@ impl Default for ContentFilter {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContentVerdict {
     pub content: Content,
+    pub style: StyleKind,
+    pub semantics: SemanticKind,
     pub code_filtered: bool,
     pub natural_filtered: bool,
     pub lang_denied: bool,
+    pub style_filtered: bool,
+    pub semantics_filtered: bool,
 }
 
 impl ContentVerdict {
     pub fn filtered(&self) -> bool {
-        self.code_filtered || self.natural_filtered || self.lang_denied
+        self.code_filtered
+            || self.natural_filtered
+            || self.lang_denied
+            || self.style_filtered
+            || self.semantics_filtered
     }
 }
 
@@ -284,106 +318,23 @@ impl ContentFilter {
         let code_filtered = self.code && content.code_ratio >= self.threshold;
         let natural_filtered = self.natural && content.natural_ratio >= self.threshold;
         let lang_denied = self.natural && self.lang.denied(primary_language(text));
+        let style = detect_style(text);
+        let semantics = detect_semantics(text);
+        let style_filtered = self.style.denied(style.as_str());
+        let semantics_filtered = self.semantics.denied(semantics.as_str());
         ContentVerdict {
             content,
+            style,
+            semantics,
             code_filtered,
             natural_filtered,
             lang_denied,
+            style_filtered,
+            semantics_filtered,
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const PY: &str = "def solve(x):\n    return x + 1\n\nprint(solve(2))";
-    const WEB: &str = "<html>\n<div class=\"app\"></div>\n<script>\nconst el = document.querySelector('.app');\n</script>\n<style>\n.app { color: red; }\n</style>";
-    const SQL: &str = "SELECT id, name FROM users WHERE age > 18;";
-    const NAT: &str = "这是一段普通的自然语言说明，描述今天下午的天气和窗外的树影。";
-
-    #[test]
-    fn detects_python_and_kind() {
-        let c = analyze(PY);
-        assert_eq!(c.kind, ContentKind::Code);
-        assert!(
-            c.code_languages.contains(&"python"),
-            "{:?}",
-            c.code_languages
-        );
-        assert!(c.code_ratio > 0.5);
-    }
-
-    #[test]
-    fn detects_frontend_and_sql() {
-        let w = analyze(WEB);
-        assert_eq!(w.kind, ContentKind::Code);
-        assert!(w.code_languages.contains(&"html"), "{:?}", w.code_languages);
-        assert!(w.code_languages.contains(&"javascript"));
-        assert!(w.code_languages.contains(&"css"));
-        let s = analyze(SQL);
-        assert!(s.code_languages.contains(&"sql"));
-    }
-
-    #[test]
-    fn natural_text_is_natural() {
-        let c = analyze(NAT);
-        assert_eq!(c.kind, ContentKind::Natural);
-        assert!(c.code_ratio < 0.2);
-    }
-
-    #[test]
-    fn filters_default_off_and_switches_are_independent() {
-        let f = ContentFilter::default();
-        assert!(!f.eval(PY).filtered());
-        assert!(!f.eval(NAT).filtered());
-
-        let code = ContentFilter {
-            code: true,
-            ..ContentFilter::default()
-        };
-        assert!(code.eval(PY).code_filtered);
-        assert!(!code.eval(NAT).code_filtered);
-
-        let nat = ContentFilter {
-            natural: true,
-            ..ContentFilter::default()
-        };
-        assert!(nat.eval(NAT).natural_filtered);
-        assert!(!nat.eval(PY).natural_filtered);
-
-        let both = ContentFilter {
-            code: true,
-            natural: true,
-            ..ContentFilter::default()
-        };
-        assert!(both.eval(PY).code_filtered);
-        assert!(both.eval(NAT).natural_filtered);
-    }
-
-    #[test]
-    fn language_deny_only_applies_when_natural_filter_on() {
-        let f = ContentFilter {
-            natural: true,
-            lang: LangFilter {
-                enabled: true,
-                deny: vec!["en".into()],
-                ..Default::default()
-            },
-            ..ContentFilter::default()
-        };
-        assert!(
-            f.eval("This is an English sentence about the weather.")
-                .lang_denied
-        );
-        let no_nat = ContentFilter {
-            natural: false,
-            ..f.clone()
-        };
-        assert!(
-            !no_nat
-                .eval("This is an English sentence about the weather.")
-                .lang_denied
-        );
-    }
-}
+#[path = "content_tests.rs"]
+mod tests;

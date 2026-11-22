@@ -167,3 +167,22 @@
     `--allow zh,en` 标记 `denied`；`--off` 直接关闭检测。
   - `gate` 新增：`--no-language`（整门关闭）、`--lang-allow zh,en`、
     `--lang-deny zh,ja`、`--no-dedup`、`--no-loop`；数据卡新增 `languages` 分布。
+
+## 9. 风格 / 语义筛选与论文映射（2026-11-23）
+
+- **可组合的标签筛选**（默认关闭）：
+  - 风格：`formal` / `conversational` / `technical` / `tutorial` / `narrative` / `qa`；
+  - 语义：`code` / `math` / `science` / `medical` / `legal` / `news` / `fiction` / `dialogue`；
+  - `--style` / `--style-deny` / `--no-style`，`--semantics` / `--semantics-deny` / `--no-semantics`；
+  - `gate`、`decontaminate`、`mix` 共用同一组开关；原因码 `style_filtered` / `semantics_filtered`。
+
+- **论文映射**：
+
+| 来源 | 规则 / 结论 | 本仓映射 |
+|---|---|---|
+| StarCoder / The Stack | 许可、PII、归因追踪、按语言覆盖 | 代码占比 + 语言识别 + 许可证缺失标记 |
+| Stack v2 | 619 语言、SWHID、PR/notebook/文档 | 多语言代码特征表；source/license 数据卡 |
+| DCLM | 模型过滤显著提升；7B/2.6T 64% MMLU | 保留为软门/外部分数，不替代硬门 |
+| FineWeb-Edu | 教育性过滤 1.3T token | language 质量门（教育词/信息密度/重复率） |
+| Nemotron-CC | 激进过滤删 90%；分类器集成 + 重写 | 三支决策 + 重写闭环；defer 不硬删 |
+| Magpie | 4M 生成 → 300K 高质量筛选 | 生成与筛选分离；质量门 + 数据卡 |

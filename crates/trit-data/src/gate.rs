@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use trit_core::fingerprint::sha256_hex;
 
-use crate::content::analyze;
+use crate::content::LabelFilter;
 use crate::language::{LangClass, Limits, classify, features};
 use crate::schema::Trajectory;
 use crate::script::{primary_language, trajectory_text};
@@ -44,6 +44,8 @@ pub struct Config {
     pub code_filter: bool,
     pub natural_filter: bool,
     pub code_threshold: f64,
+    pub style: LabelFilter,
+    pub semantics: LabelFilter,
     pub language_gate: bool,
     pub lang_allow: Option<Vec<String>>,
     pub lang_deny: Vec<String>,
@@ -64,6 +66,8 @@ impl Default for Config {
             code_filter: false,
             natural_filter: false,
             code_threshold: 0.5,
+            style: LabelFilter::default(),
+            semantics: LabelFilter::default(),
             language_gate: true,
             lang_allow: None,
             lang_deny: Vec::new(),
@@ -159,15 +163,7 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
         soft.push("length");
     }
     let lang_text = trajectory_text(t);
-    if cfg.code_filter || cfg.natural_filter {
-        let content = analyze(&lang_text);
-        if cfg.code_filter && content.code_ratio >= cfg.code_threshold {
-            soft.push("code_filtered");
-        }
-        if cfg.natural_filter && content.natural_ratio >= cfg.code_threshold {
-            soft.push("natural_filtered");
-        }
-    }
+    crate::gate_content::apply(cfg, &lang_text, &mut soft);
     if cfg.language_gate {
         let lang = primary_language(&lang_text);
         if cfg.lang_deny.iter().any(|x| x == lang) {
