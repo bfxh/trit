@@ -2,8 +2,6 @@
 
 use super::*;
 
-use super::*;
-
 fn tmp_dir() -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("trit-manifest-{}", std::process::id()));

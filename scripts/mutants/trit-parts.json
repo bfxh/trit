@@ -90,8 +90,8 @@
   {
     "name": "asset-verify: 档位解析吞掉第一档",
     "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
-    "old": "    let items = v.and_then(Json::as_array).unwrap_or(&[]);",
-    "new": "    let items = v.and_then(Json::as_array).map(|a| &a[1.min(a.len())..]).unwrap_or(&[]);",
+    "old": "fn levels(v: Option<&Json>) -> Vec<Lv> {\n    let items = v.and_then(Json::as_array).unwrap_or(&[]);",
+    "new": "fn levels(v: Option<&Json>) -> Vec<Lv> {\n    let items = v.and_then(Json::as_array).map(|a| &a[1.min(a.len())..]).unwrap_or(&[]);",
     "pkg": "trit-parts",
     "filter": "levels_parse_all_metrics"
   },
