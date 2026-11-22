@@ -6,29 +6,19 @@ use crate::scales::load_scales;
 use crate::sidecar;
 use crate::stats::{input_stats, random_like};
 use crate::sts::{load_pairs, metrics, sentence_vectors};
+use args::Args;
 use serde_json::{Map, json};
+mod args;
 use trit_wspace::activations;
 pub(crate) fn run() {
-    let mut file = String::new();
-    let mut data_dir = String::new();
-    let mut out_path = None;
-    let mut seed = 7u64;
-    let mut activation_arg = "all".to_string();
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--file" => file = args.next().expect("file"),
-            "--data-dir" => data_dir = args.next().expect("data-dir"),
-            "--out" => out_path = Some(args.next().expect("out")),
-            "--seed" => seed = args.next().expect("seed").parse().expect("num"),
-            "--activation-mode" => activation_arg = args.next().expect("activation-mode"),
-            other => panic!("unknown arg {other}"),
-        }
-    }
-    assert!(
-        !file.is_empty() && !data_dir.is_empty(),
-        "--file/--data-dir 必填"
-    );
+    let Args {
+        file,
+        data_dir,
+        out: out_path,
+        seed,
+        activation: activation_arg,
+        gptq,
+    } = args::parse();
     let (batch, seq, mask) = activations::read_mask(format!("{data_dir}/mask.u8")).expect("mask");
     let (input_rows, hidden, input) =
         activations::read_matrix(format!("{data_dir}/input.f32")).expect("input");
@@ -52,6 +42,7 @@ pub(crate) fn run() {
             quantize: false,
             activation: ActivationMode::F32,
             sidecar_rank: 0,
+            gptq_dir: None,
         },
     );
     let (f32_out, _, f32_layers) = f32_bert.forward(&input, &mask, batch, seq, false);
@@ -86,6 +77,7 @@ pub(crate) fn run() {
                 quantize: true,
                 activation: mode,
                 sidecar_rank: 0,
+                gptq_dir: gptq.then(|| format!("{data_dir}/gptq")),
             },
         );
         if mode == ActivationMode::TernaryAllChannel {

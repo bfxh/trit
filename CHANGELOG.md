@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：权重侧 GPTQ 逐列补偿——STS 0.7330 → 0.8065）
+
+- `crates/trit-wspace/src/gptq.rs`：`absmean` / `quantize`（H = XᵀX 逐列补偿，act-order
+  排序，1% 对角阻尼求 `H⁻¹`）；`examples/bert6` 加 `--gptq`，校准集每层 6 段、2048 个 token。
+- 读数（STS 64 对，仅权重三值 + f32 激活）：absmean `rel_l2 1.1660 / cosine 0.4695 /
+  Pearson 0.7330 / Spearman 0.7437` → GPTQ `rel_l2 1.0491 / cosine 0.5551 /
+  Pearson 0.8065 / Spearman 0.8320`（+0.0735 Pearson，相对 +10.0%）。
+- 负结果入册：补偿系数误用 `H` 而不是 `H⁻¹` 时 H 加权误差从 0.266 涨到 0.860，端到端
+  Pearson 掉到 0.4924；修正后 36 个 H 矩阵的加权误差全部下降（query 段 −37%）。
+- 验证：`cargo test -p trit-wspace`（含 `tests/gptq.rs` 5 条性质测试）全绿；
+  `clippy -D warnings`、`module_budget`、`docs_hygiene`、`doc_pointers`、`privacy_scan`、
+  `claims_evidence` 绿。
+
 ### Added（trit-wspace：int8 激活——权重三值 + 8-bit 输入，STS 0.7331）
 
 - `--activation-mode int8`：权重三值，LN/残差 f32，matmul 输入 per-token 对称 int8

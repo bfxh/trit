@@ -1,18 +1,18 @@
 //! MiniLM BERT 6 层的 f32 / 三值前向（只三值化线性权重，LN/GELU/softmax 保持 f32）。
 use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
 use crate::gelu::gelu;
-use crate::linear::{F32Linear, Linear, QuantLinear};
-use trit_wspace::safetensors;
+mod loader;
+use crate::linear::Linear;
 pub(crate) struct BertLayer {
-    query: Linear,
-    key: Linear,
-    value: Linear,
-    output: Linear,
-    norm1: NormKind,
-    intermediate: Linear,
-    ffn_output: Linear,
-    norm2: NormKind,
-    activation: ActivationMode,
+    pub(crate) query: Linear,
+    pub(crate) key: Linear,
+    pub(crate) value: Linear,
+    pub(crate) output: Linear,
+    pub(crate) norm1: NormKind,
+    pub(crate) intermediate: Linear,
+    pub(crate) ffn_output: Linear,
+    pub(crate) norm2: NormKind,
+    pub(crate) activation: ActivationMode,
 }
 pub(crate) struct BertConfig {
     pub(crate) layers: usize,
@@ -23,75 +23,18 @@ pub(crate) struct BertConfig {
     pub(crate) quantize: bool,
     pub(crate) activation: ActivationMode,
     pub(crate) sidecar_rank: usize,
+    pub(crate) gptq_dir: Option<String>,
 }
 pub(crate) struct Bert {
-    hidden: usize,
-    heads: usize,
-    head_dim: usize,
-    layers: Vec<BertLayer>,
-    scales: Option<Vec<LayerScales>>,
+    pub(crate) hidden: usize,
+    pub(crate) heads: usize,
+    pub(crate) head_dim: usize,
+    pub(crate) layers: Vec<BertLayer>,
+    pub(crate) scales: Option<Vec<LayerScales>>,
 }
 impl Bert {
     pub(crate) fn load(file: &str, config: BertConfig) -> Self {
-        let BertConfig {
-            layers,
-            hidden,
-            intermediate,
-            heads,
-            eps,
-            quantize,
-            activation,
-            sidecar_rank,
-        } = config;
-        let tensor = |name: &str| -> F32Linear {
-            let weight = safetensors::read_tensor(file, name)
-                .unwrap_or_else(|e| panic!("读 {name} 失败：{e}"));
-            let bias_name = name.replace(".weight", ".bias");
-            let bias = safetensors::read_vector(file, &bias_name)
-                .unwrap_or_else(|e| panic!("读 {bias_name} 失败：{e}"));
-            F32Linear {
-                rows: weight.rows,
-                cols: weight.cols,
-                weight: weight.values,
-                bias,
-            }
-        };
-        let norm = |prefix: &str| -> NormKind {
-            let weight =
-                safetensors::read_vector(file, &format!("{prefix}.weight")).expect("LN weight");
-            let bias = safetensors::read_vector(file, &format!("{prefix}.bias")).expect("LN bias");
-            NormKind::new(activation, weight, bias, eps)
-        };
-        let wrap = |linear: F32Linear| {
-            if quantize {
-                Linear::Quant(QuantLinear::from(&linear, sidecar_rank))
-            } else {
-                Linear::F32(linear)
-            }
-        };
-        let mut built = Vec::with_capacity(layers);
-        for index in 0..layers {
-            let prefix = format!("encoder.layer.{index}");
-            built.push(BertLayer {
-                query: wrap(tensor(&format!("{prefix}.attention.self.query.weight"))),
-                key: wrap(tensor(&format!("{prefix}.attention.self.key.weight"))),
-                value: wrap(tensor(&format!("{prefix}.attention.self.value.weight"))),
-                output: wrap(tensor(&format!("{prefix}.attention.output.dense.weight"))),
-                norm1: norm(&format!("{prefix}.attention.output.LayerNorm")),
-                intermediate: wrap(tensor(&format!("{prefix}.intermediate.dense.weight"))),
-                ffn_output: wrap(tensor(&format!("{prefix}.output.dense.weight"))),
-                norm2: norm(&format!("{prefix}.output.LayerNorm")),
-                activation,
-            });
-        }
-        let _ = intermediate;
-        Self {
-            hidden,
-            heads,
-            head_dim: hidden / heads,
-            layers: built,
-            scales: None,
-        }
+        loader::load(file, config)
     }
     pub(crate) fn set_scales(&mut self, scales: Vec<LayerScales>) {
         self.scales = Some(scales);

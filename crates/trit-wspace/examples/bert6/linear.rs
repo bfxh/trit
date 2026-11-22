@@ -1,7 +1,6 @@
-//! 线性层：f32 / 三值（absmean per-row scale + f32 bias）。
+//! 线性层：f32 / 三值（absmean 或 GPTQ 逐列补偿的 per-row scale + f32 bias）。
 
 use crate::sidecar_layer::Sidecar;
-use trit_wspace::safetensors::Weights;
 pub(crate) struct F32Linear {
     pub(crate) rows: usize,
     pub(crate) cols: usize,
@@ -37,23 +36,15 @@ pub(crate) struct QuantLinear {
     sidecar: Option<Sidecar>,
 }
 impl QuantLinear {
-    pub(crate) fn from(linear: &F32Linear, rank: usize) -> Self {
-        let weights = Weights {
-            rows: linear.rows,
-            cols: linear.cols,
-            values: linear.weight.clone(),
-        };
-        let layer = weights
-            .to_layer_with_bias(Some(&linear.bias))
-            .expect("三值化失败");
-        let mut trits = Vec::with_capacity(linear.rows * linear.cols);
-        let mut scales = Vec::with_capacity(linear.rows);
-        for row in 0..linear.rows {
-            scales.push(layer.scale(row).expect("scale"));
-            for col in 0..linear.cols {
-                trits.push(layer.trit(row, col).expect("trit").to_i8());
+    pub(crate) fn from(linear: &F32Linear, rank: usize, h: Option<&[f32]>) -> Self {
+        let (trits, scales) = match h {
+            Some(h) if h.len() == linear.cols * linear.cols => {
+                trit_wspace::gptq::quantize(&linear.weight, linear.rows, linear.cols, h)
+                    .expect("GPTQ 三值化失败")
             }
-        }
+            _ => trit_wspace::gptq::absmean(&linear.weight, linear.rows, linear.cols)
+                .expect("absmean 三值化失败"),
+        };
         let sidecar = Sidecar::build(linear, &trits, &scales, rank);
         Self {
             rows: linear.rows,

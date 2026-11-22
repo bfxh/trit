@@ -36,6 +36,7 @@ pub(crate) fn run(
                 quantize: true,
                 activation: ActivationMode::TernaryAllChannel,
                 sidecar_rank: rank,
+                gptq_dir: None,
             },
         );
         bert.set_scales(scales.to_vec());
