@@ -46,3 +46,26 @@ trit-fabric `missing` 37（仓库根没有 LICENSE/COPYING/NOTICE，扫描不向
 2. 测试约定补齐：`*Test.java` / `*IT.java`、`pytest` 的 `conftest.py`、Rust `#[cfg(test)]` 内联。
 3. 检索上下文：BM25 + 依赖闭包，记录实际送入的上下文哈希。
 4. 去重：文件级 MinHash，跨 fork 重复只留一份。
+
+## R2 实测（2026-11-23）
+
+**去重**（`repo --repo .`，1827 文件，release 二进制 1.2s）
+
+| 类型 | 组数 | 明细 |
+|---|---|---|
+| 精确（SHA-256） | 2 | `benchmarks/dot_variants/main.rs` = `.../src/main.rs`；`trit-wspace/examples/adaptive_defense/metrics.rs` = `creative_priming/metrics.rs` |
+| 近似（MinHash） | 2 | trit-wspace 三份 `metrics.rs` 相似 0.936；`evolution/metrics.rs` 与 `spam_redteam/metrics.rs` 相似 0.801 |
+
+跳过 304 个文件（测试文件 / <200B / >1MB / 非 UTF-8），跳过数入册不静默丢弃。
+
+**检索上下文**（`repo --context "bm25 context bundle"`，5.7s 含扫描）
+
+```json
+{"kind": "trit-data-context", "budget_tokens": 8000, "total_tokens": 3732,
+ "bundle_sha256": "ff3387f2…", "files": 10}
+```
+
+- 8 个 BM25 命中（`context.rs` / `context_tests.rs` / `repo_context.rs` 排前三，
+  另有 docs 计划与 repo_opts.rs），2 个依赖闭包补入（`repo.rs`、`code_quality.rs`）。
+- `bundle_sha256` 对入选文件的「路径 + 内容」做内容级指纹，同一查询复算可比对。
+- 预算按词级 token 数计，超预算的命中/依赖跳过，不截断文件内容。

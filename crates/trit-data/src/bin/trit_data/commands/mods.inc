@@ -22,6 +22,8 @@ mod project;
 mod shared;
 #[path = "repo.rs"]
 mod repo;
+#[path = "repo_context.rs"]
+mod repo_context;
 #[path = "repo_dup.rs"]
 mod repo_dup;
 #[path = "repo_json.rs"]

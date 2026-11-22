@@ -1,3 +1,4 @@
+pub mod context;
 pub mod deps;
 mod deps_report;
 pub mod dup;
@@ -10,6 +11,8 @@ mod license;
 pub mod paths;
 mod paths_targets;
 
+#[cfg(test)]
+mod context_tests;
 #[cfg(test)]
 mod deps_tests;
 #[cfg(test)]
