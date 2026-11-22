@@ -9,7 +9,6 @@
 //! 本模块保证的是"回执不是自报"，不是"测试有语义价值"——后者属于 claim 审计
 //! 与测试质量门的职责，不能靠回执结构假装解决。
 
-use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -18,10 +17,12 @@ use trit_orch::{Error, Exit, Receipt};
 
 use crate::cli_inputs::Execution;
 
+#[path = "io.rs"]
+mod io;
+use io::read_capped;
+
 pub(crate) const DEFAULT_TIMEOUT_MS: u64 = 600_000;
 pub(crate) const MAX_TIMEOUT_MS: u64 = 3_600_000;
-/// 单条执行命令的 stdout 保留上限；超出部分继续 drain（避免管道阻塞），但不入内存。
-const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 
 /// 执行一条验收命令并生成宿主测量回执。
 pub(crate) fn run_execution(exec: &Execution, epoch: u64, nonce: &str) -> Result<Receipt, Error> {
@@ -50,6 +51,12 @@ pub(crate) fn run_execution(exec: &Execution, epoch: u64, nonce: &str) -> Result
             task: exec.task.clone(),
             field: "usage",
         });
+    };
+
+    let test_digest = if exec.test_files.is_empty() {
+        None
+    } else {
+        Some(trit_orch::test_files_digest(&exec.test_files)?)
     };
 
     let timeout = Duration::from_millis(
@@ -110,25 +117,8 @@ pub(crate) fn run_execution(exec: &Execution, epoch: u64, nonce: &str) -> Result
     };
     Ok(Receipt::host_measured(epoch, exit, passed, failed)
         .with_observation(authorization, freshness, usage)
+        .with_test_digest(test_digest)
         .with_audit(nonce, exec.command.clone()))
-}
-
-/// 读取子进程输出；超过上限继续读空（避免管道阻塞），但不保留。
-fn read_capped(reader: &mut impl Read) -> Vec<u8> {
-    let mut kept = Vec::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => {
-                if kept.len() < MAX_OUTPUT_BYTES {
-                    let room = MAX_OUTPUT_BYTES - kept.len();
-                    kept.extend_from_slice(&buf[..n.min(room)]);
-                }
-            }
-        }
-    }
-    kept
 }
 
 /// 只允许测试运行器形态的命令。拒绝任意 shell/解释器/程序，避免"宿主执行了

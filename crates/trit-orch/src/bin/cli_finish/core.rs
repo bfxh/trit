@@ -1,30 +1,18 @@
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
 use trit_orch::{EvidenceSpec, Progress, Receipt, ReceiptProvenance};
 
 use crate::{cli_inputs::FinishInput, parse};
 
+#[path = "nonce.rs"]
+mod nonce;
+use nonce::host_nonce;
+
 use super::measure;
 
 fn flag_present(flag: &str) -> bool {
     std::env::args().skip(2).any(|arg| arg == flag)
-}
-
-/// 宿主本次调用的挑战。模型可以读到输入，但读不到调用开始后才生成的值，
-/// 因此上一轮的真回执无法在本轮重放。
-fn host_nonce() -> String {
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    format!(
-        "host-{}-{}-{}",
-        std::process::id(),
-        now.as_nanos(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    )
 }
 
 pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
@@ -97,6 +85,15 @@ pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
             &nonce,
         )?
     };
+    let test_digests: BTreeMap<&str, &str> = receipts
+        .iter()
+        .filter_map(|(task, receipt)| {
+            receipt
+                .test_digest
+                .as_deref()
+                .map(|digest| (task.as_str(), digest))
+        })
+        .collect();
     Ok(json!({
         "ok": true,
         "summary": summary,
@@ -104,5 +101,6 @@ pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
         "brief": progress.brief(),
         "provenance": if allow_self_reported { "self-reported-allowed" } else { "host-measured" },
         "nonce": nonce,
+        "test_digests": test_digests,
     }))
 }

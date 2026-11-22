@@ -6,6 +6,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use trit_ops::encode_line;
 
@@ -13,6 +14,10 @@ use crate::trace::{TraceEvent, TraceEventKind, TracePayload};
 use crate::{Error, TraceStep};
 
 use super::{MAX_TRACE_BYTES, TraceEventStore};
+
+#[path = "legacy_migrate.rs"]
+mod migrate;
+pub(crate) use migrate::{has_content, migrate_in_memory};
 
 /// 旧 `TraceStep` 的迁移路径：拆成 plan / snapshot / limits / ledger 四条事件。
 pub fn events_from_step(
@@ -113,7 +118,10 @@ impl TraceEventStore {
 
     /// 把旧格式文件重写成按 seq 排序、带完整链的新格式。
     pub(super) fn migrate_legacy_file(&self) -> Result<(), Error> {
-        let events = migrate_in_memory(self.read_events()?);
+        let events = self.read_events()?;
+        // 迁移前先验锚点：把“有摘要的文件”清空 hash 不能靠 append 洗白成旧格式。
+        self.anchor_verify(&events)?;
+        let events = migrate_in_memory(events);
         self.rewrite_events(&events)
     }
 
@@ -139,7 +147,9 @@ impl TraceEventStore {
             fs::create_dir_all(parent).map_err(|error| self.io(error))?;
         }
         let mut temporary = self.path.as_os_str().to_os_string();
-        temporary.push(".migrate.tmp");
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        temporary.push(format!(".migrate.{}.{}.tmp", std::process::id(), seq));
         let temporary = std::path::PathBuf::from(temporary);
         let mut file = fs::File::create(&temporary).map_err(|error| self.io(error))?;
         file.write_all(text.as_bytes())
@@ -168,23 +178,4 @@ impl TraceEventStore {
             }
         }
     }
-}
-
-/// 内存迁移：按 seq 排序，写入序从 1 连续分配，逐条封存。
-pub(super) fn migrate_in_memory(mut events: Vec<TraceEvent>) -> Vec<TraceEvent> {
-    events.sort_by_key(|event| event.seq);
-    let mut previous = String::new();
-    for (index, event) in events.iter_mut().enumerate() {
-        event.chain_seq = (index + 1) as u64;
-        event.seal(&previous);
-        previous = event.payload_hash.clone();
-    }
-    events
-}
-
-/// 文件里是否已有内容（存在但为空不算）。
-pub(super) fn has_content(path: &std::path::Path) -> bool {
-    fs::metadata(path)
-        .map(|metadata| metadata.len() > 0)
-        .unwrap_or(false)
 }

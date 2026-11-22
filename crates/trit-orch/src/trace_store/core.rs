@@ -8,17 +8,28 @@
 //! 未开 ECC 的存储读到 ECC 行也能按 tag 译码。
 
 use std::fs;
-use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::io::{ErrorKind, Read, Seek, SeekFrom};
+use std::path::PathBuf;
 
-use trit_ops::{FrameCode, FrameResult, decode_line, encode_line};
+use trit_ops::{FrameCode, FrameResult, decode_line};
 
 use crate::trace::{TraceEvent, TraceLog};
 use crate::{Error, TraceStep};
 
+#[path = "accessors.rs"]
+mod accessors;
+#[path = "anchor.rs"]
+mod anchor;
 #[path = "legacy.rs"]
 mod legacy;
+#[path = "time.rs"]
+mod time;
+#[path = "watermark.rs"]
+mod watermark;
+#[path = "write.rs"]
+mod write;
+
+pub use anchor::TraceAnchor;
 pub use legacy::events_from_step;
 
 /// ECC 帧行前缀（[`trit_ops::frame`] 的行格式）。
@@ -26,10 +37,6 @@ const ECC_MAGIC: &str = "TRE1";
 
 /// 单个轨迹文件允许的最大字节数；超过即拒绝，避免不可信输入耗尽内存。
 pub const MAX_TRACE_BYTES: u64 = 256 * 1024 * 1024;
-
-/// 追加串行化：读尾、链接、写盘、记水位必须是一个临界区。
-/// 这是进程内锁；跨进程并发仍需宿主自己串行化（见模块文档）。
-static APPEND_LOCK: Mutex<()> = Mutex::new(());
 
 /// 一行一个 `TraceEvent` 的追加式存储。
 ///
@@ -41,6 +48,8 @@ pub struct TraceEventStore {
     path: PathBuf,
     ecc: Option<FrameCode>,
     strict: bool,
+    anchor: Option<TraceAnchor>,
+    stamp: bool,
 }
 
 impl TraceEventStore {
@@ -49,6 +58,8 @@ impl TraceEventStore {
             path: path.into(),
             ecc: None,
             strict: false,
+            anchor: None,
+            stamp: false,
         }
     }
 
@@ -64,6 +75,8 @@ impl TraceEventStore {
             path: path.into(),
             ecc: Some(code),
             strict: false,
+            anchor: None,
+            stamp: false,
         }
     }
 
@@ -73,73 +86,38 @@ impl TraceEventStore {
             path: path.into(),
             ecc: None,
             strict: true,
+            anchor: None,
+            stamp: false,
         }
     }
 
-    pub fn strict(&self) -> bool {
-        self.strict
+    /// 链头锚点（HMAC）。锚点文件缺失时退化为无锚点；严格模式用
+    /// [`Self::with_anchor_required`]。
+    pub fn with_anchor(path: impl Into<PathBuf>, key: impl AsRef<[u8]>) -> Self {
+        let path = path.into();
+        Self {
+            path: path.clone(),
+            ecc: None,
+            strict: false,
+            anchor: Some(TraceAnchor::new(path, key.as_ref().to_vec())),
+            stamp: false,
+        }
     }
 
-    /// 当前 ECC 设置（`None` = 关闭）。
-    pub fn ecc(&self) -> Option<FrameCode> {
-        self.ecc
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
+    /// 严格锚点：非空日志没有锚点文件时直接拒绝。
+    pub fn with_anchor_required(path: impl Into<PathBuf>, key: impl AsRef<[u8]>) -> Self {
+        let path = path.into();
+        Self {
+            path: path.clone(),
+            ecc: None,
+            strict: false,
+            anchor: Some(TraceAnchor::required(path, key.as_ref().to_vec())),
+            stamp: false,
+        }
     }
 
     pub fn append(&self, event: &TraceEvent) -> Result<(), Error> {
-        if event.schema != TraceEvent::CURRENT_SCHEMA {
-            return Err(Error::TraceSchema {
-                found: event.schema,
-                expected: TraceEvent::CURRENT_SCHEMA,
-            });
-        }
-        // 读尾、链接、写盘、记水位是一个临界区；否则两个并发追加会读到同一
-        // 个尾，链分叉。
-        let _guard = APPEND_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // 旧格式文件第一次被追加时先整体迁移，之后的链接才有前驱摘要。
-        if legacy::has_content(&self.path) {
-            let (last_chain, _) = self.last_tail()?;
-            if last_chain == 0 {
-                self.migrate_legacy_file()?;
-            }
-        }
-        let (last_chain, previous) = self.last_tail()?;
-        let mut sealed = event.clone();
-        sealed.chain_seq = last_chain.saturating_add(1);
-        sealed.seal(&previous);
-        let line = serde_json::to_string(&sealed).map_err(|error| Error::TraceParse {
-            path: self.path.display().to_string(),
-            line: 0,
-            message: error.to_string(),
-        })?;
-        let line = match self.ecc {
-            Some(code) => encode_line(code, line.as_bytes()),
-            None => line,
-        };
-        if let Some(parent) = self.path.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            fs::create_dir_all(parent).map_err(|error| self.io(error))?;
-        }
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)
-            .map_err(|error| self.io(error))?;
-        // 一行一次写全（JSON 里不会有裸换行）；拆成多次 write 会让并发追加交错出半行。
-        let mut bytes = line.into_bytes();
-        bytes.push(b'\n');
-        file.write_all(&bytes).map_err(|error| self.io(error))?;
-        // 审计事件按“写成功即可见”处理：每次追加都同步到存储。
-        file.sync_data().map_err(|error| self.io(error))?;
-        // 水位给“尾部被截断”一个可检测的下界；它自己也是文件，删除它属于
-        // 有意的反审计行为（需要外部锚点才能完全防）。
-        self.write_watermark(sealed.seq)
+        self.append_batch(std::slice::from_ref(event))
     }
 
     pub fn load(&self) -> Result<Vec<TraceEvent>, Error> {
@@ -177,6 +155,7 @@ impl TraceEventStore {
                 });
             }
         }
+        self.anchor_verify(&events)?;
         Ok(events)
     }
 
@@ -199,43 +178,7 @@ impl TraceEventStore {
         step: &TraceStep,
         observed_at: u64,
     ) -> Result<(), Error> {
-        for event in events_from_step(trace_id, base_seq, step, observed_at) {
-            self.append(&event)?;
-        }
-        Ok(())
-    }
-
-    fn watermark_path(&self) -> PathBuf {
-        let mut name = self.path.as_os_str().to_os_string();
-        name.push(".watermark");
-        PathBuf::from(name)
-    }
-
-    fn write_watermark(&self, seq: u64) -> Result<(), Error> {
-        let path = self.watermark_path();
-        fs::write(&path, format!("{seq}\n")).map_err(|error| Error::TraceIo {
-            path: path.display().to_string(),
-            message: error.to_string(),
-        })
-    }
-
-    fn read_watermark(&self) -> Result<Option<u64>, Error> {
-        let path = self.watermark_path();
-        match fs::read_to_string(&path) {
-            Ok(text) => text
-                .trim()
-                .parse::<u64>()
-                .map(Some)
-                .map_err(|_| Error::TraceWatermark {
-                    path: path.display().to_string(),
-                    message: format!("bad watermark {text:?}"),
-                }),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(Error::TraceIo {
-                path: path.display().to_string(),
-                message: error.to_string(),
-            }),
-        }
+        self.append_batch(&events_from_step(trace_id, base_seq, step, observed_at))
     }
 
     fn verify_chain(&self, events: &[TraceEvent]) -> Result<(), Error> {

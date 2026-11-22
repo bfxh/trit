@@ -1992,7 +1992,7 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/core.rs",
-      "lines": 108
+      "lines": 106
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure.rs",
@@ -2000,11 +2000,19 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure/core.rs",
-      "lines": 330
+      "lines": 320
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_finish/measure/io.rs",
+      "lines": 22
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/mod.rs",
       "lines": 4
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_finish/nonce.rs",
+      "lines": 16
     },
     {
       "file": "crates/trit-orch/src/bin/cli_inputs/finish.rs",
@@ -2012,7 +2020,11 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_inputs/finish/core.rs",
-      "lines": 52
+      "lines": 4
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_inputs/finish_input.rs",
+      "lines": 55
     },
     {
       "file": "crates/trit-orch/src/bin/cli_inputs/mod.rs",
@@ -2075,16 +2087,16 @@
       "lines": 9
     },
     {
-      "file": "crates/trit-orch/src/error/core.rs",
-      "lines": 252
+      "file": "crates/trit-orch/src/error/def.rs",
+      "lines": 258
     },
     {
       "file": "crates/trit-orch/src/error/kind.rs",
       "lines": 1
     },
     {
-      "file": "crates/trit-orch/src/error/kind/core.rs",
-      "lines": 96
+      "file": "crates/trit-orch/src/error/kind/def.rs",
+      "lines": 99
     },
     {
       "file": "crates/trit-orch/src/evidence.rs",
@@ -2092,7 +2104,15 @@
     },
     {
       "file": "crates/trit-orch/src/evidence/core.rs",
-      "lines": 161
+      "lines": 74
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/digest.rs",
+      "lines": 40
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/receipt.rs",
+      "lines": 111
     },
     {
       "file": "crates/trit-orch/src/exports.rs",
@@ -2251,12 +2271,36 @@
       "lines": 3
     },
     {
+      "file": "crates/trit-orch/src/trace_store/accessors.rs",
+      "lines": 32
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/anchor.rs",
+      "lines": 206
+    },
+    {
       "file": "crates/trit-orch/src/trace_store/core.rs",
-      "lines": 379
+      "lines": 322
     },
     {
       "file": "crates/trit-orch/src/trace_store/legacy.rs",
-      "lines": 190
+      "lines": 181
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/legacy_migrate.rs",
+      "lines": 22
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/time.rs",
+      "lines": 36
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/watermark.rs",
+      "lines": 56
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/write.rs",
+      "lines": 98
     },
     {
       "file": "crates/trit-orch/tests/admission.rs",
@@ -2407,8 +2451,20 @@
       "lines": 193
     },
     {
+      "file": "crates/trit-orch/tests/test_digest.rs",
+      "lines": 31
+    },
+    {
       "file": "crates/trit-orch/tests/trace.rs",
       "lines": 275
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_anchor.rs",
+      "lines": 67
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_anchor_strict.rs",
+      "lines": 50
     },
     {
       "file": "crates/trit-orch/tests/trace_ecc.rs",
@@ -2441,6 +2497,10 @@
     {
       "file": "crates/trit-orch/tests/trace_multi.rs",
       "lines": 49
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_stamp.rs",
+      "lines": 31
     },
     {
       "file": "crates/trit-orch/tests/trace_storage_stability.rs",

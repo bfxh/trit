@@ -1,6 +1,6 @@
 mod arith;
-mod core;
+mod def;
 mod kind;
 
 pub(crate) use arith::add_tokens;
-pub use core::Error;
+pub use def::Error;

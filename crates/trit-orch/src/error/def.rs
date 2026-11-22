@@ -157,6 +157,12 @@ pub enum Error {
     TraceChainBroken { path: String, seq: u64 },
     #[error("trace at {path} has a broken chain order at chain_seq {chain_seq}")]
     TraceChainOrder { path: String, chain_seq: u64 },
+    #[error("trace anchor at {path} is missing")]
+    TraceAnchorMissing { path: String },
+    #[error("trace anchor at {path} does not match the chain head or signature")]
+    TraceAnchorMismatch { path: String },
+    #[error("trace anchor at {path} is unreadable: {message}")]
+    TraceAnchorParse { path: String, message: String },
     #[error("trace at {path} is truncated: watermark {watermark}, last seq {found}")]
     TraceTruncated {
         path: String,

@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Security（trit-orch 完成闸、轨迹链与兼容性）
+
+- `Receipt`：新增 `provenance`（`HostMeasured`/`SelfReported`）、`nonce`、`command`、
+  `authorization`/`freshness`/`usage` 与 `test_digest`；`finish` 默认只接受宿主测量回执，
+  `--allow-self-reported` 是显式兼容逃生舱。
+- `TraceEventStore`：真实 SHA-256 内容摘要 + `chain_seq` 写入序；`load` 重算校验；
+  旧格式（全空摘要）自动迁移，混合格式 fail-closed；`with_strict_hash` 拒绝旧格式。
+- `TraceAnchor`：可选 HMAC-SHA256 链头锚点，检测整链重算；`with_anchor` 默认可选、
+  `with_anchor_required` 严格；锚点文件缺失在可选模式下退化为无锚点。
+- 轨迹追加：按路径分锁 + 批量追加（`append_step` 一次写）；水位原子替换。
+- `LedgerStore`：目标损坏也回退 `.bak`；`save` 后 `sync_all`。
+- CLI：stdin 16 MiB、轨迹 256 MiB、认领 4096 条上限；`finish` 输出 `all_passed`、
+  `test_digests`；`./node` 等带路径程序名被拒绝；子进程 stdout 64 MiB 上限。
+- 兼容性：`Receipt`/`TraceEvent`/`HandoffPacket` 新增字段均有 serde 默认，旧 JSON 可读；
+  源码字面量构造需补字段，推荐用 `Receipt::host_measured` / `TraceEvent::new` 等构造器；
+  `Error` 新增变体，下游穷尽 `match` 需补分支。
+
 ### Added（容量租约：硬件探针 + 跨项目协调 + provider 前准入）
 
 - `tools/capacity_lease.py`（stdlib only，新建）：`probe/status/reserve/release/renew/contract/load`；
