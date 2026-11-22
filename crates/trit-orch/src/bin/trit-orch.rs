@@ -10,133 +10,13 @@ use std::io::Read;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
-    ClaimStore, ContextFacts, HandoffPacket, Ledger, Limits, ObligationBudget, ObligationPolicy,
-    Plan, PlanPatch, Progress, ReceiptLedger, ReceiptState, RoundReport, Selection, Snapshot,
-    TaskSpec, Ternary, TraceStep, TraceStore, admit_with_claim, builtin, compaction_gate,
-    dispatch_ready, handoff_gate, handoff_obligation, receipt_obligation, replay,
+    ContextFacts, Ledger, Plan, Progress, ReceiptState, Ternary, TraceStep, TraceStore,
+    admit_with_claim, builtin, compaction_gate, dispatch_ready, handoff_gate, handoff_obligation,
+    receipt_obligation, replay,
 };
 
-#[derive(Deserialize)]
-struct PlanInput {
-    revision: u64,
-    tasks: Vec<TaskSpec>,
-}
-
-#[derive(Deserialize)]
-struct SelectInput {
-    revision: u64,
-    tasks: Vec<TaskSpec>,
-    snapshot: Snapshot,
-    limits: Limits,
-    #[serde(default)]
-    patch: Option<PlanPatch>,
-    /// patch 的在途保护必须看到**打补丁前**的快照。
-    #[serde(default)]
-    base_snapshot: Option<Snapshot>,
-    #[serde(default)]
-    ledger: Ledger,
-}
-
-#[derive(Deserialize)]
-struct DispatchInput {
-    selection: Selection,
-    tasks: Vec<TaskSpec>,
-    ledger: Ledger,
-}
-
-#[derive(Deserialize)]
-struct ObligationInput {
-    selection: Selection,
-    #[serde(default)]
-    policy: ObligationPolicy,
-    now: u64,
-    budget: ObligationBudget,
-}
-
-#[derive(Deserialize)]
-struct ShadowInput {
-    policy: String,
-    steps: Vec<TraceStep>,
-}
-
-#[derive(Deserialize)]
-struct FinishInput {
-    tasks: Vec<TaskSpec>,
-    snapshot: Snapshot,
-    #[serde(default)]
-    rounds: Vec<RoundReport>,
-}
-
-#[derive(Deserialize)]
-struct ClaimInput {
-    #[serde(default)]
-    store: ClaimStore,
-    owner: String,
-    paths: Vec<String>,
-    intent: String,
-    now: u64,
-    ttl: u64,
-}
-
-#[derive(Deserialize)]
-struct RenewInput {
-    #[serde(default)]
-    store: ClaimStore,
-    id: String,
-    owner: String,
-    fencing: u64,
-    now: u64,
-    ttl: u64,
-}
-
-#[derive(Deserialize)]
-struct ReleaseInput {
-    #[serde(default)]
-    store: ClaimStore,
-    id: String,
-    owner: String,
-    fencing: u64,
-}
-
-#[derive(Deserialize)]
-struct ClaimGateInput {
-    #[serde(default)]
-    store: ClaimStore,
-    owner: String,
-    paths: Vec<String>,
-    now: u64,
-}
-
-#[derive(Deserialize)]
-struct ReceiptInput {
-    #[serde(default)]
-    ledger: ReceiptLedger,
-    action: String,
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    key: String,
-    #[serde(default)]
-    state: Option<String>,
-    #[serde(default)]
-    reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct HandoffGateInput {
-    packet: HandoffPacket,
-    receiver_state_hash: String,
-    now: u64,
-}
-
-#[derive(Deserialize)]
-struct AdmitWithClaimInput {
-    dependencies: String,
-    authorization: String,
-    resources: String,
-    freshness: String,
-    claim: String,
-}
+mod cli_inputs;
+use cli_inputs::*;
 
 fn parse_ternary(raw: &str) -> Result<Ternary, trit_orch::Error> {
     match raw.trim().to_ascii_lowercase().as_str() {

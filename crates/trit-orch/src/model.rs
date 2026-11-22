@@ -2,8 +2,12 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::add_tokens;
-use crate::{AdmissionObligation, Effect, Error, Resources, Task, Ternary};
+mod token;
+pub use token::TokenUsage;
+mod check;
+pub use check::CheckReport;
+
+use crate::{AdmissionObligation, Effect, Resources, Task, Ternary};
 
 /// 一个任务的完整定义。`epoch` 是该定义自己的版本号：补丁替换定义时递增，
 /// 旧 epoch 的执行与验收结果因此自动失效，与全局计划 revision 解耦。
@@ -66,65 +70,6 @@ impl EvidenceVerdict {
     }
 }
 
-/// 验收报告。`epoch` 是验收针对的任务定义版本。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CheckReport {
-    pub epoch: u64,
-    pub checks: u32,
-    pub result: CheckResult,
-}
-
-impl CheckReport {
-    /// 把报告折算成四值判定；冲突必须保持为 `Conflicted`，不能压成 `Neither`。
-    pub fn judgment(&self, expected_epoch: u64) -> EvidenceVerdict {
-        if self.checks == 0 || self.epoch != expected_epoch {
-            return EvidenceVerdict::Neither;
-        }
-        match self.result {
-            CheckResult::Passed => EvidenceVerdict::Proved,
-            CheckResult::Refuted => EvidenceVerdict::Refuted,
-            CheckResult::Inconclusive => EvidenceVerdict::Neither,
-            CheckResult::Conflicted => EvidenceVerdict::Conflicted,
-        }
-    }
-
-    /// 只有「报告针对当前 epoch、至少跑过一条断言、结果确定」才算数。
-    /// 冲突按 `Unknown` 返回，保留给需要三值口径的旧调用。
-    pub fn verdict(&self, expected_epoch: u64) -> Ternary {
-        self.judgment(expected_epoch).value()
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TokenUsage {
-    pub fresh: u64,
-    pub cached: u64,
-    pub output: u64,
-}
-
-impl TokenUsage {
-    pub fn total(&self) -> Result<u64, Error> {
-        self.total_for(None)
-    }
-
-    pub(crate) fn total_for(&self, task: Option<&str>) -> Result<u64, Error> {
-        add_tokens(
-            add_tokens(self.fresh, self.cached, task)?,
-            self.output,
-            task,
-        )
-    }
-
-    pub(crate) fn checked_add(self, other: Self, task: &str) -> Result<Self, Error> {
-        Ok(Self {
-            fresh: add_tokens(self.fresh, other.fresh, Some(task))?,
-            cached: add_tokens(self.cached, other.cached, Some(task))?,
-            output: add_tokens(self.output, other.output, Some(task))?,
-        })
-    }
-}
-
-/// 某个任务在快照中的状态。`epoch` 是这次执行所依据的任务定义版本。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Observation {
     pub phase: Phase,
