@@ -4,8 +4,8 @@ use std::path::Path;
 
 use super::super::MAGIC;
 
-/// 带显式上限的 [`read_matrix`]：全量语料（如 STS test 2758 句）会超过
-/// [`MAX_ELEMENTS`]，调用方必须自己声明合法上限，默认护栏不放松。
+/// 带显式上限的 `read_matrix`：全量语料（如 STS test 2758 句）会超过
+/// `MAX_ELEMENTS`，调用方必须自己声明合法上限，默认护栏不放松。
 pub fn read(path: impl AsRef<Path>, limit: usize) -> Result<(usize, usize, Vec<f32>), String> {
     let path = path.as_ref();
     let bytes = fs::read(path).map_err(|error| format!("读 {} 失败：{error}", path.display()))?;
