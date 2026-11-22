@@ -238,6 +238,38 @@ cargo run --release -p trit-wspace --example bert6 --   --file "$HF_HOME/hub/mod
 3. 与 PyTorch f32 的 0.9230 还差 **0.1165**；剩下的缺口在权重侧（更大 rank 侧车、
    混合权重、per-group scale、QAT），激活侧已经证明不是瓶颈（§3.10）。
 
+## 3.12 per-group scale + GPTQ：STS 0.8065 → 0.8290
+
+`--gptq-group N`：把每行的 scale 从"整行一个 absmean"改成"每 N 列一个 absmean"，
+与 §3.11 的 GPTQ 逐列补偿叠加（不用重新导出校准数据）。
+
+```bash
+cargo run --release -p trit-wspace --example bert6 --   --file "$HF_HOME/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/model.safetensors"   --data-dir "$TRIT_DATA/miniLM-bert6-sts" --activation-mode f32 --gptq-group 32
+```
+
+`scales` 布局是 `(row * groups + g)`，`groups = ceil(cols / group)`，末尾不满组按实际
+长度算 absmean；`group >= cols` 退化为 §3.11 的 per-row。
+
+| 权重三值化（激活 f32） | `rel_l2` | `cosine` | STS Pearson | STS Spearman |
+|---|---:|---:|---:|---:|
+| absmean per-row（§3.11 基线） | 1.1660 | 0.4695 | 0.7330 | 0.7437 |
+| GPTQ per-row | 1.0491 | 0.5551 | 0.8065 | 0.8320 |
+| GPTQ group=128 | 1.0468 | 0.5612 | 0.8144 | 0.8333 |
+| GPTQ group=64 | 1.0437 | 0.5562 | 0.8159 | 0.8408 |
+| GPTQ group=32 | 1.0479 | 0.5558 | 0.8272 | 0.8464 |
+| **GPTQ group=16** | 1.0448 | 0.5599 | **0.8290** | 0.8460 |
+
+读法：
+
+1. **粒度越细 Pearson 越高**：0.8065 → 0.8144 → 0.8159 → 0.8272 → 0.8290；
+   group=32 比 per-row 再 +0.0207（+2.6% 相对），group=16 只再 +0.0018 ⇒
+   **32 附近已饱和**，再细的粒度不值得 4 倍 scale 存储。
+2. `rel_l2` 与 `cosine` 并不随粒度单调（1.0491 → 1.0468 → 1.0437 → 1.0479 → 1.0448），
+   说明 per-group 改的是**误差在行内的分配**，行级幅度几乎不变；STS 对这种分配更敏感。
+3. 相对 absmean：group=32 的 Pearson +0.0942（**+12.9% 相对**）；相对 PyTorch f32 的
+   0.9230 仍差 0.0940。
+4. 只改权重侧：激活保持 f32（§3.10 已证 8-bit 不损失精度），校准集与 §3.11 同一份。
+
 ## 4. 未证栏
 
 - 只有 8 句、`8×64` token；不是大规模语料。

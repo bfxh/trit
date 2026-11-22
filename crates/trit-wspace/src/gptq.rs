@@ -15,6 +15,9 @@
 
 use crate::error::{Error, Result};
 
+mod inverse;
+use inverse::{check_shape, damped_inverse};
+
 /// absmean 逐行三值化：`scale = mean(|w_row|)`，`q = clamp(round(w/scale), -1, 1)`。
 ///
 /// 全零行的 `scale` 记为 `1.0`（与 [`crate::safetensors::Weights::to_layer_with_bias`]
@@ -45,19 +48,41 @@ pub fn quantize(
     cols: usize,
     hessian: &[f32],
 ) -> Result<(Vec<i8>, Vec<f32>)> {
+    quantize_grouped(weight, rows, cols, hessian, cols)
+}
+
+/// per-group scale 版 GPTQ：每行按 `group` 列切块，每块用自己的 absmean scale。
+///
+/// `scales` 布局是 `(row * groups + g)`，`groups = ceil(cols / group)`；`group == cols`
+/// 时退化为 [`quantize`]（每行一个 scale）。`cols < group` 按 `cols` 处理。
+pub fn quantize_grouped(
+    weight: &[f32],
+    rows: usize,
+    cols: usize,
+    hessian: &[f32],
+    group: usize,
+) -> Result<(Vec<i8>, Vec<f32>)> {
     check_shape(weight, rows, cols, "weight")?;
     check_shape(hessian, cols, cols, "hessian")?;
     if rows == 0 || cols == 0 {
         return Err(Error::EmptyLayer { rows, cols });
     }
+    let group = group.clamp(1, cols);
+    let groups = cols.div_ceil(group);
     let inverse = damped_inverse(hessian, cols);
-    let scales: Vec<f32> = (0..rows)
-        .map(|row| {
-            let line = &weight[row * cols..(row + 1) * cols];
-            let mean = line.iter().map(|value| value.abs()).sum::<f32>() / cols as f32;
-            if mean == 0.0 { 1.0 } else { mean }
-        })
-        .collect();
+    let mut scales = vec![0.0f32; rows * groups];
+    for row in 0..rows {
+        for chunk in 0..groups {
+            let start = chunk * group;
+            let end = (start + group).min(cols);
+            let sum = weight[row * cols + start..row * cols + end]
+                .iter()
+                .map(|value| value.abs())
+                .sum::<f32>();
+            let mean = sum / (end - start) as f32;
+            scales[row * groups + chunk] = if mean == 0.0 { 1.0 } else { mean };
+        }
+    }
     let mut working = weight.to_vec();
     let mut trits = vec![0i8; rows * cols];
     let mut order: Vec<usize> = (0..cols).collect();
@@ -69,8 +94,9 @@ pub fn quantize(
     for (position, &column) in order.iter().enumerate() {
         let diagonal = inverse[column * cols + column];
         let compensated = diagonal.abs() > 1e-12;
+        let chunk = column / group;
         for row in 0..rows {
-            let scale = scales[row];
+            let scale = scales[row * groups + chunk];
             let value = working[row * cols + column];
             let quantized = (value / scale).round().clamp(-1.0, 1.0);
             trits[row * cols + column] = quantized as i8;
@@ -88,81 +114,4 @@ pub fn quantize(
         }
     }
     Ok((trits, scales))
-}
-
-/// `H⁻¹`（1% 对角阻尼，GPTQ 惯例），f64 部分主元 Gauss-Jordan。
-fn damped_inverse(hessian: &[f32], cols: usize) -> Vec<f64> {
-    let width = 2 * cols;
-    let mut aug = vec![0.0f64; cols * width];
-    let mean = (0..cols)
-        .map(|index| f64::from(hessian[index * cols + index]))
-        .sum::<f64>()
-        / cols as f64;
-    let damp = if mean.is_finite() && mean > 0.0 {
-        mean * 0.01
-    } else {
-        1e-6
-    };
-    for row in 0..cols {
-        for col in 0..cols {
-            aug[row * width + col] = f64::from(hessian[row * cols + col]);
-        }
-        aug[row * width + cols + row] = 1.0;
-        aug[row * width + row] += damp;
-    }
-    for col in 0..cols {
-        let mut pivot = col;
-        for row in col + 1..cols {
-            if aug[row * width + col].abs() > aug[pivot * width + col].abs() {
-                pivot = row;
-            }
-        }
-        if pivot != col {
-            for offset in 0..width {
-                aug.swap(col * width + offset, pivot * width + offset);
-            }
-        }
-        let divisor = aug[col * width + col];
-        if divisor == 0.0 || !divisor.is_finite() {
-            continue;
-        }
-        for offset in 0..width {
-            aug[col * width + offset] /= divisor;
-        }
-        for row in 0..cols {
-            if row == col {
-                continue;
-            }
-            let factor = aug[row * width + col];
-            if factor == 0.0 {
-                continue;
-            }
-            for offset in 0..width {
-                aug[row * width + offset] -= factor * aug[col * width + offset];
-            }
-        }
-    }
-    let mut inverse = vec![0.0f64; cols * cols];
-    for row in 0..cols {
-        for col in 0..cols {
-            inverse[row * cols + col] = aug[row * width + cols + col];
-        }
-    }
-    inverse
-}
-
-fn check_shape(values: &[f32], rows: usize, cols: usize, what: &'static str) -> Result<()> {
-    let expected = rows.checked_mul(cols).ok_or(Error::Shape {
-        what,
-        expected: usize::MAX,
-        got: values.len(),
-    })?;
-    if values.len() != expected {
-        return Err(Error::Shape {
-            what,
-            expected,
-            got: values.len(),
-        });
-    }
-    Ok(())
 }

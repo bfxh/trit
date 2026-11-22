@@ -3520,7 +3520,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/linear.rs",
-      "lines": 93
+      "lines": 41
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/quant.rs",
+      "lines": 79
     },
     {
       "file": "crates/trit-wspace/examples/bert6/main.rs",
@@ -3528,11 +3532,15 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 180
+      "lines": 171
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config.rs",
+      "lines": 43
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/loader.rs",
-      "lines": 98
+      "lines": 92
     },
     {
       "file": "crates/trit-wspace/examples/bert6/norm.rs",
@@ -3548,7 +3556,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run.rs",
-      "lines": 149
+      "lines": 130
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/args.rs",
@@ -3560,7 +3568,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/sidecar.rs",
-      "lines": 49
+      "lines": 37
     },
     {
       "file": "crates/trit-wspace/examples/bert6/sidecar_layer.rs",
@@ -3916,7 +3924,11 @@
     },
     {
       "file": "crates/trit-wspace/src/gptq.rs",
-      "lines": 168
+      "lines": 117
+    },
+    {
+      "file": "crates/trit-wspace/src/gptq/inverse.rs",
+      "lines": 84
     },
     {
       "file": "crates/trit-wspace/src/learned.rs",
@@ -4197,6 +4209,10 @@
     {
       "file": "crates/trit-wspace/tests/gptq.rs",
       "lines": 172
+    },
+    {
+      "file": "crates/trit-wspace/tests/gptq_group.rs",
+      "lines": 148
     },
     {
       "file": "crates/trit-wspace/tests/gradient.rs",

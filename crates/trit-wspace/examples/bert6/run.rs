@@ -19,6 +19,8 @@ pub(crate) fn run() {
         activation: activation_arg,
         gptq,
     } = args::parse();
+    let gptq_dir = gptq.as_ref().map(|_| format!("{data_dir}/gptq"));
+    let gptq_group = gptq.unwrap_or(0);
     let (batch, seq, mask) = activations::read_mask(format!("{data_dir}/mask.u8")).expect("mask");
     let (input_rows, hidden, input) =
         activations::read_matrix(format!("{data_dir}/input.f32")).expect("input");
@@ -33,17 +35,7 @@ pub(crate) fn run() {
     let requested = (activation_arg != "all").then(|| ActivationMode::parse(&activation_arg));
     let f32_bert = Bert::load(
         &file,
-        BertConfig {
-            layers: 6,
-            hidden,
-            intermediate: hidden * 4,
-            heads,
-            eps,
-            quantize: false,
-            activation: ActivationMode::F32,
-            sidecar_rank: 0,
-            gptq_dir: None,
-        },
+        BertConfig::new(hidden, eps, false, ActivationMode::F32),
     );
     let (f32_out, _, f32_layers) = f32_bert.forward(&input, &mask, batch, seq, false);
     let f32_sts = metrics(
@@ -68,17 +60,7 @@ pub(crate) fn run() {
         }
         let mut quant = Bert::load(
             &file,
-            BertConfig {
-                layers: 6,
-                hidden,
-                intermediate: hidden * 4,
-                heads,
-                eps,
-                quantize: true,
-                activation: mode,
-                sidecar_rank: 0,
-                gptq_dir: gptq.then(|| format!("{data_dir}/gptq")),
-            },
+            BertConfig::new(hidden, eps, true, mode).with_gptq(gptq_dir.clone(), gptq_group),
         );
         if mode == ActivationMode::TernaryAllChannel {
             quant.set_scales(scales.clone());
@@ -110,7 +92,6 @@ pub(crate) fn run() {
             batch,
             seq,
             hidden,
-            heads,
             eps,
             &[0, 4, 8, 16],
         )

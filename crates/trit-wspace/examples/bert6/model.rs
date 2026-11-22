@@ -1,6 +1,8 @@
 //! MiniLM BERT 6 层的 f32 / 三值前向（只三值化线性权重，LN/GELU/softmax 保持 f32）。
+mod config;
 use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
 use crate::gelu::gelu;
+pub(crate) use config::BertConfig;
 mod loader;
 use crate::linear::Linear;
 pub(crate) struct BertLayer {
@@ -13,17 +15,6 @@ pub(crate) struct BertLayer {
     pub(crate) ffn_output: Linear,
     pub(crate) norm2: NormKind,
     pub(crate) activation: ActivationMode,
-}
-pub(crate) struct BertConfig {
-    pub(crate) layers: usize,
-    pub(crate) hidden: usize,
-    pub(crate) intermediate: usize,
-    pub(crate) heads: usize,
-    pub(crate) eps: f32,
-    pub(crate) quantize: bool,
-    pub(crate) activation: ActivationMode,
-    pub(crate) sidecar_rank: usize,
-    pub(crate) gptq_dir: Option<String>,
 }
 pub(crate) struct Bert {
     pub(crate) hidden: usize,
