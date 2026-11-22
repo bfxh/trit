@@ -2383,6 +2383,10 @@
       "lines": 5
     },
     {
+      "file": "crates/trit-orch/src/tritdb_backend/pgwire_options.rs",
+      "lines": 36
+    },
+    {
       "file": "crates/trit-orch/src/tritdb_backend/pgwire_serve.rs",
       "lines": 27
     },
