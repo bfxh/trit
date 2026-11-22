@@ -106,7 +106,7 @@ pub enum HammingDecode {
 /// q-ary Hamming 码（q=3）。支持 r=3（`[13,10,3]`）与 r=4（`[40,36,3]`）。
 ///
 /// 列 = PG(r-1,3) 全部射影点各取一个首非零归一代表元，末 r 列为单位向量，
-/// 即系统形 `H = [H_A | I_r]`；校验块 = `-(H_A · m)`（[`encode_into`]）。
+/// 即系统形 `H = [H_A | I_r]`；校验块 = `-(H_A · m)`（`encode_into`）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HammingCode {
     r: usize,
