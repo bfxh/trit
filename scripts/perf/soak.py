@@ -3,6 +3,9 @@
 
 用法：
     python scripts/perf/soak.py --duration 3600 --clients 8 --interval 30
+
+报告：请求数 / qps / p50 / p99 / p999 / p9999，RSS 峰值与斜率
+（末尾窗口 vs 前 10 分钟，KB/分钟）。
 """
 
 from __future__ import annotations
@@ -16,6 +19,33 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import pg_client as pg
+
+SLOPE_WINDOW_S = 600.0
+
+
+def mean(values: list[int]) -> float:
+    return sum(values) / len(values)
+
+
+def rss_slope(samples: list[int], interval_s: float) -> float | None:
+    """KB/分钟：末尾窗口均值相对前 10 分钟窗口均值的斜率。
+
+    窗口各取 `SLOPE_WINDOW_S / interval_s` 个样本（至少 2 个）；样本不足、
+    间隔非正或两窗口重叠时返回 None，不给出不可解释的数。
+    """
+    if interval_s <= 0 or len(samples) < 4:
+        return None
+    window = max(2, int(SLOPE_WINDOW_S / interval_s))
+    if len(samples) < window * 2:
+        window = len(samples) // 2
+    if window < 2:
+        return None
+    head = samples[:window]
+    tail = samples[-window:]
+    minutes = (len(samples) - window) * interval_s / 60.0
+    if minutes <= 0:
+        return None
+    return (mean(tail) - mean(head)) / minutes
 
 
 def main() -> int:
@@ -89,13 +119,19 @@ def main() -> int:
         print(
             f"  p50={pg.percentile(lat, 0.50) * 1000:.3f}ms "
             f"p99={pg.percentile(lat, 0.99) * 1000:.3f}ms "
-            f"p999={pg.percentile(lat, 0.999) * 1000:.3f}ms"
+            f"p999={pg.percentile(lat, 0.999) * 1000:.3f}ms "
+            f"p9999={pg.percentile(lat, 0.9999) * 1000:.3f}ms"
         )
     if samples:
         print(
             f"  RSS 采样 {len(samples)} 次: {samples[0]} KB -> {samples[-1]} KB, "
             f"峰值 {max(samples)} KB"
         )
+        slope = rss_slope(samples, args.interval)
+        if slope is None:
+            print("  RSS 斜率: 样本不足（需要两段各 >= 2 个采样）")
+        else:
+            print(f"  RSS 斜率: {slope:+.1f} KB/分钟（末尾窗口 vs 前 10 分钟）")
         print(f"  RSS 序列: {samples}")
     return 0 if stats["fail"] == 0 else 1
 

@@ -23,7 +23,7 @@ node --version
 |---|---|---|
 | `matrix.py` | 延迟分位 p50/p95/p99/**p999** + 写放大（WAL / SQLite） | `python scripts/perf/matrix.py --sizes 1000,10000 --queries 50000` |
 | `scale.py` | 并发阶梯（8/32/64 连接）QPS、分位、RSS | `python scripts/perf/scale.py --clients 8,32,64 --seconds 30` |
-| `soak.py` | 长稳 + RSS 采样（是否缓慢增长） | `python scripts/perf/soak.py --duration 3600 --clients 8 --interval 30` |
+| `soak.py` | 长稳 + RSS 采样（是否缓慢增长）、p9999、RSS 斜率（KB/分钟） | `python scripts/perf/soak.py --duration 3600 --clients 8 --interval 30` |
 | `deep.py` | 大 payload（默认 2000 行 × 10KB）+ 复杂 SQL 分位 | `python scripts/perf/deep.py --rows 2000 --payload 10000 --rounds 500` |
 | `node_client.js` | 非 Python 客户端（Node 手写 pg 协议） | `node scripts/perf/node_client.js --clients 8 --seconds 30` |
 
@@ -51,6 +51,7 @@ node --version
 | `node_client.js --clients 8` | 48,939 QPS、p999 0.596ms |
 | `soak.py --duration 120` | 397 万请求 0 失败，RSS 8876 → 8828 KB |
 | `soak.py --duration 3600` | **1.135 亿请求 0 失败**，qps 31,417；p50 0.241ms / p99 0.496ms / p999 0.726ms；RSS 8864 → 2800 KB（峰值 8864，120 次采样，无缓慢增长） |
+| `soak.py --duration 180` | 841 万请求 0 失败，qps 46,681；p50 0.079ms / p99 0.149ms / p999 0.426ms / **p9999 0.553ms**；RSS 8416 → 8368 KB，斜率 **-10.7 KB/分钟**（36 次采样） |
 | `deep.py --rows 2000 --payload 10000` | 点查 0.1ms；全表扫描 2–4ms |
 
 ## 已知边界（没测的别当测过）
@@ -59,5 +60,8 @@ node --version
 - **跨机网络**：只测了同机 LAN 地址（与 loopback 无显著差异），真实跨机未测。
 - **复杂 SQL**：只覆盖 `count(*)`、`WHERE`、`GROUP BY`、`ORDER BY`、`LIMIT`；
   没有 JOIN、子查询、窗口函数。
+- **RSS 斜率口径**：末尾窗口与最前 10 分钟窗口的均值差除以中间时长（KB/分钟）；
+  窗口取 `600 / --interval` 个样本，样本不足两段各 2 个时报告"样本不足"，不猜数。
+  `--duration 3600` 的旧记录只有 p999，p9999 与斜率需要重跑才有。
 - **小时级 RSS**：2026-11-23 已实测 `soak.py --duration 3600`（8 并发、3613s）：1.135 亿请求 0 失败，RSS 8864 → 2800 KB，无缓慢增长。
 - 服务端是**只读** pgwire：写语句返回 `0A000`，且不支持扩展查询协议（Parse/Bind/Execute）。
