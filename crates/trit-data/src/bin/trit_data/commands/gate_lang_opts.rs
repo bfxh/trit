@@ -1,6 +1,6 @@
 //! gate 的语言 / 内容开关。
 
-use trit_data::gate::Config;
+use trit_data::gate::{Config, LangPolicy};
 
 use crate::commands::die;
 
@@ -8,6 +8,21 @@ pub fn apply(cfg: &mut Config, flag: &str, argv: &[String], i: &mut usize) -> bo
     match flag {
         "--no-language" => {
             cfg.language_gate = false;
+            *i += 1;
+            true
+        }
+        "--lang-quality" => {
+            cfg.lang_policy = match argv.get(*i + 1).map(String::as_str) {
+                Some("off") => LangPolicy::Off,
+                Some("defer") => LangPolicy::Defer,
+                Some("strict") => LangPolicy::Strict,
+                _ => die("--lang-quality 需要 off|defer|strict"),
+            };
+            *i += 2;
+            true
+        }
+        "--no-lang-quality" => {
+            cfg.lang_policy = LangPolicy::Off;
             *i += 1;
             true
         }
@@ -21,33 +36,8 @@ pub fn apply(cfg: &mut Config, flag: &str, argv: &[String], i: &mut usize) -> bo
             *i += 2;
             true
         }
-        "--code" => {
-            cfg.code_filter = true;
-            *i += 1;
-            true
-        }
-        "--no-code" => {
-            cfg.code_filter = false;
-            *i += 1;
-            true
-        }
-        "--natural" => {
-            cfg.natural_filter = true;
-            *i += 1;
-            true
-        }
-        "--no-natural" => {
-            cfg.natural_filter = false;
-            *i += 1;
-            true
-        }
-        "--code-threshold" => {
-            cfg.code_threshold = argv
-                .get(*i + 1)
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_else(|| die("--code-threshold 需要小数"));
-            *i += 2;
-            true
+        "--code" | "--no-code" | "--natural" | "--no-natural" | "--code-threshold" => {
+            super::gate_lang_content_opts::apply(cfg, flag, argv, i)
         }
         _ => false,
     }

@@ -10,7 +10,7 @@ use super::json::{gate_json, reasons_json};
 use super::{created_unix, die, usage, write_lines};
 
 #[path = "gate_opts.rs"]
-mod gate_opts;
+pub(crate) mod gate_opts;
 
 pub fn run(argv: &[String]) {
     let opts = gate_opts::parse(argv);

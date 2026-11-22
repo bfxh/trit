@@ -968,7 +968,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/dispatch.rs",
-      "lines": 15
+      "lines": 5
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/format_opts.rs",
@@ -991,8 +991,12 @@
       "lines": 56
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/gate_lang_content_opts.rs",
+      "lines": 39
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_lang_opts.rs",
-      "lines": 65
+      "lines": 55
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_limit_opts.rs",
@@ -1111,8 +1115,20 @@
       "lines": 11
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/rewrite.rs",
+      "lines": 214
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/rewrite_opts.rs",
+      "lines": 53
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/route.rs",
+      "lines": 16
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/shared.rs",
-      "lines": 35
+      "lines": 34
     },
     {
       "file": "crates/trit-data/src/bits.rs",
@@ -1192,7 +1208,7 @@
     },
     {
       "file": "crates/trit-data/src/gate.rs",
-      "lines": 231
+      "lines": 214
     },
     {
       "file": "crates/trit-data/src/gate_bits.rs",
@@ -1207,12 +1223,20 @@
       "lines": 10
     },
     {
+      "file": "crates/trit-data/src/gate_keys.rs",
+      "lines": 79
+    },
+    {
+      "file": "crates/trit-data/src/gate_lang_tests.rs",
+      "lines": 61
+    },
+    {
       "file": "crates/trit-data/src/gate_quality.rs",
       "lines": 15
     },
     {
       "file": "crates/trit-data/src/gate_tests.rs",
-      "lines": 136
+      "lines": 132
     },
     {
       "file": "crates/trit-data/src/label_filter.rs",
@@ -1221,6 +1245,10 @@
     {
       "file": "crates/trit-data/src/lang_filter.rs",
       "lines": 80
+    },
+    {
+      "file": "crates/trit-data/src/lang_policy.rs",
+      "lines": 67
     },
     {
       "file": "crates/trit-data/src/language.rs",
@@ -1356,7 +1384,27 @@
     },
     {
       "file": "crates/trit-data/src/rewrite.rs",
-      "lines": 184
+      "lines": 73
+    },
+    {
+      "file": "crates/trit-data/src/rewrite/command.rs",
+      "lines": 149
+    },
+    {
+      "file": "crates/trit-data/src/rewrite/command_tests.rs",
+      "lines": 74
+    },
+    {
+      "file": "crates/trit-data/src/rewrite/fidelity.rs",
+      "lines": 123
+    },
+    {
+      "file": "crates/trit-data/src/rewrite/json.rs",
+      "lines": 71
+    },
+    {
+      "file": "crates/trit-data/src/rewrite/tests.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-data/src/schema.rs",
@@ -2160,7 +2208,7 @@
     },
     {
       "file": "crates/trit-learn/src/manifest_tests.rs",
-      "lines": 85
+      "lines": 83
     },
     {
       "file": "crates/trit-learn/src/metrics.rs",

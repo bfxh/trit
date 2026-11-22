@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added（trit-data M1 收口：语言质量策略接入 gate + `rewrite --cmd` 外部重写闭环）
+
+- `LangPolicy { Off, Defer, Strict }`（`lang_policy.rs`，CLI `gate --lang-quality` / `--no-lang-quality`）：
+  默认 `Defer` 保持历史行为（Bad→defer、Uncertain 放过）；`Strict` 下 Bad→硬门 reject
+  （`language_bad`）、Uncertain→软门 defer（`language_uncertain`）；`Off` 只保留语言 allow/deny。
+  语言分类提到硬门判空之前，短文本与长文本走同一口径。
+- `trit-data rewrite --jsonl <deferred.jsonl> --cmd "<外部重写器>" [--timeout 30] [--out <dir>] [gate 参数…]`：
+  stdin 传文本、stdout 收结果；超时 kill（`timeout: 超过 Ns`）、非 0 退出（`exit: <code> <stderr>`）、
+  空输出（`empty:`）与保真检查失败（`fidelity`）一律 fail-closed 保留原文进 `rewrite.failed.jsonl`。
+  产物 `rewritten.accepted/deferred/rejected.jsonl` + `rewrite.report.json`（输入 sha256、命令 argv、
+  `timeout_secs`、`lang_policy`、counts、reasons、manifest 内容级指纹）。
+- 保真口径改进：原文 <100 字用绝对上下限 `b >= a*0.5 && b <= a*4+40`，≥100 字仍用 0.5..=2.0 比例，
+  修掉"短 thought 加一句结构提示必被判截断"的误伤。
+- 读数（真实二进制，3 条 demo 记录）：`gate` 默认 accept 2 / defer 1（`language`）；
+  `--lang-quality strict` accept 0 / reject 1（`language_bad`）/ defer 2（`language_uncertain`）；
+  `--lang-quality off` accept 3。`rewrite` 对默认策略产出的 `deferred.jsonl`：
+  keep → accepted 1；`-Mode drop` → fidelity_failed 1（`length_ratio_ok=false`）；
+  `-Mode sleep` + `--timeout 1` → failed 1（`detail=timeout: 超过 1s`）。
+- 复算：`cargo test -p trit-data --lib`（87 条）、`cargo clippy -p trit-data --all-targets -- -D warnings`、
+  `python scripts/module_budget.py`、`python scripts/test_surface.py`。
+- 未接（不宣称）：500 条人工/LLM judge 标注语料未提供，软门 vs judge 的 Cohen's κ 与硬门一致率无对拍读数；
+  `compare` 已就绪，低于 κ≥0.6 不得宣称有效。见 `docs/reference/AGENT-DATA.md` §8。
+
 ### Security（trit-orch 完成闸、轨迹链与兼容性）
 
 - `Receipt`：新增 `provenance`（`HostMeasured`/`SelfReported`）、`nonce`、`command`、

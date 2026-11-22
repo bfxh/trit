@@ -60,13 +60,6 @@ fn defers_on_process_or_language_gaps() {
 }
 
 #[test]
-fn content_key_is_stable_and_order_sensitive() {
-    let a = td(OK);
-    let b = td(OK);
-    assert_eq!(content_key(&a), content_key(&b));
-    assert_eq!(content_key(&a).len(), 64);
-}
-#[test]
 fn defers_on_bad_language() {
     let bad = "重复句子。".repeat(80);
     let json = format!(
@@ -134,3 +127,6 @@ fn dedup_and_loop_can_be_disabled() {
     let v = evaluate(&td(looped), &cfg, &mut seen);
     assert!(!v.reasons.contains(&"loop"), "{:?}", v.reasons);
 }
+
+#[path = "gate_lang_tests.rs"]
+mod lang;

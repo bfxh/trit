@@ -140,10 +140,26 @@
   - `language.rs`：可复算文本特征与 `Good / Uncertain / Bad` 三值分类；
   - `rewrite.rs`：数字/URL/代码/引用锚点提取、保真检查（缺失 + 长度比）、重写后送回同一门；
   - `compare.rs`：多类 Cohen's κ；CLI `trit-data compare --a --b`。
-- **M1 未接**：`gate` 主决策仍用内嵌语言规则，尚未把 `LangClass` 接入
-  accept/defer 映射；CLI 尚无 `rewrite` 子命令（需要外部 rewriter 命令与超时/失败回退）。
-- **下一步**：把 `LangClass` 接进 gate（Uncertain → defer，Bad → 可配置 reject/defer），
-  实现 `rewrite --cmd`，并用 500 条人工/LLM judge 标注跑 κ 与硬门一致率。
+- **M1 已接（gate 三支映射，复算：`cargo test -p trit-data --lib`）**：
+  - `lang_policy.rs`：`LangPolicy { Off, Defer, Strict }`，默认 `Defer`（历史行为：Bad→defer、Uncertain 放过）；
+    `Strict` 下 Bad→硬门 reject（原因码 `language_bad`）、Uncertain→软门 defer（`language_uncertain`）；
+    `Off` 只保留语言 allow/deny 列表，不做质量分层。语言分类在硬门判空之前算，短文本也走同一口径。
+  - CLI：`trit-data gate --lang-quality off|defer|strict` 或 `--no-lang-quality`。
+  - 读数（3 条 demo 记录，真实二进制）：默认 → accept 2 / defer 1（`language`）；
+    `strict` → accept 0 / reject 1（`language_bad`）/ defer 2（`language_uncertain`）；`off` → accept 3。
+- **`rewrite --cmd` 已实现（复算：`trit-data rewrite ...`）**：
+  - `trit-data rewrite --jsonl <deferred.jsonl> --cmd "<外部重写器>" [--timeout 30] [--out <dir>] [gate 参数…]`：
+    stdin 传文本、stdout 收结果，三线程并行 + 截止时间轮询；超时 kill（`timeout: 超过 Ns`）、
+    非 0 退出（`exit: <code> <stderr>`）、空输出（`empty:`）一律 fail-closed 保留原文入 `rewrite.failed.jsonl`。
+  - 保真口径：短文本（<100 字）用绝对上下限 `b >= a*0.5 && b <= a*4+40`，长文本仍用 0.5..=2.0 比例；
+    缺锚点或长度不过 → `reason=fidelity`（`length_ratio_ok=false`）。
+  - 产物：`rewritten.accepted/deferred/rejected.jsonl` + `rewrite.failed.jsonl` + `rewrite.report.json`
+    （输入 sha256、命令 argv、超时、`lang_policy`、counts、reasons、manifest 内容级指纹）。
+  - 读数（输入为上面默认策略的 `deferred.jsonl`，1 条 Bad 轨迹）：keep → rewritten 1 / accepted 1（`rewrite.ok=true`、
+    `orig_sha256` 留存）；`-Mode drop` → fidelity_failed 1（`length_ratio_ok=false`）；`-Mode sleep` + `--timeout 1`
+    → failed 1（`reason=timeout`、`detail=timeout: 超过 1s`）。
+- **仍是缺口（不宣称）**：500 条人工/LLM judge 标注语料尚未提供，软门 vs judge 的 Cohen's κ 与硬门一致率
+  没有对拍读数；`compare` 工具已就绪，拿到语料即可跑，低于 κ≥0.6 不得宣称有效。
 
 - **M2 CLI 与数据卡（复算：`trit-data decontaminate ...`、`trit-data mix ...`）**：
   - `trit-data decontaminate --jsonl <in> --bench <bench.jsonl> [--ngram 13] [--threshold 0.2] [--out <dir>]`：

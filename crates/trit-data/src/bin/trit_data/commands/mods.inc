@@ -4,6 +4,8 @@ mod card;
 mod compare;
 #[path = "decontaminate.rs"]
 mod decontaminate;
+#[path = "route.rs"]
+mod route;
 #[path = "dispatch.rs"]
 mod dispatch;
 #[path = "gate.rs"]
@@ -46,5 +48,7 @@ mod repo_out;
 mod repo_show;
 #[path = "repo_stats.rs"]
 mod repo_stats;
+#[path = "rewrite.rs"]
+mod rewrite;
 #[path = "report_extra.rs"]
 mod report_extra;
