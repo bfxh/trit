@@ -40,7 +40,7 @@ fn handle_session(mut stream: TcpStream, sqlite: &Path) -> std::io::Result<()> {
     if !handshake(&mut stream)? {
         return Ok(());
     }
-    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY;
     let conn = match Connection::open_with_flags(sqlite, flags) {
         Ok(conn) => conn,
         Err(error) => {

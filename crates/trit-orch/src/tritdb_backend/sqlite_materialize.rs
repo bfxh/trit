@@ -11,12 +11,12 @@ use crate::Error;
 
 use super::TritDbTraceStore;
 
-const CREATE: &str = "CREATE TABLE IF NOT EXISTS trit_trace (
+const CREATE: &str = "PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS trit_trace (
     trace_id TEXT NOT NULL,
     seq INTEGER NOT NULL,
     chain_seq INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    actor TEXT NOT NULL,
+    kind TEXT NOT NULL, actor TEXT NOT NULL,
     observed_at INTEGER NOT NULL,
     recorded_at INTEGER NOT NULL,
     event_time INTEGER,
