@@ -3,28 +3,15 @@
 //! 单条 append 与 `append_step` 的 4 条事件都走这里：一次锁、一次 `write_all`、
 //! 一次 `sync_data`、一次水位与锚点更新。
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
 
 use trit_ops::encode_line;
 
 use crate::{Error, TraceEvent};
 
+use super::lock::{self, FileLock};
 use super::{TraceEventStore, legacy};
-
-static LOCKS: OnceLock<Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
-
-fn lock_for(path: &Path) -> Arc<Mutex<()>> {
-    let map = LOCKS.get_or_init(|| Mutex::new(BTreeMap::new()));
-    let mut guard = map.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    guard
-        .entry(path.to_path_buf())
-        .or_insert_with(|| Arc::new(Mutex::new(())))
-        .clone()
-}
 
 impl TraceEventStore {
     pub(super) fn append_batch(&self, events: &[TraceEvent]) -> Result<(), Error> {
@@ -40,8 +27,9 @@ impl TraceEventStore {
             }
         }
 
-        let lock = lock_for(&self.path);
+        let lock = lock::path_lock(&self.path);
         let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _file_lock = FileLock::acquire(&self.path)?;
 
         // 旧格式文件第一次被追加时先整体迁移，之后的链接才有前驱摘要。
         if legacy::has_content(&self.path) {
@@ -75,6 +63,8 @@ impl TraceEventStore {
             last_sealed = Some(sealed);
         }
 
+        let previous_len = fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
+        let previous_watermark = self.read_watermark()?;
         if let Some(parent) = self.path.parent()
             && !parent.as_os_str().is_empty()
         {
@@ -90,8 +80,7 @@ impl TraceEventStore {
         file.sync_data().map_err(|error| self.io(error))?;
 
         if let Some(last) = &last_sealed {
-            self.write_watermark(last.seq)?;
-            self.anchor_update(last)?;
+            self.commit_sidecars(&mut file, previous_len, previous_watermark, last)?;
         }
         Ok(())
     }

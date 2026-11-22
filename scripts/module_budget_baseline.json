@@ -2252,7 +2252,11 @@
     },
     {
       "file": "crates/trit-orch/src/trace/core.rs",
-      "lines": 389
+      "lines": 384
+    },
+    {
+      "file": "crates/trit-orch/src/trace/seal.rs",
+      "lines": 28
     },
     {
       "file": "crates/trit-orch/src/trace_invariants.rs",
@@ -2279,6 +2283,10 @@
       "lines": 206
     },
     {
+      "file": "crates/trit-orch/src/trace_store/commit.rs",
+      "lines": 59
+    },
+    {
       "file": "crates/trit-orch/src/trace_store/core.rs",
       "lines": 322
     },
@@ -2291,6 +2299,14 @@
       "lines": 22
     },
     {
+      "file": "crates/trit-orch/src/trace_store/lock.rs",
+      "lines": 105
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/recover.rs",
+      "lines": 33
+    },
+    {
       "file": "crates/trit-orch/src/trace_store/time.rs",
       "lines": 36
     },
@@ -2300,7 +2316,7 @@
     },
     {
       "file": "crates/trit-orch/src/trace_store/write.rs",
-      "lines": 98
+      "lines": 87
     },
     {
       "file": "crates/trit-orch/tests/admission.rs",
@@ -2499,6 +2515,10 @@
       "lines": 49
     },
     {
+      "file": "crates/trit-orch/tests/trace_recover.rs",
+      "lines": 40
+    },
+    {
       "file": "crates/trit-orch/tests/trace_stamp.rs",
       "lines": 31
     },
@@ -2509,6 +2529,10 @@
     {
       "file": "crates/trit-orch/tests/trace_storage_stability/core.rs",
       "lines": 363
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_tail_gap.rs",
+      "lines": 24
     },
     {
       "file": "crates/trit-orch/tests/trace_time.rs",

@@ -20,8 +20,14 @@ use crate::{Error, TraceStep};
 mod accessors;
 #[path = "anchor.rs"]
 mod anchor;
+#[path = "commit.rs"]
+mod commit;
 #[path = "legacy.rs"]
 mod legacy;
+#[path = "lock.rs"]
+mod lock;
+#[path = "recover.rs"]
+mod recover;
 #[path = "time.rs"]
 mod time;
 #[path = "watermark.rs"]
@@ -35,14 +41,8 @@ pub use legacy::events_from_step;
 /// ECC 帧行前缀（[`trit_ops::frame`] 的行格式）。
 const ECC_MAGIC: &str = "TRE1";
 
-/// 单个轨迹文件允许的最大字节数；超过即拒绝，避免不可信输入耗尽内存。
 pub const MAX_TRACE_BYTES: u64 = 256 * 1024 * 1024;
 
-/// 一行一个 `TraceEvent` 的追加式存储。
-///
-/// 单次 append 是**一次原子 write**：追加模式下 Windows（`FILE_APPEND_DATA`）与 POSIX
-/// （`O_APPEND`）都保证每次 write 挂到当前文件尾，多线程并发追加不会交错出半行——
-/// 但调用顺序不定义事件先后，重建日志时由 `TraceLog` 按 `seq` 归位。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceEventStore {
     path: PathBuf,

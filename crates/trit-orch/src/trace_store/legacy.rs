@@ -1,11 +1,7 @@
-//! 旧格式兼容：没有内容摘要的历史事件按 `seq` 迁移成一条真实链。
-//!
-//! 旧版本只写 payload，不带 `payload_hash` / `chain_seq`。升级后的读路径不能
-//! 把一个合法旧文件判成“篡改”，否则公共内核的所有历史轨迹都会打不开。迁移
-//! 只在**全文件都没有摘要**时发生；混合格式（部分有、部分无）仍 fail-closed。
+//! 旧格式兼容：没有内容摘要的历史事件按 `seq` 迁移成一条真实链；混合格式 fail-closed。
 
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use trit_ops::encode_line;
@@ -87,13 +83,19 @@ impl TraceEventStore {
                 max: MAX_TRACE_BYTES,
             });
         }
-        let text = match fs::read_to_string(&self.path) {
-            Ok(text) => text,
+        let file = match fs::File::open(&self.path) {
+            Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(error) => return Err(self.io(error)),
         };
+        let reader = BufReader::new(file);
         let mut events = Vec::new();
-        for (index, line) in text.lines().enumerate() {
+        for (index, line) in reader.lines().enumerate() {
+            let line = line.map_err(|error| Error::TraceParse {
+                path: self.path.display().to_string(),
+                line: index + 1,
+                message: error.to_string(),
+            })?;
             let line = line.trim();
             if line.is_empty() {
                 continue;
@@ -119,13 +121,11 @@ impl TraceEventStore {
     /// 把旧格式文件重写成按 seq 排序、带完整链的新格式。
     pub(super) fn migrate_legacy_file(&self) -> Result<(), Error> {
         let events = self.read_events()?;
-        // 迁移前先验锚点：把“有摘要的文件”清空 hash 不能靠 append 洗白成旧格式。
         self.anchor_verify(&events)?;
         let events = migrate_in_memory(events);
         self.rewrite_events(&events)
     }
 
-    /// 原子替换整份文件；保留 `.migrate.bak` 以便换入失败时回退。
     fn rewrite_events(&self, events: &[TraceEvent]) -> Result<(), Error> {
         let mut text = String::new();
         for event in events {

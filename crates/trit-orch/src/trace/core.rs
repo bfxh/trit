@@ -7,7 +7,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Ledger, Limits, Snapshot, TaskSpec, TraceStep, digest};
+use crate::{Error, Ledger, Limits, Snapshot, TaskSpec, TraceStep};
+
+#[path = "seal.rs"]
+mod seal;
 
 pub type TraceId = String;
 pub type SpanId = String;
@@ -199,29 +202,6 @@ impl TraceEvent {
         self.actor = actor;
         self
     }
-
-    /// 规范化 payload 字节：`payload_hash` / `prev_hash` 自身不参与计算。
-    pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut copy = self.clone();
-        copy.payload_hash.clear();
-        copy.prev_hash.clear();
-        serde_json::to_vec(&copy).expect("trace event is always serializable")
-    }
-
-    /// 当前内容对应的 SHA-256 十六进制摘要。
-    pub fn computed_payload_hash(&self) -> String {
-        digest::hex(&digest::sha256(&self.canonical_bytes()))
-    }
-
-    /// 链接到前一条并封存本事件。`prev_hash` 为空表示创世。
-    ///
-    /// 封存后任何字段（包括 payload）再被改动，`computed_payload_hash` 都会
-    /// 与 `payload_hash` 不一致；`TraceEventStore::load` 与 `check_trace` 都会
-    /// 把它判红（fail-closed）。
-    pub fn seal(&mut self, prev_hash: &str) {
-        self.prev_hash = prev_hash.to_owned();
-        self.payload_hash = self.computed_payload_hash();
-    }
 }
 
 /// 事件流折叠出的状态；`None` 表示该类完整状态事件尚未出现。
@@ -272,6 +252,7 @@ pub struct TraceLog {
     trace_id: TraceId,
     events: BTreeMap<u64, TraceEvent>,
     ids: BTreeSet<EventId>,
+    tail: Option<u64>,
 }
 
 impl TraceLog {
@@ -280,7 +261,14 @@ impl TraceLog {
             trace_id: trace_id.into(),
             events: BTreeMap::new(),
             ids: BTreeSet::new(),
+            tail: None,
         }
+    }
+
+    /// 声明本 trace 期望的最高 seq（例如来自 store 水位）；`gaps` 会报告尾部缺口。
+    pub fn with_tail(mut self, seq: u64) -> Self {
+        self.tail = Some(seq);
+        self
     }
 
     pub fn trace_id(&self) -> &str {
@@ -325,7 +313,8 @@ impl TraceLog {
         self.events.values()
     }
 
-    /// 缺失的 seq 闭区间。只报告内部与开头缺口，不猜末尾。
+    /// 缺失的 seq 闭区间。没有 `tail` 时只报告内部与开头缺口；有 `tail`
+    /// （例如 store 水位）时也报告尾部缺口。
     pub fn gaps(&self) -> Vec<(u64, u64)> {
         let mut gaps = Vec::new();
         let mut expected = 1;
@@ -334,6 +323,12 @@ impl TraceLog {
                 gaps.push((expected, seq - 1));
             }
             expected = seq.saturating_add(1);
+        }
+        if let Some(tail) = self.tail {
+            let max = self.events.keys().next_back().copied().unwrap_or(0);
+            if tail > max {
+                gaps.push((max.saturating_add(1), tail));
+            }
         }
         gaps
     }
