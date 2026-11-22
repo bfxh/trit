@@ -10,11 +10,12 @@ use std::io::Read;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
-    ContextFacts, Ledger, Plan, Progress, ReceiptState, Ternary, TraceStep, TraceStore,
-    admit_with_claim, builtin, compaction_gate, dispatch_ready, handoff_gate, handoff_obligation,
-    receipt_obligation, replay,
+    ContextFacts, Ledger, Plan, ReceiptState, Ternary, TraceStep, TraceStore, admit_with_claim,
+    builtin, compaction_gate, dispatch_ready, handoff_gate, handoff_obligation, receipt_obligation,
+    replay,
 };
 
+mod cli_finish;
 mod cli_inputs;
 use cli_inputs::*;
 
@@ -63,7 +64,6 @@ fn fail(error: &trit_orch::Error) -> ! {
     std::process::exit(1);
 }
 
-/// `select --capture <path>`：把这一步追加进轨迹文件（路径由宿主给，模型无法注入）。
 fn capture_path() -> Option<String> {
     let mut args = std::env::args().skip(2);
     while let Some(arg) = args.next() {
@@ -83,7 +83,7 @@ fn jsonl_args() -> (String, String) {
     )
 }
 
-fn parse<T: for<'de> Deserialize<'de>>(input: &str) -> Result<T, trit_orch::Error> {
+pub(crate) fn parse<T: for<'de> Deserialize<'de>>(input: &str) -> Result<T, trit_orch::Error> {
     serde_json::from_str(input).map_err(|error| trit_orch::Error::InputParse {
         message: error.to_string(),
     })
@@ -153,16 +153,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 "batch": batch,
             }))
         }
-        "finish" => {
-            let request: FinishInput = parse(input)?;
-            let progress = Progress::from_rounds(request.rounds);
-            let summary = progress.finish(&request.tasks, &request.snapshot)?;
-            Ok(json!({
-                "ok": true,
-                "summary": summary,
-                "brief": progress.brief(),
-            }))
-        }
+        "finish" => cli_finish::run(input),
         "shadow" => {
             let request: ShadowInput = parse(input)?;
             let policy = builtin(&request.policy).ok_or_else(|| trit_orch::Error::InputParse {

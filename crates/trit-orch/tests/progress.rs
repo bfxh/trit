@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-
+#![allow(deprecated)]
 use trit_orch::{
     CheckReport, CheckResult, Error, Phase, Plan, Progress, Resources, Snapshot, Ternary,
     TokenUsage,
@@ -142,7 +141,7 @@ fn missing_observation_counts_as_pending_not_complete() {
     let tasks = vec![task("a")];
     let state = Snapshot {
         revision: 1,
-        observations: BTreeMap::new(),
+        observations: std::collections::BTreeMap::new(),
     };
     assert_eq!(
         Progress::new().finish(&tasks, &state),

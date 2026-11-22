@@ -1,4 +1,6 @@
+mod arith;
 mod kind;
+pub(crate) use arith::add_tokens;
 
 use crate::Resources;
 
@@ -99,6 +101,12 @@ pub enum Error {
         inconclusive: usize,
         conflicts: usize,
     },
+    #[error(
+        "cannot report completion: {count} settled task(s) have no trusted executor receipt: {tasks:?}"
+    )]
+    UnattestedEvidence { count: usize, tasks: Vec<String> },
+    #[error("evidence for task {task} does not match its trusted executor receipt")]
+    ReceiptMismatch { task: String },
     #[error("ledger io at {path}: {message}")]
     LedgerIo { path: String, message: String },
     #[error("ledger parse: {message}")]
@@ -199,12 +207,4 @@ pub enum Error {
         from: String,
         to: String,
     },
-}
-
-pub(crate) fn add_tokens(left: u64, right: u64, task: Option<&str>) -> Result<u64, Error> {
-    left.checked_add(right).ok_or_else(|| Error::TokenOverflow {
-        task: task.map(str::to_owned),
-        left,
-        right,
-    })
 }

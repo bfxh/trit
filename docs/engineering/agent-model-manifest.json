@@ -1,0 +1,163 @@
+{
+  "schema": "trit.agent-model-manifest/v1",
+  "note": "模板，不是已接入清单。接入真实 provider 时替换 id、status 和可验收能力，保留 owner / modalities / must_not。",
+  "surfaces": {
+    "human": {
+      "audience": "human",
+      "entrypoints": ["README.md", "docs/panel", "release-notes"],
+      "order": [
+        "name",
+        "usage-and-purpose",
+        "role-owner-status-modalities",
+        "visual-comparisons",
+        "paper-method",
+        "results-and-limits",
+        "paper-video",
+        "raw-evidence-links"
+      ],
+      "rules": [
+        "all comparisons require an image, not only a table",
+        "paper-style designs require a recording; otherwise mark unrecorded",
+        "show current model/plugin status before causal analysis",
+        "no unlabeled numbers, no invented metrics, no raw dump on first screen"
+      ]
+    },
+    "agent": {
+      "audience": "agent",
+      "entrypoints": ["agent-model-manifest.json", "receipts", "GateReport"],
+      "rules": [
+        "stable ids and owners only; no personal accounts",
+        "MODALITIES and MUST_NOT are hard gates",
+        "missing or unknown fields fail closed",
+        "handoff and deferred items must be explicit"
+      ]
+    }
+  },
+  "agents": [
+    {
+      "id": "agent.trit",
+      "display_name": "Trit Agent",
+      "role": "kernel",
+      "owner": "agent.kernel",
+      "surface": "agent",
+      "status": "required",
+      "modalities": ["text"],
+      "capabilities": [
+        "task-brief",
+        "capability-gate",
+        "owner-routing",
+        "artifact-handoff",
+        "structured-notices"
+      ],
+      "must_not": [
+        "implement-backend-core-code-without-explicit-delegation",
+        "implement-frontend-panel-without-explicit-delegation",
+        "expand-user-intent"
+      ],
+      "deferred": []
+    }
+  ],
+  "models": [
+    {
+      "id": "model.backend.primary",
+      "display_name": "Backend Primary",
+      "role": "backend",
+      "owner": "model.backend.primary",
+      "surface": "agent",
+      "status": "required",
+      "eligible": true,
+      "modalities": ["text", "image"],
+      "capabilities": [
+        "complex-engineering",
+        "high-risk-engineering",
+        "mathematics",
+        "code",
+        "failure-path-tests",
+        "backend-artifacts"
+      ],
+      "must_not": [
+        "frontend-panel-implementation",
+        "human-visual-narrative",
+        "paper-layout",
+        "video-editing",
+        "invent-comparison-data"
+      ],
+      "deferred": ["frontend-collaboration"],
+      "handoff": ["model.frontend.collaborator", "human-panel-owner"]
+    },
+    {
+      "id": "model.frontend.collaborator",
+      "display_name": "Frontend Collaborator",
+      "role": "frontend",
+      "owner": "model.frontend.collaborator",
+      "surface": "human",
+      "status": "planned",
+      "eligible": false,
+      "modalities": ["text", "image", "video"],
+      "capabilities": [
+        "human-panel",
+        "visual-comparison",
+        "paper-figure",
+        "paper-layout",
+        "evidence-video",
+        "accessibility"
+      ],
+      "must_not": [
+        "kernel-semantics",
+        "backend-core-code",
+        "claim-results-without-data",
+        "fake-baseline"
+      ],
+      "deferred": []
+    }
+  ],
+  "plugins": [
+    {
+      "id": "plugin.perf-benchmark-ab-dashboard",
+      "display_name": "Performance A/B Dashboard",
+      "role": "plugin",
+      "owner": "model.frontend.collaborator",
+      "surface": "human",
+      "status": "reference",
+      "eligible": true,
+      "modalities": ["text", "image", "video"],
+      "inputs": [
+        "benchmark-json",
+        "baseline-metadata",
+        "current-metadata",
+        "raw-samples"
+      ],
+      "outputs": [
+        "brief-intro",
+        "paper-style-summary",
+        "comparison-figures",
+        "raw-csv-links"
+      ],
+      "must_not": [
+        "invent-metrics",
+        "hide-baseline",
+        "put-raw-tables-before-intro",
+        "claim-paper-grade-without-recording"
+      ],
+      "deferred": ["live-panel-implementation", "per-model-comparison"]
+    }
+  ],
+  "task_brief": {
+    "required_fields": [
+      "TASK",
+      "OWNER",
+      "SURFACE",
+      "DELIVERABLE",
+      "MUST",
+      "MUST NOT",
+      "DEFERRED",
+      "HANDOFF",
+      "EVIDENCE"
+    ],
+    "rules": [
+      "missing owner or must_not blocks execution",
+      "strict default applies to code quality, not scope expansion",
+      "if comparison is deferred, mark comparison pending instead of inventing data"
+    ]
+  }
+}

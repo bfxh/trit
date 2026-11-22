@@ -131,9 +131,11 @@
 | [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
 | [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；20/20 自测与诚实边界 |
 | [AGENT-MODELS.md](engineering/AGENT-MODELS.md) | 子智能体按角色选模型：`route/probe/call`、配置 schema、密钥只走环境变量、16 条路由自测、25 条派发与输出隔离自测、未落地项 |
+| [AGENT-MODEL-MANIFEST.md](engineering/AGENT-MODEL-MANIFEST.md) | 前端/后端模型与插件清单：人类面/智能体面分工、后端默认不接前端面板、多模态准入、论文式面板顺序与任务 brief；清单为模板，不是已接入声明 |
 | [AGENT-SANDBOX.md](engineering/AGENT-SANDBOX.md) | workspace 沙盒：复制输入 + policy 前置 + run_caps + 宿主指纹；37 条自测、40/40 并发矩阵、hostwrite 100/100、WSL+bwrap 内核隔离 11/11 与诚实边界 |
 | [AGENT-TEXT-GUARD.md](engineering/AGENT-TEXT-GUARD.md) | 外部文字污染门：不可信数据封套、隐形字符剥离、NFKD/多层编码扫描、派发输入 `prompt_guard` 与产物 `output_guard`、59/59 自测、81 例红队、90 例变形矩阵与自适应攻击边界 |
 | [AGENT-REDTEAM.md](engineering/AGENT-REDTEAM.md) | 入口红队：81 例文字语料（0 攻击漏检、0 overblock）、沙盒 junction/硬链接/忽略文件及本轮 reparse 路径洞、修复与残余边界 |
+| [AGENT-COMPLETION-PROVENANCE.md](engineering/AGENT-COMPLETION-PROVENANCE.md) | 编排完成回执：`finish` 默认要求 executor `Receipt`，伪造 `Passed` 报 `unattested_evidence`；CLI/库层回归与诚实边界 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |
