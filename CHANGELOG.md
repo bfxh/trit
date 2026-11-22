@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：STS 任务头 + 128 句——全三值激活 Pearson 0.25）
+
+- `export_bert6.py` 扩到 128 句 / 64 对，导出 `pairs.json`（人工分）；Rust 侧新增
+  `sts.rs`：mask mean pooling + L2 normalize + Pearson/Spearman。
+- 读数（STS test 64 对）：
+
+  | 模型 | rel_l2 | cosine | Pearson | Spearman |
+  |---|---:|---:|---:|---:|
+  | PyTorch f32 参照 | — | — | 0.9230 | 0.9243 |
+  | 三值线性权重（f32 激活） | 1.1660 | 0.4695 | 0.7330 | 0.7437 |
+  | ternary-ln | 1.3999 | 0.3583 | 0.5461 | 0.5310 |
+  | ternary-all | 2.5051 | 0.0275 | 0.2472 | 0.2494 |
+
+- 结论：仅三值化线性权重保留 STS 相关性 0.733；LN 也三值降到 0.546；全三值激活
+  只剩 0.247，基本失去句向量相关性。任务头方向与 hidden 读数一致。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
 ### Added（trit-wspace：全三值激活——LN 也三值，cosine 0.03）
 
 - `examples/bert6` 新增 `--activation-mode f32|ternary-ln|ternary-all`：

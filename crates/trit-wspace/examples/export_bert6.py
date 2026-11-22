@@ -51,11 +51,18 @@ def main():
 
     dataset = load_dataset("mteb/stsbenchmark-sts", split="test")
     texts = []
-    for first, second in zip(dataset["sentence1"], dataset["sentence2"]):
+    pairs = []
+    for index, (first, second) in enumerate(
+        zip(dataset["sentence1"], dataset["sentence2"])
+    ):
         texts.extend([first, second])
+        pairs.append(
+            {"a": 2 * index, "b": 2 * index + 1, "score": float(dataset["score"][index])}
+        )
         if len(texts) >= batch:
             break
     texts = texts[:batch]
+    pairs = pairs[: batch // 2]
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, local_files_only=True)
     model = AutoModel.from_pretrained(MODEL_ID, local_files_only=True)
@@ -108,6 +115,9 @@ def main():
             hidden.reshape(-1, hidden.shape[-1]).numpy(),
         )
 
+    with open(os.path.join(out_dir, "pairs.json"), "w", encoding="utf-8") as handle:
+        json.dump({"pairs": pairs}, handle, indent=2, ensure_ascii=False)
+
     manifest = {
         "model": MODEL_ID,
         "revision": getattr(config, "_commit_hash", None)
@@ -121,9 +131,10 @@ def main():
         "intermediate": config.intermediate_size,
         "hidden_act": config.hidden_act,
         "layer_norm_eps": config.layer_norm_eps,
+        "pairs": len(pairs),
         "files": {
             name: sha256(os.path.join(out_dir, name))
-            for name in ["input.f32", "reference.f32", "mask.u8"]
+            for name in ["input.f32", "reference.f32", "mask.u8", "pairs.json"]
             + [f"layer{index}.f32" for index in range(config.num_hidden_layers)]
         },
     }

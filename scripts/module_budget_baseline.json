@@ -3516,7 +3516,15 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/report.rs",
-      "lines": 111
+      "lines": 83
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/stats.rs",
+      "lines": 53
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sts.rs",
+      "lines": 149
     },
     {
       "file": "crates/trit-wspace/examples/bias_e2e/main.rs",

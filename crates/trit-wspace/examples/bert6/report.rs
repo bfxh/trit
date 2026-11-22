@@ -1,6 +1,7 @@
 //! 报告工具：误差汇总、输入分布统计、随机输入生成。
 
 use serde_json::{Value, json};
+use trit_wspace::activations;
 
 pub(crate) struct Acc {
     sq_err: f64,
@@ -60,52 +61,23 @@ pub(crate) fn compare(output: &[f32], reference: &[f32], mask: &[u8], hidden: us
     acc.finish()
 }
 
-pub(crate) fn input_stats(values: &[f32]) -> Value {
-    let n = values.len() as f64;
-    let mean = values.iter().map(|&v| f64::from(v)).sum::<f64>() / n;
-    let mut m2 = 0.0;
-    let mut m3 = 0.0;
-    let mut m4 = 0.0;
-    let mut max_abs = 0.0f64;
-    let mut zeros = 0usize;
-    for &value in values {
-        let x = f64::from(value);
-        let d = x - mean;
-        m2 += d * d;
-        m3 += d * d * d;
-        m4 += d * d * d * d;
-        max_abs = max_abs.max(x.abs());
-        if value == 0.0 {
-            zeros += 1;
+/// 逐层 f32 输出与导出的 `layerN.f32` 对拍；缺文件就停。
+pub(crate) fn layer_refs(
+    data_dir: &str,
+    layers: &[Vec<f32>],
+    mask: &[u8],
+    hidden: usize,
+) -> Vec<Value> {
+    let mut out = Vec::new();
+    for (index, values) in layers.iter().enumerate() {
+        let path = format!("{data_dir}/layer{index}.f32");
+        match activations::read_matrix(&path) {
+            Ok((rows, cols, reference)) => {
+                assert_eq!(rows * cols, values.len(), "layer{index} 形状不符");
+                out.push(compare(values, &reference, mask, hidden));
+            }
+            Err(_) => break,
         }
     }
-    let var = m2 / n;
-    let std = var.sqrt();
-    let kurtosis = if var > 0.0 {
-        (m4 / n) / (var * var) - 3.0
-    } else {
-        0.0
-    };
-    json!({
-        "mean": mean,
-        "std": std,
-        "max_abs": max_abs,
-        "skew": if var > 0.0 { (m3 / n) / var.powf(1.5) } else { 0.0 },
-        "kurtosis_excess": kurtosis,
-        "zero_frac": zeros as f64 / n,
-        "norm": (m2 + n * mean * mean).sqrt(),
-    })
-}
-
-pub(crate) fn random_like(values: &[f32], seed: u64) -> Vec<f32> {
-    let mut state = seed | 1;
-    values
-        .iter()
-        .map(|_| {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            ((state % 2001) as f32 / 1000.0) - 1.0
-        })
-        .collect()
+    out
 }
