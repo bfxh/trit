@@ -814,7 +814,7 @@
       "since": "2026-11-22",
       "tier": "fast",
       "added": "2026-11-22T14:00:00+08:00",
-      "run": "grep -q 'fn check_bipolar' crates/trit-dot/src/bipolar.rs && grep -q 'Result<i64, DotError>' crates/trit-dot/src/bipolar.rs && grep -q 'words.len()' crates/trit-dot/src/bipolar.rs",
+      "run": "grep -q 'fn check_bipolar' crates/trit-dot/src/bipolar.rs && grep -q 'Result<i64, DotError>' crates/trit-dot/src/bipolar.rs && grep -q 'checked_mul(BLOCK_BITS)' crates/trit-dot/src/bipolar.rs",
       "shell": "bash",
       "expect_exit": 0
     },
