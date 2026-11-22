@@ -248,7 +248,7 @@ impl ContentFilter {
             && !crate::code_quality::check_with(text, &self.code_quality_limits).ok;
         let edu_filtered = self.edu_min > 0.0 && crate::edu::score(text) < self.edu_min;
         let formats = crate::format::detect(text);
-        let format_filtered = formats.iter().any(|f| self.formats.denied(f));
+        let format_filtered = crate::format_filter::denied(&self.formats, &formats);
         ContentVerdict {
             content,
             style,

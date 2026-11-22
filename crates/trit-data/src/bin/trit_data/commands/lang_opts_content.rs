@@ -1,31 +1,19 @@
 use crate::commands::die;
-#[path = "quality_opts.rs"]
-mod quality_opts;
 use trit_data::content::ContentFilter;
+
+#[path = "format_opts.rs"]
+mod format_opts;
 #[path = "label_opts.rs"]
 mod label_opts;
+#[path = "quality_opts.rs"]
+mod quality_opts;
+
 pub fn apply(filter: &mut ContentFilter, flag: &str, argv: &[String], i: &mut usize) -> bool {
     match flag {
-        "--code" => {
-            filter.code = true;
-            *i += 1;
-            true
-        }
-        "--no-code" => {
-            filter.code = false;
-            *i += 1;
-            true
-        }
-        "--natural" => {
-            filter.natural = true;
-            *i += 1;
-            true
-        }
-        "--no-natural" => {
-            filter.natural = false;
-            *i += 1;
-            true
-        }
+        "--code" => set(&mut filter.code, true, i),
+        "--no-code" => set(&mut filter.code, false, i),
+        "--natural" => set(&mut filter.natural, true, i),
+        "--no-natural" => set(&mut filter.natural, false, i),
         "--code-threshold" => {
             filter.threshold = argv
                 .get(*i + 1)
@@ -34,6 +22,16 @@ pub fn apply(filter: &mut ContentFilter, flag: &str, argv: &[String], i: &mut us
             *i += 2;
             true
         }
-        _ => label_opts::apply(filter, flag, argv, i) || quality_opts::apply(filter, flag, argv, i),
+        _ => {
+            label_opts::apply(filter, flag, argv, i)
+                || quality_opts::apply(filter, flag, argv, i)
+                || format_opts::apply(filter, flag, argv, i)
+        }
     }
+}
+
+fn set(v: &mut bool, x: bool, i: &mut usize) -> bool {
+    *v = x;
+    *i += 1;
+    true
 }

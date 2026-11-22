@@ -21,3 +21,4 @@ pub mod code_langs;
 pub mod code_quality;
 pub mod edu;
 pub mod format;
+pub mod format_filter;
