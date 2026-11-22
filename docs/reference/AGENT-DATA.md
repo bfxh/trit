@@ -136,7 +136,7 @@
 
 - **M0 已落地**：`crates/trit-data` 的 schema、7 条硬门、6 条软门、三支决策、数据清单；
   CLI `trit-data gate`。
-- **M1 已落地（库 + 对拍）**：
+- **M1 库 + 对拍（复算：`cargo test -p trit-data --lib`）**：
   - `language.rs`：可复算文本特征与 `Good / Uncertain / Bad` 三值分类；
   - `rewrite.rs`：数字/URL/代码/引用锚点提取、保真检查（缺失 + 长度比）、重写后送回同一门；
   - `compare.rs`：多类 Cohen's κ；CLI `trit-data compare --a --b`。
@@ -145,7 +145,7 @@
 - **下一步**：把 `LangClass` 接进 gate（Uncertain → defer，Bad → 可配置 reject/defer），
   实现 `rewrite --cmd`，并用 500 条人工/LLM judge 标注跑 κ 与硬门一致率。
 
-- **M2 CLI 与数据卡已落地（2026-11-23）**：
+- **M2 CLI 与数据卡（复算：`trit-data decontaminate ...`、`trit-data mix ...`）**：
   - `trit-data decontaminate --jsonl <in> --bench <bench.jsonl> [--ngram 13] [--threshold 0.2] [--out <dir>]`：
     逐条写 `contamination {ratio, bench_index, contaminated}`，并输出报告；
   - `trit-data mix --jsonl <in> [--total 1000] [--weights code=0.7,writing=0.3] [--out <dir>]`：
@@ -153,7 +153,7 @@
   - `gate.report.json` 新增 `dataset_card`：sources / licenses / labels 分布、
     `provenance_missing`、`rewritten`。
 
-- **真实轨迹投影已落地（2026-11-23）**：
+- **真实轨迹投影（复算：`trit-data project --events ...`，端到端 2 条事件 → accept 1）**：
   - `trit-data project --events <trace.jsonl> --out <dir>`：把 `trit-orch` 的
     TraceEvent 按 `trace_id` 分组、按 `chain_seq` 排序，机械投影成轨迹 JSONL；
     事件 → step（actor/kind/payload），`finish_confirmed` → `verifier=trace / passed`，

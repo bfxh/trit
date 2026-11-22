@@ -52,6 +52,7 @@
 | [AGENT-DATA.md](reference/AGENT-DATA.md) | 智能体/语言数据质量门 M0–M2 与数据卡判据 |
 | [CODEBASE-DATA.md](reference/CODEBASE-DATA.md) | 大型代码库数据：RepoUnit、依赖图、仓库级质量门 |
 | [REPO-SCAN.md](reference/REPO-SCAN.md) | 本地代码库全量扫描读数：依赖图、测试关联、去重、上下文 |
+| [TRACE-BACKENDS.md](TRACE-BACKENDS.md) | 轨迹后端：JSONL 或 trit-db 的取舍与迁移 |
 
 ## results/ — 读数与结论
 

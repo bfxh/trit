@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "tritdb"), allow(dead_code))]
+#![cfg_attr(not(feature = "tritdb"), allow(dead_code, unused_imports))]
 use serde::Deserialize;
 use serde_json::{Value, json};
 #[cfg(feature = "tritdb")]
