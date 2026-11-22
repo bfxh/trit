@@ -2,6 +2,8 @@
 
 use trit_wspace::safetensors::{self, Weights};
 
+use crate::activation::{ActivationMode, NormKind, quantize_activation};
+
 pub(crate) struct F32Linear {
     pub(crate) rows: usize,
     pub(crate) cols: usize,
@@ -87,39 +89,6 @@ impl QuantLinear {
     }
 }
 
-pub(crate) struct Norm {
-    weight: Vec<f32>,
-    bias: Vec<f32>,
-    eps: f32,
-}
-
-impl Norm {
-    fn forward(&self, values: &mut [f32]) {
-        let n = values.len() as f32;
-        let mean = values.iter().map(|&v| f64::from(v)).sum::<f64>() / f64::from(n);
-        let var = values
-            .iter()
-            .map(|&v| {
-                let d = f64::from(v) - mean;
-                d * d
-            })
-            .sum::<f64>()
-            / f64::from(n);
-        let inv = 1.0 / (var + f64::from(self.eps)).sqrt();
-        for (index, value) in values.iter_mut().enumerate() {
-            *value =
-                (((f64::from(*value) - mean) * inv) as f32) * self.weight[index] + self.bias[index];
-        }
-    }
-
-    fn forward_seq(&self, values: &mut [f32], seq: usize) {
-        let width = self.weight.len();
-        for token in 0..seq {
-            self.forward(&mut values[token * width..(token + 1) * width]);
-        }
-    }
-}
-
 enum Linear {
     F32(F32Linear),
     Quant(QuantLinear),
@@ -139,10 +108,21 @@ pub(crate) struct BertLayer {
     key: Linear,
     value: Linear,
     output: Linear,
-    norm1: Norm,
+    norm1: NormKind,
     intermediate: Linear,
     ffn_output: Linear,
-    norm2: Norm,
+    norm2: NormKind,
+    activation: ActivationMode,
+}
+
+pub(crate) struct BertConfig {
+    pub(crate) layers: usize,
+    pub(crate) hidden: usize,
+    pub(crate) intermediate: usize,
+    pub(crate) heads: usize,
+    pub(crate) eps: f32,
+    pub(crate) quantize: bool,
+    pub(crate) activation: ActivationMode,
 }
 
 pub(crate) struct Bert {
@@ -153,15 +133,16 @@ pub(crate) struct Bert {
 }
 
 impl Bert {
-    pub(crate) fn load(
-        file: &str,
-        layers: usize,
-        hidden: usize,
-        intermediate: usize,
-        heads: usize,
-        eps: f32,
-        quantize: bool,
-    ) -> Self {
+    pub(crate) fn load(file: &str, config: BertConfig) -> Self {
+        let BertConfig {
+            layers,
+            hidden,
+            intermediate,
+            heads,
+            eps,
+            quantize,
+            activation,
+        } = config;
         let tensor = |name: &str| -> F32Linear {
             let weight = safetensors::read_tensor(file, name)
                 .unwrap_or_else(|e| panic!("读 {name} 失败：{e}"));
@@ -175,11 +156,11 @@ impl Bert {
                 bias,
             }
         };
-        let norm = |prefix: &str| -> Norm {
+        let norm = |prefix: &str| -> NormKind {
             let weight =
                 safetensors::read_vector(file, &format!("{prefix}.weight")).expect("LN weight");
             let bias = safetensors::read_vector(file, &format!("{prefix}.bias")).expect("LN bias");
-            Norm { weight, bias, eps }
+            NormKind::new(activation, weight, bias, eps)
         };
         let wrap = |linear: F32Linear| {
             if quantize {
@@ -200,6 +181,7 @@ impl Bert {
                 intermediate: wrap(tensor(&format!("{prefix}.intermediate.dense.weight"))),
                 ffn_output: wrap(tensor(&format!("{prefix}.output.dense.weight"))),
                 norm2: norm(&format!("{prefix}.output.LayerNorm")),
+                activation,
             });
         }
         let _ = intermediate;
@@ -301,7 +283,8 @@ impl BertLayer {
         for index in 0..seq * hidden {
             x[index] += projected[index];
         }
-        self.norm1.forward_seq(x, seq);
+        self.norm1
+            .forward_seq(x, seq, self.activation.ternary_activation());
 
         let intermediate = hidden * 4;
         let mut ffn = vec![0.0f32; seq * intermediate];
@@ -309,13 +292,17 @@ impl BertLayer {
         for value in &mut ffn {
             *value = gelu(*value);
         }
+        if self.activation.ternary_activation() {
+            quantize_activation(&mut ffn);
+        }
         let snapshot = ffn.clone();
         let mut out = vec![0.0f32; seq * hidden];
         self.ffn_output.forward_seq(&ffn, seq, &mut out);
         for index in 0..seq * hidden {
             x[index] += out[index];
         }
-        self.norm2.forward_seq(x, seq);
+        self.norm2
+            .forward_seq(x, seq, self.activation.ternary_activation());
         snapshot
     }
 }

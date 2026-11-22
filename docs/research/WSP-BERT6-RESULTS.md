@@ -67,10 +67,32 @@ output 段（FFN 的 GELU 后输入）统计：
 5. output 段真实输入的 layer0 重尾（99.6、max 8.83）仍然是最强的局部信号；它解释了
    第 0 层单段为什么对输入分布敏感，但不能外推到 6 层最终读数。
 
+## 3.5 全三值激活（LN 也三值）
+
+`--activation-mode` 三档：`f32`（LN/激活保持 f32，只三值化线性权重）、`ternary-ln`
+（LN 的 weight 三值化，bias 保 f32）、`ternary-all`（LN weight 三值化 + LN/GELU 输出
+符号三值化）。
+
+| 模式 | 真实 `rel_l2` | 真实 `cosine` | 随机 `rel_l2` | 随机 `cosine` |
+|---|---:|---:|---:|---:|
+| f32（仅线性权重） | 1.1594 | 0.4690 | 1.5488 | 0.3117 |
+| ternary-ln | 1.3647 | 0.3516 | 1.6907 | 0.2312 |
+| ternary-all | **2.4475** | **0.0345** | **3.0896** | **0.0382** |
+
+读法：
+
+1. 只把 LN 的 weight 三值化，真实 cosine 从 0.469 掉到 0.352（−25%）；
+2. 再把 LN/GELU 输出符号三值化，cosine 掉到 **0.03**，方向信息几乎全丢；
+3. **当前 absmean LN weight + sign 激活方案在 `ternary-all` 下真实 cosine 只有 0.0345**
+   （复算：`--activation-mode ternary-all`）。要保留方向，
+   需要 QAT/学习式 scale、混合精度（LN 输出保 f32）或残差侧车；
+4. 随机输入在三种模式下都比真实输入更差（rel_l2 高 25%–34%），方向与 §3 一致。
+
 ## 4. 未证栏
 
 - 只有 8 句、`8×64` token；不是大规模语料。
-- 只三值化线性权重；LN/GELU/softmax/残差保持 f32。全三值激活（含 LN）未做。
+- 只三值化线性权重；LN/GELU/softmax/残差保持 f32。全三值激活已做 `ternary-all`，
+  cosine 只有 0.03（见 §3.5）；没有 QAT / 学习式 scale / 混合精度。
 - 只测 absmean 逐行三值化；没有 GPTQ / per-group / 残差侧车。
 - 没有任务头（检索/分类），`cosine 0.47` 不能直接换算成任务掉点。
 - GELU 用 erf 近似；f32 对齐 6e-7，但严格逐位复现仍需与 PyTorch 用同一近似。
