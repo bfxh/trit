@@ -14,8 +14,12 @@ use std::sync::Mutex;
 
 use trit_ops::{FrameCode, FrameResult, decode_line, encode_line};
 
-use crate::trace::{TraceEvent, TraceEventKind, TraceLog, TracePayload};
+use crate::trace::{TraceEvent, TraceLog};
 use crate::{Error, TraceStep};
+
+#[path = "legacy.rs"]
+mod legacy;
+pub use legacy::events_from_step;
 
 /// ECC 帧行前缀（[`trit_ops::frame`] 的行格式）。
 const ECC_MAGIC: &str = "TRE1";
@@ -36,6 +40,7 @@ static APPEND_LOCK: Mutex<()> = Mutex::new(());
 pub struct TraceEventStore {
     path: PathBuf,
     ecc: Option<FrameCode>,
+    strict: bool,
 }
 
 impl TraceEventStore {
@@ -43,6 +48,7 @@ impl TraceEventStore {
         Self {
             path: path.into(),
             ecc: None,
+            strict: false,
         }
     }
 
@@ -57,7 +63,21 @@ impl TraceEventStore {
         Self {
             path: path.into(),
             ecc: Some(code),
+            strict: false,
         }
+    }
+
+    /// 严格模式：拒绝没有内容摘要的历史文件（默认构造会自动迁移旧格式）。
+    pub fn with_strict_hash(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            ecc: None,
+            strict: true,
+        }
+    }
+
+    pub fn strict(&self) -> bool {
+        self.strict
     }
 
     /// 当前 ECC 设置（`None` = 关闭）。
@@ -81,6 +101,13 @@ impl TraceEventStore {
         let _guard = APPEND_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // 旧格式文件第一次被追加时先整体迁移，之后的链接才有前驱摘要。
+        if legacy::has_content(&self.path) {
+            let (last_chain, _) = self.last_tail()?;
+            if last_chain == 0 {
+                self.migrate_legacy_file()?;
+            }
+        }
         let (last_chain, previous) = self.last_tail()?;
         let mut sealed = event.clone();
         sealed.chain_seq = last_chain.saturating_add(1);
@@ -116,59 +143,30 @@ impl TraceEventStore {
     }
 
     pub fn load(&self) -> Result<Vec<TraceEvent>, Error> {
-        let metadata = match fs::metadata(&self.path) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(self.io(error)),
-        };
-        if metadata.len() > MAX_TRACE_BYTES {
-            return Err(Error::TraceTooLarge {
-                path: self.path.display().to_string(),
-                size: metadata.len(),
-                max: MAX_TRACE_BYTES,
-            });
-        }
-        let text = match fs::read_to_string(&self.path) {
-            Ok(text) => text,
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(self.io(error)),
-        };
-        let mut events = Vec::new();
-        for (index, line) in text.lines().enumerate() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let payload = self.decode_stored_line(index, line)?;
-            let event: TraceEvent =
-                serde_json::from_str(&payload).map_err(|error| Error::TraceParse {
-                    path: self.path.display().to_string(),
-                    line: index + 1,
-                    message: error.to_string(),
-                })?;
-            if event.schema != TraceEvent::CURRENT_SCHEMA {
-                return Err(Error::TraceSchema {
-                    found: event.schema,
-                    expected: TraceEvent::CURRENT_SCHEMA,
-                });
-            }
-            // 存储层的每条事件都必须带内容摘要；空摘要只允许存在于未落盘的
-            // 内存事件里。否则“清空 hash”就是现成的绕过口。
+        let mut events = self.read_events()?;
+        let mut is_legacy = false;
+        for event in &events {
             if event.payload_hash.is_empty() {
-                return Err(Error::TraceHashMissing {
-                    path: self.path.display().to_string(),
-                    line: index + 1,
-                });
-            }
-            if event.payload_hash != event.computed_payload_hash() {
+                is_legacy = true;
+            } else if event.payload_hash != event.computed_payload_hash() {
                 return Err(Error::TraceHashMismatch {
                     path: self.path.display().to_string(),
-                    line: index + 1,
+                    line: 0,
                 });
             }
-            events.push(event);
         }
-        self.verify_chain(&events)?;
+        if is_legacy {
+            // 混合格式不是旧文件：一部分有摘要、一部分没有，按篡改拒绝。
+            if events.iter().any(|event| !event.payload_hash.is_empty()) || self.strict {
+                return Err(Error::TraceHashMissing {
+                    path: self.path.display().to_string(),
+                    line: 0,
+                });
+            }
+            events = legacy::migrate_in_memory(events);
+        } else {
+            self.verify_chain(&events)?;
+        }
         if let Some(watermark) = self.read_watermark()? {
             let found = events.iter().map(|event| event.seq).max().unwrap_or(0);
             if found < watermark {
@@ -378,57 +376,4 @@ impl TraceEventStore {
             reason: reason.to_string(),
         }
     }
-}
-
-/// 旧 `TraceStep` 的迁移路径：拆成 plan / snapshot / limits / ledger 四条事件。
-pub fn events_from_step(
-    trace_id: &str,
-    base_seq: u64,
-    step: &TraceStep,
-    observed_at: u64,
-) -> Vec<TraceEvent> {
-    let correlation = format!("legacy-step:{}", step.revision);
-    vec![
-        TraceEvent::new(
-            trace_id,
-            base_seq,
-            TraceEventKind::PlanPatched,
-            correlation.as_str(),
-            observed_at,
-        )
-        .with_payload(TracePayload::Plan {
-            revision: step.revision,
-            tasks: step.tasks.clone(),
-        }),
-        TraceEvent::new(
-            trace_id,
-            base_seq.saturating_add(1),
-            TraceEventKind::SnapshotCaptured,
-            correlation.as_str(),
-            observed_at,
-        )
-        .with_payload(TracePayload::Snapshot {
-            snapshot: step.snapshot.clone(),
-        }),
-        TraceEvent::new(
-            trace_id,
-            base_seq.saturating_add(2),
-            TraceEventKind::LimitsCaptured,
-            correlation.as_str(),
-            observed_at,
-        )
-        .with_payload(TracePayload::Limits {
-            limits: step.limits.clone(),
-        }),
-        TraceEvent::new(
-            trace_id,
-            base_seq.saturating_add(3),
-            TraceEventKind::LedgerCaptured,
-            correlation.as_str(),
-            observed_at,
-        )
-        .with_payload(TracePayload::Ledger {
-            ledger: step.ledger.clone(),
-        }),
-    ]
 }

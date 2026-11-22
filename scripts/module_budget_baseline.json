@@ -1996,7 +1996,11 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure.rs",
-      "lines": 301
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_finish/measure/core.rs",
+      "lines": 330
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/mod.rs",
@@ -2055,8 +2059,12 @@
       "lines": 3
     },
     {
+      "file": "crates/trit-orch/src/effects/persist/backup.rs",
+      "lines": 98
+    },
+    {
       "file": "crates/trit-orch/src/effects/persist/core.rs",
-      "lines": 153
+      "lines": 76
     },
     {
       "file": "crates/trit-orch/src/error.rs",
@@ -2152,7 +2160,7 @@
     },
     {
       "file": "crates/trit-orch/src/progress/core.rs",
-      "lines": 103
+      "lines": 102
     },
     {
       "file": "crates/trit-orch/src/progress/decisive.rs",
@@ -2232,7 +2240,11 @@
     },
     {
       "file": "crates/trit-orch/src/trace_invariants/core.rs",
-      "lines": 307
+      "lines": 269
+    },
+    {
+      "file": "crates/trit-orch/src/trace_invariants/core/hash.rs",
+      "lines": 53
     },
     {
       "file": "crates/trit-orch/src/trace_store.rs",
@@ -2240,7 +2252,11 @@
     },
     {
       "file": "crates/trit-orch/src/trace_store/core.rs",
-      "lines": 434
+      "lines": 379
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/legacy.rs",
+      "lines": 190
     },
     {
       "file": "crates/trit-orch/tests/admission.rs",
@@ -2301,6 +2317,10 @@
     {
       "file": "crates/trit-orch/tests/durable/core.rs",
       "lines": 334
+    },
+    {
+      "file": "crates/trit-orch/tests/durable_backup.rs",
+      "lines": 38
     },
     {
       "file": "crates/trit-orch/tests/effects.rs",
@@ -2413,6 +2433,14 @@
     {
       "file": "crates/trit-orch/tests/trace_invariants/core.rs",
       "lines": 568
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_legacy.rs",
+      "lines": 96
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_multi.rs",
+      "lines": 49
     },
     {
       "file": "crates/trit-orch/tests/trace_storage_stability.rs",

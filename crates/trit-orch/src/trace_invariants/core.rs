@@ -41,6 +41,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::trace::{TraceEvent, TraceLog, TracePayload};
 
+mod hash;
+
 /// 轨迹级不变量名。取值同时是 CI 日志里的稳定字符串，改名等于破坏对外契约。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -237,48 +239,8 @@ pub fn check(log: &TraceLog) -> TraceReport {
         }
     }
 
-    // 5. 防篡改链：存储层按 chain_seq（写入序）验证；纯内存事件按 seq。
-    let mut chain: Vec<&TraceEvent> = events.clone();
-    if chain.iter().all(|event| event.chain_seq > 0) {
-        chain.sort_by_key(|event| event.chain_seq);
-    }
-    let mut previous: Option<&TraceEvent> = None;
-    for event in &chain {
-        // 非空摘要必须与当前内容一致：只改 payload 不改 hash 会在这里被抓到。
-        // 空摘要保留给纯内存事件（未经过 TraceEventStore::seal）；存储层 load
-        // 对空摘要直接 fail-closed，不会让空链混进审计证据。
-        if !event.payload_hash.is_empty() && event.payload_hash != event.computed_payload_hash() {
-            report.violations.push(TraceViolation::at(
-                TraceInvariant::HashChainLinked,
-                Some(event.seq),
-                "payload_hash == SHA-256(canonical payload)",
-                format!("payload_hash={}", event.payload_hash),
-            ));
-        }
-        match previous {
-            None => {
-                if !event.prev_hash.is_empty() {
-                    report.violations.push(TraceViolation::at(
-                        TraceInvariant::HashChainLinked,
-                        Some(event.seq),
-                        "创世事件 prev_hash 为空",
-                        format!("prev_hash={}", event.prev_hash),
-                    ));
-                }
-            }
-            Some(prior) => {
-                if event.prev_hash != prior.payload_hash {
-                    report.violations.push(TraceViolation::at(
-                        TraceInvariant::HashChainLinked,
-                        Some(event.seq),
-                        format!("prev_hash == 前一条 payload_hash={}", prior.payload_hash),
-                        format!("prev_hash={}", event.prev_hash),
-                    ));
-                }
-            }
-        }
-        previous = Some(event);
-    }
+    // 5. 防篡改链：内容绑定 + 写入序链接（多 trace 缺口见 hash 模块）。
+    hash::check(&events, &mut report);
 
     // 6. 折叠对齐：手工重推，定位到最后一次 plan 与最后一次 snapshot。
     let mut plan: Option<(u64, u64)> = None;
