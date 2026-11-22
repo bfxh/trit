@@ -58,6 +58,7 @@ import uuid
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
 RUN_CAPS = os.path.join(TOOLS, "run_caps.py")
+import capacity_lease as capacity  # noqa: E402  (same-directory tool, stdlib only)
 POLICY = os.path.join(TOOLS, "policy.py")
 
 MAX_INPUT_BYTES = 64 * 1024 * 1024
@@ -383,13 +384,17 @@ def policy_check(work, command, profile, allow_network):
     return {"exit": proc.returncode, "lines": lines[-12:], "command": cmdstr}
 
 
-def run_capped(work, command, env, mem_mb, procs, seconds, max_output):
+def run_capped(work, command, env, mem_mb, procs, seconds, max_output,
+               lease_id="", capacity_dir=""):
     fd_out, out_path = tempfile.mkstemp(prefix="sandbox-out-", suffix=".log")
     fd_err, err_path = tempfile.mkstemp(prefix="sandbox-err-", suffix=".log")
     os.close(fd_out)
     os.close(fd_err)
     argv = [PY, RUN_CAPS, "--mem-mb", str(mem_mb), "--procs", str(procs),
-            "--seconds", str(seconds), "--", *command]
+            "--seconds", str(seconds)]
+    if lease_id:
+        argv += ["--lease", lease_id, "--capacity-dir", capacity_dir or ""]
+    argv += ["--", *command]
     t0 = time.time()
     code = None
     timed_out = False
@@ -523,7 +528,8 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
                 allow_network=False, allow_host_write=False, mem_mb=2048,
                 procs=64, seconds=1800, max_output=MAX_OUTPUT_BYTES, keep=False,
                 role="", model="", max_input_bytes=MAX_INPUT_BYTES,
-                max_input_files=MAX_INPUT_FILES, isolation="none", wsl_distro=""):
+                max_input_files=MAX_INPUT_FILES, isolation="none", wsl_distro="",
+                capacity_lease="", capacity_dir=""):
     root = os.path.abspath(root)
     work = os.path.abspath(work)
     receipt = {"tool": "sandbox-run", "role": role, "model": model,
@@ -531,6 +537,7 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
                "command_sha256": sha256_bytes(" ".join(command).encode("utf-8")),
                "profile": profile, "ok": False, "exit": 2, "verdict": "bad-invocation",
                "copies": [], "policy": None, "run": None, "env_removed": [],
+               "capacity": {"mode": "none"},
                "host": {"before": None, "after": None, "kind": "", "mutated": None},
                "isolation": {"mode": "none", "kernel": False}}
     if profile not in ("read-only", "workspace-write", "full"):
@@ -563,6 +570,44 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
     if not command:
         receipt["error"] = "empty command"
         return receipt
+    lease = None
+    if capacity_lease:
+        try:
+            loaded = capacity.load_lease(capacity_lease, capacity_dir)
+        except capacity.CapacityError as exc:
+            receipt["error"] = f"capacity lease {capacity_lease} not found ({exc})"
+            receipt["capacity"] = {"mode": "lease-not-found", "lease_id": capacity_lease}
+            return receipt
+        except Exception as exc:
+            receipt["error"] = f"capacity lease lookup failed: {type(exc).__name__}: {exc}"
+            receipt["capacity"] = {"mode": "lease-error", "lease_id": capacity_lease}
+            return receipt
+        if not loaded.get("ok"):
+            receipt["error"] = f"capacity lease {capacity_lease} not found"
+            receipt["capacity"] = {"mode": "lease-not-found", "lease_id": capacity_lease}
+            return receipt
+        lease = loaded["lease"]
+        deadline = int(lease.get("deadline_at") or lease["expires_at"])
+        if capacity.now_epoch() >= float(lease["expires_at"]):
+            receipt["error"] = f"capacity lease {capacity_lease} already expired"
+            receipt["capacity"] = {"mode": "lease-expired", "lease_id": capacity_lease,
+                                   "expires_at": lease["expires_at"]}
+            return receipt
+        if capacity.now_epoch() >= deadline:
+            receipt["error"] = f"capacity lease {capacity_lease} reached its hard deadline"
+            receipt["capacity"] = {"mode": "lease-deadline", "lease_id": capacity_lease,
+                                   "deadline_at": deadline}
+            return receipt
+        lease_mem = int(lease.get("resources", {}).get("memory_mb", 0))
+        if mem_mb > lease_mem:
+            receipt["error"] = (f"requested memory {mem_mb} MB exceeds lease "
+                                f"budget {lease_mem} MB")
+            receipt["capacity"] = {"mode": "lease-memory-exceeded",
+                                   "lease_id": capacity_lease,
+                                   "lease_memory_mb": lease_mem}
+            return receipt
+        receipt["capacity"] = {"mode": "lease", "lease": lease,
+                               "contract": capacity.contract(lease)}
     if os.path.exists(work):
         if not os.path.isdir(work):
             receipt["error"] = "workdir exists and is not a directory"
@@ -608,7 +653,18 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
         return receipt
     env, removed = scrub_env(os.environ)
     receipt["env_removed"] = removed
-    run = run_capped(work, run_command, env, mem_mb, procs, seconds, max_output)
+    heartbeat = None
+    if lease is not None:
+        lease_ttl = max(30, int(lease["expires_at"] - lease["created_at"]))
+        heartbeat = capacity.LeaseHeartbeat(lease["id"], lease_ttl,
+                                            capacity_dir).start()
+    try:
+        run = run_capped(work, run_command, env, mem_mb, procs, seconds, max_output,
+                         lease_id=(lease["id"] if lease else ""),
+                         capacity_dir=capacity_dir)
+    finally:
+        if heartbeat is not None:
+            receipt["capacity"]["heartbeat"] = heartbeat.stop()
     receipt["run"] = {k: run[k] for k in ("exit", "timed_out", "seconds", "stdout_truncated",
                                            "stderr_truncated", "stdout_bytes", "stderr_bytes",
                                            "stdout_sha256", "stderr_sha256")}
@@ -636,6 +692,10 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
         receipt.update({"verdict": "run-timeout" if run["timed_out"] else "run-failed",
                         "exit": int(run["exit"] or 2)})
         return receipt
+    hb = receipt["capacity"].get("heartbeat")
+    if hb and hb.get("status") != "ok":
+        receipt.update({"verdict": "capacity-heartbeat-failed", "exit": 1})
+        return receipt
     receipt.update({"ok": True, "verdict": "ok", "exit": 0})
     if not keep:
         shutil.rmtree(work, ignore_errors=True)
@@ -649,7 +709,8 @@ def parse_args(argv):
            "procs": 64, "seconds": 1800, "max_output": MAX_OUTPUT_BYTES,
            "keep": False, "receipt": "", "role": "", "model": "", "command": [],
            "self_test": False, "self_test_wsl": False,
-           "isolation": "none", "wsl_distro": ""}
+           "isolation": "none", "wsl_distro": "",
+           "capacity_lease": "", "capacity_dir": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -666,12 +727,14 @@ def parse_args(argv):
             continue
         name = a.lstrip("-").lower().replace("_", "").replace("-", "")
         if name in ("root", "work", "profile", "receipt", "role", "model", "copy",
-                    "copies", "isolation", "wsldistro"):
+                    "copies", "isolation", "wsldistro", "capacitylease", "capacitydir"):
             val = argv[i + 1] if i + 1 < len(argv) else ""
             if name in ("copy", "copies"):
                 out["copies"].append(val)
             else:
-                out["wsl_distro" if name == "wsldistro" else name] = val
+                key = {"wsldistro": "wsl_distro", "capacitylease": "capacity_lease",
+                       "capacitydir": "capacity_dir"}.get(name, name)
+                out[key] = val
             i += 2
             continue
         if name in ("allownetwork", "allowhostwrite", "keep"):
@@ -756,6 +819,32 @@ def self_test():
     rec, _ = case("memory", [PY, "-c", "x=bytearray(256*1024*1024)"], mem_mb=64)
     ck("memory cap kills allocation", rec["exit"] != 0 and rec["verdict"] == "run-failed",
        f"{rec['exit']}")
+
+    cstate = os.path.join(tmp, "capacity")
+    cp = capacity.probe(cpu_override=8, memory_override_mb=8192)
+    lease = capacity.reserve("sandbox", "sandbox-run", 1, 128, 60, "sandbox", cstate,
+                        probe_data=cp)
+    rec, _ = case("shared lease", [PY, "-c", "print('lease-ok')"],
+                  capacity_lease=lease["lease"]["id"], capacity_dir=cstate, mem_mb=128)
+    ck("sandbox attaches to a live lease", rec["ok"]
+       and rec["capacity"]["mode"] == "lease"
+       and "lease-ok" in rec["run"]["stdout_tail"], rec["verdict"])
+    rec, _ = case("lease memory over", [PY, "-c", "print('never')"],
+                  capacity_lease=lease["lease"]["id"], capacity_dir=cstate, mem_mb=256)
+    ck("sandbox refuses to exceed lease memory",
+       rec["verdict"] == "bad-invocation" and "exceeds lease budget" in rec.get("error", ""),
+       rec.get("error", ""))
+    rec, _ = case("lease missing", [PY, "-c", "print(1)"],
+                  capacity_lease="missing-lease", capacity_dir=cstate, mem_mb=64)
+    ck("missing lease fails closed", rec["verdict"] == "bad-invocation"
+       and "not found" in rec.get("error", ""), rec.get("error", ""))
+    expired = capacity.reserve("sandbox", "sandbox-run", 1, 64, 30, "old", cstate,
+                          probe_data=cp, now=100)
+    rec, _ = case("lease expired", [PY, "-c", "print(1)"],
+                  capacity_lease=expired["lease"]["id"], capacity_dir=cstate, mem_mb=64)
+    ck("expired lease fails closed", rec["verdict"] == "bad-invocation"
+       and "expired" in rec.get("error", ""), rec.get("error", ""))
+    capacity.release(lease["lease"]["id"], cstate)
 
     os.environ["TRIT_SANDBOX_SECRET"] = "must-not-leak"
     rec, _ = case("env secret", [PY, "-c",
@@ -1068,7 +1157,9 @@ def main(argv):
                       procs=args["procs"], seconds=args["seconds"],
                       max_output=args["max_output"], keep=args["keep"],
                       role=args["role"], model=args["model"],
-                      isolation=args["isolation"], wsl_distro=args["wsl_distro"])
+                      isolation=args["isolation"], wsl_distro=args["wsl_distro"],
+                      capacity_lease=args["capacity_lease"],
+                      capacity_dir=args["capacity_dir"])
     if args["receipt"]:
         write_receipt(args["receipt"], rec)
     if rec.get("run"):

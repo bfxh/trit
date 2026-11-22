@@ -457,6 +457,7 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
     # does not reserve anything) but strictly before any provider call.
     capacity_meta = {"mode": capacity_mode, "required": False}
     lease = None
+    lease_ttl = 0
     contract_text = ""
     lease_required = bool(routed) and (
         capacity_mode == "enforce"
@@ -470,12 +471,17 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
         waves = max(1, (len(routed) + workers - 1) // workers)
         ttl = min(cap.MAX_TTL, max(int(getattr(args, "capacity_ttl", 900)),
                                    timeout * waves + 120))
+        lease_ttl = ttl
         memory_mb = int(getattr(args, "capacity_memory_mb", 0)) or max(256, workers * 512)
+        gpu = int(getattr(args, "capacity_gpu", 0) or 0)
+        disk_mb = int(getattr(args, "capacity_disk_mb", 0) or 0)
+        io_units = int(getattr(args, "capacity_io_units", 0) or 0)
         try:
             decision = cap.reserve(
                 project, "subagent-dispatch", workers, memory_mb, ttl,
                 f"dispatch {len(routed)} task(s) parallel={workers}",
-                getattr(args, "capacity_dir", ""), dry_run=bool(args.dry_run))
+                getattr(args, "capacity_dir", ""), dry_run=bool(args.dry_run),
+                gpu=gpu, disk_mb=disk_mb, io_units=io_units)
         except Exception as exc:
             capacity_meta["error"] = f"{type(exc).__name__}: {exc}"
             return {"tool": "subagent-dispatch", "ok": False, "exit": 2,
@@ -491,7 +497,15 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
         capacity_meta["lease"] = lease
         capacity_meta["dry_run"] = bool(args.dry_run)
         capacity_meta["contract_sha256"] = sha256_bytes(contract_text.encode("utf-8"))
+    heartbeat = None
+    heartbeat_error = None
     release_error = None
+    if lease is not None and not args.dry_run:
+        # The dispatch can outlive the initial TTL; renew in the background,
+        # but the hard deadline still bounds the whole run.
+        heartbeat = cap.LeaseHeartbeat(
+            lease["id"], lease_ttl or 900,
+            getattr(args, "capacity_dir", "")).start()
     try:
         with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
             futures = {}
@@ -503,6 +517,11 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
             for fut in as_completed(futures):
                 tasks.append(fut.result())
     finally:
+        if heartbeat is not None:
+            heartbeat_doc = heartbeat.stop()
+            capacity_meta["heartbeat"] = heartbeat_doc
+            if heartbeat_doc.get("status") != "ok":
+                heartbeat_error = heartbeat_doc
         if lease is not None and not args.dry_run:
             try:
                 release = cap.release(lease["id"], getattr(args, "capacity_dir", ""),
@@ -517,10 +536,13 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
     # keep plan order, not id order, so the receipt reads like the input plan
     order = {t["id"]: i for i, t in enumerate(normalized["tasks"])}
     tasks.sort(key=lambda t: order.get(t["id"], 10**9))
-    ok = all(t["ok"] for t in tasks) and not route_errors and release_error is None
+    ok = (all(t["ok"] for t in tasks) and not route_errors
+          and release_error is None and heartbeat_error is None)
     models = sorted({t["model"] for t in tasks if t["model"]})
+    status = "ok" if ok else ("capacity-release-failed" if release_error else
+                              "capacity-heartbeat-failed" if heartbeat_error else "task-failed")
     doc = {"tool": "subagent-dispatch", "version": 1, "ok": ok, "exit": 0 if ok else 1,
-           "status": "ok" if ok else ("capacity-release-failed" if release_error else "task-failed"),
+           "status": status,
            "root": os.path.basename(os.path.abspath(root)),
            "parallel": args.parallel, "dry_run": args.dry_run, "guard": guard,
            "capacity": capacity_meta,
@@ -546,6 +568,9 @@ def make_parser():
     p.add_argument("--capacity", default="auto", choices=["off", "auto", "enforce"])
     p.add_argument("--capacity-ttl", type=int, default=900)
     p.add_argument("--capacity-memory-mb", type=int, default=0)
+    p.add_argument("--capacity-gpu", type=int, default=0)
+    p.add_argument("--capacity-disk-mb", type=int, default=0)
+    p.add_argument("--capacity-io-units", type=int, default=0)
     p.add_argument("--capacity-dir", default="")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--dry-run", action="store_true")

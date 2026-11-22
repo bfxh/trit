@@ -110,8 +110,9 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
 - 每个任务走同一份 `model_router` 配置选模型；选不到就只失败该任务（`no-model`），
   不静默换默认模型。不同任务可以落到不同模型，`--parallel N` 真并行。
 - 高并发前先过容量准入：默认 `--capacity auto` 在 `--parallel > 2` 时向
-  `tools/capacity_lease.py` 申请 worker/内存租约，失败整批拒绝；`--capacity enforce`
-  对任意并行数都申请。批准后把 worker/内存/deadline 写成 CAPACITY CONTRACT 注入 prompt。
+  `tools/capacity_lease.py` 申请 worker/内存/GPU/磁盘/IO 租约，失败整批拒绝；
+  `--capacity enforce` 对任意并行数都申请。批准后把五类预算/deadline 写成
+  CAPACITY CONTRACT 注入 prompt，运行中 heartbeat 续租、结束先停再释放。
   详见 `AGENT-CAPACITY.md`。
 - 每个任务在调用 provider 前默认过一次 `tools/context_guard.py`（`--guard enforce`）：
   prompt 被判 `quarantine` 时任务在调用前变成 `prompt-quarantined`，不落 `out`；

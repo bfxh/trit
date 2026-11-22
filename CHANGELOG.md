@@ -4,15 +4,26 @@
 
 ### Added（容量租约：硬件探针 + 跨项目协调 + provider 前准入）
 
-- `tools/capacity_lease.py`（stdlib only，新建）：`probe/status/reserve/release/renew/contract`；
-  逻辑核/load/可用内存/磁盘探针，共享租约目录（Windows byte-range / Unix flock 跨进程锁）
-  + TTL + 过期清理；坏租约 `capacity-unreadable` fail-closed；不把“读不出”当“没占用”。
+- `tools/capacity_lease.py`（stdlib only，新建）：`probe/status/reserve/release/renew/contract/load`；
+  逻辑核/load/可用内存、GPU 卡数、磁盘空闲、IO advisory slot 五类探针；共享租约目录
+  （Windows byte-range / Unix flock 跨进程锁）+ 可续租 TTL + 不可续租 `deadline_at`
+  + 过期清理；坏租约 `capacity-unreadable` fail-closed；不把“读不出”当“没占用”。
+- `LeaseHeartbeat`：后台线程按 `max(5, ttl//3)` 续租，只延长 `expires_at` 到
+  `min(now+ttl, deadline_at)`；到硬 deadline 返回 `deadline-exceeded`，长任务不会悄悄
+  变成无限预算。
 - `tools/subagent_dispatch.py`：`--capacity off|auto|enforce`，默认 `auto` 只在
-  `--parallel > 2` 启用；provider 调用前申请 `--parallel` 个 worker + 内存租约，失败整批
-  `capacity-refused`（exit 2），批准后把 worker/内存/deadline 写成 CAPACITY CONTRACT 注入
-  每条 prompt；`finally` 释放，释放失败标 `capacity-release-failed`（exit 1）。
-- `C047` 钉住 `capacity_lease.py --self-test`：14/14（含 8 进程抢 4 个租约、过期/坏租约、
-  dispatch 契约注入、占满时 provider 前拒绝）；`subagent_dispatch` 25/25 未回退，全量
+  `--parallel > 2` 启用；provider 调用前申请 worker/内存/GPU/磁盘/IO 租约，失败整批
+  `capacity-refused`（exit 2），批准后把五类预算/deadline 写成 CAPACITY CONTRACT 注入
+  每条 prompt；运行中启 heartbeat，`finally` 先停 heartbeat 再释放；释放失败标
+  `capacity-release-failed`、续租失败标 `capacity-heartbeat-failed`（均 exit 1）。
+- `tools/run_caps.py`：新增 `--lease ID --capacity-dir DIR`，运行前校验租约存在且未过期，
+  租约内存成为上限；显式更大的 `--mem-mb` 被拒绝，不静默超预算。
+- `tools/sandbox_run.py`：新增 `--capacity-lease/--capacity-dir`，在工作目录与 policy
+  之前加载租约，过期/缺失/内存超额 fail-closed；通过后把同一 lease id 传给 `run_caps`，
+  回执 `capacity` 段记录租约与契约。
+- `C047` 钉住 `capacity_lease.py --self-test`：20/20（含 8 进程抢 4 个租约、过期/坏租约、
+  GPU/磁盘/IO 预留与拒绝、heartbeat 不移动硬 deadline、dispatch 契约注入、占满时
+  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 41/41 未回退，全量
   `selftest` 仍 675/675。
 - 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
   `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。

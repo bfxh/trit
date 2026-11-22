@@ -594,7 +594,7 @@ policy/constraints 的活；这是**下一个模型读的东西**。条目内容
 | run_caps | 已放行命令的爆炸半径（内存/进程数/超时） | **不是安全边界**：不隔离文件系统/网络，防不了蓄意逃脱；POSIX 无 procs 帽等价物（如实说明） |
 | agent-verify | 调用者跳步：单一入口、闸门串联、回执可审计；run 段实际消耗自动上账（台账 + `cost:` 行）；同 root 并发链 fail-closed；journal-begin 判红不放 run；多智能体协调门（`--claim-gate` / `--handoff`）opt-in 且 false/unknown 都拒绝 | 回执写完之后的事它管不着；不传 `--budget-token` 就没有预算闸；tokens 是声明不是测量；compact 砍掉的是自由文本证据（审计要全量回执）；并行门只覆盖三个只读分类器，写面永远串行；认领账本是协调文件不是 ACL（能写它的人也能改它）；handoff 的 state_hash 只覆盖 `-Root` 下 git 看得见的东西，树外写入不在范围 |
 | model-router | 子智能体按角色选模型：只探测可用性、不发网络请求；配置拒绝密钥字面量；选不到可用模型 exit 2 | 不是质量评测器（可用 ≠ 聪明）；`call` 会真实计费；`command` provider 继承环境，不适合不可信提示词；没有 keychain/secret manager |
-| subagent-dispatch | 批量任务按 role 分模型、真并行；id/out 唯一、out 在 root 内、已存在默认拒绝；硬链接/符号链接/junction、大小写/尾点 denied component 全部拒绝；`budget_tokens<=0` 调用前拒绝，无 usage 的预算 fail-closed；默认 `--guard enforce` 在调用 provider 前隔离 `context_guard` 判 `quarantine` 的 prompt，并把高风险管理产物移到 `.quarantine`（原路径留空）；`--capacity auto / enforce` 在 provider 调用前向 capacity-lease 申请 worker/内存/deadline，失败整批拒绝并注入 CAPACITY CONTRACT | 不验证产出质量；预算 prompt 侧不可测，usage 只能事后核对；文字扫描是启发式，不能保证模型不被语义改写绕过；不自动套 `sandbox_run`，也不替代 `agent_verify`；二进制产物只抽可打印段与有限 zip/tar 文本成员，不做 OCR、不递归嵌套归档；容量租约是估算+协调文件，不是 cgroup，绕过派发器仍可超 |
+| subagent-dispatch | 批量任务按 role 分模型、真并行；id/out 唯一、out 在 root 内、已存在默认拒绝；硬链接/符号链接/junction、大小写/尾点 denied component 全部拒绝；`budget_tokens<=0` 调用前拒绝，无 usage 的预算 fail-closed；默认 `--guard enforce` 在调用 provider 前隔离 `context_guard` 判 `quarantine` 的 prompt，并把高风险管理产物移到 `.quarantine`（原路径留空）；`--capacity auto / enforce` 在 provider 调用前向 capacity-lease 申请 worker/内存/GPU/磁盘/IO 与硬 deadline，失败整批拒绝并注入 CAPACITY CONTRACT，运行中 heartbeat、结束先停再释放；`sandbox_run --capacity-lease`/`run_caps --lease` 共用同一租约 | 不验证产出质量；预算 prompt 侧不可测，usage 只能事后核对；文字扫描是启发式，不能保证模型不被语义改写绕过；不自动套 `sandbox_run`，也不替代 `agent_verify`；二进制产物只抽可打印段与有限 zip/tar 文本成员，不做 OCR、不递归嵌套归档；容量租约是估算+协调文件，不是 cgroup，绕过派发器仍可超；GPU 只按卡数、IO 只是 advisory slot |
 | capacity-lease | 本机容量准入：逻辑核/load/可用内存/磁盘探针；跨项目共享租约目录 + 跨进程锁 + TTL；`reserve/status/release/renew/contract`；损坏租约 fail-closed；派发器把 worker/内存/deadline 写进 prompt | **不是硬隔离**：租约靠调用方遵守，绕过 `subagent_dispatch` 直接调 provider 仍可超；只覆盖本机，不跨机/不防伪造；NUMA、容器配额、GPU 显存、磁盘 IO 未纳入；`auto` 仅在 `--parallel > 2` 启用，阈值是策略不是安全证明 |
 | context-guard | 外部文字入口卫生：剥离隐形/控制字符、HTML 实体/percent/`\u`/`\x` 多层解码、NFKD+组合标记清除、同形字折叠后扫描，并解 URL-safe/换行/嵌套四层/任意位置 base64 与分隔 hex/ROT13；带 nonce 的不可信数据封套；`quarantine` 默认 exit 1，`wrap` 明确标记隔离 | **不是模型对齐/训练去毒**；静态规则会被翻译、开放式语义改写绕过，base64 仍受 64 MiB 总预算限制（adaptive attack 可绕多数防御）；`clean` 只表示规则集没发现；不自动获得工具动作权限控制 |
 | sandbox-run | 子智能体命令的 workspace 边界：cwd 在宿主外、只复制声明输入（拒绝 reparse point/硬链接/大小写尾点）、policy 先拒、run_caps 兜底、宿主指纹事后判 `host-mutated`（exit 3，含 `.agent/.git/.qoder`、git index 语义哈希、构建缓存 name/size/mtime；64 MiB 总预算内大文件也内容哈希）；`-Isolation wsl` 走 WSL+bwrap 真内核命名空间（user/pid/net/ipc/uts/cgroup 全切、空根只 bind `/work`、`--cap-drop ALL`） | **默认模式不是内核隔离**：绝对路径/网络 socket/子进程/ctypes 可逃出；要真隔离必须显式 `-Isolation wsl`，且它只接受 Linux 命令、拒绝 Windows `.exe`/绝对路径参数；宿主写完改回 size/mtime 在构建缓存和超 64 MiB 预算时仍可逃；`-AllowNetwork` 在 WSL 模式不可用；POSIX 无 procs 帽等价物 |
@@ -657,13 +657,17 @@ python tools/model_router.py call --role docs --prompt-file <任务.md> \
 python tools/subagent_dispatch.py --plan <tasks.json> --parallel 3 \
   --receipt .agent/subagent-dispatch.json               # 按 role 分模型；默认 --guard enforce
 python tools/subagent_dispatch.py --plan <tasks.json> --parallel 4 \
-  --capacity enforce --capacity-memory-mb 2048 \
-  --receipt .agent/subagent-dispatch.json               # provider 前申请 4 worker 租约
-python tools/capacity_lease.py probe --json              # 本机 CPU/load/内存/磁盘
+  --capacity enforce --capacity-memory-mb 2048 --capacity-gpu 1 \
+  --capacity-disk-mb 4096 --capacity-io-units 4 \
+  --receipt .agent/subagent-dispatch.json               # provider 前申请五类资源租约
+python tools/capacity_lease.py probe --json              # 本机 CPU/load/内存/GPU/磁盘/IO
 python tools/capacity_lease.py status --json             # 跨项目租约与剩余容量
 python tools/capacity_lease.py reserve --project trit --agent main \
-  --workers 4 --memory-mb 2048 --ttl 900                # 手工占租约
+  --workers 4 --memory-mb 2048 --gpu 1 --disk-mb 4096 --io-units 4 \
+  --ttl 900                                              # 手工占五类资源租约
 python tools/capacity_lease.py release --id cap-...     # 收工释放
+python tools/sandbox_run.py -Root . -CapacityLease cap-... -CapacityDir <state> \
+  -CapsMemMb 1024 -- python tool.py                      # sandbox/run_caps 共用租约
 python tools/context_guard.py scan --file <外部文本> --json \
   --receipt .agent/context-guard.json                   # high → exit 1；不写原文件
 python tools/context_guard.py wrap --file <外部文本> --out <封套.md> \
@@ -734,7 +738,7 @@ AP1–AP3） 36 组：
 A–Z 26 组 + AA/AB/AC/AD/AE/AF/AH/AN/AO/AP 十组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
 AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条、
-AF 组编排链稳定性 46 条、AH 组术语契约 26 条、AN 组 3 条（模型路由 16/16、沙盒 37/37、
+AF 组编排链稳定性 46 条、AH 组术语契约 26 条、AN 组 3 条（模型路由 16/16、沙盒 41/41、
 40 沙盒矩阵 40/40）、AO 组 1 条（派发器 25/25）、AP 组 4 条（文字门 59/59、
 90 例 stress 90/90、malicious CLI 隔离/良性不误杀、81 例红队 0 攻击漏检），是新增的十个观测、审批、稳定性、
 概念契约与入口污染面）。护栏的断言全部

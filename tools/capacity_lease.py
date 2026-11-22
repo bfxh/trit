@@ -3,18 +3,21 @@
 
     python tools/capacity_lease.py probe --json
     python tools/capacity_lease.py reserve --project trit --agent main \
-        --workers 4 --memory-mb 2048 --ttl 900 --purpose "subagent dispatch"
+        --workers 4 --memory-mb 2048 --gpu 1 --disk-mb 4096 --io-units 4 \
+        --ttl 900 --purpose "subagent dispatch"
     python tools/capacity_lease.py status --json
     python tools/capacity_lease.py contract --id cap-...
+    python tools/capacity_lease.py renew --id cap-... --ttl 600
     python tools/capacity_lease.py release --id cap-...
     python tools/capacity_lease.py --self-test
 
 它解决什么：
-  1. 高并发不是“CL/CI 绿了就直接上”。先看这台机器现在还剩多少 CPU/内存；
-  2. 多项目共用一台机器时，租约是共享的：A 项目占住的核/内存，B 项目不能
+  1. 高并发不是“CL/CI 绿了就直接上”。先看这台机器现在还剩多少 CPU/内存/GPU/磁盘/IO；
+  2. 多项目共用一台机器时，租约是共享的：A 项目占住的资源，B 项目不能
      再按“整机空闲”去算；
-  3. 租约带 TTL 和 deadline，派发器把 deadline 写进子智能体的 prompt：
-     到点必须收工/交接，不许静默重试或临时加并发。
+  3. 租约带可续租 TTL 和不可续租的硬 deadline，派发器把 deadline 写进子智能体的
+     prompt：到点必须收工/交接，不许静默重试或临时加并发；
+  4. 长任务用 `LeaseHeartbeat` 续租，但 heartbeat 不会把硬 deadline 往后推。
 
 边界（诚实）：
   * 容量是本机探针的估算，不是 cgroup/Job Object 的硬隔离；租约靠调用方遵守，
@@ -34,10 +37,12 @@ import math
 import os
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -51,6 +56,7 @@ MIN_TTL = 30
 MAX_TTL = 86400
 DEFAULT_MEMORY_MB = 1024
 MEMORY_RESERVE_MB = 1024
+DEFAULT_IO_UNITS = 16
 LOCK_TIMEOUT = 5.0
 
 
@@ -179,6 +185,39 @@ def probe_memory_mb():
         raise CapacityError(f"cannot probe memory: {exc}") from exc
 
 
+def probe_gpu():
+    """GPU 不是可移植探针：`nvidia-smi` 能列出几张就报几张，否则报 0/unknown。
+
+    capacity 是准入估算，不是驱动层的硬隔离；请求 GPU > 0 时如果探针给 0，
+    reserve 会 fail-closed 拒绝，而不是假设“应该有”。
+    """
+    override = _env_int("TRIT_CAPACITY_ASSUME_GPU")
+    if override is not None:
+        return max(0, int(override)), "override"
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        return 0, "unavailable"
+    try:
+        result = subprocess.run(
+            [exe, "--query-gpu=name", "--format=csv,noheader"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 0, f"probe-failed:{type(exc).__name__}"
+    if result.returncode != 0:
+        return 0, f"probe-failed:exit={result.returncode}"
+    names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return len(names), "nvidia-smi"
+
+
+def probe_io_units():
+    override = _env_int("TRIT_CAPACITY_ASSUME_IO")
+    if override is not None:
+        return max(0, int(override)), "override"
+    return DEFAULT_IO_UNITS, "default-advisory"
+
+
 def probe_load1(cores):
     override = _env_float("TRIT_CAPACITY_ASSUME_LOAD1")
     if override is not None:
@@ -195,7 +234,8 @@ def probe_load1(cores):
         return None, "unknown"
 
 
-def probe(cpu_override=None, memory_override_mb=None):
+def probe(cpu_override=None, memory_override_mb=None, gpu_override=None,
+          disk_override_mb=None, io_override=None, state_dir=""):
     cores = max(1, int(os.cpu_count() or 1))
     assume_cpu = cpu_override if cpu_override is not None else _env_int("TRIT_CAPACITY_ASSUME_CPU")
     assume_mem = memory_override_mb if memory_override_mb is not None else _env_int(
@@ -210,9 +250,14 @@ def probe(cpu_override=None, memory_override_mb=None):
     cpu_workers = max(0, cores - 1 - int(math.floor(load1 or 0.0))) if load1 is not None else max(0, cores - 1)
     memory_reserve = min(MEMORY_RESERVE_MB, max(256, available_mb // 8))
     memory_capacity = max(0, available_mb - memory_reserve)
-    state = resolve_state_dir()
+    gpu_count, gpu_source = probe_gpu()
+    if gpu_override is not None:
+        gpu_count, gpu_source = max(0, int(gpu_override)), "override"
+    io_units, io_source = probe_io_units()
+    if io_override is not None:
+        io_units, io_source = max(0, int(io_override)), "override"
+    state = resolve_state_dir(state_dir)
     try:
-        import shutil
         disk_path = state
         while disk_path and not os.path.exists(disk_path):
             parent = os.path.dirname(disk_path)
@@ -222,6 +267,8 @@ def probe(cpu_override=None, memory_override_mb=None):
         disk_free_mb = shutil.disk_usage(disk_path).free // (1024 * 1024)
     except OSError:
         disk_free_mb = 0
+    if disk_override_mb is not None:
+        disk_free_mb = max(0, int(disk_override_mb))
     return {
         "host": socket.gethostname(),
         "platform": sys.platform,
@@ -240,11 +287,22 @@ def probe(cpu_override=None, memory_override_mb=None):
             "reserve_mb": memory_reserve,
             "capacity_mb": memory_capacity,
         },
+        "gpu": {"count": gpu_count, "source": gpu_source},
         "disk": {"free_mb": disk_free_mb},
-        "capacity": {"cpu_workers": cpu_workers, "memory_mb": memory_capacity},
+        "io": {"capacity_units": io_units, "source": io_source},
+        "capacity": {
+            "cpu_workers": cpu_workers,
+            "memory_mb": memory_capacity,
+            "gpu": gpu_count,
+            "disk_mb": disk_free_mb,
+            "io_units": io_units,
+        },
         "assumptions": [
             "cpu: one logical core reserved for the OS; subtract floor(load1) when loadavg exists",
             "memory: keep up to 1 GiB (or 1/8 available) for the OS/other work",
+            "gpu: nvidia-smi count, 0 when the probe is unavailable; a positive request is refused then",
+            "disk: free space of the lease state filesystem, not a scratch-volume reservation",
+            "io: advisory slots, not a syscall/bandwidth measurement",
             "not a cgroup/Job Object; leases are advisory until the caller enforces them",
         ],
     }
@@ -332,12 +390,22 @@ def _validate_lease(doc):
     for key in ("project", "host", "created_at", "expires_at", "heartbeat_at", "pid"):
         if key not in doc:
             raise CapacityError(f"lease missing {key}")
-    for key in ("cpu_workers", "memory_mb"):
-        value = doc.get("resources", {}).get(key)
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            raise CapacityError(f"lease resources.{key} must be a non-negative integer")
     if not isinstance(doc["expires_at"], int) or not isinstance(doc["created_at"], int):
         raise CapacityError("lease timestamps must be integers")
+    # 老租约没有 deadline_at / gpu / disk / io：补默认值而不是让 reader 崩。
+    if not isinstance(doc.get("deadline_at"), int):
+        doc["deadline_at"] = doc["expires_at"]
+    resources = doc.setdefault("resources", {})
+    for key in ("cpu_workers", "memory_mb"):
+        value = resources.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise CapacityError(f"lease resources.{key} must be a non-negative integer")
+    for key in ("gpu", "disk_mb", "io_units"):
+        if key not in resources:
+            resources[key] = 0
+        value = resources[key]
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise CapacityError(f"lease resources.{key} must be a non-negative integer")
     return doc
 
 
@@ -386,6 +454,32 @@ def _usage(active):
     return cpu, mem
 
 
+def _usage_resources(active):
+    used = {"cpu_workers": 0, "memory_mb": 0, "gpu": 0, "disk_mb": 0, "io_units": 0}
+    for lease in active:
+        resources = lease["resources"]
+        for key in used:
+            used[key] += int(resources.get(key) or 0)
+    return used
+
+
+def _capacity_resources(snapshot):
+    cap = snapshot["capacity"]
+    return {
+        "cpu_workers": int(cap["cpu_workers"]),
+        "memory_mb": int(cap["memory_mb"]),
+        "gpu": int(cap.get("gpu") or 0),
+        "disk_mb": int(cap["disk_mb"] if "disk_mb" in cap
+                        else snapshot.get("disk", {}).get("free_mb") or 0),
+        "io_units": int(cap.get("io_units") or 0),
+    }
+
+
+def _free_resources(snapshot, used):
+    cap = _capacity_resources(snapshot)
+    return {key: max(0, cap[key] - used.get(key, 0)) for key in cap}
+
+
 def _lease_id():
     return "cap-" + secrets.token_hex(12)
 
@@ -397,12 +491,14 @@ def _result(ok, status, **extra):
 
 
 def reserve(project, agent="", workers=1, memory_mb=DEFAULT_MEMORY_MB, ttl=DEFAULT_TTL,
-            purpose="", state_dir="", now=None, probe_data=None, dry_run=False):
+            purpose="", state_dir="", now=None, probe_data=None, dry_run=False,
+            gpu=0, disk_mb=0, io_units=0):
     project = _clean_label(project, "project", required=True)
     agent = _clean_label(agent, "agent")
     purpose = _clean_purpose(purpose)
     for name, value, minimum in (("workers", workers, 1), ("memory_mb", memory_mb, 1),
-                                 ("ttl", ttl, MIN_TTL)):
+                                 ("ttl", ttl, MIN_TTL), ("gpu", gpu, 0),
+                                 ("disk_mb", disk_mb, 0), ("io_units", io_units, 0)):
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             return _result(False, "bad-request", reason=f"{name} must be an integer >= {minimum}")
     if ttl > MAX_TTL:
@@ -415,17 +511,16 @@ def reserve(project, agent="", workers=1, memory_mb=DEFAULT_MEMORY_MB, ttl=DEFAU
             return _result(False, "capacity-unreadable",
                            reason="one or more lease files are unreadable; refusing rather than guessing",
                            invalid=invalid, expired=expired)
-        snapshot = probe_data or probe()
-        used_cpu, used_mem = _usage(active)
-        free_cpu = max(0, snapshot["capacity"]["cpu_workers"] - used_cpu)
-        free_mem = max(0, snapshot["capacity"]["memory_mb"] - used_mem)
-        if workers > free_cpu or memory_mb > free_mem:
+        snapshot = probe_data or probe(state_dir=state)
+        used = _usage_resources(active)
+        free = _free_resources(snapshot, used)
+        request = {"cpu_workers": workers, "memory_mb": memory_mb,
+                   "gpu": gpu, "disk_mb": disk_mb, "io_units": io_units}
+        over = [key for key, value in request.items() if value > free[key]]
+        if over:
             return _result(False, "capacity-refused",
-                           reason=(f"requested {workers} workers / {memory_mb} MB, "
-                                   f"available {free_cpu} workers / {free_mem} MB"),
-                           requested={"workers": workers, "memory_mb": memory_mb},
-                           available={"cpu_workers": free_cpu, "memory_mb": free_mem},
-                           used={"cpu_workers": used_cpu, "memory_mb": used_mem},
+                           reason=(f"requested {request}, available {free}; over: {', '.join(over)}"),
+                           requested=request, available=free, used=used,
                            capacity=snapshot, leases=active, expired=expired)
         lease = {
             "version": LEASE_VERSION,
@@ -439,18 +534,16 @@ def reserve(project, agent="", workers=1, memory_mb=DEFAULT_MEMORY_MB, ttl=DEFAU
             "created_at": now,
             "heartbeat_at": now,
             "expires_at": now + ttl,
+            "deadline_at": now + ttl,
             "state": "active",
-            "resources": {"cpu_workers": workers, "memory_mb": memory_mb},
+            "resources": request,
         }
         if not dry_run:
             _write_lease(state, lease)
+        after = {key: free[key] - request[key] for key in free}
         return _result(True, "granted" if not dry_run else "dry-run", lease=lease,
-                       requested={"workers": workers, "memory_mb": memory_mb},
-                       available_before={"cpu_workers": free_cpu, "memory_mb": free_mem},
-                       available_after={"cpu_workers": free_cpu - workers,
-                                        "memory_mb": free_mem - memory_mb},
-                       used={"cpu_workers": used_cpu, "memory_mb": used_mem},
-                       capacity=snapshot, leases=active, expired=expired,
+                       requested=request, available_before=free, available_after=after,
+                       used=used, capacity=snapshot, leases=active, expired=expired,
                        state_dir=state, dry_run=bool(dry_run))
 
 
@@ -462,6 +555,16 @@ def _find(state, lease_id):
     if not os.path.isfile(path):
         return None, path
     return _read_lease(path), path
+
+
+def load_lease(lease_id, state_dir=""):
+    """Public read-only lookup for tools that attach to an existing lease."""
+    state = resolve_state_dir(state_dir)
+    with BrokerLock(state):
+        lease, _ = _find(state, lease_id)
+        if lease is None:
+            return _result(False, "not-found", lease_id=lease_id, state_dir=state)
+        return _result(True, "active", lease=lease, state_dir=state)
 
 
 def release(lease_id, state_dir="", owner="", now=None):
@@ -492,12 +595,71 @@ def renew(lease_id, ttl=DEFAULT_TTL, state_dir="", now=None):
         lease, path = _find(state, lease_id)
         if lease is None:
             return _result(False, "not-found", lease_id=lease_id)
+        deadline = int(lease.get("deadline_at") or lease["expires_at"])
         if lease["expires_at"] <= now:
             return _result(False, "expired", lease=lease)
+        if now >= deadline:
+            return _result(False, "deadline-exceeded", lease=lease,
+                           reason="hard deadline reached; do not extend the lease")
         lease["heartbeat_at"] = now
-        lease["expires_at"] = now + ttl
+        # TTL 可以续，但硬 deadline 不能续：heartbeat 只防“未完成就被别人抢走”，
+        # 不把长时间运行偷偷变成无限预算。
+        lease["expires_at"] = min(now + ttl, deadline)
+        lease["deadline_at"] = deadline
         _write_lease(state, lease)
         return _result(True, "renewed", lease=lease, state_dir=state)
+
+
+class LeaseHeartbeat:
+    """后台续租线程：只在 deadline 前续 TTL，不延长硬 deadline。
+
+    daemon=True，父进程退出不会把续租线程留成孤儿；stop() 必须 join，避免
+    释放租约后线程又把同一 id 复活（release 后 renew 会 not-found）。
+    """
+
+    def __init__(self, lease_id, ttl=DEFAULT_TTL, state_dir="", interval=None):
+        self.lease_id = lease_id
+        self.ttl = int(ttl)
+        self.state_dir = state_dir
+        self.interval = max(1, int(interval or max(5, self.ttl // 3)))
+        self.renewals = 0
+        self.last = None
+        self.error = None
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _run(self):
+        while not self._stop.wait(self.interval):
+            try:
+                result = renew(self.lease_id, self.ttl, self.state_dir)
+            except Exception as exc:
+                self.error = {"status": "heartbeat-error", "error": str(exc)}
+                return
+            if not result.get("ok"):
+                self.error = result
+                return
+            self.renewals += 1
+            self.last = result
+
+    def start(self):
+        if self._thread is not None:
+            return self
+        self._thread = threading.Thread(target=self._run, name="capacity-heartbeat",
+                                        daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(1, self.interval + 1))
+        return {
+            "status": "ok" if self.error is None else "failed",
+            "interval_s": self.interval,
+            "renewals": self.renewals,
+            "error": self.error,
+            "last": self.last,
+        }
 
 
 def status(state_dir="", now=None):
@@ -505,21 +667,21 @@ def status(state_dir="", now=None):
     now = now_epoch() if now is None else int(now)
     with BrokerLock(state):
         active, invalid, expired = _scan(state, now)
-        snapshot = probe()
-        used_cpu, used_mem = _usage(active)
+        snapshot = probe(state_dir=state)
+        used = _usage_resources(active)
+        free = _free_resources(snapshot, used)
         by_project = {}
         for lease in active:
             key = lease["project"]
-            row = by_project.setdefault(key, {"cpu_workers": 0, "memory_mb": 0, "leases": 0})
-            row["cpu_workers"] += lease["resources"]["cpu_workers"]
-            row["memory_mb"] += lease["resources"]["memory_mb"]
+            row = by_project.setdefault(key, {"cpu_workers": 0, "memory_mb": 0,
+                                              "gpu": 0, "disk_mb": 0, "io_units": 0,
+                                              "leases": 0})
+            for resource in ("cpu_workers", "memory_mb", "gpu", "disk_mb", "io_units"):
+                row[resource] += int(lease["resources"].get(resource) or 0)
             row["leases"] += 1
         return _result(not invalid, "ok" if not invalid else "capacity-unreadable",
-                       state_dir=state, now=now,
-                       capacity=snapshot,
-                       used={"cpu_workers": used_cpu, "memory_mb": used_mem},
-                       free={"cpu_workers": max(0, snapshot["capacity"]["cpu_workers"] - used_cpu),
-                             "memory_mb": max(0, snapshot["capacity"]["memory_mb"] - used_mem)},
+                       state_dir=state, now=now, capacity=snapshot,
+                       used=used, free=free,
                        leases=active, by_project=by_project,
                        invalid=invalid, expired=expired)
 
@@ -528,8 +690,11 @@ def contract(lease, now=None):
     if isinstance(lease, str):
         raise CapacityError("contract expects a lease object, not an id; call find first")
     now = now_epoch() if now is None else int(now)
+    deadline = int(lease.get("deadline_at") or lease["expires_at"])
     if lease["expires_at"] <= now:
         raise CapacityError("lease expired; renew before handing it to a subagent")
+    if deadline <= now:
+        raise CapacityError("lease deadline reached; do not hand it to a subagent")
     resources = lease["resources"]
     return (
         "CAPACITY CONTRACT (enforced by the parent before this task starts)\n"
@@ -537,7 +702,10 @@ def contract(lease, now=None):
         f"- project / agent: {lease['project']} / {lease.get('agent') or '-'}\n"
         f"- workers: at most {resources['cpu_workers']}; do not spawn extra threads or processes\n"
         f"- memory: at most {resources['memory_mb']} MB\n"
-        f"- deadline: {iso_utc(lease['expires_at'])} (UTC); finish or hand off before it\n"
+        f"- gpu: at most {resources.get('gpu', 0)} device slot(s)\n"
+        f"- disk: at most {resources.get('disk_mb', 0)} MB of scratch/free-space budget\n"
+        f"- io: at most {resources.get('io_units', 0)} advisory IO slot(s)\n"
+        f"- deadline: {iso_utc(deadline)} (UTC); finish or hand off before it\n"
         "- shared host: other projects may hold leases; stay inside this slice\n"
         "- if blocked or unable to finish, stop and report; do not silently retry or raise concurrency\n"
         "- do not write outside the task's declared output paths"
@@ -552,7 +720,8 @@ def _print(doc, as_json=False):
     if status_name in ("granted", "dry-run"):
         lease = doc["lease"]
         print(f"capacity: {status_name} {lease['id']} workers={lease['resources']['cpu_workers']} "
-              f"memory={lease['resources']['memory_mb']}MB deadline={iso_utc(lease['expires_at'])}")
+              f"memory={lease['resources']['memory_mb']}MB gpu={lease['resources'].get('gpu', 0)} "
+              f"deadline={iso_utc(lease.get('deadline_at') or lease['expires_at'])}")
     elif status_name == "ok":
         cap = doc["capacity"]["capacity"]
         print(f"capacity: host={doc['capacity']['host']} cpu={doc['used']['cpu_workers']}/"
@@ -590,6 +759,9 @@ def _build_parser():
     reserve_p.add_argument("--agent", default="")
     reserve_p.add_argument("--workers", type=int, default=1)
     reserve_p.add_argument("--memory-mb", type=int, default=DEFAULT_MEMORY_MB)
+    reserve_p.add_argument("--gpu", type=int, default=0)
+    reserve_p.add_argument("--disk-mb", type=int, default=0)
+    reserve_p.add_argument("--io-units", type=int, default=0)
     reserve_p.add_argument("--ttl", type=int, default=DEFAULT_TTL)
     reserve_p.add_argument("--purpose", default="")
     reserve_p.add_argument("--dry-run", action="store_true")
@@ -618,7 +790,7 @@ def main(argv=None):
         return 2
     try:
         if args.cmd == "probe":
-            doc = probe()
+            doc = probe(state_dir=args.state_dir)
             doc["status"] = "ok"
             _print(doc, args.json)
             return 0
@@ -628,7 +800,8 @@ def main(argv=None):
             return 0 if doc["ok"] else 2
         if args.cmd == "reserve":
             doc = reserve(args.project, args.agent, args.workers, args.memory_mb,
-                          args.ttl, args.purpose, args.state_dir, dry_run=args.dry_run)
+                          args.ttl, args.purpose, args.state_dir, dry_run=args.dry_run,
+                          gpu=args.gpu, disk_mb=args.disk_mb, io_units=args.io_units)
             _print(doc, args.json)
             return 0 if doc["ok"] else 2
         if args.cmd == "release":
@@ -663,9 +836,13 @@ def self_test():
     tmp = tempfile.mkdtemp(prefix="capacity-self-")
     state = os.path.join(tmp, "state")
     try:
-        p = probe(cpu_override=8, memory_override_mb=8192)
+        p = probe(cpu_override=8, memory_override_mb=8192, gpu_override=2,
+                  disk_override_mb=4096, io_override=8)
         _check(checks, "probe has capacity", p["capacity"]["cpu_workers"] == 7
                and p["capacity"]["memory_mb"] > 0, str(p["capacity"]))
+        _check(checks, "probe has gpu/disk/io dimensions",
+               p["capacity"]["gpu"] == 2 and p["capacity"]["disk_mb"] == 4096
+               and p["capacity"]["io_units"] == 8, str(p["capacity"]))
         r1 = reserve("project-a", "main", 3, 1024, 60, "first", state,
                      now=1000, probe_data=p)
         _check(checks, "reserve grants", r1["ok"] and r1["status"] == "granted"
@@ -681,7 +858,20 @@ def self_test():
         text = contract(r1["lease"], now=1000)
         _check(checks, "contract carries budget and deadline",
                "at most 3" in text and "memory: at most 1024 MB" in text
-               and "deadline:" in text and "do not spawn extra threads" in text)
+               and "gpu: at most" in text and "disk: at most" in text
+               and "io: at most" in text and "deadline:" in text
+               and "do not spawn extra threads" in text)
+        res = reserve("project-res", "worker", 1, 512, 60, "resources", state,
+                      now=1000, probe_data=p, gpu=1, disk_mb=1024, io_units=2)
+        _check(checks, "gpu/disk/io are leased", res["ok"]
+               and res["lease"]["resources"]["gpu"] == 1
+               and res["lease"]["resources"]["disk_mb"] == 1024
+               and res["lease"]["resources"]["io_units"] == 2, str(res))
+        res_over = reserve("project-res2", "worker", 1, 512, 60, "gpu-over", state,
+                           now=1000, probe_data=p, gpu=2)
+        _check(checks, "gpu over-request refused", not res_over["ok"]
+               and res_over["status"] == "capacity-refused", str(res_over))
+        release(res["lease"]["id"], state)
         rel = release(r1["lease"]["id"], state, owner="project-a")
         _check(checks, "release works", rel["ok"] and rel["status"] == "released")
         r3 = reserve("project-c", "worker", 1, 512, 60, "after-release", state,
@@ -701,6 +891,39 @@ def self_test():
         _check(checks, "unreadable lease fails closed",
                not r4["ok"] and r4["status"] == "capacity-unreadable", str(r4))
         os.remove(os.path.join(_lease_dir(state), "bad.json"))
+
+        # Heartbeat: renews the TTL while the task runs, but never moves the
+        # hard deadline.
+        hstate = os.path.join(tmp, "heartbeat")
+        hnow = now_epoch()
+        hres = reserve("project-hb", "worker", 1, 512, 30, "heartbeat", hstate,
+                       now=hnow, probe_data=p)
+        deadline = hres["lease"]["deadline_at"]
+        hb = LeaseHeartbeat(hres["lease"]["id"], 30, hstate, interval=1).start()
+        time.sleep(1.2)
+        hb_doc = hb.stop()
+        loaded = load_lease(hres["lease"]["id"], hstate)
+        _check(checks, "heartbeat renews without moving deadline",
+               hb_doc["renewals"] >= 1 and loaded["ok"]
+               and loaded["lease"]["deadline_at"] == deadline
+               and loaded["lease"]["expires_at"] <= deadline, str(hb_doc))
+        hb_again = hb.stop()
+        _check(checks, "heartbeat stop is idempotent", hb_again["status"] == "ok"
+               and hb_again["renewals"] == hb_doc["renewals"], str(hb_again))
+        release(hres["lease"]["id"], hstate)
+
+        # A TTL shorter than the hard deadline can expire first; contract must
+        # refuse the expired lease even while the deadline is still in the future.
+        sstate = os.path.join(tmp, "short-ttl")
+        short = reserve("project-short", "worker", 1, 512, 60, "short-ttl", sstate,
+                        now=1000, probe_data=p)
+        renewed = renew(short["lease"]["id"], 30, sstate, now=1020)
+        try:
+            contract(renewed["lease"], now=1055)
+            short_expired = False
+        except CapacityError:
+            short_expired = True
+        _check(checks, "contract refuses expired TTL before deadline", short_expired)
 
         # Cross-process lock: 8 processes each ask 1 worker / 512 MB against a
         # fake 4-worker / 2560 MB host; exactly 4 may win.

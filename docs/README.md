@@ -129,7 +129,7 @@
 | [BUILD-PERF.md](engineering/BUILD-PERF.md) | 构建性能：本机 / CI 实测、缓存边界、采纳与未采纳项 |
 | [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×）、simchain 第七面接入（AI30–AI35）、ledger/registry 成本实测与不扩缓存的理由、Rust / 三进制 / 四进制评估与剩余待办 |
 | [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
-| [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存探针、共享租约目录 + 跨进程锁 + TTL、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT；14/14 自测与诚实边界 |
+| [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；20/20 自测与诚实边界 |
 | [AGENT-MODELS.md](engineering/AGENT-MODELS.md) | 子智能体按角色选模型：`route/probe/call`、配置 schema、密钥只走环境变量、16 条路由自测、25 条派发与输出隔离自测、未落地项 |
 | [AGENT-SANDBOX.md](engineering/AGENT-SANDBOX.md) | workspace 沙盒：复制输入 + policy 前置 + run_caps + 宿主指纹；37 条自测、40/40 并发矩阵、hostwrite 100/100、WSL+bwrap 内核隔离 11/11 与诚实边界 |
 | [AGENT-TEXT-GUARD.md](engineering/AGENT-TEXT-GUARD.md) | 外部文字污染门：不可信数据封套、隐形字符剥离、NFKD/多层编码扫描、派发输入 `prompt_guard` 与产物 `output_guard`、59/59 自测、81 例红队、90 例变形矩阵与自适应攻击边界 |

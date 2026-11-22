@@ -4,7 +4,7 @@
 > 一句话：**默认 cwd 在宿主外的空 workdir，只复制声明输入，policy 先拒，caps 兜底，
 > 跑完用宿主指纹证明有没有写坏；需要真隔离时显式走 `-Isolation wsl` 的 WSL+bwrap 内核命名空间。**
 > 边界：默认模式不是内核沙盒；`-Isolation wsl` 只接受 Linux 命令。见 §4。
-> 状态：**已跑通**（`tools/sandbox_run.py --self-test` 37/37；`sandbox_matrix.py --cases 40` 40/40；
+> 状态：**已跑通**（`tools/sandbox_run.py --self-test` 41/41；`sandbox_matrix.py --cases 40` 40/40；
 > `hostwrite` 独立宿主 100 例 100/100；WSL+bwrap 隔离回归 **11/11**）。红队已补的洞见
 > `AGENT-REDTEAM.md`：workdir junction、硬链接输入、git-ignored 宿主写、
 > 根内 junction 复制、`.agent/.git` 排除目录、`.git/index` 与构建缓存漏检、
@@ -31,7 +31,9 @@ workspace 沙盒补的就是这个空档：把 cwd 移出宿主、只给声明�
    `-Work` 也先 `realpath`，junction/符号链接指向别处直接拒绝。
 3. `policy.py -Profile <profile> -Root <workdir> -Command <命令>` 预分类；policy 拒绝就**不运行**。
 4. `run_caps.py` 套内核资源帽（mem/procs/seconds）；stdin 接 DEVNULL；环境只留白名单，
-   密钥类变量摘掉（回执只记变量名，不记值）。
+   密钥类变量摘掉（回执只记变量名，不记值）。显式 `-CapacityLease <id>` 时，
+   `run_caps --lease` 会先校验租约仍存活、租约内存是上限，再执行；过期/缺失/超额
+   fail-closed。
 4b. 显式 `-Isolation wsl` 时，命令改由 `wsl.exe` 里的 `bwrap` 执行：
    `--unshare-all`（user/pid/net/ipc/uts/cgroup）、空根只读 bind `/usr /bin /lib
    /lib64 /sbin /etc /usr/local`、只把 workdir bind 到 `/work`、`--cap-drop ALL`、
@@ -65,6 +67,10 @@ python tools/sandbox_run.py -Root . -Copy draft.md -AllowHostWrite `
 python tools/sandbox_run.py -Root . -Copy script.py -Isolation wsl `
   -WslDistro Ubuntu-24.04 -- python3 script.py
 python tools/sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04
+
+# 接父智能体批准的容量租约：sandbox_run 与 run_caps 共用同一份 lease
+python tools/sandbox_run.py -Root . -CapacityLease cap-... -CapacityDir <state> `
+  -CapsMemMb 1024 -- python tool.py
 
 # 批量对抗：40 个独立沙盒并发
 python tools/sandbox_matrix.py --cases 40 --parallel 8 --json

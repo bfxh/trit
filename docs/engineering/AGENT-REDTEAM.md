@@ -90,7 +90,7 @@
   `.git/index.lock` 退出 manifest，改为运行前后存在性检查 + 0.35 秒稳定窗口；
 - `MAX_HOST_FILES=200000`，超限判 `host-unprovable`，不再把看不见的忽略文件当没发生。
 
-`tools/sandbox_run.py --self-test` 37/37；`sandbox_matrix --cases 40 --parallel 8`
+`tools/sandbox_run.py --self-test` 41/41；`sandbox_matrix --cases 40 --parallel 8`
 40/40、hostwrite 5/5、host_violations=0。
 
 ## 3. 子智能体边界：硬链接/符号链接/junction/大小写
@@ -123,7 +123,7 @@ python tools/context_guard.py --self-test          # 59/59
 python tools/guard_redteam.py                     # 81 例，attack_misses=0
 python tools/context_guard.py --stress --json     # 90/90
 python tools/subagent_dispatch.py --self-test     # 25/25
-python tools/sandbox_run.py --self-test           # 37/37
+python tools/sandbox_run.py --self-test           # 41/41
 python tools/sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04  # 11/11
 python tools/sandbox_matrix.py --cases 40 --parallel 8 --json  # 40/40
 pwsh tools/selftest.ps1                           # 675/675
