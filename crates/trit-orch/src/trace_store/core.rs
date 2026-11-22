@@ -123,13 +123,13 @@ impl TraceEventStore {
     pub fn load(&self) -> Result<Vec<TraceEvent>, Error> {
         let mut events = self.read_events()?;
         let mut is_legacy = false;
-        for event in &events {
+        for (index, event) in events.iter().enumerate() {
             if event.payload_hash.is_empty() {
                 is_legacy = true;
             } else if event.payload_hash != event.computed_payload_hash() {
                 return Err(Error::TraceHashMismatch {
                     path: self.path.display().to_string(),
-                    line: 0,
+                    line: index + 1,
                 });
             }
         }

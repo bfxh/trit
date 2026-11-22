@@ -37,6 +37,13 @@ BASELINE = ROOT / "scripts" / "module_budget_baseline.json"
 # 单个源文件的硬预算：新建文件超过它就是"上帝对象"，登记会被拒绝。
 LIMIT = 800
 
+# 纯模块外壳：内容只有注释、`#[path = "..."]` 与 `mod X;` 声明，最多 2 行。
+# 拆分大测试（`tests/foo.rs` -> `tests/foo/core.rs`）之后，接线必须显式带
+# `#[path]`：集成测试的 crate root 在 `tests/`，裸 `mod core;` 会解析到
+# 顶层 `tests/core.rs`（别人的用例），子目录里的测试永远不会执行。
+# 因此这类文件允许 2 行；其他规则（只收紧、不抬台账）不变。
+SHELL_LINES = 2
+
 # 扫描跳过这些目录名（构建产物 / 版本库 / 缓存 / 第三方源码副本）。
 # `vendor/` 是上游 trit-db 的源码副本，不按本仓预算拆分（见 vendor/trit-db/README.md）。
 EXCLUDE_DIRS = {
@@ -64,6 +71,36 @@ def scan(root: Path) -> dict[str, int]:
             text = path.read_text(encoding="utf-8", errors="replace")
             sizes[rel] = len(text.splitlines())
     return sizes
+
+
+def is_shell(text: str) -> bool:
+    """纯模块外壳：只有注释/属性/`mod X;`，且不超过 `SHELL_LINES` 行。"""
+    body = [line.strip() for line in text.splitlines() if line.strip()]
+    if not body or len(body) > SHELL_LINES:
+        return False
+    has_mod = False
+    for line in body:
+        if line.startswith("//") or line.startswith("#["):
+            continue
+        if line.startswith("mod ") and line.endswith(";"):
+            has_mod = True
+            continue
+        return False
+    return has_mod
+
+
+def scan_shells(root: Path) -> set[str]:
+    """仓库里所有纯模块外壳（相对路径）。"""
+    shells: set[str] = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDE_DIRS)
+        for name in sorted(filenames):
+            if not name.endswith(".rs"):
+                continue
+            path = Path(dirpath) / name
+            if is_shell(path.read_text(encoding="utf-8", errors="replace")):
+                shells.add(path.relative_to(root).as_posix())
+    return shells
 
 
 def load_baseline(path: Path) -> dict[str, int]:
@@ -95,6 +132,7 @@ def save_baseline(path: Path, caps: dict[str, int]) -> None:
 def check(root: Path, baseline_path: Path) -> tuple[list[str], list[str]]:
     """返回 `(判红, 仅提醒)`。"""
     sizes = scan(root)
+    shells = scan_shells(root)
     caps = load_baseline(baseline_path)
     failures: list[str] = []
     notices: list[str] = []
@@ -109,8 +147,12 @@ def check(root: Path, baseline_path: Path) -> tuple[list[str], list[str]]:
             else:
                 failures.append(f"UNCAPPED: {file} {lines} 行不在台账（跑 --update 登记）")
             continue
-        if lines > cap:
-            failures.append(f"GREW: {file} {lines} > 台账上限 {cap}（要腾地方就拆，别抬台账）")
+        limit = max(cap, SHELL_LINES) if file in shells else cap
+        if lines > limit:
+            budget = (
+                f"模块外壳允许 {SHELL_LINES} 行" if file in shells else f"台账上限 {cap}"
+            )
+            failures.append(f"GREW: {file} {lines} > {budget}（要腾地方就拆，别抬台账）")
         elif lines < cap and cap > LIMIT:
             # 债务文件变瘦是好事，但台账必须同步收紧，否则"还剩多少债"是假数。
             notices.append(
@@ -127,13 +169,21 @@ def check(root: Path, baseline_path: Path) -> tuple[list[str], list[str]]:
 
 
 def update(root: Path, baseline_path: Path) -> int:
-    """登记新文件 + 收紧；**对已有条目只降不升**（抬上限就是给变胖开绿灯）。"""
+    """登记新文件 + 收紧；**对已有条目只降不升**（抬上限就是给变胖开绿灯）。
+
+    唯一例外是纯模块外壳（`SHELL_LINES`）：接线需要多一行 `#[path]`，
+    允许它登记到 2 行，其余文件仍然只能降。
+    """
     sizes = scan(root)
+    shells = scan_shells(root)
     caps = load_baseline(baseline_path)
     refused: list[str] = []
     for file, recorded in sorted(caps.items()):
         new = sizes.get(file)
-        if new is not None and new > recorded:
+        if new is None:
+            continue
+        allowed = max(recorded, SHELL_LINES) if file in shells else recorded
+        if new > allowed:
             refused.append(f"{file}: 台账 {recorded} -> 实测 {new}")
     too_big = [f"{f} {n} > {LIMIT}" for f, n in sorted(sizes.items()) if f not in caps and n > LIMIT]
     if refused or too_big:
@@ -143,7 +193,12 @@ def update(root: Path, baseline_path: Path) -> int:
         for line in too_big:
             print(f"  NEW OVER BUDGET {line} —— 新文件先拆到预算内")
         return 1
-    merged = {f: min(caps.get(f, n), n) for f, n in sizes.items()}
+    merged: dict[str, int] = {}
+    for file, lines in sizes.items():
+        if file in shells and lines <= SHELL_LINES:
+            merged[file] = lines
+        else:
+            merged[file] = min(caps.get(file, lines), lines)
     save_baseline(baseline_path, merged)
     debt = sum(1 for n in merged.values() if n > LIMIT)
     print(
@@ -162,6 +217,11 @@ def _write(path: Path, lines: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "\n".join(f"// line {i}" for i in range(lines))
     path.write_text(body + "\n", encoding="utf-8")
+
+
+def _write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def self_test() -> int:
@@ -235,6 +295,23 @@ def self_test() -> int:
         expect("orphan is a notice, not a failure", run(), True, "ORPHAN")
         expect("update drops the orphan", run("--update"), True)
         expect("green: ledger clean again", run(), True)
+
+        # 9. 纯模块外壳：接线需要 `#[path]`，允许 2 行；3 行仍然红
+        shell = "crates/demo/tests/probe.rs"
+        _write_text(root / shell, '#[path = "probe/core.rs"]\nmod core;\n')
+        expect("red: shell is uncapped", run(), False, "UNCAPPED")
+        expect("update registers the shell", run("--update"), True)
+        expect("green: shell keeps its #[path] wiring", run(), True)
+        _write_text(root / shell, '#[path = "probe/core.rs"]\nmod core;\nmod extra;\n')
+        expect("red: shell longer than two lines", run(), False, "GREW")
+
+        # 10. 例外只给外壳：普通文件仍不能借它长胖
+        (root / shell).unlink()
+        plain = "crates/demo/tests/plain.rs"
+        _write_text(root / plain, "pub fn a() {}\npub fn b() {}\n")
+        expect("update registers the plain file", run("--update"), True)
+        _write_text(root / plain, "pub fn a() {}\npub fn b() {}\npub fn c() {}\n")
+        expect("red: plain file grew a line", run(), False, "GREW")
 
     print("self-test: %d/%d passed" % (seen[0] - len(failures), seen[0]))
     return 1 if failures else 0

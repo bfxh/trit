@@ -12,13 +12,9 @@ impl LedgerStore {
     /// 崩溃会留下它），两者都没有才视为空台账。
     pub fn load(&self) -> Result<Ledger, Error> {
         match std::fs::read_to_string(&self.path) {
-            Ok(text) => match Ledger::from_json(&text) {
-                Ok(ledger) => Ok(ledger),
-                Err(primary) => match self.load_backup() {
-                    Ok(ledger) => Ok(ledger),
-                    Err(_) => Err(primary),
-                },
-            },
+            Ok(text) => {
+                Ledger::from_json(&text).or_else(|primary| self.load_backup().or(Err(primary)))
+            }
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 self.load_backup().or_else(|_| Ok(Ledger::new()))
             }
@@ -57,10 +53,13 @@ impl LedgerStore {
         let backup = self.backup_path();
         if self.path.exists() {
             let _ = std::fs::remove_file(&backup);
-            std::fs::rename(&self.path, &backup).map_err(|error| {
+            // 并发保存时目标可能已被另一线程挪走：没有旧文件可备份，继续换 tmp。
+            if let Err(error) = std::fs::rename(&self.path, &backup)
+                && error.kind() != ErrorKind::NotFound
+            {
                 let _ = std::fs::remove_file(&temporary);
-                self.io(error)
-            })?;
+                return Err(self.io(error));
+            }
         }
         match std::fs::rename(&temporary, &self.path) {
             Ok(()) => {

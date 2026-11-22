@@ -2080,7 +2080,7 @@
     },
     {
       "file": "crates/trit-orch/src/effects/persist/backup.rs",
-      "lines": 98
+      "lines": 97
     },
     {
       "file": "crates/trit-orch/src/effects/persist/core.rs",
@@ -2424,7 +2424,7 @@
     },
     {
       "file": "crates/trit-orch/tests/coordination.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/coordination/core.rs",
@@ -2440,7 +2440,7 @@
     },
     {
       "file": "crates/trit-orch/tests/durable.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/durable/core.rs",
@@ -2460,7 +2460,7 @@
     },
     {
       "file": "crates/trit-orch/tests/finish.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/finish/core.rs",
@@ -2468,7 +2468,7 @@
     },
     {
       "file": "crates/trit-orch/tests/finish_receipts.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/finish_receipts/core.rs",
@@ -2480,7 +2480,7 @@
     },
     {
       "file": "crates/trit-orch/tests/obligations.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/obligations/core.rs",
@@ -2504,7 +2504,7 @@
     },
     {
       "file": "crates/trit-orch/tests/receipt_matrix.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/receipt_matrix/core.rs",
@@ -2528,7 +2528,7 @@
     },
     {
       "file": "crates/trit-orch/tests/store.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/store/core.rs",
@@ -2572,7 +2572,7 @@
     },
     {
       "file": "crates/trit-orch/tests/trace_ecc.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/trace_ecc/core.rs",
@@ -2580,7 +2580,7 @@
     },
     {
       "file": "crates/trit-orch/tests/trace_event_store.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/trace_event_store/core.rs",
@@ -2588,7 +2588,7 @@
     },
     {
       "file": "crates/trit-orch/tests/trace_invariants.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/trace_invariants/core.rs",
@@ -2624,7 +2624,7 @@
     },
     {
       "file": "crates/trit-orch/tests/trace_storage_stability.rs",
-      "lines": 1
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/trace_storage_stability/core.rs",
