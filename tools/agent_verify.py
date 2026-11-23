@@ -18,6 +18,7 @@ the caller has to remember the order. The order IS the safety property --
     journal-begin (we can prove and undo what it writes)
     run           (only now; with --caps each command is wrapped by run_caps.py)
     journal-end   (what it actually wrote)
+    alignment-post (actual writes still match the declared graph; no drift)
     memory-note   (a durable, evidenced trace)
     timeline-record (a failure is a problem with a timestamp)
 
@@ -181,7 +182,7 @@ ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attes
                "the budget gate consumes the chain balance when it exists, stays "
                "declaration-based (labeled declared-only) when it does not")
 
-HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -> run -> journal, one audited receipt.
+HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -> run -> journal -> alignment-post, one audited receipt.
 
   agent-verify.sh -Root <dir> -Changed <files> -Lang rust|python|node|go
                     [-Profile read-only|workspace-write|full] [-DryRun]
@@ -218,7 +219,10 @@ HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -
                 refuse before any write. Auto-runs when the project has
                 .agent/alignment.json and settings.alignment.enabled is true;
                 --alignment overrides the path, --alignment-lenient downgrades
-                should-requirement gaps to warnings. must gaps always refuse.)
+                should-requirement gaps to warnings. must gaps always refuse.
+                After the run, journal-end's actual changed paths are fed back
+                through the same gate (alignment-post); a run that writes outside
+                the declared graph ends as "unaligned after run", not a pass.)
   delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
                 (subagent chains: only changed fields + hash refs for unchanged ones;
                 --rebuild <delta> --against <prev> [--out <full.json>] reconstructs
@@ -416,6 +420,49 @@ def json_tail(result):
             except ValueError:
                 continue
     return None
+
+
+def alignment_probe(root, manifest, changed, lenient):
+    """Run alignment_gate.py and return (step result, parsed report)."""
+    args = [ALIGNMENT, "--root", root, "--manifest", manifest, "--json"]
+    if changed:
+        args += ["--changed", ",".join(changed)]
+    if lenient:
+        args.append("--lenient")
+    result = step(args, timeout=120)
+    return result, (json_tail(result) or {})
+
+
+def alignment_summary(adoc, root, manifest_path):
+    """The receipt-facing view of one alignment report (preflight and post-run)."""
+    astatus = str(adoc.get("status", "")).lower()
+    acounts = adoc.get("counts", {}) if isinstance(adoc.get("counts"), dict) else {}
+    try:
+        rel_manifest = os.path.relpath(manifest_path, root).replace("\\", "/")
+        if rel_manifest.startswith("../"):
+            rel_manifest = os.path.basename(manifest_path)
+    except ValueError:
+        rel_manifest = os.path.basename(manifest_path)
+    return {
+        "manifest": rel_manifest,
+        "status": astatus or "unreadable",
+        "score": adoc.get("score"),
+        "must_score": adoc.get("must_score"),
+        "counts": {k: acounts.get(k) for k in
+                   ("goals", "requirements", "must", "artifacts", "evidence", "changed", "linked_changes")},
+        "failures": len(adoc.get("failures", []) or []),
+        "warnings": len(adoc.get("warnings", []) or []),
+    }
+
+
+def journal_changes(out):
+    """Extract the repo-relative paths journal.py end reported as changed."""
+    changed = []
+    for line in out:
+        m = re.match(r"journal:\s+(added|deleted|modified)\s+(.+)", line)
+        if m:
+            changed.append(m.group(2).strip().replace("\\", "/"))
+    return changed
 
 
 def repo_relative(root, paths):
@@ -1483,31 +1530,11 @@ def main(argv):
     if alignment_manifest:
         if not os.path.isabs(alignment_manifest):
             alignment_manifest = os.path.join(root, alignment_manifest)
-        a_args = [ALIGNMENT, "--root", root, "--manifest", alignment_manifest, "--json"]
-        if a["changed"]:
-            a_args += ["--changed", ",".join(a["changed"])]
-        if a.get("alignment_lenient") or not align_cfg.get("strict", True):
-            a_args.append("--lenient")
-        ar = step(a_args, timeout=120)
-        adoc = json_tail(ar) or {}
+        ar, adoc = alignment_probe(
+            root, alignment_manifest, a["changed"],
+            a.get("alignment_lenient") or not align_cfg.get("strict", True))
         astatus = str(adoc.get("status", "")).lower()
-        acounts = adoc.get("counts", {}) if isinstance(adoc.get("counts"), dict) else {}
-        try:
-            rel_manifest = os.path.relpath(alignment_manifest, root).replace("\\", "/")
-            if rel_manifest.startswith("../"):
-                rel_manifest = os.path.basename(alignment_manifest)
-        except ValueError:
-            rel_manifest = os.path.basename(alignment_manifest)
-        doc["alignment"] = {
-            "manifest": rel_manifest,
-            "status": astatus or "unreadable",
-            "score": adoc.get("score"),
-            "must_score": adoc.get("must_score"),
-            "counts": {k: acounts.get(k) for k in
-                       ("goals", "requirements", "must", "artifacts", "evidence", "changed", "linked_changes")},
-            "failures": len(adoc.get("failures", []) or []),
-            "warnings": len(adoc.get("warnings", []) or []),
-        }
+        doc["alignment"] = alignment_summary(adoc, root, alignment_manifest)
         add("alignment", ar, "ok" if ar["code"] == 0 and astatus == "aligned" else "refused")
         if ar["code"] != 0 or astatus != "aligned":
             for ln in ar["out"][-10:]:
@@ -1690,6 +1717,48 @@ def main(argv):
     doc["changes"] = changes
     doc["wall_s"] = total_run
 
+    # --- 8.2 post-run alignment: did the run write what the manifest claimed? --------
+    # Preflight proves the declaration before the run; this check proves the run did
+    # not drift from it.  journal-end is the source of truth for actual paths, and the
+    # gate re-hashes artifacts/evidence after the write.  A drift does not erase the
+    # journal (cost/memory still record what happened), but the verdict cannot pass.
+    post_failed = False
+    if alignment_manifest:
+        actual_changes = journal_changes(je["out"])
+        # A caller may put the journal/cost store under -Root; those are bookkeeping
+        # writes, not product changes the manifest should explain.  The default store
+        # is outside the root, so this only protects an explicit in-root store.
+        try:
+            store_rel = os.path.relpath(store, root).replace("\\", "/")
+        except ValueError:
+            store_rel = ""
+        if store_rel and store_rel != "." and not store_rel.startswith("../"):
+            actual_changes = [p for p in actual_changes
+                              if p != store_rel and not p.startswith(store_rel + "/")]
+        post_lenient = a.get("alignment_lenient") or not align_cfg.get("strict", True)
+        if je["code"] in (0, 1):
+            par, padoc = alignment_probe(root, alignment_manifest, actual_changes, post_lenient)
+            post_status = str(padoc.get("status", "")).lower()
+            doc["alignment"]["post"] = alignment_summary(padoc, root, alignment_manifest)
+            post_ok = par["code"] == 0 and post_status == "aligned"
+            add("alignment-post", par, "ok" if post_ok else "drifted")
+            if not post_ok:
+                post_failed = True
+                for ln in par["out"][-10:]:
+                    if not ln.strip().startswith("{"):
+                        print(ln)
+                print("agent-verify: 对齐漂移 -- run 后实际变更/产物/证据不再满足清单；"
+                      "journal 已保留，回执记录 alignment.post 失败")
+        else:
+            post_failed = True
+            doc["alignment"]["post"] = alignment_summary({}, root, alignment_manifest)
+            doc["alignment"]["post"]["status"] = "unknown"
+            doc["alignment"]["post"]["reason"] = "journal-end failed"
+            add("alignment-post", skipped("journal-end failed; cannot prove post-run alignment"),
+                "unknown")
+            print("agent-verify: 对齐复核不可用 -- journal-end 失败，无法证明实际落盘；"
+                  "按 drift 处理，不放行")
+
     # --- 8.5 cost recording: this run's actual consumption goes on the ledger ----------
     # journal-end 后、memory-note 前。失败也只记账面（cost 记账不是闸）：loud, not fatal.
     runid = uuid.uuid4().hex[:8]
@@ -1726,7 +1795,8 @@ def main(argv):
                   f"后续预算闸会少算这次消耗")
 
     verdict = ("command failed" if not ran_ok else
-               ("passed on full run (plan was unproven)" if not proven else "passed on proven subset"))
+               ("unaligned after run" if post_failed else
+                ("passed on full run (plan was unproven)" if not proven else "passed on proven subset")))
 
     # --- 9. memory note: leave a durable, evidenced trace of this run ------------------
     if mem_init and run_log:
@@ -1795,7 +1865,7 @@ def main(argv):
         print(f"  cost: wall={cost.get('wall_s')}s +{cost.get('overhead_s')}s overhead "
               f"tokens={cost.get('tokens') if cost.get('tokens') is not None else '-'} "
               f"ledger={'recorded' if cost.get('recorded') else 'FAILED'} scope={cost.get('scope')}")
-    return finish(verdict, 0 if ran_ok else 1)
+    return finish(verdict, 0 if ran_ok and not post_failed else 1)
 
 
 if __name__ == "__main__":

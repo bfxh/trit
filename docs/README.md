@@ -139,7 +139,7 @@
 | [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
 | [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；21/21 自测与诚实边界 |
 | [AGENT-CONTEXT-SEARCH.md](engineering/AGENT-CONTEXT-SEARCH.md) | 1M 窗口 / 850K 触发 / 700K 目标：锚点保留 + 抽取式摘要 + fail-closed；搜索结果相关性/安全/权威/新鲜度/去重/token 预算评分与自动推理强度；23/23 + 22/22 自测、100/100 随机不变量、14/14 交叉接缝 |
-| [AGENT-ALIGNMENT.md](engineering/AGENT-ALIGNMENT.md) | 目标→需求→产物/证据/变更的显式对齐门：v1 单目标与 v2 单根目标树、父链、悬空引用、sha256/locator、未挂变更、non-goal 越界、需求矛盾、scaffold 空骨架；65/65 自测、100/100 随机不变量、AL27–AL32 链集成 |
+| [AGENT-ALIGNMENT.md](engineering/AGENT-ALIGNMENT.md) | 目标→需求→产物/证据/变更的显式对齐门：v1 单目标与 v2 单根目标树、父链、悬空引用、sha256/locator、未挂变更、non-goal 越界、需求矛盾、scaffold 空骨架、journal-end 后 run 后漂移复核；65/65 自测、100/100 随机不变量、AL27–AL35 链集成、全仓 705 通过 |
 | [AGENT-MODELS.md](engineering/AGENT-MODELS.md) | 子智能体按角色选模型：`route/probe/call`、配置 schema、密钥只走环境变量、16 条路由自测、25 条派发与输出隔离自测、未落地项 |
 | [AGENT-MODEL-MANIFEST.md](engineering/AGENT-MODEL-MANIFEST.md) | 前端/后端模型与插件清单：人类面/智能体面分工、后端默认不接前端面板、多模态准入、论文式面板顺序与任务 brief；清单为模板，不是已接入声明 |
 | [AGENT-SANDBOX.md](engineering/AGENT-SANDBOX.md) | workspace 沙盒：复制输入 + policy 前置 + run_caps + 宿主指纹；37 条自测、40/40 并发矩阵、hostwrite 100/100、WSL+bwrap 内核隔离 11/11 与诚实边界 |

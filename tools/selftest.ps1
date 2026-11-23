@@ -4386,7 +4386,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
-$alTotal = 32
+$alTotal = 35
 if (-not $alPy) {
     "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
     $skipped += $alTotal
@@ -4772,11 +4772,14 @@ print("ALDRV done")
     New-File (Join-Path $AlW "plan.json") '{"proven":true,"commands":["true","true"],"unproven":[]}'
     & $alPy (Join-Path $tools 'constraints.py') init -Root $AlW | Out-Null
 
-    function Invoke-AlAv([string]$receipt, [string[]]$extra, [switch]$NoPlan) {
+    function Invoke-AlAv([string]$receipt, [string[]]$extra, [switch]$NoPlan, [string]$PlanPath, [string]$ChangedFile = 'pkg/core.py') {
         $argsAv = @((Join-Path $tools "agent_verify.py"), "-Root", $AlW,
-                    "-Changed", "pkg/core.py", "-Lang", "python",
+                    "-Changed", $ChangedFile, "-Lang", "python",
                     "-Store", (Join-Path $Work "al-wd-store"), "-Receipt", $receipt)
-        if (-not $NoPlan) { $argsAv += @("-Plan", (Join-Path $AlW "plan.json")) }
+        if (-not $NoPlan) {
+            $planFile = if ($PlanPath) { $PlanPath } else { Join-Path $AlW "plan.json" }
+            $argsAv += @("-Plan", $planFile)
+        }
         $argsAv += $extra
         & $alPy @argsAv 2>&1 | Out-Null
         return $LASTEXITCODE
@@ -4902,6 +4905,59 @@ print("ALDRV done")
     Assert-True ($al32 -eq 0 -and $al32doc.alignment.status -eq 'aligned' `
         -and $al32doc.alignment.counts.goals -eq 2) `
         "AL32 alignment/2 子目标链通过并记录 goals=2" "e=$al32 s=$($al32doc.alignment.status)"
+
+    # AL33-AL35: preflight 只是上半场；run 后必须用 journal 的实际落盘再对一次。
+    $alDriftPlan = Join-Path $AlW 'plan-drift.json'
+    New-File $alDriftPlan @'
+{"proven":true,"commands":["echo drift > pkg/drift.py"],"unproven":[]}
+'@
+    $al33rc = Join-Path $Work "al-wd33.json"
+    $al33 = Invoke-AlAv $al33rc @('--alignment', $alManifest) -PlanPath $alDriftPlan
+    $al33doc = Read-AlReceipt $al33rc
+    $al33steps = @($al33doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al33 -eq 1 -and $al33doc.verdict -eq 'unaligned after run' `
+        -and $al33doc.alignment.post.status -eq 'unaligned' `
+        -and ($al33steps -contains 'journal-end') -and ($al33steps -contains 'alignment-post')) `
+        "AL33 run 写出未挂变更→post-run 对齐拒绝，journal 仍保留" "e=$al33 v=$($al33doc.verdict) p=$($al33doc.alignment.post.status)"
+
+    $alPostPlan = Join-Path $AlW 'plan-post.json'
+    New-File $alPostPlan @'
+{"proven":true,"commands":["printf '\\n# post\\n' >> pkg/core.py"],"unproven":[]}
+'@
+    $al34rc = Join-Path $Work "al-wd34.json"
+    $al34 = Invoke-AlAv $al34rc @('--alignment', $alManifest) -PlanPath $alPostPlan
+    $al34doc = Read-AlReceipt $al34rc
+    Assert-True ($al34 -eq 0 -and $al34doc.verdict -eq 'passed on proven subset' `
+        -and $al34doc.alignment.post.status -eq 'aligned' `
+        -and $al34doc.alignment.post.counts.changed -eq 1) `
+        "AL34 run 只改清单声明的路径→post-run 仍 aligned，记录 actual changed=1" "e=$al34 p=$($al34doc.alignment.post.status)"
+
+    New-File (Join-Path $AlW "pkg\data.py") "VALUE = 1$nl"
+    $alDataSha = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $AlW 'pkg\data.py')).Hash.ToLower()
+    $alHashDoc = @'
+{
+  "schema": "alignment/1",
+  "goal": {"id": "G1", "text": "data.py 值不变"},
+  "requirements": [
+    {"id": "R1", "text": "data.py 实现", "priority": "must", "parent": "G1",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["pkg/data.py"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "pkg/data.py", "sha256": "__SHA__"}],
+  "evidence": [{"id": "E1", "path": "tests/test_core.py", "locator": "text:test_f"}]
+}
+'@
+    New-File $alManifest $alHashDoc.Replace('__SHA__', $alDataSha)
+    $alHashPlan = Join-Path $AlW 'plan-hash.json'
+    New-File $alHashPlan @'
+{"proven":true,"commands":["printf '\\n# hash\\n' >> pkg/data.py"],"unproven":[]}
+'@
+    $al35rc = Join-Path $Work "al-wd35.json"
+    $al35 = Invoke-AlAv $al35rc @('--alignment', $alManifest) -PlanPath $alHashPlan -ChangedFile 'pkg/data.py'
+    $al35doc = Read-AlReceipt $al35rc
+    Assert-True ($al35 -eq 1 -and $al35doc.verdict -eq 'unaligned after run' `
+        -and $al35doc.alignment.post.status -eq 'unaligned' `
+        -and $al35doc.alignment.post.failures -ge 1) `
+        "AL35 run 改了带 sha256 的产物→post-run 哈希漂移拒绝" "e=$al35 p=$($al35doc.alignment.post.status) f=$($al35doc.alignment.post.failures)"
 }
 
 

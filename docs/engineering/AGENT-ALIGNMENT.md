@@ -142,13 +142,31 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 - 回执增加 `alignment` 块：manifest、status、score、must_score、counts、failures、warnings。
 - 设置里 `alignment.enabled=false` 可显式退出；不会静默跳过已有清单。
 
+### run 后复核 `alignment-post`
+
+预检只证明“动手前的声明成立”；执行器仍可能在 run 里写出清单没声明的文件，或改掉
+带 `sha256` 的产物、让 evidence 的 locator 失效。`agent_verify` 在 `journal-end`
+拿到**实际落盘路径**后，再用同一份清单和同一套 gate 复核：
+
+- `journal-end` 的 `added/deleted/modified` 路径作为 `--changed` 重跑 gate；
+- 产物/证据重新按磁盘内容验哈希与 locator；
+- 实际变更必须挂到 requirement 或 artifact；落进 `non_goal` 仍拒绝；
+- 清单被 run 改坏、journal 失败导致无法证明实际落盘，一律按 drift/unknown 处理；
+- 失败 verdict 是 `unaligned after run`，exit 1；journal 已保留，成本/记忆仍会记账，
+  不会用“拒绝”抹掉已经发生的写入；
+- 若 `Store` 显式放在项目 root 内，thin bookkeeping 的 store 路径会从“产品变更”
+  中过滤，避免把 journal 自己的副本当成业务产物。
+
+回执里的 `alignment.post` 记录 post-run 的 `status/score/must_score/counts/failures/warnings`。
+它仍在同一个 `alignment` 稳定字段内，不新增顶层波动键。
+
 ## 测试读数
 
 - `python tools/alignment_gate.py self-test`：**65/65**
 - `python tools/alignment_gate.py stress --cases 100`：**200 用例，valid 100 aligned，mutated 100 rejected，0 errors**
 - `python tools/agent_settings.py --self-test`：**30/30**
-- `tools/selftest.ps1` 的 AL27–AL32：通过清单继续 run、缺证据拒绝、清单缺失 unknown、lenient 只警告、不传 `--alignment` 时自动发现、v2 子目标链通过并记录 `goals=2`
-- 全仓 `tools/selftest.ps1`：**702 passed / 0 failed / 0 skipped**
+- `tools/selftest.ps1` 的 AL27–AL35：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝
+- 全仓 `tools/selftest.ps1`：**705 passed / 0 failed / 0 skipped**
 
 ## 诚实边界
 
@@ -156,6 +174,9 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
   不对，仍要靠人/评审。
 - `locator` 只证明片段存在，不证明该片段就是充分证据；它把“有证据”降级为
   “可定位证据”，不替代 claim audit 与测试。
+- `alignment-post` 只看 journal 覆盖范围内的实际差异；journal 明确跳过的目录
+  （`target`/`.git`/`.journal`/`node_modules` 等）不会被它发现，这是 journal 的
+  既有作用域，不是对齐门在放水。
 - 没有 LLM 评审；`scaffold` 只生成空骨架，不自动补产物/证据/变更，因此骨架本身
   仍会被拒。清单必须由执行者显式写出，写不出就应该拒绝。
 - 不替代 `security_gate`、`claim_audit`、`handoff`、`constraints`：它只管
