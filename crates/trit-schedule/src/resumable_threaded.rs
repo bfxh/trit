@@ -272,6 +272,15 @@ pub fn run_resumable_threaded(
 }
 
 fn acquire(state: &mut Shared) -> Option<Acquired> {
+    // 已置停（失败/取消/溢出）后不再认领新工作：就绪任务直接归 cancelled。
+    // 对齐 `runtime/execute.rs` 的 stop 守卫；失败后新 promote 进 ready 的
+    // 依赖也在此被排空，避免被空闲 worker 取出执行。
+    if state.stop {
+        while let Some((_, id, _)) = state.ready.pop() {
+            state.cancelled.insert(id);
+        }
+        return None;
+    }
     let &(priority, _, position) = state.ready.peek()?;
     if state.running >= state.workers {
         return None;
@@ -390,13 +399,17 @@ fn worker(shared: Arc<(Mutex<Shared>, Condvar)>, cancel: CancelToken) {
                     state.running = state.running.saturating_sub(1);
                     state.used = state.used.release(state.requirements[position]);
                     state.completed.insert(id);
-                    let nexts = state.dependents[position].clone();
-                    for next in nexts {
-                        state.indegree[next] -= 1;
-                        if state.indegree[next] == 0 {
-                            let next_priority = state.priorities[next];
-                            let next_id = state.ids[next].clone();
-                            state.ready.push((next_priority, next_id, next));
+                    // 已置停后不再 promote 后继：依赖任务留在 cancelled，避免同一任务
+                    // 同时进入 completed 与 cancelled（对齐 execute.rs:335 的守卫）。
+                    if !state.stop {
+                        let nexts = state.dependents[position].clone();
+                        for next in nexts {
+                            state.indegree[next] -= 1;
+                            if state.indegree[next] == 0 {
+                                let next_priority = state.priorities[next];
+                                let next_id = state.ids[next].clone();
+                                state.ready.push((next_priority, next_id, next));
+                            }
                         }
                     }
                     state.idle += 1;
@@ -605,5 +618,37 @@ mod tests {
         assert_eq!(id, "boom");
         assert_eq!(message, "任务 panic");
         assert!(report.completed.contains(&"ok".to_string()), "{report:?}");
+    }
+
+    #[test]
+    fn failure_after_stop_does_not_promote_dependents() {
+        // #634：一个任务 Failed 置 stop 后，threaded 不得再把依赖任务跑完并记
+        // completed；依赖只能出现在 cancelled，不能同时落在两个集合里。
+        struct Slow;
+        impl ResumableTask for Slow {
+            fn step(&mut self, _ctx: &StepContext) -> Progress {
+                std::thread::sleep(Duration::from_millis(30));
+                Progress::Done
+            }
+        }
+        struct FailSet;
+        impl ResumableTask for FailSet {
+            fn step(&mut self, _ctx: &StepContext) -> Progress {
+                std::thread::sleep(Duration::from_millis(20));
+                Progress::Failed("boom".to_string())
+            }
+        }
+        let specs = vec![
+            ResumableSpec::new("a", vec![], Slow).with_priority(0),
+            ResumableSpec::new("b", vec![], FailSet).with_priority(10),
+            ResumableSpec::new("c", vec![dep("a")], Counter::new(1)).with_priority(0),
+        ];
+        let report =
+            run_resumable_threaded(specs, RuntimeConfig::new(2), CancelToken::new()).unwrap();
+        let (id, message) = report.failed.as_ref().expect("b 必须记为失败");
+        assert_eq!(id, "b");
+        assert_eq!(message, "boom");
+        assert!(!report.completed.contains(&"c".to_string()), "{report:?}");
+        assert!(report.cancelled.contains(&"c".to_string()), "{report:?}");
     }
 }
