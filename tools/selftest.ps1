@@ -4386,7 +4386,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
-$alTotal = 31
+$alTotal = 32
 if (-not $alPy) {
     "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
     $skipped += $alTotal
@@ -4817,7 +4817,7 @@ print("ALDRV done")
         -Lang python --gate-deadline-affected 0 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 2) "AL22 deadline 0/负数→exit 2（坏调用，不是关掉看门狗）" "e=$LASTEXITCODE"
 
-    # --- AL27-AL31: alignment gate 接入 chain（目标/需求/产物/证据/变更） -------------
+    # --- AL27-AL32: alignment gate 接入 chain（目标/需求/产物/证据/变更） -------------
     $alManifestDir = Join-Path $AlW '.agent'
     New-Item -ItemType Directory -Force -Path $alManifestDir | Out-Null
     $alManifest = Join-Path $alManifestDir 'alignment.json'
@@ -4878,6 +4878,30 @@ print("ALDRV done")
     Assert-True ($al31 -eq 0 -and $al31doc.alignment.status -eq 'aligned' `
         -and @($al31doc.steps | Where-Object { $_.step -eq 'alignment' }).Count -eq 1) `
         "AL31 不传 --alignment：项目清单被自动发现并进入链" "e=$al31 s=$($al31doc.alignment.status)"
+
+    # alignment/2：单根目标 + 子目标，需求挂在子目标上仍必须落到 G1。
+    $alV2Doc = @'
+{
+  "schema": "alignment/2",
+  "goals": [
+    {"id": "G1", "text": "core.f 返回 1"},
+    {"id": "G2", "text": "测试覆盖", "parent": "G1"}
+  ],
+  "requirements": [
+    {"id": "R1", "text": "core.f 的实现", "priority": "must", "parent": "G2",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["pkg/core.py"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "pkg/core.py"}],
+  "evidence": [{"id": "E1", "path": "tests/test_core.py", "locator": "text:test_f"}]
+}
+'@
+    New-File $alManifest $alV2Doc
+    $al32rc = Join-Path $Work "al-wd32.json"
+    $al32 = Invoke-AlAv $al32rc @('--alignment', $alManifest)
+    $al32doc = Read-AlReceipt $al32rc
+    Assert-True ($al32 -eq 0 -and $al32doc.alignment.status -eq 'aligned' `
+        -and $al32doc.alignment.counts.goals -eq 2) `
+        "AL32 alignment/2 子目标链通过并记录 goals=2" "e=$al32 s=$($al32doc.alignment.status)"
 }
 
 
