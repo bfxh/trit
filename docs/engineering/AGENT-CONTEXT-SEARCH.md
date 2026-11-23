@@ -1,7 +1,7 @@
 # 上下文压缩、搜索评分与自动推理强度
 
-> 状态：**已落地并自测**。`context_window.py` 23/23、`search_policy.py` 22/22；
-> `agent_settings.py` 默认档新增 `context/search/reasoning` 三段，23/23。
+> 状态：**已落地并自测**（`context_window.py` 23/23、`search_policy.py` 22/22；
+> `agent_settings.py` 默认档新增 `context/search/reasoning` 三段，23/23。命令见 §5）。
 > 这些读数是本机 Python 自测，不等于真实模型 tokenizer 的精确计数。
 
 ## 1. 为什么先做“预算计划”，而不是直接摘要
