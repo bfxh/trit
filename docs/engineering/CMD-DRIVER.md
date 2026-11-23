@@ -102,7 +102,7 @@ cmd-driver: 4/4 steps ok / quality-gates 13/13 / retries 0 / errors 0
 
 ## 6. 边界
 
-- 不是 shell：不支持管道、重定向、`&&`；需要管道时写成脚本，再以 argv 调脚本。
+- 不是 shell：命令按 argv 数组执行（见 `tools/cmd_driver.py`），没有管道、重定向或 `&&`；需要管道时写成脚本，再以 argv 调脚本。
 - 不是安全沙箱：它只做执行编排和核验，不负责权限隔离；不受信任的 plan 仍应在沙箱/受控账户跑。
 - full receipt 可能含敏感输出；`-Out` 要放在受控目录，不要直接把 receipt 贴进公开文档。
 - 磁盘预检只看输出目录；其他盘的写入失败仍可能发生，会按 `disk_full` 分类并停止。

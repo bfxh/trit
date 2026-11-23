@@ -1,6 +1,6 @@
 # CI/CD 与发布流程
 
-> 状态：已落地（2026-11-23）。本文只描述**开发侧质量门与发布链**，不是用户手册。
+> 状态：已落地（2026-11-23，质量门入口见 `scripts/agent_quality_gate.py`）。本文只描述**开发侧质量门与发布链**，不是用户手册。
 > 相关：[WORK-BENCH.md](WORK-BENCH.md)（工作任务基准）、[CMD-DRIVER.md](CMD-DRIVER.md)
 > （PTC 命令行降错）、[WORKTREES.md](WORKTREES.md)（发布 preflight 的 worktree 口径）。
 
