@@ -140,6 +140,18 @@ impl TpmModel {
             let relu = take_u32(&b, &mut at)? != 0;
             let convt = take_u32(&b, &mut at)? != 0;
             let nw = take_u32(&b, &mut at)? as usize;
+            // 写侧（`Layer::random`）按 `kk²·cin·cout` 分配 q，`save` 原样拷贝；
+            // 读侧必须与声明维度对账，不能只按头里的 `nw` 切字节。
+            let expected =
+                cin.checked_mul(cout)
+                    .and_then(|v| v.checked_mul(kk))
+                    .and_then(|v| v.checked_mul(kk))
+                    .ok_or_else(|| "TPM1 q 长度对账溢出".to_string())? as usize;
+            if nw != expected {
+                return Err(format!(
+                    "TPM1 q 长度不合法：cin={cin} cout={cout} kk={kk} expected={expected} nw={nw}"
+                ));
+            }
             let qs = b.get(at..at + nw).ok_or("TPM1 截断（q）")?;
             let q: Vec<i8> = qs.iter().map(|&v| v as i8).collect();
             at += nw;

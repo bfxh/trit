@@ -101,6 +101,7 @@ mod write;
 use bytes::*;
 pub use write::to_wsp2;
 
+mod geom;
 mod index;
 mod index_io;
 pub use index::{BlockIndex, DEFAULT_BLOCK_ROWS, LayerIndex, RowBlock};
