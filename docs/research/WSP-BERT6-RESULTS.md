@@ -662,7 +662,7 @@ f32 只服务 `f32_sts`、`real_vs_f32` 和 `f32_vs_reference`，同一模型 + 
 
 - 首次运行算 f32，并把 `f32_sts`（含 `TRIT_DUMP_PREDS=1` 的 preds）写入缓存；
 - 后续命中直接复用，跳过 f32 Bert 加载和前向，只跑量化模型；
-- 缓存键含 `schema=1/model/data_dir/hidden/batch/seq/layers`，键不符不会误用；
+- 缓存键含 `schema=1/model/data_dir/hidden/batch/seq/layers/preds`，键不符不会误用；
 - `activation=all` 或带 `--sidecar-svd` 时禁用缓存，因为这些路径依赖完整 `f32_out`；
 - 命中时 `f32_vs_reference`、`real_vs_f32`、`random_vs_f32`、逐层对照写 `null`，
   量化模型的 STS 不受影响；f32 的 271 MB 输出不缓存。
