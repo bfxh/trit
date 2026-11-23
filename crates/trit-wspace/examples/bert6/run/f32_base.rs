@@ -33,9 +33,9 @@ fn key(file: &str, data_dir: &str, hidden: usize, batch: usize, seq: usize) -> V
         "batch": batch,
         "seq": seq,
         "layers": std::env::var("TRIT_LAYERS").unwrap_or_else(|_| "6".to_string()),
+        "preds": std::env::var("TRIT_DUMP_PREDS").is_ok_and(|v| v.trim() == "1"),
     })
 }
-
 fn load(file: &str, data_dir: &str, hidden: usize, batch: usize, seq: usize) -> Option<Value> {
     let path = cache_path()?;
     let text = std::fs::read_to_string(path).ok()?;
