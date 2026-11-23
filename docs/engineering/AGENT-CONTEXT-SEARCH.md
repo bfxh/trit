@@ -109,7 +109,7 @@ python tools/search_policy.py self-test
   确定性哈希、保留消息不被改写，共 23 条。
 - `search_policy.py`：相关结果排序、无关/注入/重复/超预算/超上限落选理由、
   低/中/高档位、强制档位、空查询/空结果拒绝、设置禁用、相关度地板、
-  新鲜度排序、确定性，共 20 条。
+  新鲜度排序、确定性，共 22 条。
 - `context_window.py stress --cases 100` 与 `search_policy.py stress --cases 100`：
   随机 transcript / 随机搜索结果，钉住“不超目标、不超预算、锚点不丢、拒绝不
   返回半截、排除有理由、输入不被改写、输出可复现”。
