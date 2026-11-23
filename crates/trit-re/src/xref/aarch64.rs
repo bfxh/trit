@@ -209,7 +209,12 @@ fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
     let mut out = Vec::new();
     let mut taken = BTreeSet::new();
     for index in 0..insns.len() {
-        let pc = base + index as u64 * 4;
+        let Some(offset) = (index as u64).checked_mul(4) else {
+            continue;
+        };
+        let Some(pc) = base.checked_add(offset) else {
+            continue;
+        };
         let Some(page) = adrp_page(insns[index], pc) else {
             continue;
         };
@@ -340,7 +345,12 @@ fn expand_thunks(exec: &[(u32, usize, &[u8])], sites: &mut [BTreeSet<RawSite>]) 
     for (section_rva, file_base, data) in exec {
         let base = *section_rva as u64;
         for (index, insn) in instructions(data).iter().enumerate() {
-            let pc = base + index as u64 * 4;
+            let Some(offset) = (index as u64).checked_mul(4) else {
+                continue;
+            };
+            let Some(pc) = base.checked_add(offset) else {
+                continue;
+            };
             let Some((target, is_call)) = branch_target(*insn, pc) else {
                 continue;
             };
@@ -415,7 +425,12 @@ pub(super) fn scan_elf(
             }
         }
         for (index, insn) in instructions(data).iter().enumerate() {
-            let pc = base + index as u64 * 4;
+            let Some(offset) = (index as u64).checked_mul(4) else {
+                continue;
+            };
+            let Some(pc) = base.checked_add(offset) else {
+                continue;
+            };
             if stub_ranges
                 .iter()
                 .any(|(low, high)| pc >= *low && pc < *high)

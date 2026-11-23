@@ -199,6 +199,12 @@ pub(super) fn slice_at(bytes: &[u8], start: usize, len: usize) -> Option<&[u8]> 
     bytes.get(start..start.checked_add(len)?)
 }
 
+/// 节虚拟地址 + 指令下标：checked 求和；溢出（恶意近上限节地址）返回 `None`，
+/// 调用方跳过该指令并把扫描降级为不完整，不回绕出假调用点。
+fn insn_addr(section_addr: u64, index: usize) -> Option<u64> {
+    section_addr.checked_add(index as u64)
+}
+
 /// 扫描 PE 的 IAT 交叉引用。
 pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
     let arch = info.arch();
@@ -492,6 +498,7 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
     }
 
     let mut complete = true;
+    let mut address_overflow = false;
     let mut scanned = 0usize;
     let executable: Vec<&elf::ElfSection> = info
         .sections
@@ -532,12 +539,15 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
                     data[index + 4],
                     data[index + 5],
                 ]);
-                let target = section
-                    .addr
-                    .wrapping_add(index as u64 + 6)
-                    .wrapping_add(disp as i64 as u64);
+                // checked：节地址近上限时不得回绕出假 GOT 目标；地址不可表示则
+                // 跳过该指令并把扫描降级为不完整（不据此判 False）。
+                let Some(instruction) = insn_addr(section.addr, index) else {
+                    address_overflow = true;
+                    index += 1;
+                    continue;
+                };
+                let target = instruction.wrapping_add(6).wrapping_add(disp as i64 as u64);
                 if let Some(symbol) = symbol_of_got.get(&target) {
-                    let instruction = section.addr + index as u64;
                     stub_to_symbol.entry(instruction & !0xF).or_insert(*symbol);
                     stub_instructions.insert(instruction);
                 }
@@ -551,7 +561,11 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
     for (section, data) in &exec_data {
         let mut index = 0usize;
         while index + 5 <= data.len() {
-            let here = section.addr + index as u64;
+            let Some(here) = insn_addr(section.addr, index) else {
+                address_overflow = true;
+                index += 1;
+                continue;
+            };
             if stub_instructions.contains(&here) {
                 index += 1;
                 continue;
@@ -596,7 +610,14 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
         }
     }
 
-    build_elf_report(arch, &symbols, &jump_slots, &sites, complete, scanned)
+    build_elf_report(
+        arch,
+        &symbols,
+        &jump_slots,
+        &sites,
+        complete && !address_overflow,
+        scanned,
+    )
 }
 
 /// 各架构 ELF 扫描共用的报告构造。

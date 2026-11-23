@@ -177,7 +177,7 @@ fn parse_fde(
     if info.encoding == 0xff {
         return None;
     }
-    let field_addr = section_addr + cursor as u64;
+    let field_addr = section_addr.checked_add(cursor as u64)?;
     let (begin, _) = read_encoded(
         data,
         &mut cursor,

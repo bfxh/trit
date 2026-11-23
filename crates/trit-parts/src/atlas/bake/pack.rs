@@ -11,7 +11,7 @@ pub(super) fn pack(
 ) -> Option<(Vec<[usize; 4]>, f32)> {
     let pad = 2usize;
     let cap = atlas_px + 1;
-    let mut rects = vec![[0, 0, 0, 0]; ng];
+    let mut rects: Vec<[usize; 4]>;
     for _ in 0..24 {
         let mut order: Vec<usize> = (0..bounds.len()).collect();
         order.sort_by(|&a, &b| {

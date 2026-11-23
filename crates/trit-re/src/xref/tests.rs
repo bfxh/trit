@@ -1,6 +1,6 @@
 //! `xref` 的单元与集成式单元测试（从 mod.rs 拆出，控制单文件行数预算）。
 
-use super::{ImportXref, SiteKind, build_elf_report, mark_taken, scan_pe};
+use super::{ImportXref, SiteKind, build_elf_report, insn_addr, mark_taken, scan_pe};
 use crate::elf::DynamicSymbol;
 use crate::pe;
 use std::collections::{BTreeMap, BTreeSet};
@@ -163,6 +163,24 @@ fn x64_address_only_import_is_unknown() {
     assert!(report.imports[0].sites.is_empty());
     assert_eq!(report.imports[0].status, Ternary::Unknown);
     assert!(report.imports[0].note.contains("地址"));
+}
+
+#[test]
+fn insn_addr_legal_offsets_unchanged() {
+    // 正例：合法节地址 + 指令下标与原朴素加法一致。
+    assert_eq!(insn_addr(0x1000, 0), Some(0x1000));
+    assert_eq!(insn_addr(0x1000, 0x10), Some(0x1010));
+    assert_eq!(insn_addr(0, 0), Some(0));
+    // 边界相邻：u64::MAX - 5 + 5 = MAX，不溢出。
+    assert_eq!(insn_addr(u64::MAX - 5, 5), Some(u64::MAX));
+}
+
+#[test]
+fn insn_addr_rejects_wrapping_addresses() {
+    // 极端：近上限节地址 + 下标回绕 → `None`（跳过该指令，不回绕假地址）。
+    assert_eq!(insn_addr(u64::MAX, 1), None);
+    assert_eq!(insn_addr(u64::MAX - 3, 5), None);
+    assert_eq!(insn_addr(u64::MAX - 1, usize::MAX), None);
 }
 
 #[test]

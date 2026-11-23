@@ -414,8 +414,8 @@ pub fn simplify_cluster(m: &Mesh, cell: f32) -> Mesh {
             cnt.push(0);
             (acc.len() - 1) as u32
         });
-        for a in 0..3 {
-            acc[id as usize][a] += p[a] as f64;
+        for (acc_cell, &pa) in acc[id as usize].iter_mut().zip(p.iter()) {
+            *acc_cell += pa as f64;
         }
         cnt[id as usize] += 1;
         remap[i] = id;

@@ -155,8 +155,8 @@ where
         // 切平面（LSCM 也用它当局部参照系与初值）
         let mut acc = [0.0f32; 3];
         for &fi in g {
-            for c in 0..3 {
-                acc[c] += nrm[fi][c] * areas[fi].max(1e-12);
+            for (acc_c, &nrm_c) in acc.iter_mut().zip(nrm[fi].iter()) {
+                *acc_c += nrm_c * areas[fi].max(1e-12);
             }
         }
         let l = norm(acc).max(1e-12);

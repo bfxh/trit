@@ -44,8 +44,8 @@ pub fn vertex_normals(m: &Mesh) -> Vec<[f32; 3]> {
             e1[0] * e2[1] - e1[1] * e2[0],
         ];
         for k in 0..3 {
-            for d in 0..3 {
-                acc[t[k] as usize][d] += n[d] as f64;
+            for (acc_cell, &nd) in acc[t[k] as usize].iter_mut().zip(n.iter()) {
+                *acc_cell += nd as f64;
             }
         }
     }

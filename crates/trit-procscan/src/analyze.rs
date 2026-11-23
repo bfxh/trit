@@ -18,6 +18,37 @@ pub struct Finding {
     pub evidence: Vec<String>,
 }
 
+/// `analyze` 阶段的结构化错误。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnalyzeError {
+    /// 同名进程累计的 CPU 毫秒数超出 `u64` 表示范围。
+    ///
+    /// `cpu_ms` 是对外可见字段（出现在 `top_cpu` 报告里，单位 ms）；溢出时
+    /// 上抛本错误，不回绕、不截断、不 panic。
+    CpuTimeOverflow {
+        process: String,
+        accumulated: u64,
+        additional: u64,
+    },
+}
+
+impl std::fmt::Display for AnalyzeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CpuTimeOverflow {
+                process,
+                accumulated,
+                additional,
+            } => write!(
+                f,
+                "CPU 时间累计溢出：进程 \"{process}\" 已累计 {accumulated} ms，再加 {additional} ms 超出 u64 表示范围"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for AnalyzeError {}
+
 #[derive(Debug, Default)]
 pub struct Report {
     pub duration_ms: u64,
@@ -45,7 +76,14 @@ const NET_TOOLS: [&str; 6] = [
 ];
 const EXEC_EXT: [&str; 6] = [".exe", ".dll", ".ps1", ".bat", ".cmd", ".scr"];
 
-pub fn analyze(events: &[Event]) -> Report {
+/// 把事件流压成「它到底干了什么」：进程树、外联、写盘、可疑模式。
+///
+/// # 错误
+///
+/// 同名进程的 `cpu_ms`（对外出现在 `top_cpu` 报告里，单位 ms）按
+/// [`u64::checked_add`] 累计；一旦累计值超出 `u64` 范围，返回
+/// [`AnalyzeError::CpuTimeOverflow`]。合法输入下累计值与普通加法逐位一致。
+pub fn analyze(events: &[Event]) -> Result<Report, AnalyzeError> {
     let mut report = Report::default();
     let mut pids: BTreeSet<u32> = BTreeSet::new();
     let mut module_paths: BTreeSet<String> = BTreeSet::new();
@@ -81,7 +119,22 @@ pub fn analyze(events: &[Event]) -> Report {
                 ..
             } => {
                 pids.insert(*pid);
-                *cpu.entry(name.clone()).or_default() += *cpu_ms;
+                // CPU 时长累计用 checked_add，而不是普通 `+=`：
+                // - `+=` 在 release 下按两补码静默回绕、debug 下直接 panic，
+                //   都会把错误的 CPU 时长写进对外可见的 `top_cpu`；
+                // - 这里特意不用 saturating_add：饱和到 `u64::MAX` 会把溢出伪装成
+                //   “真实达到上限”的数值，污染进程排序，且与真实近上限值无法区分。
+                // 溢出说明输入流异常（被篡改或采样口径错误），以结构化错误上抛，
+                // 不产出被污染的报告；合法路径下结果与原先逐位一致。
+                let accumulated = cpu.entry(name.clone()).or_default();
+                let next = accumulated.checked_add(*cpu_ms).ok_or_else(|| {
+                    AnalyzeError::CpuTimeOverflow {
+                        process: name.clone(),
+                        accumulated: *accumulated,
+                        additional: *cpu_ms,
+                    }
+                })?;
+                *accumulated = next;
                 let lower = name.to_ascii_lowercase();
                 if SHELLS.contains(&lower.as_str()) {
                     shells.push(format!("{name} {command_line}"));
@@ -195,7 +248,7 @@ pub fn analyze(events: &[Event]) -> Report {
     report.findings.extend(crate::net::network_findings(events));
     // 网络角色：扫描回答「这次采样里谁在当后端（监听）、谁在当前端（外联）」。
     report.network_roles = crate::net::network_roles(events);
-    report
+    Ok(report)
 }
 
 pub fn to_json(report: &Report) -> Value {
@@ -233,99 +286,5 @@ pub fn has_findings(report: &Report) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn process(pid: u32, name: &str, cmd: &str, cpu_ms: u64) -> Event {
-        Event::Process {
-            ts_ms: 1000 + pid as u64,
-            pid,
-            ppid: 1,
-            name: name.to_string(),
-            command_line: cmd.to_string(),
-            working_set: 0,
-            cpu_ms,
-        }
-    }
-
-    #[test]
-    fn flags_shell_network_and_encoded_commands() {
-        let events = vec![
-            process(1, "app.exe", "app.exe", 10),
-            process(2, "cmd.exe", "cmd.exe /c whoami", 5),
-            process(3, "curl.exe", "curl http://x", 5),
-            process(
-                4,
-                "powershell.exe",
-                "powershell -EncodedCommand SQBFAFgA",
-                5,
-            ),
-        ];
-        let report = analyze(&events);
-        let ids: Vec<&str> = report.findings.iter().map(|finding| finding.id).collect();
-        for expected in [
-            "spawns-shell",
-            "spawns-network-tool",
-            "encoded-command-line",
-        ] {
-            assert!(ids.contains(&expected), "{ids:?}");
-        }
-        assert!(has_findings(&report));
-        assert_eq!(report.processes, 4);
-    }
-
-    #[test]
-    fn loopback_connections_are_not_flagged_but_public_ones_are() {
-        let events = vec![
-            Event::Connection {
-                ts_ms: 1,
-                pid: 1,
-                remote: "127.0.0.1:3425".into(),
-                state: "Established".into(),
-            },
-            Event::Connection {
-                ts_ms: 2,
-                pid: 1,
-                remote: "10.1.2.3:443".into(),
-                state: "Established".into(),
-            },
-            Event::Connection {
-                ts_ms: 3,
-                pid: 1,
-                remote: "93.184.216.34:443".into(),
-                state: "Established".into(),
-            },
-        ];
-        let report = analyze(&events);
-        let outbound = report
-            .findings
-            .iter()
-            .find(|finding| finding.id == "outbound-connection")
-            .expect("必须报外联");
-        assert_eq!(outbound.evidence.len(), 1, "{outbound:?}");
-        assert!(outbound.evidence[0].contains("93.184.216.34"));
-    }
-
-    #[test]
-    fn temp_modules_and_executable_writes_are_flagged() {
-        let events = vec![
-            Event::Module {
-                ts_ms: 1,
-                pid: 9,
-                process: "x.exe".into(),
-                path: "C:\\Users\\u\\AppData\\Local\\Temp\\a.dll".into(),
-                exports: None,
-            },
-            Event::FileWrite {
-                ts_ms: 2,
-                path: "out\\dropper.exe".into(),
-                bytes: 12,
-            },
-        ];
-        let report = analyze(&events);
-        let ids: Vec<&str> = report.findings.iter().map(|finding| finding.id).collect();
-        assert!(ids.contains(&"loads-module-from-temp"), "{ids:?}");
-        assert!(ids.contains(&"writes-executable"), "{ids:?}");
-        assert_eq!(report.writes, 1);
-    }
-}
+#[path = "analyze_tests.rs"]
+mod tests;

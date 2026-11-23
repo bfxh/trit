@@ -72,8 +72,7 @@ fn thousand_node_dag_build_and_propagate() {
     assert_eq!(allowed, 250, "另一半干净");
 
     println!(
-        "千节点 DAG：构建 {:?}，传播 {:?}，门禁 {:?}（1001 节点、500 门禁）",
-        build_time, prop_time, gate_time
+        "千节点 DAG：构建 {build_time:?}，传播 {prop_time:?}，门禁 {gate_time:?}（1001 节点、500 门禁）"
     );
 }
 
@@ -175,10 +174,7 @@ fn scheduler_thousand_tasks_eight_workers() {
     assert_eq!(counter.load(Ordering::Relaxed), 500, "500 个任务恰好一次");
     assert_eq!(dag.convergence().ratio, 1.0, "全 +1 固定点");
 
-    println!(
-        "调度器：500 任务 8 worker {:?}（{} 轮）",
-        elapsed, total_rounds
-    );
+    println!("调度器：500 任务 8 worker {elapsed:?}（{total_rounds} 轮）");
 }
 
 // ── 4. 六副本同步 + 跨仓污染 + 合并一致性 ────────────────────────────────
@@ -241,7 +237,7 @@ fn six_replicas_sync_and_cross_repo_propagation() {
     assert!(!merged.is_empty());
 
     let elapsed = start.elapsed();
-    println!("六副本：跨仓传播 + 合并 {:?}（6 仓、5 条跨仓边）", elapsed);
+    println!("六副本：跨仓传播 + 合并 {elapsed:?}（6 仓、5 条跨仓边）");
 
     // 清理
     for p in paths.iter() {
@@ -293,7 +289,7 @@ fn lifecycle_hundred_nodes_cascade_rollback() {
     assert!((lc.convergence().ratio - 1.0).abs() < 1e-9, "恢复到全 +1");
 
     let elapsed = start.elapsed();
-    println!("生命周期：100 节点级联回滚+恢复 {:?}", elapsed);
+    println!("生命周期：100 节点级联回滚+恢复 {elapsed:?}");
 }
 
 // ── 6. 概念台账：大量登记 + 同构检测不退化 ───────────────────────────────
@@ -336,7 +332,7 @@ fn vocab_hundred_concepts_no_degradation() {
     }
 
     let elapsed = start.elapsed();
-    println!("概念台账：100 条 + 同构检测 {:?}", elapsed);
+    println!("概念台账：100 条 + 同构检测 {elapsed:?}");
 }
 
 // ── 7. 全管线端到端：收割→扫描→死依赖→入账→调度器→固定点 ────────────────
@@ -445,7 +441,7 @@ fn vocab_thousand_concepts_isomorphism() {
     }
 
     let elapsed = start.elapsed();
-    println!("概念台账：1000 条 + 同构检测 {:?}", elapsed);
+    println!("概念台账：1000 条 + 同构检测 {elapsed:?}");
 }
 
 // ── 9. 并发 HTTP 服务器：100 请求 ─────────────────────────────────────────
@@ -494,6 +490,6 @@ fn server_hundred_concurrent_requests() {
     let elapsed = start.elapsed();
     assert_eq!(success.load(Ordering::Relaxed), 100);
 
-    println!("并发 HTTP：100 请求（10 线程 × 10）{:?}", elapsed);
+    println!("并发 HTTP：100 请求（10 线程 × 10）{elapsed:?}");
     let _ = std::fs::remove_file(&pa);
 }

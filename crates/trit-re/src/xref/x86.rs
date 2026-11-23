@@ -292,7 +292,14 @@ fn find_got_bases(exec: &[(&elf::ElfSection, &[u8])]) -> Bases {
                 index += 1;
                 continue;
             };
-            let return_address = section.addr.wrapping_add(index as u64 + 5);
+            let Some(return_address) = section
+                .addr
+                .checked_add(index as u64)
+                .and_then(|at| at.checked_add(5))
+            else {
+                index += 1;
+                continue;
+            };
             let target = return_address.wrapping_add(rel as i64 as u64);
             let Some(register) = pc_thunk_register(exec, target) else {
                 index += 1;

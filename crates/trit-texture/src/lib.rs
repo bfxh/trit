@@ -35,6 +35,7 @@ use trit_core::value::Ternary;
 
 pub mod convert;
 mod endpoints;
+pub(crate) use endpoints::endpoint_fnv;
 pub mod error;
 pub mod gguf;
 pub mod mip;

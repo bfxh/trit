@@ -261,19 +261,19 @@ fn transport(proto: u8, src: Addr, dst: Addr, l4: &[u8]) -> Result<Packet, Skip>
             if l4.len() < 8 {
                 return Err(Skip::Malformed("udp-header"));
             }
-            let length = usize::from(u16::from_be_bytes([l4[4], l4[5]])).min(l4.len());
-            if length < 8 {
+            let declared = usize::from(u16::from_be_bytes([l4[4], l4[5]]));
+            // 偏小（声明 < 捕获）属自相矛盾：可见跳过，不许静默截成零载荷；偏大按捕获钳取（截断场景）。
+            if declared < 8 || declared < l4.len() {
                 return Err(Skip::Malformed("udp-length"));
             }
-            let transport = Transport::Udp {
-                sport: u16::from_be_bytes([l4[0], l4[1]]),
-                dport: u16::from_be_bytes([l4[2], l4[3]]),
-            };
             Ok(Packet {
                 src,
                 dst,
-                transport,
-                payload_len: length - 8,
+                transport: Transport::Udp {
+                    sport: u16::from_be_bytes([l4[0], l4[1]]),
+                    dport: u16::from_be_bytes([l4[2], l4[3]]),
+                },
+                payload_len: l4.len() - 8,
             })
         }
         _ => Err(Skip::NotTcpUdp),

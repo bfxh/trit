@@ -320,7 +320,7 @@ impl<'a> Parser<'a> {
             // 范围 a-z（`-` 在类内 = 范围连接，字面 `-` 放头尾或转义）
             if self.peek() == Some(b'-')
                 && self.src.get(self.pos + 1).copied() != Some(b']')
-                && !self.src.get(self.pos + 1).is_none()
+                && self.src.get(self.pos + 1).is_some()
             {
                 self.pos += 1;
                 let hi_c = self.peek().ok_or("类范围缺上界")?;

@@ -249,6 +249,6 @@ fn emit_rules(
     let text = serde_json::to_string_pretty(band_rules)
         .map_err(|error| format!("规则序列化失败：{error}"))?;
     std::fs::write(path, text).map_err(|error| format!("写 {path} 失败：{error}"))?;
-    println!("校准规则已写 {}", path);
+    println!("校准规则已写 {path}");
     Ok(())
 }
