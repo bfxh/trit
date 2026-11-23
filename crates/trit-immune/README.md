@@ -41,7 +41,7 @@ cargo run --example scenario     # 红蓝对抗场景演示
 - **三值是语义不是装饰**：`-1 & x == -1`（一条确证漏洞堵死全链）、`0` 传染但不武断
   （未知面冻结合并，绝不猜成安全）、新代码默认 `0`。真值表逐组合对拍在 `tests/trit_tables.rs`。
 - **两层结构**：`--no-default-features` 一条命令切到内核形态，feature 门控钉死边界。
-- **CI 全部 `shell: bash`**：格式、clippy `-D warnings`、三平台测试、内核形态、MSRV 1.88、
+- **CI 全部 `shell: bash`**：格式、clippy `-D warnings`、三平台测试、内核形态、MSRV 1.89、
   rustdoc `-D warnings`、CLI 冒烟（`.github/workflows/ci.yml`）。
 - **诚实边界**见下文同名小节：`Sandbox` 是确定性替身，真实隔离执行环境要换；
   红蓝 Agent 是外部组件，本仓只定义它们写入 DAG 的协议。

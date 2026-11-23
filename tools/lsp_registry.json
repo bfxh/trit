@@ -1,0 +1,2381 @@
+{
+  "schema": "lsp-registry/1",
+  "updated": "2026-11-23",
+  "source": "https://raw.githubusercontent.com/neovim/nvim-lspconfig/master/doc/configs.md",
+  "note": "Curated from nvim-lspconfig's published config list. Only core install recipes are vetted; every other entry is detect/manual-install by design.",
+  "install_allowlist": [
+    "cargo",
+    "dotnet",
+    "gem",
+    "go",
+    "npm",
+    "pip",
+    "rustup"
+  ],
+  "servers": [
+    {
+      "id": "astro",
+      "command": [
+        "astro-ls",
+        "--stdio"
+      ],
+      "filetypes": [
+        "astro"
+      ],
+      "source": "https://github.com/withastro/astro",
+      "description": "Astro language server",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "basedpyright",
+      "command": [
+        "basedpyright-langserver",
+        "--stdio"
+      ],
+      "filetypes": [
+        "python"
+      ],
+      "source": "https://detachhead.github.io/basedpyright",
+      "description": "`basedpyright`, a static type checker and language server for python",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "basedpyright"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "bashls",
+      "command": [
+        "bash-language-server",
+        "start"
+      ],
+      "filetypes": [
+        "bash",
+        "sh"
+      ],
+      "source": "https://github.com/bash-lsp/bash-language-server",
+      "description": "`bash-language-server` can be installed via `npm`:",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "bash-language-server"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "ccls",
+      "command": [
+        "ccls"
+      ],
+      "filetypes": [
+        "c",
+        "cpp",
+        "objc",
+        "objcpp",
+        "cuda"
+      ],
+      "source": "https://github.com/MaskRay/ccls/wiki",
+      "description": "ccls relies on a [JSON compilation database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) specified",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "clangd",
+      "command": [
+        "clangd"
+      ],
+      "filetypes": [
+        "c",
+        "c.doxygen",
+        "cpp",
+        "cpp.doxygen",
+        "objc",
+        "objcpp",
+        "cuda"
+      ],
+      "source": "https://clangd.llvm.org/installation.html",
+      "description": "- **NOTE:** Clang >= 11 is recommended! See [#23](https://github.com/neovim/nvim-lspconfig/issues/23).",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "cmake",
+      "command": [
+        "cmake-language-server"
+      ],
+      "filetypes": [
+        "cmake"
+      ],
+      "source": "https://github.com/regen100/cmake-language-server",
+      "description": "CMake LSP Implementation",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "csharp_ls",
+      "command": [
+        "csharp-ls"
+      ],
+      "filetypes": [
+        "cs"
+      ],
+      "source": "https://github.com/razzmatazz/csharp-language-server",
+      "description": "C# language server",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "dotnet",
+          "tool",
+          "install",
+          "-g",
+          "csharp-ls"
+        ],
+        "manager": "dotnet"
+      }
+    },
+    {
+      "id": "cssls",
+      "command": [
+        "vscode-css-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "css",
+        "scss",
+        "less"
+      ],
+      "source": "https://github.com/hrsh7th/vscode-langservers-extracted",
+      "description": "CSS/SCSS/Less language server",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "vscode-langservers-extracted"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "emmylua_ls",
+      "command": [
+        "emmylua_ls"
+      ],
+      "filetypes": [
+        "lua"
+      ],
+      "source": "https://github.com/EmmyLuaLs/emmylua-analyzer-rust",
+      "description": "EmmyluaLs, a language server for Lua.",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "fish_lsp",
+      "command": [
+        "fish-lsp",
+        "start"
+      ],
+      "filetypes": [
+        "fish"
+      ],
+      "source": "https://github.com/ndonfris/fish-lsp",
+      "description": "A Language Server Protocol (LSP) tailored for the fish shell.",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "gopls",
+      "command": [
+        "gopls"
+      ],
+      "filetypes": [
+        "go",
+        "gomod",
+        "gowork",
+        "gotmpl"
+      ],
+      "source": "https://github.com/golang/tools/tree/master/gopls",
+      "description": "Google's lsp server for golang.",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "go",
+          "install",
+          "golang.org/x/tools/gopls@latest"
+        ],
+        "manager": "go"
+      }
+    },
+    {
+      "id": "html",
+      "command": [
+        "vscode-html-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "html"
+      ],
+      "source": "https://github.com/hrsh7th/vscode-langservers-extracted",
+      "description": "HTML language server",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "vscode-langservers-extracted"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "jdtls",
+      "command": [
+        "jdtls"
+      ],
+      "filetypes": [
+        "java"
+      ],
+      "source": "https://projects.eclipse.org/projects/eclipse.jdt.ls",
+      "description": "Eclipse JDT language server",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "jedi_language_server",
+      "command": [
+        "jedi-language-server"
+      ],
+      "filetypes": [
+        "python"
+      ],
+      "source": "https://github.com/pappasam/jedi-language-server",
+      "description": "`jedi-language-server`, a language server for Python, built on top of jedi",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "jsonls",
+      "command": [
+        "vscode-json-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "json",
+        "jsonc"
+      ],
+      "source": "https://github.com/hrsh7th/vscode-langservers-extracted",
+      "description": "JSON language server",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "vscode-langservers-extracted"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "lemminx",
+      "command": [
+        "lemminx"
+      ],
+      "filetypes": [
+        "xml",
+        "xsd",
+        "xsl",
+        "xslt",
+        "svg"
+      ],
+      "source": "https://github.com/eclipse/lemminx",
+      "description": "vim.lsp.enable('lemminx')",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "lua_ls",
+      "command": [
+        "lua-language-server"
+      ],
+      "filetypes": [
+        "lua"
+      ],
+      "source": "https://github.com/luals/lua-language-server",
+      "description": "Lua language server.",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "luau_lsp",
+      "command": [
+        "luau-lsp",
+        "lsp"
+      ],
+      "filetypes": [
+        "luau"
+      ],
+      "source": "https://github.com/JohnnyMorganz/luau-lsp",
+      "description": "Language server for the [Luau](https://luau-lang.org/) language.",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "pylsp",
+      "command": [
+        "pylsp"
+      ],
+      "filetypes": [
+        "python"
+      ],
+      "source": "https://github.com/python-lsp/python-lsp-server",
+      "description": "A Python 3.6+ implementation of the Language Server Protocol.",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "pip",
+          "install",
+          "python-lsp-server"
+        ],
+        "manager": "pip"
+      }
+    },
+    {
+      "id": "pyright",
+      "command": [
+        "pyright-langserver",
+        "--stdio"
+      ],
+      "filetypes": [
+        "python"
+      ],
+      "source": "https://github.com/microsoft/pyright",
+      "description": "`pyright`, a static type checker and language server for python",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "pyright"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "ruby_lsp",
+      "command": [
+        "ruby-lsp"
+      ],
+      "filetypes": [
+        "ruby",
+        "eruby"
+      ],
+      "source": "https://shopify.github.io/ruby-lsp/",
+      "description": "Ruby LSP",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "gem",
+          "install",
+          "ruby-lsp"
+        ],
+        "manager": "gem"
+      }
+    },
+    {
+      "id": "ruff",
+      "command": [
+        "ruff",
+        "server"
+      ],
+      "filetypes": [
+        "python"
+      ],
+      "source": "https://github.com/astral-sh/ruff",
+      "description": "A Language Server Protocol implementation for Ruff, an extremely fast Python linter and code formatter, written in Rust. It can be installed via `pip`.",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "pip",
+          "install",
+          "ruff"
+        ],
+        "manager": "pip"
+      }
+    },
+    {
+      "id": "rust_analyzer",
+      "command": [
+        "rust-analyzer"
+      ],
+      "filetypes": [
+        "rust"
+      ],
+      "source": "https://github.com/rust-lang/rust-analyzer",
+      "description": "rust-analyzer (aka rls 2.0), a language server for Rust",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "rustup",
+          "component",
+          "add",
+          "rust-analyzer"
+        ],
+        "manager": "rustup"
+      }
+    },
+    {
+      "id": "svelte",
+      "command": [
+        "svelteserver",
+        "--stdio"
+      ],
+      "filetypes": [
+        "svelte"
+      ],
+      "source": "https://github.com/sveltejs/language-tools",
+      "description": "Svelte language server",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "taplo",
+      "command": [
+        "taplo",
+        "lsp",
+        "stdio"
+      ],
+      "filetypes": [
+        "toml"
+      ],
+      "source": "https://taplo.tamasfe.dev/cli/usage/language-server.html",
+      "description": "Language server for Taplo, a TOML toolkit.",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "cargo",
+          "install",
+          "taplo-cli",
+          "--locked"
+        ],
+        "manager": "cargo"
+      }
+    },
+    {
+      "id": "ts_ls",
+      "command": [
+        "typescript-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "javascript",
+        "javascriptreact",
+        "typescript",
+        "typescriptreact"
+      ],
+      "source": "https://github.com/typescript-language-server/typescript-language-server",
+      "description": "TypeScript/JavaScript language server",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "typescript",
+          "typescript-language-server"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "vtsls",
+      "command": [
+        "vtsls",
+        "--stdio"
+      ],
+      "filetypes": [
+        "javascript",
+        "javascriptreact",
+        "typescript",
+        "typescriptreact"
+      ],
+      "source": "https://github.com/yioneko/vtsls",
+      "description": "`vtsls` can be installed with npm:",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "@vtsls/language-server"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "vue_ls",
+      "command": [
+        "vue-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "vue"
+      ],
+      "source": "https://github.com/vuejs/language-tools/tree/master/packages/language-server",
+      "description": "It can be installed via npm:",
+      "verified": true,
+      "tier": "core",
+      "install": null
+    },
+    {
+      "id": "yamlls",
+      "command": [
+        "yaml-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "yaml",
+        "yaml.docker-compose",
+        "yaml.gitlab"
+      ],
+      "source": "https://github.com/redhat-developer/yaml-language-server",
+      "description": "YAML language server",
+      "verified": true,
+      "tier": "core",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "yaml-language-server"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "ada_ls",
+      "command": [
+        "ada_language_server"
+      ],
+      "filetypes": [
+        "ada"
+      ],
+      "source": "https://github.com/AdaCore/ada_language_server",
+      "description": "Installation instructions can be found [here](https://github.com/AdaCore/ada_language_server#Install).",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "agda_ls",
+      "command": [
+        "als"
+      ],
+      "filetypes": [
+        "agda"
+      ],
+      "source": "https://github.com/agda/agda-language-server",
+      "description": "Language Server for Agda.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "agentscript",
+      "command": [
+        "agentscript-lsp",
+        "--stdio"
+      ],
+      "filetypes": [
+        "agentscript"
+      ],
+      "source": "https://github.com/salesforce/agentscript",
+      "description": "Language server for Agent Script, Salesforce's open agent specification",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "aiken",
+      "command": [
+        "aiken",
+        "lsp"
+      ],
+      "filetypes": [
+        "aiken"
+      ],
+      "source": "https://github.com/aiken-lang/aiken",
+      "description": "A language server for Aiken Programming Language.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "air",
+      "command": [
+        "air",
+        "language-server"
+      ],
+      "filetypes": [
+        "r"
+      ],
+      "source": "https://github.com/posit-dev/air",
+      "description": "Air is an R formatter and language server, written in Rust.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "alloy_ls",
+      "command": [
+        "alloy",
+        "lsp"
+      ],
+      "filetypes": [
+        "alloy"
+      ],
+      "source": "https://github.com/AlloyTools/org.alloytools.alloy",
+      "description": "Alloy is a formal specification language for describing structures and a tool for exploring them.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "anakin_language_server",
+      "command": [
+        "anakinls"
+      ],
+      "filetypes": [
+        "python"
+      ],
+      "source": "https://pypi.org/project/anakin-language-server/",
+      "description": "`anakin-language-server` is yet another Jedi Python language server.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "ansiblels",
+      "command": [
+        "ansible-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "yaml.ansible"
+      ],
+      "source": "https://github.com/ansible/vscode-ansible",
+      "description": "Language server for the ansible configuration management tool.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "antlersls",
+      "command": [
+        "antlersls",
+        "--stdio"
+      ],
+      "filetypes": [
+        "html",
+        "antlers"
+      ],
+      "source": "https://www.npmjs.com/package/antlers-language-server",
+      "description": "`antlersls` can be installed via `npm`:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "arduino_language_server",
+      "command": [
+        "arduino-language-server"
+      ],
+      "filetypes": [
+        "arduino"
+      ],
+      "source": "https://github.com/arduino/arduino-language-server",
+      "description": "Language server for Arduino",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "armls",
+      "command": [
+        "armls"
+      ],
+      "filetypes": [
+        "asm"
+      ],
+      "source": "https://github.com/arm/armls",
+      "description": "ArmLS is a language server for Arm Assembly.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "asm_lsp",
+      "command": [
+        "asm-lsp"
+      ],
+      "filetypes": [
+        "asm",
+        "vmasm"
+      ],
+      "source": "https://github.com/bergercookie/asm-lsp",
+      "description": "Language Server for NASM/GAS/GO Assembly",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "ast_grep",
+      "command": [
+        "ast-grep",
+        "lsp"
+      ],
+      "filetypes": [
+        "bash",
+        "c",
+        "cpp",
+        "cs",
+        "css",
+        "elixir",
+        "go",
+        "haskell",
+        "html",
+        "java",
+        "javascript",
+        "javascriptreact",
+        "json",
+        "kotlin",
+        "lua",
+        "nix",
+        "php",
+        "python",
+        "ruby",
+        "rust",
+        "scala",
+        "sh",
+        "solidity",
+        "swift",
+        "typescript",
+        "typescriptreact",
+        "yaml"
+      ],
+      "source": "https://ast-grep.github.io/",
+      "description": "ast-grep(sg) is a fast and polyglot tool for code structural search, lint, rewriting at large scale.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "ballerina",
+      "command": [
+        "bal",
+        "start-language-server"
+      ],
+      "filetypes": [
+        "ballerina"
+      ],
+      "source": "https://github.com/neovim/nvim-lspconfig/blob/master/lsp/ballerina.lua",
+      "description": "Ballerina language server",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "bazelrc_lsp",
+      "command": [
+        "bazelrc-lsp",
+        "lsp"
+      ],
+      "filetypes": [
+        "bazelrc"
+      ],
+      "source": "https://github.com/salesforce-misc/bazelrc-lsp",
+      "description": "`bazelrc-lsp` is a LSP for `.bazelrc` configuration files.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "buck2",
+      "command": [
+        "buck2",
+        "lsp"
+      ],
+      "filetypes": [
+        "bzl"
+      ],
+      "source": "https://github.com/facebook/buck2",
+      "description": "Build system, successor to Buck",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "buf_ls",
+      "command": [
+        "buf",
+        "lsp",
+        "serve",
+        "--log-format=text"
+      ],
+      "filetypes": [
+        "proto",
+        "buf-config"
+      ],
+      "source": "https://github.com/bufbuild/buf",
+      "description": "buf lsp included in the cli itself",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "bzl",
+      "command": [
+        "bzl",
+        "lsp",
+        "serve"
+      ],
+      "filetypes": [
+        "bzl"
+      ],
+      "source": "https://bzl.io/",
+      "description": "vim.lsp.enable('bzl')",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "clojure_lsp",
+      "command": [
+        "clojure-lsp"
+      ],
+      "filetypes": [
+        "clojure",
+        "edn"
+      ],
+      "source": "https://github.com/clojure-lsp/clojure-lsp",
+      "description": "Clojure Language Server",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "coq_lsp",
+      "command": [
+        "coq-lsp"
+      ],
+      "filetypes": [
+        "coq"
+      ],
+      "source": "https://github.com/ejgallego/coq-lsp/",
+      "description": "vim.lsp.enable('coq_lsp')",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "crystalline",
+      "command": [
+        "crystalline"
+      ],
+      "filetypes": [
+        "crystal"
+      ],
+      "source": "https://github.com/elbywan/crystalline",
+      "description": "Crystal language server.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "cue",
+      "command": [
+        "cue",
+        "lsp"
+      ],
+      "filetypes": [
+        "cue"
+      ],
+      "source": "https://github.com/cue-lang/cue",
+      "description": "CUE makes it easy to validate data, write schemas, and ensure configurations align with policies.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "dhall_lsp_server",
+      "command": [
+        "dhall-lsp-server"
+      ],
+      "filetypes": [
+        "dhall"
+      ],
+      "source": "https://github.com/dhall-lang/dhall-haskell/tree/master/dhall-lsp-server",
+      "description": "language server for dhall",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "docker_compose_language_service",
+      "command": [
+        "docker-compose-langserver",
+        "--stdio"
+      ],
+      "filetypes": [
+        "yaml.docker-compose"
+      ],
+      "source": "https://github.com/microsoft/compose-language-service",
+      "description": "`compose-language-service` can be installed via `npm`:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "dockerls",
+      "command": [
+        "docker-langserver",
+        "--stdio"
+      ],
+      "filetypes": [
+        "dockerfile"
+      ],
+      "source": "https://github.com/rcjsuen/dockerfile-language-server-nodejs",
+      "description": "`docker-langserver` can be installed via `npm`:",
+      "verified": true,
+      "tier": "standard",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "dockerfile-language-server-nodejs"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "earthlyls",
+      "command": [
+        "earthlyls"
+      ],
+      "filetypes": [
+        "earthfile"
+      ],
+      "source": "https://github.com/glehmann/earthlyls",
+      "description": "A fast language server for earthly.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "elixirls",
+      "command": [
+        "elixir-ls"
+      ],
+      "filetypes": [
+        "elixir",
+        "eelixir",
+        "heex",
+        "surface"
+      ],
+      "source": "https://github.com/elixir-lsp/elixir-ls",
+      "description": "`elixir-ls` can be installed by following the instructions [here](https://github.com/elixir-lsp/elixir-ls#building-and-running).",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "elmls",
+      "command": [
+        "elm-language-server"
+      ],
+      "filetypes": [
+        "elm"
+      ],
+      "source": "https://github.com/elm-tooling/elm-language-server#installation",
+      "description": "If you don't want to use Nvim to install it, then you can use:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "elp",
+      "command": [
+        "elp",
+        "server"
+      ],
+      "filetypes": [
+        "erlang"
+      ],
+      "source": "https://whatsapp.github.io/erlang-language-platform",
+      "description": "ELP integrates Erlang into modern IDEs via the language server protocol and was",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "fennel_language_server",
+      "command": [
+        "fennel-language-server"
+      ],
+      "filetypes": [
+        "fennel"
+      ],
+      "source": "https://github.com/rydesun/fennel-language-server",
+      "description": "Fennel language server protocol (LSP) support.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "fsautocomplete",
+      "command": [
+        "fsautocomplete",
+        "--adaptive-lsp-server-enabled"
+      ],
+      "filetypes": [
+        "fsharp"
+      ],
+      "source": "https://github.com/fsharp/FsAutoComplete",
+      "description": "Language Server for F# provided by FsAutoComplete (FSAC).",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "gdshader_lsp",
+      "command": [
+        "gdshader-lsp",
+        "--stdio"
+      ],
+      "filetypes": [
+        "gdshader",
+        "gdshaderinc"
+      ],
+      "source": "https://github.com/godofavacyn/gdshader-lsp",
+      "description": "A language server for the Godot Shading language.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "ghdl_ls",
+      "command": [
+        "ghdl-ls"
+      ],
+      "filetypes": [
+        "vhdl"
+      ],
+      "source": "https://github.com/ghdl/ghdl-language-server",
+      "description": "A language server for VHDL, using ghdl as its backend.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "gleam",
+      "command": [
+        "gleam",
+        "lsp"
+      ],
+      "filetypes": [
+        "gleam"
+      ],
+      "source": "https://github.com/gleam-lang/gleam",
+      "description": "A language server for Gleam Programming Language.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "glsl_analyzer",
+      "command": [
+        "glsl_analyzer"
+      ],
+      "filetypes": [
+        "glsl",
+        "vert",
+        "tesc",
+        "tese",
+        "frag",
+        "geom",
+        "comp"
+      ],
+      "source": "https://github.com/nolanderc/glsl_analyzer",
+      "description": "Language server for GLSL",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "gradle_ls",
+      "command": [
+        "gradle-language-server"
+      ],
+      "filetypes": [
+        "groovy"
+      ],
+      "source": "https://github.com/microsoft/vscode-gradle",
+      "description": "Microsoft's lsp server for gradle files",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "graphql",
+      "command": [
+        "graphql-lsp",
+        "server",
+        "-m",
+        "stream"
+      ],
+      "filetypes": [
+        "graphql",
+        "typescriptreact",
+        "javascriptreact"
+      ],
+      "source": "https://github.com/graphql/graphiql/tree/main/packages/graphql-language-service-cli",
+      "description": "`graphql-lsp` can be installed via `npm`:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "guile_ls",
+      "command": [
+        "guile-lsp-server"
+      ],
+      "filetypes": [
+        "scheme.guile"
+      ],
+      "source": "https://codeberg.org/rgherdt/scheme-lsp-server",
+      "description": "guix package -f guix.scm",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "hare_lsp",
+      "command": [
+        "hare-lsp",
+        "-S"
+      ],
+      "filetypes": [
+        "hare"
+      ],
+      "source": "https://sr.ht/~whynothugo/hare-lsp/",
+      "description": "Language server for hare.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "harper_ls",
+      "command": [
+        "harper-ls",
+        "--stdio"
+      ],
+      "filetypes": [
+        "asciidoc",
+        "c",
+        "cpp",
+        "cs",
+        "gitcommit",
+        "go",
+        "html",
+        "java",
+        "javascript",
+        "jjdescription",
+        "lua",
+        "markdown",
+        "nix",
+        "python",
+        "ruby",
+        "rust",
+        "swift",
+        "tex",
+        "toml",
+        "typescript",
+        "typescriptreact",
+        "haskell",
+        "cmake",
+        "typst",
+        "php",
+        "dart",
+        "clojure",
+        "sh"
+      ],
+      "source": "https://github.com/automattic/harper",
+      "description": "In short, they should look something like this:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "helm_ls",
+      "command": [
+        "helm_ls",
+        "serve"
+      ],
+      "filetypes": [
+        "helm",
+        "yaml.helm-values"
+      ],
+      "source": "https://github.com/mrjosh/helm-ls",
+      "description": "Helm Language server. (This LSP is in early development)",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "hlasm",
+      "command": [
+        "hlasm_language_server"
+      ],
+      "filetypes": [
+        "hlasm"
+      ],
+      "source": "https://github.com/eclipse-che4z/che-che4z-lsp-for-hlasm",
+      "description": "`hlasm_language_server` is a language server for the High Level Assembler language used on IBM SystemZ mainframes.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "hls",
+      "command": [
+        "haskell-language-server-wrapper",
+        "--lsp"
+      ],
+      "filetypes": [
+        "haskell",
+        "lhaskell"
+      ],
+      "source": "https://github.com/haskell/haskell-language-server",
+      "description": "Haskell Language Server",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "idris2_lsp",
+      "command": [
+        "idris2-lsp"
+      ],
+      "filetypes": [
+        "idris2"
+      ],
+      "source": "https://github.com/idris-community/idris2-lsp",
+      "description": "Plugins for the Idris 2 filetype include",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "intelephense",
+      "command": [
+        "intelephense",
+        "--stdio"
+      ],
+      "filetypes": [
+        "php"
+      ],
+      "source": "https://intelephense.com/",
+      "description": "`intelephense` can be installed via `npm`:",
+      "verified": true,
+      "tier": "standard",
+      "install": {
+        "kind": "command",
+        "command": [
+          "npm",
+          "install",
+          "-g",
+          "intelephense"
+        ],
+        "manager": "npm"
+      }
+    },
+    {
+      "id": "janet_lsp",
+      "command": [
+        "janet-lsp",
+        "--stdio"
+      ],
+      "filetypes": [
+        "janet"
+      ],
+      "source": "https://github.com/CFiggers/janet-lsp",
+      "description": "A Language Server Protocol implementation for Janet.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "jsonnet_ls",
+      "command": [
+        "jsonnet-language-server"
+      ],
+      "filetypes": [
+        "jsonnet",
+        "libsonnet"
+      ],
+      "source": "https://github.com/grafana/jsonnet-language-server",
+      "description": "A Language Server Protocol (LSP) server for Jsonnet.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "julials",
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--history-file=no",
+        "-e",
+        ".julia",
+        "environments",
+        "nvim-lspconfig",
+        "Running language server"
+      ],
+      "filetypes": [
+        "julia"
+      ],
+      "source": "https://github.com/julia-vscode/LanguageServer.jl/",
+      "description": "LanguageServer.jl can be installed with `julia` and `Pkg`:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "just",
+      "command": [
+        "just-lsp"
+      ],
+      "filetypes": [
+        "just"
+      ],
+      "source": "https://github.com/terror/just-lsp",
+      "description": "`just-lsp` is an LSP for just built on top of the tree-sitter-just parser.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "kcl",
+      "command": [
+        "kcl-language-server"
+      ],
+      "filetypes": [
+        "kcl"
+      ],
+      "source": "https://github.com/kcl-lang/kcl.nvim",
+      "description": "Language server for the KCL configuration and policy language.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "kconfig_lsp",
+      "command": [
+        "kconfig-lsp"
+      ],
+      "filetypes": [
+        "kconfig"
+      ],
+      "source": "https://github.com/cccheng/kconfig-lsp",
+      "description": "Language server for Kconfig, the configuration language of Linux, Zephyr, U-Boot, coreboot and",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "kotlin_language_server",
+      "command": [
+        "kotlin-language-server"
+      ],
+      "filetypes": [
+        "kotlin"
+      ],
+      "source": "https://github.com/fwcd/kotlin-language-server",
+      "description": "A kotlin language server which was developed for internal usage and",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "kotlin_lsp",
+      "command": [
+        "intellij-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "kotlin"
+      ],
+      "source": "https://github.com/neovim/nvim-lspconfig/blob/master/lsp/kotlin_lsp.lua",
+      "description": "Pre-alpha official Kotlin support for Visual Studio Code and an implementation of Language Server Protocol for the Kotlin language.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "lexical",
+      "command": [
+        "lexical"
+      ],
+      "filetypes": [
+        "elixir",
+        "eelixir",
+        "heex",
+        "surface"
+      ],
+      "source": "https://github.com/lexical-lsp/lexical",
+      "description": "Lexical is a next-generation language server for the Elixir programming language.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "ltex",
+      "command": [
+        "ltex-ls"
+      ],
+      "filetypes": [
+        "bib",
+        "gitcommit",
+        "markdown",
+        "org",
+        "plaintex",
+        "rst",
+        "rnoweb",
+        "tex",
+        "pandoc",
+        "quarto",
+        "rmd",
+        "context",
+        "html",
+        "xhtml",
+        "mail",
+        "text"
+      ],
+      "source": "https://github.com/valentjn/ltex-ls",
+      "description": "LTeX Language Server: LSP language server for LanguageTool 🔍✔️ with support for LaTeX 🎓, Markdown 📝, and others",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "m68k",
+      "command": [
+        "m68k-lsp-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "asm68k"
+      ],
+      "source": "https://github.com/grahambates/m68k-lsp",
+      "description": "Language server for Motorola 68000 family assembly",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "markdown_oxide",
+      "command": [
+        "markdown-oxide"
+      ],
+      "filetypes": [
+        "markdown"
+      ],
+      "source": "https://github.com/Feel-ix-343/markdown-oxide",
+      "description": "Editor Agnostic PKM: you bring the text editor and we",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "marksman",
+      "command": [
+        "marksman",
+        "server"
+      ],
+      "filetypes": [
+        "markdown",
+        "markdown.mdx"
+      ],
+      "source": "https://github.com/artempyanykh/marksman",
+      "description": "Marksman is a Markdown LSP server providing completion, cross-references, diagnostics, and more.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "mesonlsp",
+      "command": [
+        "mesonlsp",
+        "--lsp"
+      ],
+      "filetypes": [
+        "meson"
+      ],
+      "source": "https://github.com/JCWasmx86/mesonlsp",
+      "description": "An unofficial, unendorsed language server for meson written in C++",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "metals",
+      "command": [
+        "metals"
+      ],
+      "filetypes": [
+        "scala"
+      ],
+      "source": "https://scalameta.org/metals/",
+      "description": "Scala language server with rich IDE features.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "mlir_lsp_server",
+      "command": [
+        "mlir-lsp-server"
+      ],
+      "filetypes": [
+        "mlir"
+      ],
+      "source": "https://mlir.llvm.org/docs/Tools/MLIRLSP/#mlir-lsp-language-server--mlir-lsp-server=",
+      "description": "`mlir-lsp-server` can be installed at the llvm-project repository (https://github.com/llvm/llvm-project)",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "neocmake",
+      "command": [
+        "neocmakelsp",
+        "stdio"
+      ],
+      "filetypes": [
+        "cmake"
+      ],
+      "source": "https://github.com/neocmakelsp/neocmakelsp",
+      "description": "CMake LSP Implementation",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "nginx_language_server",
+      "command": [
+        "nginx-language-server"
+      ],
+      "filetypes": [
+        "nginx"
+      ],
+      "source": "https://pypi.org/project/nginx-language-server/",
+      "description": "`nginx-language-server` can be installed via pip:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "nickel_ls",
+      "command": [
+        "nls"
+      ],
+      "filetypes": [
+        "ncl",
+        "nickel"
+      ],
+      "source": "https://github.com/tweag/nickel",
+      "description": "Nickel Language Server",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "nim_langserver",
+      "command": [
+        "nimlangserver"
+      ],
+      "filetypes": [
+        "nim"
+      ],
+      "source": "https://github.com/nim-lang/langserver",
+      "description": "`nim-langserver` can be installed via the `nimble` package manager:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "nimls",
+      "command": [
+        "nimlsp"
+      ],
+      "filetypes": [
+        "nim"
+      ],
+      "source": "https://github.com/PMunch/nimlsp",
+      "description": "`nimlsp` can be installed via the `nimble` package manager:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "nomad_lsp",
+      "command": [
+        "nomad-lsp"
+      ],
+      "filetypes": [
+        "hcl.nomad",
+        "nomad"
+      ],
+      "source": "https://github.com/juliosueiras/nomad-lsp",
+      "description": "Written in Go, compilation is needed for `nomad_lsp` to be used. Please see the [original repository](https://github.com/juliosuieras/nomad-lsp).",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "ocamllsp",
+      "command": [
+        "ocamllsp"
+      ],
+      "filetypes": [
+        "ocaml",
+        "menhir",
+        "ocamlinterface",
+        "ocamllex",
+        "reason",
+        "dune"
+      ],
+      "source": "https://github.com/ocaml/ocaml-lsp",
+      "description": "`ocaml-lsp` can be installed as described in [installation guide](https://github.com/ocaml/ocaml-lsp#installation).",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "ols",
+      "command": [
+        "ols"
+      ],
+      "filetypes": [
+        "odin"
+      ],
+      "source": "https://github.com/DanielGavin/ols",
+      "description": "`Odin Language Server`.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "omnisharp",
+      "command": [
+        "omnisharp",
+        "-z",
+        "--hostPID",
+        "12345",
+        "DotNet:enablePackageRestore=false",
+        "--encoding",
+        "utf-8",
+        "--languageserver"
+      ],
+      "filetypes": [
+        "cs",
+        "vb"
+      ],
+      "source": "https://github.com/omnisharp/omnisharp-roslyn",
+      "description": "OmniSharp server based on Roslyn workspaces",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "opencl_ls",
+      "command": [
+        "opencl-language-server"
+      ],
+      "filetypes": [
+        "opencl"
+      ],
+      "source": "https://github.com/Galarius/opencl-language-server",
+      "description": "Build instructions can be found [here](https://github.com/Galarius/opencl-language-server/blob/main/DEV.md).",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "openscad_ls",
+      "command": [
+        "openscad-language-server"
+      ],
+      "filetypes": [
+        "openscad"
+      ],
+      "source": "https://github.com/dzhu/openscad-language-server",
+      "description": "A Language Server Protocol server for OpenSCAD",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "perl_lsp",
+      "command": [
+        "perl-lsp"
+      ],
+      "filetypes": [
+        "perl"
+      ],
+      "source": "https://github.com/tree-sitter-perl/perl-lsp",
+      "description": "A Perl language server built on tree-sitter-perl, with cross-file type inference. It can be",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "perlls",
+      "command": [
+        "perl",
+        "-MPerl::LanguageServer",
+        "-e",
+        "Perl::LanguageServer::run",
+        "--",
+        "--port 13603",
+        "--nostdio 0"
+      ],
+      "filetypes": [
+        "perl"
+      ],
+      "source": "https://github.com/richterger/Perl-LanguageServer/tree/master/clients/vscode/perl",
+      "description": "`Perl-LanguageServer`, a language server for Perl.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "perlnavigator",
+      "command": [
+        "perlnavigator"
+      ],
+      "filetypes": [
+        "perl"
+      ],
+      "source": "https://github.com/bscan/PerlNavigator",
+      "description": "A Perl language server. It can be installed via npm:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "phpactor",
+      "command": [
+        "phpactor",
+        "language-server"
+      ],
+      "filetypes": [
+        "php"
+      ],
+      "source": "https://github.com/phpactor/phpactor",
+      "description": "Installation: https://phpactor.readthedocs.io/en/master/usage/standalone.html#global-installation",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "pkl",
+      "command": [
+        "pkl-lsp"
+      ],
+      "filetypes": [
+        "pkl",
+        "pcf"
+      ],
+      "source": "https://github.com/apple/pkl-lsp",
+      "description": "Language server for [Pkl](https://pkl-lang.org/), a configuration language by Apple.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "postgres_lsp",
+      "command": [
+        "postgres-language-server",
+        "lsp-proxy"
+      ],
+      "filetypes": [
+        "sql"
+      ],
+      "source": "https://pg-language-server.com",
+      "description": "A collection of language tools and a Language Server Protocol (LSP) implementation for Postgres, focusing on developer experience and reliable SQL tooling.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "prismals",
+      "command": [
+        "prisma-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "prisma"
+      ],
+      "source": "https://github.com/neovim/nvim-lspconfig/blob/master/lsp/prismals.lua",
+      "description": "Language Server for the Prisma JavaScript and TypeScript ORM",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "prosemd_lsp",
+      "command": [
+        "prosemd-lsp",
+        "--stdio"
+      ],
+      "filetypes": [
+        "markdown"
+      ],
+      "source": "https://github.com/kitten/prosemd-lsp",
+      "description": "An experimental LSP for Markdown.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "protols",
+      "command": [
+        "protols"
+      ],
+      "filetypes": [
+        "proto"
+      ],
+      "source": "https://github.com/coder3101/protols",
+      "description": "`protols` can be installed via `cargo`:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "psalm",
+      "command": [
+        "psalm",
+        "--language-server"
+      ],
+      "filetypes": [
+        "php"
+      ],
+      "source": "https://github.com/vimeo/psalm",
+      "description": "Can be installed with composer.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "purescriptls",
+      "command": [
+        "purescript-language-server",
+        "--stdio"
+      ],
+      "filetypes": [
+        "purescript"
+      ],
+      "source": "https://github.com/nwolverson/purescript-language-server",
+      "description": "* JavaScript package manager such as npm, pnpm, Yarn, et al.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "r_language_server",
+      "command": [
+        "R",
+        "--no-echo",
+        "-e",
+        "languageserver::run()"
+      ],
+      "filetypes": [
+        "r",
+        "rmd",
+        "quarto"
+      ],
+      "source": "https://github.com/REditorSupport/languageserver",
+      "description": "[languageserver](https://github.com/REditorSupport/languageserver) is an",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "racket_langserver",
+      "command": [
+        "racket",
+        "--lib",
+        "racket-langserver"
+      ],
+      "filetypes": [
+        "racket",
+        "scheme"
+      ],
+      "source": "https://github.com/jeapostrophe/racket-langserver](https://github.com/jeapostrophe/racket-langserver",
+      "description": "[https://github.com/jeapostrophe/racket-langserver](https://github.com/jeapostrophe/racket-langserver)",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "roslyn_ls",
+      "command": [
+        "roslyn-language-server",
+        "--stdio",
+        "--autoLoadProjects"
+      ],
+      "filetypes": [
+        "cs"
+      ],
+      "source": "https://github.com/dotnet/roslyn",
+      "description": "dotnet tool install --global roslyn-language-server --prerelease",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "scheme_langserver",
+      "command": [
+        "scheme-langserver",
+        "~/.scheme-langserver.log",
+        "enable",
+        "disable"
+      ],
+      "filetypes": [
+        "scheme"
+      ],
+      "source": "https://github.com/ufo5260987423/scheme-langserver",
+      "description": "`scheme-langserver`, a language server protocol implementation for scheme.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "serve_d",
+      "command": [
+        "serve-d"
+      ],
+      "filetypes": [
+        "d"
+      ],
+      "source": "https://github.com/Pure-D/serve-d",
+      "description": "Microsoft language server protocol implementation for D using workspace-d.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "slangd",
+      "command": [
+        "slangd"
+      ],
+      "filetypes": [
+        "hlsl",
+        "shaderslang"
+      ],
+      "source": "https://github.com/shader-slang/slang",
+      "description": "by [building `slang` from source](https://github.com/shader-slang/slang/blob/master/docs/building.md).",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "solargraph",
+      "command": [
+        "solargraph",
+        "stdio"
+      ],
+      "filetypes": [
+        "ruby"
+      ],
+      "source": "https://solargraph.org/",
+      "description": "solargraph, a language server for Ruby",
+      "verified": true,
+      "tier": "standard",
+      "install": {
+        "kind": "command",
+        "command": [
+          "gem",
+          "install",
+          "solargraph"
+        ],
+        "manager": "gem"
+      }
+    },
+    {
+      "id": "sorbet",
+      "command": [
+        "srb",
+        "tc",
+        "--lsp"
+      ],
+      "filetypes": [
+        "ruby"
+      ],
+      "source": "https://sorbet.org",
+      "description": "Sorbet is a fast, powerful type checker designed for Ruby.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "sqlls",
+      "command": [
+        "sql-language-server",
+        "up",
+        "--method",
+        "stdio"
+      ],
+      "filetypes": [
+        "sql",
+        "mysql"
+      ],
+      "source": "https://github.com/joe-re/sql-language-server",
+      "description": "vim.lsp.enable('sqlls')",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "sqls",
+      "command": [
+        "sqls"
+      ],
+      "filetypes": [
+        "sql",
+        "mysql"
+      ],
+      "source": "https://github.com/sqls-server/sqls",
+      "description": "vim.lsp.config('sqls', {",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "starlark_rust",
+      "command": [
+        "starlark",
+        "--lsp"
+      ],
+      "filetypes": [
+        "star",
+        "bzl",
+        "BUILD.bazel"
+      ],
+      "source": "https://github.com/facebookexperimental/starlark-rust/",
+      "description": "but the implementation works well for linting.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "starpls",
+      "command": [
+        "starpls"
+      ],
+      "filetypes": [
+        "bzl"
+      ],
+      "source": "https://github.com/withered-magic/starpls",
+      "description": "`starpls` is an LSP implementation for Starlark. Installation instructions can be found in the project's README.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "svlangserver",
+      "command": [
+        "svlangserver"
+      ],
+      "filetypes": [
+        "verilog",
+        "systemverilog"
+      ],
+      "source": "https://github.com/imc-trading/svlangserver",
+      "description": "Language server for SystemVerilog.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "svls",
+      "command": [
+        "svls"
+      ],
+      "filetypes": [
+        "verilog",
+        "systemverilog"
+      ],
+      "source": "https://github.com/dalance/svls",
+      "description": "Language server for verilog and SystemVerilog",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "tblgen_lsp_server",
+      "command": [
+        "tblgen-lsp-server"
+      ],
+      "filetypes": [
+        "tablegen"
+      ],
+      "source": "https://mlir.llvm.org/docs/Tools/MLIRLSP/#tablegen-lsp-language-server--tblgen-lsp-server",
+      "description": "`tblgen-lsp-server` can be installed at the llvm-project repository (https://github.com/llvm/llvm-project)",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "terraform_lsp",
+      "command": [
+        "terraform-lsp"
+      ],
+      "filetypes": [
+        "terraform",
+        "hcl"
+      ],
+      "source": "https://github.com/juliosueiras/terraform-lsp",
+      "description": "Terraform language server",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "terraformls",
+      "command": [
+        "terraform-ls",
+        "serve"
+      ],
+      "filetypes": [
+        "terraform",
+        "terraform-vars"
+      ],
+      "source": "https://github.com/hashicorp/terraform-ls",
+      "description": "Terraform language server",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "texlab",
+      "command": [
+        "texlab"
+      ],
+      "filetypes": [
+        "tex",
+        "plaintex",
+        "bib"
+      ],
+      "source": "https://github.com/latex-lsp/texlab",
+      "description": "A completion engine built from scratch for (La)TeX.",
+      "verified": true,
+      "tier": "standard",
+      "install": {
+        "kind": "command",
+        "command": [
+          "cargo",
+          "install",
+          "texlab",
+          "--locked"
+        ],
+        "manager": "cargo"
+      }
+    },
+    {
+      "id": "tilt_ls",
+      "command": [
+        "tilt",
+        "lsp",
+        "start"
+      ],
+      "filetypes": [
+        "tiltfile"
+      ],
+      "source": "https://github.com/tilt-dev/tilt",
+      "description": "Tilt language server.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "tinymist",
+      "command": [
+        "tinymist"
+      ],
+      "filetypes": [
+        "typst"
+      ],
+      "source": "https://github.com/Myriad-Dreamin/tinymist",
+      "description": "An integrated language service for Typst [taɪpst]. You can also call it \"微霭\" [wēi ǎi] in Chinese.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "v_analyzer",
+      "command": [
+        "v-analyzer"
+      ],
+      "filetypes": [
+        "v",
+        "vsh",
+        "vv"
+      ],
+      "source": "https://github.com/vlang/v-analyzer",
+      "description": "V language server.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "vale_ls",
+      "command": [
+        "vale-ls"
+      ],
+      "filetypes": [
+        "asciidoc",
+        "markdown",
+        "text",
+        "tex",
+        "rst",
+        "html",
+        "xml"
+      ],
+      "source": "https://github.com/errata-ai/vale-ls",
+      "description": "An implementation of the Language Server Protocol (LSP) for the Vale command-line tool.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "verible",
+      "command": [
+        "verible-verilog-ls"
+      ],
+      "filetypes": [
+        "systemverilog",
+        "verilog"
+      ],
+      "source": "https://github.com/chipsalliance/verible",
+      "description": "A linter and formatter for verilog and SystemVerilog files.",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "vhdl_ls",
+      "command": [
+        "vhdl_ls"
+      ],
+      "filetypes": [
+        "vhd",
+        "vhdl"
+      ],
+      "source": "https://github.com/VHDL-LS/rust_hdl",
+      "description": "Install vhdl_ls from https://github.com/VHDL-LS/rust_hdl and add it to path",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "wgsl_analyzer",
+      "command": [
+        "wgsl-analyzer"
+      ],
+      "filetypes": [
+        "wgsl"
+      ],
+      "source": "https://github.com/wgsl-analyzer/wgsl-analyzer",
+      "description": "`wgsl-analyzer` can be installed via `cargo`:",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    },
+    {
+      "id": "zls",
+      "command": [
+        "zls"
+      ],
+      "filetypes": [
+        "zig",
+        "zir"
+      ],
+      "source": "https://github.com/zigtools/zls",
+      "description": "Zig LSP implementation + Zig Language Server",
+      "verified": true,
+      "tier": "standard",
+      "install": null
+    }
+  ],
+  "count": 138
+}

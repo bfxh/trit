@@ -1,0 +1,1064 @@
+{
+  "schema": 1,
+  "suite": "agent-bench",
+  "tasks": [
+    {
+      "id": "py-sum-offbyone",
+      "title": "sum_to 的右端点少算一项",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "off-by-one",
+        "loop"
+      ],
+      "files": {
+        "calc.py": "def sum_to(n):\n    return sum(range(1, n))\n",
+        "test_calc.py": "import unittest\nfrom calc import sum_to\n\nclass T(unittest.TestCase):\n    def test_five(self):\n        self.assertEqual(sum_to(5), 15)\n    def test_zero(self):\n        self.assertEqual(sum_to(0), 0)\n"
+      },
+      "gold": {
+        "calc.py": "def sum_to(n):\n    return sum(range(1, n + 1))\n"
+      },
+      "negative": {
+        "calc.py": "def sum_to(n):\n    return sum(range(1, n + 2))\n"
+      },
+      "changed": [
+        "calc.py"
+      ],
+      "negative_changed": [
+        "calc.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 1
+    },
+    {
+      "id": "py-cli-upper-flag",
+      "title": "render 忽略 upper 参数",
+      "kind": "patch",
+      "category": "feature",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "feature-flag",
+        "string"
+      ],
+      "files": {
+        "cli.py": "def render(text, upper=False):\n    return text\n",
+        "test_cli.py": "import unittest\nfrom cli import render\n\nclass T(unittest.TestCase):\n    def test_upper(self):\n        self.assertEqual(render(\"abc\", True), \"ABC\")\n    def test_plain(self):\n        self.assertEqual(render(\"abc\", False), \"abc\")\n"
+      },
+      "gold": {
+        "cli.py": "def render(text, upper=False):\n    return text.upper() if upper else text\n"
+      },
+      "negative": {
+        "cli.py": "def render(text, upper=False):\n    return text.lower() if upper else text\n"
+      },
+      "changed": [
+        "cli.py"
+      ],
+      "negative_changed": [
+        "cli.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 2
+    },
+    {
+      "id": "py-normalize-refactor",
+      "title": "名字和邮箱的规范化重复且不一致",
+      "kind": "patch",
+      "category": "refactor",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "SWE-bench-style",
+      "tags": [
+        "refactor",
+        "dedupe"
+      ],
+      "files": {
+        "normalize.py": "def normalize_name(s):\n    return s.strip()\n\ndef normalize_email(s):\n    return s.strip()\n",
+        "test_normalize.py": "import unittest\nfrom normalize import normalize_name, normalize_email\n\nclass T(unittest.TestCase):\n    def test_name(self):\n        self.assertEqual(normalize_name(\"  Ada \"), \"ada\")\n    def test_email(self):\n        self.assertEqual(normalize_email(\" A@B.COM \"), \"a@b.com\")\n"
+      },
+      "gold": {
+        "normalize.py": "def _clean(s):\n    return s.strip().lower()\n\ndef normalize_name(s):\n    return _clean(s)\n\ndef normalize_email(s):\n    return _clean(s)\n"
+      },
+      "negative": {
+        "normalize.py": "def normalize_name(s):\n    return s.strip().upper()\n\ndef normalize_email(s):\n    return s.strip().upper()\n"
+      },
+      "changed": [
+        "normalize.py"
+      ],
+      "negative_changed": [
+        "normalize.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 3
+    },
+    {
+      "id": "py-json-schema-email",
+      "title": "用户校验漏掉 email 必填",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "json",
+        "validation"
+      ],
+      "files": {
+        "validate.py": "def validate_user(d):\n    if not d.get(\"name\"):\n        return \"name\"\n    return None\n",
+        "test_validate.py": "import unittest\nfrom validate import validate_user\n\nclass T(unittest.TestCase):\n    def test_missing_email(self):\n        self.assertEqual(validate_user({\"name\": \"Ada\"}), \"email\")\n    def test_missing_name(self):\n        self.assertEqual(validate_user({\"email\": \"a@b.c\"}), \"name\")\n    def test_valid(self):\n        self.assertIsNone(validate_user({\"name\": \"Ada\", \"email\": \"a@b.c\"}) )\n"
+      },
+      "gold": {
+        "validate.py": "def validate_user(d):\n    if not d.get(\"name\"):\n        return \"name\"\n    if not d.get(\"email\"):\n        return \"email\"\n    return None\n"
+      },
+      "negative": {
+        "validate.py": "def validate_user(d):\n    if not d.get(\"name\"):\n        return \"name\"\n    if not d.get(\"email\"):\n        return \"name\"\n    return None\n"
+      },
+      "changed": [
+        "validate.py"
+      ],
+      "negative_changed": [
+        "validate.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 4
+    },
+    {
+      "id": "py-csv-average",
+      "title": "CSV 求平均时丢最后一行",
+      "kind": "patch",
+      "category": "data",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "Spider2-V-style",
+      "tags": [
+        "csv",
+        "aggregation"
+      ],
+      "files": {
+        "stats.py": "def average(rows):\n    if not rows:\n        return 0\n    total = 0\n    for row in rows[:-1]:\n        total += int(row[\"score\"])\n    return total / len(rows[:-1])\n",
+        "test_stats.py": "import unittest\nfrom stats import average\n\nclass T(unittest.TestCase):\n    def test_three(self):\n        self.assertEqual(average([{\"score\": 10}, {\"score\": 20}, {\"score\": 30}]), 20)\n    def test_empty(self):\n        self.assertEqual(average([]), 0)\n"
+      },
+      "gold": {
+        "stats.py": "def average(rows):\n    if not rows:\n        return 0\n    total = sum(int(row[\"score\"]) for row in rows)\n    return total / len(rows)\n"
+      },
+      "negative": {
+        "stats.py": "def average(rows):\n    if not rows:\n        return 0\n    total = sum(int(row[\"score\"]) for row in rows[:-2])\n    return total / max(len(rows[:-2]), 1)\n"
+      },
+      "changed": [
+        "stats.py"
+      ],
+      "negative_changed": [
+        "stats.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 5
+    },
+    {
+      "id": "py-path-traversal",
+      "title": "read_text 允许 ../ 越出 base",
+      "kind": "patch",
+      "category": "security",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "security",
+        "path",
+        "traversal"
+      ],
+      "files": {
+        "files.py": "import os\n\ndef read_text(base, rel):\n    with open(os.path.join(base, rel), encoding=\"utf-8\") as f:\n        return f.read()\n",
+        "test_files.py": "import os\nimport tempfile\nimport unittest\nfrom files import read_text\n\nclass T(unittest.TestCase):\n    def test_escape(self):\n        with tempfile.TemporaryDirectory() as d:\n            base = os.path.join(d, \"base\")\n            os.mkdir(base)\n            secret = os.path.join(d, \"secret.txt\")\n            with open(secret, \"w\", encoding=\"utf-8\") as f:\n                f.write(\"secret\")\n            with self.assertRaises(ValueError):\n                read_text(base, \"../secret.txt\")\n    def test_inside(self):\n        with tempfile.TemporaryDirectory() as d:\n            base = os.path.join(d, \"base\")\n            os.mkdir(base)\n            p = os.path.join(base, \"ok.txt\")\n            with open(p, \"w\", encoding=\"utf-8\") as f:\n                f.write(\"ok\")\n            self.assertEqual(read_text(base, \"ok.txt\"), \"ok\")\n"
+      },
+      "gold": {
+        "files.py": "import os\n\ndef read_text(base, rel):\n    base_real = os.path.realpath(base)\n    target = os.path.realpath(os.path.join(base, rel))\n    if os.path.commonpath([base_real, target]) != base_real:\n        raise ValueError(\"outside base\")\n    with open(target, encoding=\"utf-8\") as f:\n        return f.read()\n"
+      },
+      "negative": {
+        "files.py": "import os\n\ndef read_text(base, rel):\n    with open(os.path.join(base, rel), encoding=\"utf-8\") as f:\n        return f.read()\n"
+      },
+      "changed": [
+        "files.py"
+      ],
+      "negative_changed": [
+        "files.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 6
+    },
+    {
+      "id": "py-multifile-key",
+      "title": "pkg.util 的规范化没有变小写",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "SWE-bench-style",
+      "tags": [
+        "multi-file",
+        "package"
+      ],
+      "files": {
+        "pkg/__init__.py": "",
+        "pkg/util.py": "def normalize(s):\n    return s.strip()\n",
+        "pkg/core.py": "from .util import normalize\n\ndef key(s):\n    return normalize(s)\n",
+        "test_pkg.py": "import unittest\nfrom pkg.core import key\n\nclass T(unittest.TestCase):\n    def test_key(self):\n        self.assertEqual(key(\" A-B \"), \"a-b\")\n"
+      },
+      "gold": {
+        "pkg/util.py": "def normalize(s):\n    return s.strip().lower()\n"
+      },
+      "negative": {
+        "pkg/core.py": "from .util import normalize\n\ndef key(s):\n    return normalize(s).upper()\n"
+      },
+      "changed": [
+        "pkg/util.py"
+      ],
+      "negative_changed": [
+        "pkg/core.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 7
+    },
+    {
+      "id": "py-cli-exitcode",
+      "title": "非法参数仍然返回 0",
+      "kind": "patch",
+      "category": "cli",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "cli",
+        "exit-code"
+      ],
+      "files": {
+        "cli.py": "def run(argv):\n    if not argv:\n        return 0\n    if argv[0] == \"ok\":\n        return 0\n    return 0\n",
+        "test_cli.py": "import unittest\nfrom cli import run\n\nclass T(unittest.TestCase):\n    def test_empty(self):\n        self.assertEqual(run([]), 0)\n    def test_ok(self):\n        self.assertEqual(run([\"ok\"]), 0)\n    def test_bad(self):\n        self.assertEqual(run([\"bad\"]), 2)\n"
+      },
+      "gold": {
+        "cli.py": "def run(argv):\n    if not argv:\n        return 0\n    if argv[0] == \"ok\":\n        return 0\n    return 2\n"
+      },
+      "negative": {
+        "cli.py": "def run(argv):\n    if not argv:\n        return 0\n    if argv[0] == \"ok\":\n        return 0\n    return 1\n"
+      },
+      "changed": [
+        "cli.py"
+      ],
+      "negative_changed": [
+        "cli.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 8
+    },
+    {
+      "id": "py-person-fullname",
+      "title": "Person.display 只返回 first",
+      "kind": "patch",
+      "category": "feature",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "SWE-bench-style",
+      "tags": [
+        "feature",
+        "property"
+      ],
+      "files": {
+        "person.py": "class Person:\n    def __init__(self, first, last):\n        self.first = first\n        self.last = last\n\n    def display(self):\n        return self.first\n",
+        "test_person.py": "import unittest\nfrom person import Person\n\nclass T(unittest.TestCase):\n    def test_display(self):\n        self.assertEqual(Person(\"Ada\", \"Lovelace\").display(), \"Ada Lovelace\")\n    def test_full_name(self):\n        self.assertEqual(Person(\"Ada\", \"Lovelace\").full_name, \"Ada Lovelace\")\n"
+      },
+      "gold": {
+        "person.py": "class Person:\n    def __init__(self, first, last):\n        self.first = first\n        self.last = last\n\n    @property\n    def full_name(self):\n        return f\"{self.first} {self.last}\"\n\n    def display(self):\n        return self.full_name\n"
+      },
+      "negative": {
+        "person.py": "class Person:\n    def __init__(self, first, last):\n        self.first = first\n        self.last = last\n\n    @property\n    def full_name(self):\n        return f\"{self.first}-{self.last}\"\n\n    def display(self):\n        return self.full_name\n"
+      },
+      "changed": [
+        "person.py"
+      ],
+      "negative_changed": [
+        "person.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 9
+    },
+    {
+      "id": "py-date-inclusive",
+      "title": "日期区间少算端点",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "date",
+        "off-by-one"
+      ],
+      "files": {
+        "dates.py": "from datetime import date\n\ndef days_inclusive(start, end):\n    return (end - start).days\n",
+        "test_dates.py": "import unittest\nfrom datetime import date\nfrom dates import days_inclusive\n\nclass T(unittest.TestCase):\n    def test_three(self):\n        self.assertEqual(days_inclusive(date(2024, 1, 1), date(2024, 1, 3)), 3)\n    def test_same(self):\n        self.assertEqual(days_inclusive(date(2024, 1, 1), date(2024, 1, 1)), 1)\n"
+      },
+      "gold": {
+        "dates.py": "from datetime import date\n\ndef days_inclusive(start, end):\n    return (end - start).days + 1\n"
+      },
+      "negative": {
+        "dates.py": "from datetime import date\n\ndef days_inclusive(start, end):\n    return (end - start).days + 2\n"
+      },
+      "changed": [
+        "dates.py"
+      ],
+      "negative_changed": [
+        "dates.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 10
+    },
+    {
+      "id": "py-ledger-balance",
+      "title": "balance 把 debit 当成加法",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "TheAgentCompany-style",
+      "tags": [
+        "ledger",
+        "sign"
+      ],
+      "files": {
+        "ledger.py": "def balance(entries):\n    return sum(amount for kind, amount in entries)\n",
+        "test_ledger.py": "import unittest\nfrom ledger import balance\n\nclass T(unittest.TestCase):\n    def test_mixed(self):\n        self.assertEqual(balance([(\"credit\", 10), (\"debit\", 3)]), 7)\n    def test_debit_only(self):\n        self.assertEqual(balance([(\"debit\", 3)]), -3)\n"
+      },
+      "gold": {
+        "ledger.py": "def balance(entries):\n    total = 0\n    for kind, amount in entries:\n        total += amount if kind == \"credit\" else -amount\n    return total\n"
+      },
+      "negative": {
+        "ledger.py": "def balance(entries):\n    total = 0\n    for kind, amount in entries:\n        total += -amount if kind == \"credit\" else amount\n    return total\n"
+      },
+      "changed": [
+        "ledger.py"
+      ],
+      "negative_changed": [
+        "ledger.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 11
+    },
+    {
+      "id": "py-dedupe-order",
+      "title": "set 去重丢顺序",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "dedupe",
+        "order"
+      ],
+      "files": {
+        "dedupe.py": "def dedupe(xs):\n    return list(set(xs))\n",
+        "test_dedupe.py": "import unittest\nfrom dedupe import dedupe\n\nclass T(unittest.TestCase):\n    def test_order(self):\n        self.assertEqual(dedupe([3, 1, 3, 2]), [3, 1, 2])\n"
+      },
+      "gold": {
+        "dedupe.py": "def dedupe(xs):\n    return list(dict.fromkeys(xs))\n"
+      },
+      "negative": {
+        "dedupe.py": "def dedupe(xs):\n    return list(reversed(list(dict.fromkeys(xs))))\n"
+      },
+      "changed": [
+        "dedupe.py"
+      ],
+      "negative_changed": [
+        "dedupe.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 12
+    },
+    {
+      "id": "py-retry-backoff",
+      "title": "backoff 没有指数和上限",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "retry",
+        "backoff"
+      ],
+      "files": {
+        "retry.py": "def backoff(attempt):\n    return attempt\n",
+        "test_retry.py": "import unittest\nfrom retry import backoff\n\nclass T(unittest.TestCase):\n    def test_first(self):\n        self.assertEqual(backoff(0), 1)\n    def test_third(self):\n        self.assertEqual(backoff(3), 8)\n    def test_cap(self):\n        self.assertEqual(backoff(5), 8)\n"
+      },
+      "gold": {
+        "retry.py": "def backoff(attempt):\n    return min(2 ** attempt, 8)\n"
+      },
+      "negative": {
+        "retry.py": "def backoff(attempt):\n    return 2 ** attempt\n"
+      },
+      "changed": [
+        "retry.py"
+      ],
+      "negative_changed": [
+        "retry.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 13
+    },
+    {
+      "id": "py-text-wrap",
+      "title": "按字符硬切而不是按词换行",
+      "kind": "patch",
+      "category": "text",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "SWE-bench-style",
+      "tags": [
+        "text",
+        "wrap"
+      ],
+      "files": {
+        "wrap.py": "def wrap(text, width):\n    return [text[i:i + width] for i in range(0, len(text), width)]\n",
+        "test_wrap.py": "import unittest\nfrom wrap import wrap\n\nclass T(unittest.TestCase):\n    def test_words(self):\n        self.assertEqual(wrap(\"the quick brown fox\", 10), [\"the quick\", \"brown fox\"])\n"
+      },
+      "gold": {
+        "wrap.py": "def wrap(text, width):\n    words = text.split()\n    lines = []\n    current = \"\"\n    for word in words:\n        if not current:\n            current = word\n        elif len(current) + 1 + len(word) <= width:\n            current += \" \" + word\n        else:\n            lines.append(current)\n            current = word\n    if current:\n        lines.append(current)\n    return lines\n"
+      },
+      "negative": {
+        "wrap.py": "def wrap(text, width):\n    return [text[i:i + width + 1] for i in range(0, len(text), width + 1)]\n"
+      },
+      "changed": [
+        "wrap.py"
+      ],
+      "negative_changed": [
+        "wrap.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 14
+    },
+    {
+      "id": "py-priority-max",
+      "title": "pop_max 取的是队首不是最大",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "queue",
+        "selection"
+      ],
+      "files": {
+        "queue.py": "def pop_max(items):\n    return items.pop(0)\n",
+        "test_queue.py": "import unittest\nfrom queue import pop_max\n\nclass T(unittest.TestCase):\n    def test_max(self):\n        items = [3, 1, 5]\n        self.assertEqual(pop_max(items), 5)\n        self.assertEqual(items, [3, 1])\n"
+      },
+      "gold": {
+        "queue.py": "def pop_max(items):\n    value = max(items)\n    items.remove(value)\n    return value\n"
+      },
+      "negative": {
+        "queue.py": "def pop_max(items):\n    value = min(items)\n    items.remove(value)\n    return value\n"
+      },
+      "changed": [
+        "queue.py"
+      ],
+      "negative_changed": [
+        "queue.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 15
+    },
+    {
+      "id": "py-word-count-punct",
+      "title": "按空白分词把 one,two 算成一个词",
+      "kind": "patch",
+      "category": "text",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "text",
+        "tokenization"
+      ],
+      "files": {
+        "words.py": "def word_count(text):\n    return len(text.split())\n",
+        "test_words.py": "import unittest\nfrom words import word_count\n\nclass T(unittest.TestCase):\n    def test_punct(self):\n        self.assertEqual(word_count(\"one,two three\"), 3)\n    def test_empty(self):\n        self.assertEqual(word_count(\"\"), 0)\n"
+      },
+      "gold": {
+        "words.py": "import re\n\ndef word_count(text):\n    return len(re.findall(r\"\\b\\w+\\b\", text))\n"
+      },
+      "negative": {
+        "words.py": "def word_count(text):\n    return len(text.split())\n"
+      },
+      "changed": [
+        "words.py"
+      ],
+      "negative_changed": [
+        "words.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 16
+    },
+    {
+      "id": "py-money-cents",
+      "title": "float 转分时把 1.005 舍成 100",
+      "kind": "patch",
+      "category": "finance",
+      "lang": "python",
+      "difficulty": "medium",
+      "source": "SWE-bench-style",
+      "tags": [
+        "money",
+        "decimal",
+        "rounding"
+      ],
+      "files": {
+        "money.py": "def cents(x):\n    return int(x * 100 + 0.5)\n",
+        "test_money.py": "import unittest\nfrom money import cents\n\nclass T(unittest.TestCase):\n    def test_half_up(self):\n        self.assertEqual(cents(1.005), 101)\n    def test_round(self):\n        self.assertEqual(cents(2.675), 268)\n"
+      },
+      "gold": {
+        "money.py": "from decimal import Decimal, ROUND_HALF_UP\n\ndef cents(x):\n    value = Decimal(str(x)).quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n    return int(value * 100)\n"
+      },
+      "negative": {
+        "money.py": "def cents(x):\n    return int(x * 100)\n"
+      },
+      "changed": [
+        "money.py"
+      ],
+      "negative_changed": [
+        "money.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 17
+    },
+    {
+      "id": "py-config-fallback",
+      "title": "非法 PORT 直接抛异常而不是回落",
+      "kind": "patch",
+      "category": "feature",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "config",
+        "fallback"
+      ],
+      "files": {
+        "config.py": "def get_port(env, default=8080):\n    return int(env[\"PORT\"])\n",
+        "test_config.py": "import unittest\nfrom config import get_port\n\nclass T(unittest.TestCase):\n    def test_default(self):\n        self.assertEqual(get_port({}), 8080)\n    def test_valid(self):\n        self.assertEqual(get_port({\"PORT\": \"9000\"}), 9000)\n    def test_invalid(self):\n        self.assertEqual(get_port({\"PORT\": \"bad\"}), 8080)\n"
+      },
+      "gold": {
+        "config.py": "def get_port(env, default=8080):\n    try:\n        return int(env.get(\"PORT\", default))\n    except (TypeError, ValueError):\n        return default\n"
+      },
+      "negative": {
+        "config.py": "def get_port(env, default=8080):\n    try:\n        return int(env.get(\"PORT\", default))\n    except (TypeError, ValueError):\n        return 0\n"
+      },
+      "changed": [
+        "config.py"
+      ],
+      "negative_changed": [
+        "config.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 18
+    },
+    {
+      "id": "js-array-sum",
+      "title": "数组求和的 reducer 写成减法",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "node",
+      "difficulty": "easy",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "node",
+        "reduce"
+      ],
+      "files": {
+        "sum.js": "module.exports = function sum(xs) {\n  return xs.reduce((a, b) => a - b, 0);\n};\n",
+        "test_sum.js": "const test = require(\"node:test\");\nconst assert = require(\"node:assert\");\nconst sum = require(\"./sum\");\ntest(\"sum\", () => assert.equal(sum([1, 2, 3]), 6));\ntest(\"empty\", () => assert.equal(sum([]), 0));\n"
+      },
+      "gold": {
+        "sum.js": "module.exports = function sum(xs) {\n  return xs.reduce((a, b) => a + b, 0);\n};\n"
+      },
+      "negative": {
+        "sum.js": "module.exports = function sum(xs) {\n  return xs.reduce((a, b) => a * b, 1);\n};\n"
+      },
+      "changed": [
+        "sum.js"
+      ],
+      "negative_changed": [
+        "sum.js"
+      ],
+      "commands": [
+        "node --test test_sum.js"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 19
+    },
+    {
+      "id": "js-slug-normalize",
+      "title": "slug 没有折叠连续空格",
+      "kind": "patch",
+      "category": "feature",
+      "lang": "node",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "node",
+        "regex"
+      ],
+      "files": {
+        "slug.js": "module.exports = function slug(s) {\n  return s.trim().toLowerCase().replace(/ /g, \"-\");\n};\n",
+        "test_slug.js": "const test = require(\"node:test\");\nconst assert = require(\"node:assert\");\nconst slug = require(\"./slug\");\ntest(\"slug\", () => assert.equal(slug(\"  Hello   World \"), \"hello-world\"));\n"
+      },
+      "gold": {
+        "slug.js": "module.exports = function slug(s) {\n  return s.trim().toLowerCase().replace(/\\s+/g, \"-\");\n};\n"
+      },
+      "negative": {
+        "slug.js": "module.exports = function slug(s) {\n  return s.trim().replace(/ /g, \"-\");\n};\n"
+      },
+      "changed": [
+        "slug.js"
+      ],
+      "negative_changed": [
+        "slug.js"
+      ],
+      "commands": [
+        "node --test test_slug.js"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 20
+    },
+    {
+      "id": "go-max",
+      "title": "Max 永远返回第一个参数",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "go",
+      "difficulty": "easy",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "go",
+        "comparison"
+      ],
+      "files": {
+        "go.mod": "module bench\n\ngo 1.22\n",
+        "max.go": "package bench\n\nfunc Max(a, b int) int {\n    return a\n}\n",
+        "max_test.go": "package bench\n\nimport \"testing\"\n\nfunc TestMax(t *testing.T) {\n    if Max(3, 5) != 5 {\n        t.Fatalf(\"Max(3,5) != 5\")\n    }\n    if Max(-1, -2) != -1 {\n        t.Fatalf(\"Max(-1,-2) != -1\")\n    }\n}\n"
+      },
+      "gold": {
+        "max.go": "package bench\n\nfunc Max(a, b int) int {\n    if a > b {\n        return a\n    }\n    return b\n}\n"
+      },
+      "negative": {
+        "max.go": "package bench\n\nfunc Max(a, b int) int {\n    if a < b {\n        return a\n    }\n    return b\n}\n"
+      },
+      "changed": [
+        "max.go"
+      ],
+      "negative_changed": [
+        "max.go"
+      ],
+      "commands": [
+        "go test ./..."
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 21
+    },
+    {
+      "id": "go-dedupe-order",
+      "title": "Dedupe 原样返回没有去重",
+      "kind": "patch",
+      "category": "feature",
+      "lang": "go",
+      "difficulty": "medium",
+      "source": "SWE-bench-style",
+      "tags": [
+        "go",
+        "dedupe"
+      ],
+      "files": {
+        "go.mod": "module bench\n\ngo 1.22\n",
+        "dedupe.go": "package bench\n\nfunc Dedupe(xs []string) []string {\n    return xs\n}\n",
+        "dedupe_test.go": "package bench\n\nimport (\n    \"reflect\"\n    \"testing\"\n)\n\nfunc TestDedupe(t *testing.T) {\n    got := Dedupe([]string{\"a\", \"b\", \"a\", \"c\"})\n    want := []string{\"a\", \"b\", \"c\"}\n    if !reflect.DeepEqual(got, want) {\n        t.Fatalf(\"got %v want %v\", got, want)\n    }\n}\n"
+      },
+      "gold": {
+        "dedupe.go": "package bench\n\nfunc Dedupe(xs []string) []string {\n    seen := map[string]bool{}\n    out := []string{}\n    for _, x := range xs {\n        if !seen[x] {\n            seen[x] = true\n            out = append(out, x)\n        }\n    }\n    return out\n}\n"
+      },
+      "negative": {
+        "dedupe.go": "package bench\n\nfunc Dedupe(xs []string) []string {\n    out := []string{}\n    for _, x := range xs {\n        out = append([]string{x}, out...)\n    }\n    return out\n}\n"
+      },
+      "changed": [
+        "dedupe.go"
+      ],
+      "negative_changed": [
+        "dedupe.go"
+      ],
+      "commands": [
+        "go test ./..."
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 22
+    },
+    {
+      "id": "rs-sum-offbyone",
+      "title": "sum_to 的 Range 不含右端",
+      "kind": "patch",
+      "category": "bugfix",
+      "lang": "rust",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "rust",
+        "off-by-one"
+      ],
+      "files": {
+        "Cargo.toml": "[package]\nname = \"bench_calc\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        "src/lib.rs": "pub fn sum_to(n: u32) -> u32 {\n    (1..n).sum()\n}\n",
+        "tests/calc.rs": "use bench_calc::sum_to;\n\n#[test]\nfn sums_inclusive() {\n    assert_eq!(sum_to(5), 15);\n    assert_eq!(sum_to(0), 0);\n}\n"
+      },
+      "gold": {
+        "src/lib.rs": "pub fn sum_to(n: u32) -> u32 {\n    (1..=n).sum()\n}\n"
+      },
+      "negative": {
+        "src/lib.rs": "pub fn sum_to(n: u32) -> u32 {\n    (1..n + 2).sum()\n}\n"
+      },
+      "changed": [
+        "src/lib.rs"
+      ],
+      "negative_changed": [
+        "src/lib.rs"
+      ],
+      "commands": [
+        "cargo test -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 23
+    },
+    {
+      "id": "rs-normalize-lower",
+      "title": "normalize 没有变小写",
+      "kind": "patch",
+      "category": "feature",
+      "lang": "rust",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "rust",
+        "string"
+      ],
+      "files": {
+        "Cargo.toml": "[package]\nname = \"bench_norm\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        "src/lib.rs": "pub fn normalize(s: &str) -> String {\n    s.trim().to_string()\n}\n",
+        "tests/norm.rs": "use bench_norm::normalize;\n\n#[test]\nfn trims_and_lowers() {\n    assert_eq!(normalize(\"  Ada \"), \"ada\");\n}\n"
+      },
+      "gold": {
+        "src/lib.rs": "pub fn normalize(s: &str) -> String {\n    s.trim().to_lowercase()\n}\n"
+      },
+      "negative": {
+        "src/lib.rs": "pub fn normalize(s: &str) -> String {\n    s.trim().to_uppercase()\n}\n"
+      },
+      "changed": [
+        "src/lib.rs"
+      ],
+      "negative_changed": [
+        "src/lib.rs"
+      ],
+      "commands": [
+        "cargo test -q"
+      ],
+      "extra": [],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 24
+    },
+    {
+      "id": "sec-policy-refuse",
+      "title": "危险删除命令必须在 policy 阶段拒绝",
+      "kind": "policy",
+      "category": "security",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "policy",
+        "rm-rf"
+      ],
+      "files": {
+        "README.md": "# demo\n"
+      },
+      "commands": [
+        "rm -rf ."
+      ],
+      "changed": [
+        "README.md"
+      ],
+      "negative": {},
+      "negative_changed": [],
+      "gold": {},
+      "extra": [],
+      "profile": "workspace-write",
+      "expect": {
+        "run": "refused"
+      },
+      "order": 25
+    },
+    {
+      "id": "agent-budget-suspend",
+      "title": "声明预算为 0 时 run 前挂起",
+      "kind": "budget",
+      "category": "budget",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "tau-bench-style",
+      "tags": [
+        "budget",
+        "suspension"
+      ],
+      "files": {
+        "README.md": "# demo\n"
+      },
+      "commands": [
+        "{py} -c \"print(1)\""
+      ],
+      "changed": [
+        "README.md"
+      ],
+      "negative": {},
+      "negative_changed": [],
+      "gold": {},
+      "extra": [
+        "--budget-token",
+        "0"
+      ],
+      "profile": null,
+      "expect": {
+        "run": "suspended"
+      },
+      "order": 26
+    },
+    {
+      "id": "agent-dry-run",
+      "title": "dry-run 只出回执不执行命令",
+      "kind": "dry_run",
+      "category": "orchestration",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "Terminal-Bench-style",
+      "tags": [
+        "dry-run",
+        "receipt"
+      ],
+      "files": {
+        "README.md": "# demo\n"
+      },
+      "commands": [
+        "{py} -c \"print(1)\""
+      ],
+      "changed": [
+        "README.md"
+      ],
+      "negative": {},
+      "negative_changed": [],
+      "gold": {},
+      "extra": [
+        "-DryRun"
+      ],
+      "profile": null,
+      "expect": {
+        "run": "dry_run"
+      },
+      "order": 27
+    },
+    {
+      "id": "py-compact-sum",
+      "title": "compact 回执下 sum_to 仍然通过",
+      "kind": "compact",
+      "category": "bugfix",
+      "lang": "python",
+      "difficulty": "easy",
+      "source": "SWE-bench-style",
+      "tags": [
+        "compact",
+        "receipt"
+      ],
+      "files": {
+        "calc.py": "def sum_to(n):\n    return sum(range(1, n))\n",
+        "test_calc.py": "import unittest\nfrom calc import sum_to\n\nclass T(unittest.TestCase):\n    def test_five(self):\n        self.assertEqual(sum_to(5), 15)\n"
+      },
+      "gold": {
+        "calc.py": "def sum_to(n):\n    return sum(range(1, n + 1))\n"
+      },
+      "negative": {
+        "calc.py": "def sum_to(n):\n    return sum(range(1, n))\n"
+      },
+      "changed": [
+        "calc.py"
+      ],
+      "negative_changed": [
+        "calc.py"
+      ],
+      "commands": [
+        "{py} -m unittest -q"
+      ],
+      "extra": [
+        "--compact"
+      ],
+      "expect": {
+        "gold": "passed",
+        "negative": "failed"
+      },
+      "order": 28
+    }
+  ]
+}

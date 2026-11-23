@@ -388,7 +388,7 @@ cargo run --release -p trit-cli -- verify examples/policy.json
 **可复算的质量数据**：`scripts/mutation_check.py` 的登记表（`scripts/mutants/*.json`）现有 **958**
 条关键规则的单点文本变异，逐条跑对应回归（复算：`python -c "import json,glob;print(sum(len(json.load(open(f,encoding='utf-8'))) for f in glob.glob('scripts/mutants/*.json')))"`）；
 fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / netlist_json）；
-测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
+测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.89 + wasm32。贡献流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 **对比与测量的规则**见 [`docs/positioning/TERNARY-BOUNDARIES.md`](docs/positioning/TERNARY-BOUNDARIES.md) §6/§7：
@@ -853,7 +853,7 @@ cargo test --workspace
 `trit-redteam binary` 会把这些路径标成 `rust-toolchain`（而非我们的问题）。
 
 CI 另外覆盖：`docs`（rustdoc `-D warnings`）、`action`（用 `examples/policy.json` 跑复合 Action 自测）、
-`MSRV`（1.88，`--locked`）、`wasm`（wasm32 构建）与 `package`（每个 crate 可打包）。
+`MSRV`（1.89，`--locked`）、`wasm`（wasm32 构建）与 `package`（每个 crate 可打包）。
 Release 前会校验 tag 与 `trit-cli` 版本一致。
 
 `main` 使用线性历史；贡献流程与本地检查见 [CONTRIBUTING.md](CONTRIBUTING.md)。

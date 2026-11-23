@@ -848,7 +848,7 @@
     },
     {
       "id": "C049",
-      "title": "workspace 沙盒自测（37/37，含宿主写/链接/超时/忽略文件）",
+      "title": "workspace 沙盒自测（43/43，含宿主写/链接/超时/忽略文件/.git 指纹）",
       "kind": "cmd",
       "covers": [
         "L128",
@@ -863,7 +863,8 @@
         "L148",
         "L152",
         "L155",
-        "L156"
+        "L156",
+      "L166"
       ],
       "scope": [
         "tools/sandbox_run.py"
@@ -1352,6 +1353,61 @@
       "tier": "fast",
       "added": "2026-11-22T14:00:00+08:00",
       "run": "grep -q 'MAX_LEN' crates/trit-dot/src/cli.rs && grep -q 'MAX_PAIRS' crates/trit-attn/src/limits.rs && grep -q 'MAX_HIDDEN' crates/trit-attn/src/limits.rs && grep -q 'MAX_CELLS' crates/trit-ops/src/shape.rs && grep -q 'MAX_ITERATIONS' crates/trit-redteam/src/fuzz_cli.rs",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C074",
+      "title": "1M/850K/700K 上下文压缩：锚点、抽取摘要与 fail-closed",
+      "kind": "cmd",
+      "covers": [
+        "L163"
+      ],
+      "scope": [
+        "tools/context_window.py",
+        "tools/agent_settings.py"
+      ],
+      "since": "2026-11-23",
+      "tier": "fast",
+      "added": "2026-11-23T18:00:00+08:00",
+      "run": "python3 tools/context_window.py self-test && python3 tools/context_window.py stress --cases 100",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C075",
+      "title": "搜索结果相关性/安全/权威/新鲜度/去重/token 预算与自动推理强度",
+      "kind": "cmd",
+      "covers": [
+        "L164"
+      ],
+      "scope": [
+        "tools/search_policy.py",
+        "tools/agent_settings.py"
+      ],
+      "since": "2026-11-23",
+      "tier": "fast",
+      "added": "2026-11-23T18:00:00+08:00",
+      "run": "python3 tools/search_policy.py self-test && python3 tools/search_policy.py stress --cases 100",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C076",
+      "title": "上下文预算 × 搜索策略接缝：证据保留、同一项目设置、溢出 fail-closed",
+      "kind": "cmd",
+      "covers": [
+        "L165"
+      ],
+      "scope": [
+        "tools/context_window.py",
+        "tools/search_policy.py",
+        "tools/context_search_cross.py"
+      ],
+      "since": "2026-11-23",
+      "tier": "fast",
+      "added": "2026-11-23T18:00:00+08:00",
+      "run": "python3 tools/context_search_cross.py",
       "shell": "bash",
       "expect_exit": 0
     }

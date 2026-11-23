@@ -4,7 +4,7 @@
 > `tools/sandbox_run.py` 的**本地可复算攻击面**。不攻击外部服务，不制造真实
 > 凭据；默认沙盒不当内核隔离，真隔离路径（`-Isolation wsl`）另行实测。
 >
-> 结论先说：**已修掉一串真实可穿门问题**（复算：`python tools/guard_redteam.py` 81 例 0 漏检；`python tools/context_guard.py --self-test` 59/59；`python tools/sandbox_run.py --self-test` 41/41）：
+> 结论先说：**已修掉一串真实可穿门问题**（复算：`python tools/guard_redteam.py` 81 例 0 漏检；`python tools/context_guard.py --self-test` 59/59；`python tools/sandbox_run.py --self-test` 43/43）：
 > base64 任意位置与四层嵌套、nonce 归一化伪造、`.agent/.git` 排除目录、
 > `.git/index` 与构建缓存漏检、根内 junction 复制/派发、大小写/尾点路径绕过；
 > 本轮又补了 `context_guard --out/--receipt` root 包含、超 256 KiB base64 分窗
@@ -90,7 +90,7 @@
   `.git/index.lock` 退出 manifest，改为运行前后存在性检查 + 0.35 秒稳定窗口；
 - `MAX_HOST_FILES=200000`，超限判 `host-unprovable`，不再把看不见的忽略文件当没发生。
 
-`tools/sandbox_run.py --self-test` 41/41；`sandbox_matrix --cases 40 --parallel 8`
+`tools/sandbox_run.py --self-test` 43/43；`sandbox_matrix --cases 40 --parallel 8`
 40/40、hostwrite 5/5、host_violations=0。
 
 ## 3. 子智能体边界：硬链接/符号链接/junction/大小写
@@ -130,10 +130,10 @@ python tools/context_guard.py --self-test          # 59/59
 python tools/guard_redteam.py                     # 81 例，attack_misses=0
 python tools/context_guard.py --stress --json     # 90/90
 python tools/subagent_dispatch.py --self-test     # 25/25
-python tools/sandbox_run.py --self-test           # 41/41
+python tools/sandbox_run.py --self-test           # 43/43
 python tools/sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04  # 11/11
 python tools/sandbox_matrix.py --cases 40 --parallel 8 --json  # 40/40
-pwsh tools/selftest.ps1                           # 675/675
+pwsh tools/selftest.ps1                           # 696/0/0
 ```
 
 诚实边界：以上都是本地、规则/文件系统层的可复算读数；真实模型是否服从封套

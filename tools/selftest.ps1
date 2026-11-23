@@ -33,6 +33,21 @@ function Assert-True([bool]$cond, [string]$name, [string]$detail) {
     else { "  FAIL  $name  ($detail)"; $script:failed++ }
 }
 
+# `python`/`python3` can be PowerShell aliases on Windows. Get-Command().Source is
+# empty for an alias, which used to fall through to the `py` launcher (a different
+# interpreter that may not have openpyxl). Resolve the alias definition to the real
+# executable so every block uses the same interpreter.
+function Resolve-Python([string]$name) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if (-not $cmd) { return $null }
+    if ($cmd.CommandType -eq 'Alias' -and $cmd.Definition) {
+        $def = $cmd.Definition
+        if ($def -match '^\s*"([^"]+)"') { return $matches[1] }
+        return $def
+    }
+    return $cmd.Source
+}
+
 function New-File([string]$path, [string]$content) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
     [IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding($false)))
@@ -1389,7 +1404,7 @@ if (-not $bashExe) {
     $zPy = $null
     foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
         if (-not $c) { continue }
-        $src = (Get-Command $c -ErrorAction SilentlyContinue).Source
+        $src = Resolve-Python $c
         if (-not $src) { continue }
         if ((& $src -c 'print(1)' 2>$null) -eq '1') { $zPy = $src; break }
     }
@@ -2249,7 +2264,7 @@ if (-not $bashExe) {
 $aePy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $aeSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $aeSrc = Resolve-Python $c
     if (-not $aeSrc) { continue }
     if ((& $aeSrc -c 'print(1)' 2>$null) -eq '1') { $aePy = $aeSrc; break }
 }
@@ -2410,7 +2425,7 @@ if (-not $aePy) {
 $afPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $afSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $afSrc = Resolve-Python $c
     if (-not $afSrc) { continue }
     if ((& $afSrc -c 'print(1)' 2>$null) -eq '1') { $afPy = $afSrc; break }
 }
@@ -2629,6 +2644,52 @@ if (-not $afPy) {
     $cb = (Get-Item (Join-Path $Work 'af-rc2-compact.json')).Length
     Assert-True ($cb * 4 -lt $fb) 'AF14 compact 显著小于 full（≥4 倍；典型 run 实测由 bench 报数）' "full=$fb compact=$cb"
 
+    # --- AF14b-AF14d: policy allow 去重、WARN 保留、模型视图、brief stdout ---
+    # 500 条 allow 的 policy 回执不再重复通用两行文案；命令/exit 判定仍逐条保留。
+    # echo 重定向会留下一条“write allowed inside workspace”的特殊说明，这是
+    # 允许语义而不是通用 allow 模板，保留；只断言通用模板没被复制 500 次。
+    $afPolGeneric = @($afBigDoc.policy | ForEach-Object { @($_.output) } `
+        | Where-Object { $_ -match '^policy: OK\s+.*reads or executes$' -or $_ -match '^policy: allow \([A-Za-z0-9_-]+, network=(?:on|off)\)$' })
+    Assert-True (@($afBigDoc.policy).Count -eq 500 -and $afPolGeneric.Count -eq 0) `
+        'AF14b policy allow 通用文案不逐命令重复（500 条命令+exit 仍在）' "generic=$($afPolGeneric.Count)"
+
+    # WARN 是 exit=0 的 advisory，不能被 allow 去重误删。
+    $AfWarn = Join-Path $Work 'af-policy-warn'
+    New-AvFixture $AfWarn
+    New-File (Join-Path $AfWarn 'plan.json') '{"proven":true,"commands":["git add -A"],"unproven":[]}'
+    $storeWarn = Join-Path $Work 'af-store-policy-warn'
+    $null = Invoke-Av $AfWarn $storeWarn (Join-Path $Work 'af-policy-warn.json')
+    $afWarnDoc = Read-Receipt (Join-Path $Work 'af-policy-warn.json')
+    $afWarnLines = @($afWarnDoc.policy | ForEach-Object { @($_.output) } | Where-Object { $_ -match 'WARN' })
+    Assert-True ($LASTEXITCODE -eq 0 -and $afWarnLines.Count -gt 0) `
+        'AF14c policy allow 去重保留 WARN 行（advisory 不静默）' "warn_lines=$($afWarnLines.Count)"
+
+    # 完整审计与模型视图分文件：model view 是 compact，full 仍带 policy。
+    $AfModel = Join-Path $Work 'af-model-view'
+    New-AvFixture $AfModel
+    New-File (Join-Path $AfModel 'plan.json') '{"proven":true,"commands":["echo m1 > m1.txt","echo m2 > m2.txt"],"unproven":[]}'
+    $storeModel = Join-Path $Work 'af-store-model-view'
+    $rcAudit = Join-Path $Work 'af-model-audit.json'
+    $rcModelView = Join-Path $Work 'af-model-view.json'
+    $null = Invoke-Av $AfModel $storeModel $rcAudit @('--model-receipt', $rcModelView)
+    $afAuditDoc = Read-Receipt $rcAudit
+    $afModelDoc = Read-Receipt $rcModelView
+    Assert-True ($LASTEXITCODE -eq 0 -and (Test-Path $rcModelView) `
+        -and (Get-Item $rcModelView).Length -lt (Get-Item $rcAudit).Length `
+        -and $afModelDoc.verdict -eq $afAuditDoc.verdict -and $null -eq $afModelDoc.policy) `
+        'AF14d --model-receipt 写 compact 模型视图、完整审计仍保留 policy' "model=$((Get-Item $rcModelView).Length) full=$((Get-Item $rcAudit).Length)"
+
+    # --brief 成功时只留汇总，失败命令才逐条；判定/回执不变。
+    $AfBrief = Join-Path $Work 'af-brief'
+    New-AvFixture $AfBrief
+    New-File (Join-Path $AfBrief 'plan.json') '{"proven":true,"commands":["echo b1 > b1.txt","echo b2 > b2.txt"],"unproven":[]}'
+    $storeBrief = Join-Path $Work 'af-store-brief'
+    $afBriefOut = @(Invoke-Av $AfBrief $storeBrief (Join-Path $Work 'af-brief.json') @('--brief'))
+    $afBriefText = (@($afBriefOut) -join "`n")
+    Assert-True ($LASTEXITCODE -eq 0 -and $afBriefText -notmatch 'echo b1.*-> exit' `
+        -and $afBriefText -match 'commands: 2 run, 0 failed') `
+        'AF14e --brief 成功只打汇总，不逐条打印成功命令' $afBriefText
+
     # --- AF15-AF18: cost 记账往返与预算闸打通 ---
     $AfCost = Join-Path $Work 'af-cost'
     New-AvFixture $AfCost
@@ -2829,7 +2890,7 @@ if (-not $afPy) {
 $agPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $agSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $agSrc = Resolve-Python $c
     if (-not $agSrc) { continue }
     if ((& $agSrc -c 'print(1)' 2>$null) -eq '1') { $agPy = $agSrc; break }
 }
@@ -3091,7 +3152,7 @@ if (-not $agPy) {
 $ahPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $ahSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $ahSrc = Resolve-Python $c
     if (-not $ahSrc) { continue }
     if ((& $ahSrc -c 'print(1)' 2>$null) -eq '1') { $ahPy = $ahSrc; break }
 }
@@ -3281,7 +3342,7 @@ if (-not $ahPy) {
 $aiPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $aiSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $aiSrc = Resolve-Python $c
     if (-not $aiSrc) { continue }
     if ((& $aiSrc -c 'print(1)' 2>$null) -eq '1') { $aiPy = $aiSrc; break }
 }
@@ -3633,7 +3694,7 @@ if (-not $aiPy) {
 $ajPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $ajSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $ajSrc = Resolve-Python $c
     if (-not $ajSrc) { continue }
     if ((& $ajSrc -c 'print(1)' 2>$null) -eq '1') { $ajPy = $ajSrc; break }
 }
@@ -3902,7 +3963,7 @@ if (-not $ajPy) {
 $akPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $akSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $akSrc = Resolve-Python $c
     if (-not $akSrc) { continue }
     if ((& $akSrc -c 'print(1)' 2>$null) -eq '1') { $akPy = $akSrc; break }
 }
@@ -4321,7 +4382,7 @@ print("ak-gen ok")
 $alPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $alSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $alSrc = Resolve-Python $c
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
@@ -4769,7 +4830,7 @@ print("ALDRV done")
 $amPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $amSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $amSrc = Resolve-Python $c
     if (-not $amSrc) { continue }
     if ((& $amSrc -c 'print(1)' 2>$null) -eq '1') { $amPy = $amSrc; break }
 }
@@ -5067,7 +5128,7 @@ $anTotal = 3
 $anPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $anSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $anSrc = Resolve-Python $c
     if (-not $anSrc) { continue }
     if ((& $anSrc -c 'print(1)' 2>$null) -eq '1') { $anPy = $anSrc; break }
 }
@@ -5082,8 +5143,8 @@ if (-not $anPy) {
 
     $anOut2 = @(& $anPy (Join-Path $tools 'sandbox_run.py') --self-test 2>&1)
     $anRc2 = $LASTEXITCODE
-    Assert-True ($anRc2 -eq 0 -and (($anOut2 -join ' ') -match 'sandbox-run self-test: 41/41')) `
-        'AN2 workspace 沙盒自测 41/41（宿主写检测/超时/内存帽/容量租约附着与超额拒绝/密钥环境/复制穿越/硬链接拒绝/workdir junction 拒绝/忽略文件写检测/根内 junction 与大小写/尾点拒绝/排除目录与缓存覆盖检测/同 size+恢复 mtime 内容哈希/大于 1 MiB 内容哈希/index.lock/并发隔离）' "e=$anRc2"
+    Assert-True ($anRc2 -eq 0 -and (($anOut2 -join ' ') -match 'sandbox-run self-test: 43/43')) `
+        'AN2 workspace 沙盒自测 43/43（宿主写检测/超时/内存帽/容量租约附着与超额拒绝/密钥环境/复制穿越/硬链接拒绝/workdir junction 拒绝/忽略文件写检测/根内 junction 与大小写/尾点拒绝/排除目录与缓存覆盖检测/同 size+恢复 mtime 内容哈希/大于 1 MiB 内容哈希/index.lock/并发隔离）' "e=$anRc2"
 
     $anMatrix = Join-Path $Work 'an-sandbox-matrix.json'
     $anOut3 = @(& $anPy (Join-Path $tools 'sandbox_matrix.py') --cases 40 --parallel 8 --receipt $anMatrix 2>&1)
@@ -5141,6 +5202,215 @@ if (-not $anPy) {
     Assert-True ($apRc -eq 1 -and $apDoc -and $apDoc.verdict -eq 'quarantine' `
         -and $apDoc.max_severity -eq 'high' -and $apAfter -eq $apBefore) `
         'AP3 CLI 扫描 high 输入 exit=1、回执 quarantine、原文件零改写' "e=$apRc"
+}
+
+
+# ==============================================================================
+# AR. agent_verify 回执指标：full/compact/坏回执的 verdict/step/run/成本/分组统计
+if (-not $anPy) {
+    "  SKIP  AR1 找不到可用的 Python，跳过 agent 回执指标自测"
+    $skipped++
+} else {
+    $arOut = @(& $anPy (Join-Path $tools 'agent_metrics.py') -SelfTest 2>&1)
+    $arMatch = [regex]::Match(($arOut -join ' '), 'agent-metrics self-test: (\d+)/(\d+)')
+    $arOk = ($LASTEXITCODE -eq 0) -and $arMatch.Success -and `
+        ([int]$arMatch.Groups[1].Value -eq [int]$arMatch.Groups[2].Value) -and `
+        ([int]$arMatch.Groups[1].Value -ge 100)
+    Assert-True $arOk `
+        'AR1 agent_verify 回执指标 100+ 项：60 条合成 full/compact/坏回执、6 条真实 dry-run/pass/fail/refuse/suspend/compact 场景、verdict/step/run/成本/预算/claims/分组/分位统计' "e=$LASTEXITCODE"
+}
+
+
+# ==============================================================================
+# AS. 真实任务基准：22 个代码/策略夹具，gold 必须过、negative 必须被检出
+if (-not $anPy) {
+    "  SKIP  AS1 找不到可用的 Python，跳过 agent 真实任务基准"
+    $skipped++
+} else {
+    $asOut = @(& $anPy (Join-Path $tools 'agent_bench.py') -SelfTest 2>&1)
+    $asMatch = [regex]::Match(($asOut -join ' '), 'agent-bench self-test: (\d+)/(\d+)')
+    $asOk = ($LASTEXITCODE -eq 0) -and $asMatch.Success -and `
+        ([int]$asMatch.Groups[1].Value -eq [int]$asMatch.Groups[2].Value) -and `
+        ([int]$asMatch.Groups[1].Value -ge 300)
+    Assert-True $asOk `
+        'AS1 agent 真实任务基准 300+ 项：28 个夹具、25 个参考补丁、25 个负例、policy/budget/dry-run 场景，Python/Node/Go/Rust 真实测试执行与 agent_verify 回执' "e=$LASTEXITCODE"
+}
+
+
+# ==============================================================================
+# AT. 工作任务产物基准：参考产物必须过，负例必须被拦，原生 XLSX 公式必须真读
+if (-not $anPy) {
+    "  SKIP  AT1/AT2 找不到可用的 Python，跳过工作任务产物基准"
+    $skipped += 2
+} else {
+    $atOut = @(& $anPy (Join-Path $tools 'work_bench.py') -SelfTest 2>&1)
+    $atMatch = [regex]::Match(($atOut -join ' '), 'work-bench self-test: (\d+)/(\d+)')
+    $atOk = ($LASTEXITCODE -eq 0) -and $atMatch.Success -and `
+        ([int]$atMatch.Groups[1].Value -eq [int]$atMatch.Groups[2].Value) -and `
+        ([int]$atMatch.Groups[1].Value -ge 180)
+    Assert-True $atOk `
+        'AT1 工作任务产物基准 180+ 项：20 个文档/数据/表格/邮件/日历/文件整理/合规任务、81 条检查、参考产物全过、负例全拦' "e=$LASTEXITCODE"
+
+    $atReport = Join-Path $Work 'work-bench-xlsx.json'
+    & $anPy (Join-Path $tools 'work_bench.py') -Run -Task data-budget-xlsx -Strict -Quiet -Out $atReport | Out-Null
+    $atRunRc = $LASTEXITCODE
+    $atDoc = if (Test-Path $atReport) { Get-Content $atReport -Raw | ConvertFrom-Json } else { $null }
+    $atRunOk = ($atRunRc -eq 0) -and $atDoc `
+        -and ([int]$atDoc.reference.passed -eq 5) -and ([int]$atDoc.reference.total -eq 5) `
+        -and ([int]$atDoc.negative.caught -eq 1) -and ([int]$atDoc.negative.total -eq 1)
+    Assert-True $atRunOk `
+        'AT2 单个 XLSX 工作任务真实执行：reference 5/5、negative 1/1、B3 必须为 =SUM(B2:B3)' "e=$atRunRc"
+}
+
+
+# ==============================================================================
+# AU. PTC 命令行降错驱动：预检、执行、逐步核验、无盲重试、摘要/本地回执分离
+if (-not $anPy) {
+    "  SKIP  AU1/AU2 找不到可用的 Python，跳过命令行降错驱动"
+    $skipped += 2
+} else {
+    $auOut = @(& $anPy (Join-Path $tools 'cmd_driver.py') -SelfTest 2>&1)
+    $auMatch = [regex]::Match(($auOut -join ' '), 'cmd-driver self-test: (\d+)/(\d+)')
+    $auOk = ($LASTEXITCODE -eq 0) -and $auMatch.Success -and `
+        ([int]$auMatch.Groups[1].Value -eq [int]$auMatch.Groups[2].Value) -and `
+        ([int]$auMatch.Groups[1].Value -ge 30)
+    Assert-True $auOk `
+        'AU1 PTC 命令行降错驱动 30+ 项：plan 校验、预检 missing-exe/bad-cwd/low-disk、nonzero/verify/timeout、无盲重试、dry-run、JSON/文件核验、摘要压缩' "e=$LASTEXITCODE"
+
+    $auPlan = Join-Path $repo 'testdata\work-bench\ptc-plan.json'
+    $auReceipt = Join-Path $Work 'ptc-work-bench.json'
+    & $anPy (Join-Path $tools 'cmd_driver.py') -Plan $auPlan -Out $auReceipt -Quiet 2>&1 | Out-Null
+    $auRc = $LASTEXITCODE
+    $auDoc = if (Test-Path $auReceipt) { Get-Content $auReceipt -Raw | ConvertFrom-Json } else { $null }
+    $auGateOk = ($auRc -eq 0) -and $auDoc `
+        -and ($auDoc.summary.verdict -eq 'ok') -and ([int]$auDoc.summary.steps -eq 4) `
+        -and ([int]$auDoc.summary.verification_passed -eq 13) -and ([int]$auDoc.summary.verification_checks -eq 13) `
+        -and ([int]$auDoc.summary.retries -eq 0) -and (@($auDoc.summary.error_classes.PSObject.Properties).Count -eq 0) `
+        -and ([double]$auDoc.summary.context_vs_local_ratio -gt 10)
+    Assert-True $auGateOk `
+        'AU2 work-bench 一条 PTC 计划 4 步全过：quality-gates 13/13、retries 0、无错误分类、摘要/本地回执分离' "e=$auRc"
+}
+
+
+# ==============================================================================
+# AV. 用户设置 / 一次性审计 / 安全门 / 100+ LSP 注册表 / 上下文预算 / 搜索策略
+$avTotal = 11
+if (-not $anPy) {
+    "  SKIP  AV1-AV11 找不到可用的 Python，跳过设置/审计/安全/LSP/上下文/搜索/交叉门"
+    $skipped += $avTotal
+} else {
+    $avSettings = @(& $anPy (Join-Path $tools 'agent_settings.py') --self-test 2>&1)
+    $avSettingsMatch = [regex]::Match(($avSettings -join ' '), 'agent-settings self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avSettingsMatch.Success -and `
+        ([int]$avSettingsMatch.Groups[1].Value -eq [int]$avSettingsMatch.Groups[2].Value) -and `
+        ([int]$avSettingsMatch.Groups[1].Value -ge 16)) `
+        'AV1 用户级/项目级/显式设置优先级、null 删除、未知键拒绝、回执不含绝对路径 23/23' "e=$LASTEXITCODE"
+
+    $avAudit = @(& $anPy (Join-Path $tools 'agent_audit.py') --self-test 2>&1)
+    $avAuditMatch = [regex]::Match(($avAudit -join ' '), 'agent-audit self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avAuditMatch.Success -and `
+        ([int]$avAuditMatch.Groups[1].Value -eq [int]$avAuditMatch.Groups[2].Value) -and `
+        ([int]$avAuditMatch.Groups[1].Value -ge 13)) `
+        'AV2 一次性审计：完整回执/compact 拒绝/篡改/root 失配/delta 拒绝/高危扫描 14/14' "e=$LASTEXITCODE"
+
+    $avSec = @(& $anPy (Join-Path $tools 'security_gate.py') --self-test 2>&1)
+    $avSecMatch = [regex]::Match(($avSec -join ' '), 'security-gate self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avSecMatch.Success -and `
+        ([int]$avSecMatch.Groups[1].Value -eq [int]$avSecMatch.Groups[2].Value) -and `
+        ([int]$avSecMatch.Groups[1].Value -ge 19)) `
+        'AV3 安全门：findings 归一/高危拦截/中危放行/必需缺口 fail-closed/超时/argv 不进 shell 19/19' "e=$LASTEXITCODE"
+
+    $avLsp = @(& $anPy (Join-Path $tools 'lsp_registry.py') --self-test 2>&1)
+    $avLspMatch = [regex]::Match(($avLsp -join ' '), 'lsp-registry self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avLspMatch.Success -and `
+        ([int]$avLspMatch.Groups[1].Value -eq [int]$avLspMatch.Groups[2].Value) -and `
+        ([int]$avLspMatch.Groups[1].Value -ge 13)) `
+        'AV4 LSP 注册表 100+ 条目/唯一 id/https 源/安装 allowlist/真实 initialize 握手 13/13' "e=$LASTEXITCODE"
+
+    # AV5: a high finding refuses before run and leaves no write.
+    $avRoot = Join-Path $Work 'av-security-refuse'
+    New-AvFixture $avRoot
+    New-Item -ItemType Directory -Force -Path (Join-Path $avRoot '.agent') | Out-Null
+    New-File (Join-Path $avRoot '.agent\settings.json') @'
+{"version":1,"security":{"enabled":true,"mode":"quick","commands":[{"id":"fake-high","category":"static","severity":"high","required":true,"command":["python","-c","print(\"bad\"); raise SystemExit(1)"]}]}}
+'@
+    New-File (Join-Path $avRoot 'plan.json') '{"proven":true,"commands":["echo never > should-not-exist.txt"],"unproven":[]}'
+    $avReceipt = Join-Path $Work 'av-security-refuse.json'
+    & $anPy (Join-Path $tools 'agent_verify.py') -Root $avRoot -Changed (Join-Path $avRoot 'pkg\core.py') `
+        -Lang python -Plan (Join-Path $avRoot 'plan.json') -Store (Join-Path $Work 'av-security-store') `
+        -Receipt $avReceipt --security 2>&1 | Out-Null
+    $avRc = $LASTEXITCODE
+    $avDoc = if (Test-Path $avReceipt) { Get-Content $avReceipt -Raw | ConvertFrom-Json } else { $null }
+    $avSteps = @($avDoc.steps | ForEach-Object { $_.step })
+    Assert-True ($avRc -eq 1 -and $avDoc -and $avDoc.verdict -eq 'refused by security gate' `
+        -and ($avSteps -notcontains 'run') -and -not (Test-Path (Join-Path $avRoot 'should-not-exist.txt'))) `
+        'AV5 高危发现拒绝在 run 之前，命令没有落盘；回执带 security 报告路径与哈希' "e=$avRc"
+
+    # AV6: full receipt + clean scan is PASS in one audit pass.
+    $avGood = Join-Path $Work 'av-security-good'
+    New-AvFixture $avGood
+    New-File (Join-Path $avGood 'plan.json') '{"proven":true,"commands":["echo good > out.txt"],"unproven":[]}'
+    $avGoodReceipt = Join-Path $Work 'av-security-good.json'
+    & $anPy (Join-Path $tools 'agent_verify.py') -Root $avGood -Changed (Join-Path $avGood 'pkg\core.py') `
+        -Lang python -Plan (Join-Path $avGood 'plan.json') -Store (Join-Path $Work 'av-security-good-store') `
+        -Receipt $avGoodReceipt --security 2>&1 | Out-Null
+    $avGoodRc = $LASTEXITCODE
+    $avReport = Join-Path $avGood 'target\agent-security\security-gate.json'
+    $avAuditOut = @(& $anPy (Join-Path $tools 'agent_audit.py') --root $avGood `
+        --receipt $avGoodReceipt --out (Join-Path $Work 'av-audit-once.json') --json 2>&1)
+    $avAuditRc = $LASTEXITCODE
+    $avAuditDoc = if (Test-Path (Join-Path $Work 'av-audit-once.json')) { Get-Content (Join-Path $Work 'av-audit-once.json') -Raw | ConvertFrom-Json } else { $null }
+    Assert-True ($avGoodRc -eq 0 -and $avAuditRc -eq 0 -and $avAuditDoc -and $avAuditDoc.verdict -eq 'pass' `
+        -and [int]$avAuditDoc.summary.failed -eq 0 -and (Test-Path $avReport)) `
+        'AV6 完整回执 + 干净扫描报告一次审计 PASS（不是只看模型视图）' "e=$avGoodRc/$avAuditRc"
+
+    # AV7: plan is data-driven, and the registry has a mainstream Python server.
+    $avPlanOut = @(& $anPy (Join-Path $tools 'lsp_registry.py') plan --lang python --json 2>&1)
+    $avPlanRc = $LASTEXITCODE
+    $avPlanDoc = if ($avPlanOut.Count -gt 0) { ($avPlanOut -join "`n") | ConvertFrom-Json } else { $null }
+    Assert-True ($avPlanRc -eq 0 -and $avPlanDoc -and $avPlanDoc.verdict -eq 'available' `
+        -and @($avPlanDoc.available).Count -ge 1) `
+        'AV7 LSP plan 按语言返回可用的已安装服务器（python/pylsp 或 ruff）' "e=$avPlanRc"
+
+    # AV8: external project without scripts/ still gets trit's audited engines.
+    $avExt = Join-Path $Work 'av-external-project'
+    New-Item -ItemType Directory -Force -Path (Join-Path $avExt 'src') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $avExt 'src\app.py'), "print('ok')`n", [Text.UTF8Encoding]::new($false))
+    & git -C $avExt init -q 2>&1 | Out-Null
+    & git -C $avExt add src\app.py 2>&1 | Out-Null
+    $avExtReport = Join-Path $Work 'av-external-gate.json'
+    $avExtOut = @(& $anPy (Join-Path $tools 'security_gate.py') --root $avExt --mode quick --out $avExtReport --json 2>&1)
+    $avExtRc = $LASTEXITCODE
+    $avExtDoc = if (Test-Path $avExtReport) { Get-Content $avExtReport -Raw | ConvertFrom-Json } else { $null }
+    $avExtIds = @($avExtDoc.scanners | ForEach-Object { $_.id })
+    Assert-True ($avExtRc -eq 0 -and $avExtDoc -and $avExtDoc.verdict -eq 'pass' `
+        -and ($avExtIds -contains 'secrets') -and ($avExtIds -contains 'privacy')) `
+        'AV8 外部项目没有 scripts/ 时仍用 trit 的审计引擎跑 secrets/privacy（不是空扫描）' "e=$avExtRc"
+
+    # AV9: 1M/850K/700K context planner is deterministic and fail-closed.
+    $avCtx = @(& $anPy (Join-Path $tools 'context_window.py') self-test 2>&1)
+    $avCtxMatch = [regex]::Match(($avCtx -join ' '), 'context-window self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avCtxMatch.Success -and `
+        ([int]$avCtxMatch.Groups[1].Value -eq [int]$avCtxMatch.Groups[2].Value) -and `
+        ([int]$avCtxMatch.Groups[1].Value -ge 20)) `
+        'AV9 1M 窗口/850K 触发/700K 目标：锚点保留、抽取摘要、锚点溢出/摘要上限拒绝 23/23' "e=$LASTEXITCODE"
+
+    # AV10: search scoring is precision/safety/budget aware and effort is explainable.
+    $avSearch = @(& $anPy (Join-Path $tools 'search_policy.py') self-test 2>&1)
+    $avSearchMatch = [regex]::Match(($avSearch -join ' '), 'search-policy self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avSearchMatch.Success -and `
+        ([int]$avSearchMatch.Groups[1].Value -eq [int]$avSearchMatch.Groups[2].Value) -and `
+        ([int]$avSearchMatch.Groups[1].Value -ge 18)) `
+        'AV10 搜索评分：相关/安全/权威/新鲜度/去重/预算 + 自动推理强度 22/22' "e=$LASTEXITCODE"
+
+    # AV11: cross-module seam — selected evidence survives compaction, settings
+    # flow through both CLIs, overflow exits 3 without a half transcript.
+    $avCross = @(& $anPy (Join-Path $tools 'context_search_cross.py') 2>&1)
+    $avCrossMatch = [regex]::Match(($avCross -join ' '), 'context-search-cross self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avCrossMatch.Success -and `
+        ([int]$avCrossMatch.Groups[1].Value -eq [int]$avCrossMatch.Groups[2].Value) -and `
+        ([int]$avCrossMatch.Groups[1].Value -ge 12)) `
+        'AV11 上下文 × 搜索接缝：选中证据保留、项目设置共用、溢出 fail-closed 14/14' "e=$LASTEXITCODE"
 }
 
 

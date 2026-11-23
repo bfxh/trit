@@ -4,7 +4,7 @@
 > 一句话：**默认 cwd 在宿主外的空 workdir，只复制声明输入，policy 先拒，caps 兜底，
 > 跑完用宿主指纹证明有没有写坏；需要真隔离时显式走 `-Isolation wsl` 的 WSL+bwrap 内核命名空间。**
 > 边界：默认模式不是内核沙盒；`-Isolation wsl` 只接受 Linux 命令。见 §4。
-> 状态：**已跑通**（`tools/sandbox_run.py --self-test` 41/41；`sandbox_matrix.py --cases 40` 40/40；
+> 状态：**已跑通**（`tools/sandbox_run.py --self-test` 43/43；`sandbox_matrix.py --cases 40` 40/40；
 > `hostwrite` 独立宿主 100 例 100/100；WSL+bwrap 隔离回归 **11/11**）。红队已补的洞见
 > `AGENT-REDTEAM.md`：workdir junction、硬链接输入、git-ignored 宿主写、
 > 根内 junction 复制、`.agent/.git` 排除目录、`.git/index` 与构建缓存漏检、

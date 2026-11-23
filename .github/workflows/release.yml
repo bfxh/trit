@@ -19,6 +19,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Release tooling self-test
+        run: |
+          python scripts/release_preflight.py --self-test
+          python scripts/release.py --self-test
+
       - name: Tag must equal trit-cli version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -29,9 +35,33 @@ jobs:
           echo "tag=${tag} trit-cli=${version}"
           test "${tag}" = "${version}"
 
+  # Developer-only quality gate.  It must pass before a release build starts,
+  # but its receipt and test fixtures are never uploaded as release assets.
+  agent-quality:
+    name: agent quality (work-bench + PTC)
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install native XLSX dependency
+        run: python -m pip install "openpyxl==3.1.5"
+
+      - name: Agent quality gate
+        run: python scripts/agent_quality_gate.py --out artifacts/agent-quality-gate.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: agent-quality-evidence
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
   build:
     name: build (${{ matrix.asset }})
-    needs: guard
+    needs: [guard, agent-quality]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -108,14 +138,19 @@ jobs:
   release:
     name: publish
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      # Only the three trit-* binary archives are user-facing release assets.
+      # agent-quality-evidence is deliberately excluded: receipts, fixture
+      # names and internal command output stay on the CI run page.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
+          pattern: trit-*
           merge-multiple: true
 
       - name: Checksums

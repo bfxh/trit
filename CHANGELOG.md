@@ -2,6 +2,124 @@
 
 ## [Unreleased]
 
+### Added（第六轮：上下文预算 + 搜索评分 + 自动推理强度）
+
+- `tools/context_window.py`：1M 窗口 / 850K 触发 / 700K 目标的确定性预算规划器。
+  保 system、首末 user、pinned、tool evidence；中间低优先级消息按序丢弃，并把
+  索引/角色/关键行写成 `compressed_summary`。锚点 + 摘要仍超目标时
+  `status=refused`、退出码 3，不返回半截 transcript；摘要超出证据行上限也拒绝。23/23 自测。
+- `tools/search_policy.py`：搜索结果 relevance（覆盖率+BM25+短语）、
+  `context_guard` 安全门、权威/新鲜度、MMR 去重、token 硬预算和
+  `max_results` 双帽；每条落选带原因。`choose_effort` 按对比/因果/多跳/
+  高 stakes/时效/歧义/冲突信号自动选 low/medium/high，并给
+  `search_depth/max_results/verify`。22/22 自测。
+- `agent_settings.py` 默认档新增 `context/search/reasoning` 三段，校验非法
+  envelope、搜索预算/阈值/effort；`receipt_echo` 只回显数值/模式，不带绝对
+  路径。设置自测 23/23。
+- 注册表新增 C074/C075/C076（fast tier），`selftest.ps1` 新增 AV9/AV10/AV11；
+  两个模块各有 `stress --cases 100` 随机不变量测试，`context_search_cross.py`
+  14/14 验搜索证据在压缩后仍保留、项目设置两侧共用、溢出退出 3 不返回半截；
+  文档 `docs/engineering/AGENT-CONTEXT-SEARCH.md` 与 `docs/ERRORS.md`
+  L163/L164/L165 记录机制、阈值和诚实边界。
+
+### Fixed（第六轮补：AN3 并发沙盒宿主指纹）
+
+- `tools/sandbox_run.py`：宿主指纹不再把 `.git` 目录 mtime 和瞬时
+  `.git/index.lock` 当作写入；`handoff.state` 在 `git status` 被并发锁挡住时
+  重试 3 次。`--self-test` **43/43**（新增“git dir mtime alone is not
+  host-mutated”“file write under .git is host-mutated”两条断言）；
+  `sandbox_matrix --cases 40 --parallel 8` 连续 **4 次 40/40**。
+- `tools/selftest.ps1`：Python 解释器解析器改为解析 PowerShell alias 的
+  `Definition`。此前 `python` 是 alias 时 `Get-Command().Source` 为空，循环
+  落到 `py`（另一个解释器，没有 `openpyxl`），导致 AT1/AT2/AU2 假失败；现在
+  11 个选择点统一走 `Resolve-Python`。
+- `tools/cmd_driver.py`：新增 `${PYTHON}` 变量（= 正在运行 driver 的
+  `sys.executable`）；`testdata/work-bench/ptc-plan.json` 用它代替 PATH
+  `python`，避免宿主 PATH 指向另一个缺失 `openpyxl` 的解释器。PTC 计划
+  4 步全过、quality-gates 13/13、retries 0。
+- 本轮收口后全仓 `tools/selftest.ps1`：**696 passed / 0 failed / 0 skipped**。
+
+### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
+
+- `tools/agent_settings.py`：用户级 `%APPDATA%\trit\agent\settings.json`（POSIX
+  `$XDG_CONFIG_HOME/trit/agent/settings.json`）、项目 `.agent/settings.json`、
+  `--settings` 文件与 CLI 参数四级覆盖；默认档 `deepseek-strict`（完整审计回执
+  保留、模型读 compact 视图）。设置回执不含本机绝对路径。自测 16/16。
+- `tools/agent_audit.py`：把多个 full receipt 和多个 `security-gate` 报告折叠成
+  一个 `agent-audit/1` PASS/FAIL；compact/delta/篡改/root 失配/高危扫描均判红；
+  `--receipt` 可直接从回执 `security.report` 自动拉扫描报告并校验 sha256。
+  自测 14/14。
+- `tools/security_gate.py`：统一静态/依赖/lint/unsafe/SAST/动态 fuzz/运行时 MCP
+  adapter，输出 `security-gate/1`；必需扫描器缺口 fail-closed，可选缺口只可见；
+  用户 `security.commands` 只走 argv，不经过 shell。自测 19/19。真实 `quick` 扫描
+  本仓发现并修复 `libsqlite3-sys 0.37.0`（RUSTSEC-2026-0459）与
+  `rustix 1.1.5`（RUSTSEC-2026-0486）两个 high；`rusqlite` 升到 `=0.41.0`、
+  `rustix` 升到 `1.1.6` 后 `cargo audit` 为 0 vulnerabilities，剩 2 条 medium
+  unmaintained（`fxhash`、`rustls-pemfile`）。`rusqlite 0.41` 需要 rustc 1.89，
+  本仓 MSRV 由 1.88 上调到 1.89（CI 与 `required-checks.txt` 同步）。
+- `tools/lsp_registry.json` + `tools/lsp_registry.py`：138 条 LSP 注册表，覆盖
+  Rust/C/C++/Go/Python/TS/JS/Java/C#/Ruby/PHP/Kotlin/Scala/Clojure/Elixir/Haskell/
+  OCaml/F#/Terraform/Ansible/Docker/GraphQL/Prisma/Zig/Nim/R/Julia 等；命令
+  `list|detect|plan|install|probe`，`probe` 发真实 LSP `initialize` 帧；
+  `install --apply` 只允许 allowlist 包管理器与已审核配方。自测 13/13。
+- `agent_verify`：新增 `--settings`、`--security`、`--security-mode`；安全门在
+  preflight 之后、handoff 之前执行，高危拒绝时 `run` 永不开始；回执写报告相对路径
+  与 sha256。默认 `security.enabled=false`，显式 `--security` 或项目设置才跑，
+  避免旧链每条命令都付扫描成本。
+- `.github/workflows/ci.yml`：新增 `security gate (quick, fail-closed)` job，
+  self-test + secrets/privacy/deps，artifact 保留 7 天；`.github/required-checks.txt`
+  同步加入该检查。
+- `docs/security/SECURITY-SCAN.md`、`AGENT-GUARDRAILS.md`：安全 adapter 矩阵、
+  fail-closed/gap 语义、一次性审计和 LSP 注册表边界；明确"注册表覆盖 100+"不等于
+  "自动安装 100+"。
+- `tools/selftest.ps1`：新增 AV1–AV8，覆盖四个新模块自测、设置/审计/安全门真实
+  夹具、`refused by security gate` 不落盘、full receipt + clean scan 一次审计 PASS、
+  LSP plan、外部项目扫描；全仓 **693 passed / 0 failed / 0 skipped**。真实
+  `security_gate --mode static` 本仓 PASS（clippy/unsafe 0 findings，2 条 medium
+  依赖 unmaintained）；`agent_verify` 夹具 full 8,285 B / compact 1,151 B。
+- POSIX 修正：`tools/signal.py` 会遮蔽标准库 `signal`，新安全门在 Ubuntu 的
+  `subprocess` 超时/kill 路径曾崩在 `signal.SIGKILL`；`security_gate` /
+  `agent_verify` 现在在导入 `subprocess` 前临时移开 `tools/`，WSL 复跑安全门
+  自测 19/19。`docs/security/SECURITY-SCAN.md` 已补进 `docs/README.md` 索引。
+
+### Added（第四轮：work-bench + PTC + CI/CD）
+
+- `work-bench`：20 个真实工作任务、15 类、81 条确定性检查、20 个负例；参考
+  81/81、负例 20/20，`-SelfTest` 182/182，支持 `-Candidates` 只读实际产物。
+- `cmd_driver.py`：PTC 风格命令驱动，plan 预检、argv 不经过 shell、逐步 verify、
+  不盲重试、错误分类，摘要与本地 receipt 分离；自测 34/34，work-bench 计划
+  4/4 步、质量门 13/13、零重试。
+- `scripts/agent_quality_gate.py`：CI/发布共用质量门，包装
+  `cmd_driver -SelfTest` + `cmd_driver -Plan testdata/work-bench/ptc-plan.json`，
+  输出 `trit-agent-quality-gate/v1`，断言 34/34、81/81、20/20、4/4、13/13。
+- `.github/workflows/agent-quality.yml`：PR 触及 work-bench / cmd-driver / 夹具时
+  在 Ubuntu + Windows 运行质量门，artifact 保留 7 天，不进入 release assets。
+- `release.yml`：新增 `agent-quality` 前置门，`build` 依赖它；发布下载 artifact
+  限定 `pattern: trit-*`，`agent-quality-evidence` 与 receipt 不暴露给用户；
+  `release` job 只在 tag 上发布，手动 dispatch 不会误发。
+- `docs/engineering/CI-CD.md`：开发内部（命令、自测、错误分类、receipt、CI job）
+  与用户交付（二进制、SHA256SUMS、release notes）分层，CI 预算与排障口径。
+- `agent_verify` 回执降 token（不丢判定）：新增 `--model-receipt <path>`，完整审计
+  回执照旧保留，另写 compact 路由视图供模型/父代理读取；allow 的通用两行政策文案
+  不再逐命令重复，逐条仍保留 `command + exit`，无特殊证据时省略空 `output`；
+  新增 `--brief`，成功 stdout 只打命令汇总与 `changes: N`，失败命令才逐条列出。
+  同路径保护：`--model-receipt` 与 `-Receipt` 指向同一路径直接拒绝。
+  自测新增 AF14b–AF14e（500 条 policy 去重、WARN 保留、模型视图与审计分离、
+  brief stdout），全量 selftest **685 passed / 0 failed / 0 skipped**。
+  实测（20 命令、2 轮中位、`true`）：full receipt **5,738 B**（原 8,558 B，降 33.0%），
+  compact **1,541 B**（full 的 26.9%，省 73.1%），policy 字段 **561 B**（原约 2,860 B
+  compact JSON）；bytes/4 仅为上下文代理，不是模型侧 token 实测。
+- `cmd_driver.py`：Linux 下 `tools/signal.py` 会遮蔽 stdlib `signal`，使
+  `subprocess` 超时后的 `SIGKILL` 路径崩溃；脚本入口在导入 `subprocess` 前移除
+  自身目录，`-SelfTest` 在 Linux/WSL 与 Windows 均 **34/34**。这是 CI 的 Ubuntu
+  `agent-quality` 门从 0/0 失败恢复为可用的必要修复。
+### Fixed（C047 CI 确定性：负载注入不再让容量自测随共享 runner 抖动）
+
+- `capacity_lease.probe` 新增 `load_override`，自测固定 `load1=0.0`，并新增
+  `load_override=3.0` 的容量扣减断言；`capacity_lease.py --self-test` 21/21。
+  CI 的 C047 不再因为 GitHub 共享 runner 的真实 load1 是 5/6 而误报，容量
+  准入逻辑本身不变。
+
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 
 - `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]
@@ -175,7 +293,7 @@
   回执 `capacity` 段记录租约与契约。
 - `C047` 钉住 `capacity_lease.py --self-test`：20/20（含 8 进程抢 4 个租约、过期/坏租约、
   GPU/磁盘/IO 预留与拒绝、heartbeat 不移动硬 deadline、dispatch 契约注入、占满时
-  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 41/41 未回退，全量
+  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 43/43 未回退，全量
   `selftest` 仍 675/675。
 - 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
   `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。

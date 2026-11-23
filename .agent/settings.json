@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "security": {
+    "enabled": true,
+    "mode": "quick",
+    "fail_on": ["critical", "high"],
+    "timeout_s": 900,
+    "allow_gaps": false,
+    "scanners": {
+      "secrets": true,
+      "privacy": true,
+      "deps": true,
+      "lint": true,
+      "sast": true,
+      "dynamic": false,
+      "runtime": false
+    }
+  },
+  "lsp": {
+    "enabled": true,
+    "mode": "on-demand",
+    "auto_install": false,
+    "max_probe_s": 20
+  }
+}

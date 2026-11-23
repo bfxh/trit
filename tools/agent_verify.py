@@ -101,15 +101,39 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+# tools/signal.py shadows the stdlib `signal` module when this script is run as
+# `python tools/agent_verify.py`. Load stdlib signal and subprocess with the
+# script dir off sys.path, then restore it for the local tool modules. Without
+# this, POSIX timeout/kill paths resolve tools/signal.py and crash on SIGKILL.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if sys.path and os.path.abspath(sys.path[0]) == _SCRIPT_DIR:
+    del sys.path[0]
+import signal as _stdlib_signal  # noqa: F401 - shadow guard, keeps stdlib in sys.modules
+import subprocess
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
 import attest  # same tools directory; the budget gate consumes the attest chain balance
 import ledger  # same tools directory; the chain appends cost entries, one writer per chain
+import agent_settings  # same tools directory; user/project settings resolution
+
+# The policy allow path emits the same two boilerplate lines for every command.
+# They are useful when printed once, but repeating them per command makes the full
+# receipt (and every model that reads it) pay for the same text N times.  Keep the
+# per-command decision and every WARN/DENY/special-note line; drop only these two
+# generic lines from allow results.
+POLICY_GENERIC_ALLOW_RX = re.compile(
+    r"^policy: OK\s+allowed: .* reads or executes$"
+)
+POLICY_ALLOW_TAIL_RX = re.compile(
+    r"^policy: allow \([A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*, network=(?:on|off)\)$"
+)
 
 LANGS = {"rust", "python", "node", "go"}
 PROFILES = {"read-only", "workspace-write", "full"}
@@ -125,6 +149,7 @@ RESUME = os.path.join(TOOLS, "resume.py")
 HANDOFF = os.path.join(TOOLS, "handoff.py")
 CLAIMS = os.path.join(os.path.dirname(TOOLS), "scripts", "agent_claims.py")
 RUN_CAPS = os.path.join(TOOLS, "run_caps.py")
+SECURITY = os.path.join(TOOLS, "security_gate.py")
 
 BUDGET_NOTE = ("declaration-based gate: the tool layer cannot measure model-side token "
                "usage; --budget-token is the caller's declared remaining budget "
@@ -172,7 +197,16 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
                 (false or unknown refuses); a handoff packet's base_commit/state_hash must
                 match this tree (unknown or false refuses). Both are opt-in; no flag means
                 the chain is exactly what it was.)
-  receipt:      [--compact]         (single-line machine receipt; default stays full)
+  receipt:      [--compact] [--model-receipt <path>] [--settings <file>]
+                (settings resolve builtin < user < project .agent/settings.json
+                < explicit file; explicit CLI flags win; full receipt stays the
+                audit artifact; --model-receipt writes a compact routing view)
+  brief:        [--brief]           (stdout lists only failed commands; full receipt
+                still records every command and its output tail)
+  security:     [--security [--security-mode quick|static|dynamic|runtime|all]]
+                (static/dynamic/runtime gate; high/critical or a required scanner
+                gap refuses before any write; report path+hash go in the receipt;
+                off unless the flag or settings.security.enabled says otherwise)
   delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
                 (subagent chains: only changed fields + hash refs for unchanged ones;
                 --rebuild <delta> --against <prev> [--out <full.json>] reconstructs
@@ -253,14 +287,16 @@ Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocatio
 
 def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
-           "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
-           "allow": [], "agent_id": "", "spent_token": "", "compact": False,
+           "settings": "", "allow_network": False, "dry_run": False, "receipt": "",
+           "store": "", "plan": "", "allow": [], "agent_id": "", "spent_token": "",
+           "compact": False, "brief": False, "model_receipt": "",
+           "security": False, "security_mode": "",
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
            "claim_gate": False, "claim_who": "", "claims_ledger": "", "handoff": "",
            "second_opinion": False, "no_derivations": False, "delta": False,
            "against": "", "rebuild": "", "delta_full": "", "out": "",
            "gate_deadline_affected": "600", "gate_deadline_policy": "600",
-           "gate_deadline_constraints": "600"}
+           "gate_deadline_constraints": "600", "_given": set()}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -271,6 +307,11 @@ def parse_args(argv):
         # Boolean flags must be listed here: a bool flag that falls through to the
         # value-branch swallows the NEXT argument as its value (--caps -Root ... would
         # parse -Root as the caps value).
+        if name in ("brief", "security"):
+            out["brief" if name == "brief" else "security"] = True
+            out["_given"].add(name)
+            i += 1
+            continue
         if name in ("dryrun", "allownetwork", "caps", "compact", "secondopinion",
                     "second-opinion", "derivations", "noderivations", "no-derivations",
                     "delta", "claimgate", "claim-gate"):
@@ -284,10 +325,12 @@ def parse_args(argv):
                 else "delta" if name == "delta"
                 else "claim_gate" if name in ("claimgate", "claim-gate")
                 else "second_opinion"] = True
+            out["_given"].add("compact" if name == "compact" else name)
             i += 1
             continue
         if name == "parallelgates" or name == "parallel-gates":
             out["parallel_gates"] = True
+            out["_given"].add("parallel_gates")
             i += 1
             continue
         val = argv[i + 1] if i + 1 < len(argv) else ""
@@ -298,17 +341,22 @@ def parse_args(argv):
         elif name in ("claims-receipts", "claimsreceipts"):
             out["claims_receipts"].extend([x for x in val.split(",") if x.strip()])
         else:
-            out[{"root": "root", "lang": "lang", "profile": "profile", "receipt": "receipt",
-                 "store": "store", "plan": "plan", "agent-id": "agent_id",
-                 "agentid": "agent_id", "spent-token": "spent_token",
-                 "spenttoken": "spent_token", "claims-file": "claims_file",
-                 "claimsfile": "claims_file", "delta-full": "delta_full",
-                 "deltafull": "delta_full", "claim-who": "claim_who",
-                 "claimwho": "claim_who", "claims-ledger": "claims_ledger",
-                 "claimsledger": "claims_ledger", "handoff": "handoff",
-                 "gate-deadline-affected": "gate_deadline_affected",
-                 "gate-deadline-policy": "gate_deadline_policy",
-                 "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)] = val
+            key = {"root": "root", "lang": "lang", "profile": "profile", "receipt": "receipt",
+                   "store": "store", "plan": "plan", "agent-id": "agent_id",
+                   "agentid": "agent_id", "spent-token": "spent_token",
+                   "spenttoken": "spent_token", "claims-file": "claims_file",
+                   "claimsfile": "claims_file", "delta-full": "delta_full",
+                   "deltafull": "delta_full", "claim-who": "claim_who",
+                   "claimwho": "claim_who", "claims-ledger": "claims_ledger",
+                   "claimsledger": "claims_ledger", "handoff": "handoff",
+                   "model-receipt": "model_receipt", "modelreceipt": "model_receipt",
+                   "settings": "settings", "settings-file": "settings", "settingsfile": "settings",
+                   "security-mode": "security_mode", "securitymode": "security_mode",
+                   "gate-deadline-affected": "gate_deadline_affected",
+                   "gate-deadline-policy": "gate_deadline_policy",
+                   "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)
+            out[key] = val
+            out["_given"].add(key)
         i += 2
     return out
 
@@ -391,7 +439,7 @@ def session_file(root, task_id):
     return os.path.join(root, ".agent", "resume", f"{task_id}.json")
 
 
-STABLE_HEAD = ("root", "lang", "profile", "changed", "agent_id", "handoff", "claim",
+STABLE_HEAD = ("root", "lang", "profile", "changed", "settings", "security", "agent_id", "handoff", "claim",
                "caps", "plan",
                "policy", "steps", "run", "changes", "claims", "watchdog",
                "verdict", "exit")
@@ -448,6 +496,30 @@ def receipt_view(doc):
     return view
 
 
+def policy_evidence(lines, code):
+    """Per-command policy evidence without the repeated allow boilerplate.
+
+    The batch policy gate returns the exact lines a single invocation would print.
+    For an allow, two of those lines are generic (``policy: OK ... reads or
+    executes`` and ``policy: allow (<profile>, network=...)``).  They carry no
+    per-command decision not already expressed by ``command`` + ``exit``.  WARN
+    lines (advisory, exit 0), DENY lines, and special allow notes ("allowed by
+    -Allow ...", "write allowed inside workspace", ...) are kept.
+
+    This is an evidence-shape change, not a decision change: the full receipt
+    keeps every command and exit; raw policy output remains available from
+    policy.py when a caller needs it.
+    """
+    kept = []
+    for line in list(lines or [])[-3:]:
+        text = str(line).strip()
+        if code == 0 and (POLICY_GENERIC_ALLOW_RX.match(text)
+                          or POLICY_ALLOW_TAIL_RX.match(text)):
+            continue
+        kept.append(line)
+    return kept
+
+
 def compact_view(doc, steps):
     """Prefix-stable --compact shape: one line, routing fields first, volatile tail.
 
@@ -466,6 +538,14 @@ def compact_view(doc, steps):
          "changes": len(doc.get("changes", []))}
     if "plan" in doc:
         c["proven"] = bool(doc["plan"].get("proven"))
+    if "security" in doc:
+        c["security"] = {k: doc["security"].get(k) for k in
+                          ("verdict", "exit", "mode", "findings", "blocking", "gaps")}
+    if "settings" in doc:
+        # routing only: a compact reader needs to know which profile decided,
+        # not the entire scanner configuration.
+        c["settings"] = {k: doc["settings"].get(k)
+                         for k in ("name", "source", "policy_profile")}
     if "agent_id" in doc:
         c["agent_id"] = doc["agent_id"]
     if "handoff" in doc:
@@ -831,8 +911,34 @@ def main(argv):
     if not root_in or not os.path.isdir(root_in):
         print("agent-verify: -Root 必须是已存在的目录")
         return 2
+    # Settings are resolved before validation so a user/project profile can
+    # supply defaults, but an explicit CLI flag always wins.  A malformed
+    # settings file refuses the run: silently ignoring a typo in a security
+    # switch is exactly the failure mode this layer exists to prevent.
+    try:
+        effective, settings_meta = agent_settings.load_settings(
+            root_in, explicit=str(a.get("settings", "")).strip())
+    except (OSError, ValueError) as e:
+        print(f"agent-verify: 设置不可用（{e}）")
+        return 2
+    a["_effective_settings"] = effective
+    a["_settings_meta"] = settings_meta
+    if "profile" not in a["_given"]:
+        a["profile"] = str(effective.get("policy_profile", a["profile"]))
+    if "compact" not in a["_given"]:
+        a["compact"] = bool(effective.get("receipt", {}).get("compact", False))
+    if "brief" not in a["_given"]:
+        a["brief"] = bool(effective.get("receipt", {}).get("brief", False))
+    if "security" not in a["_given"]:
+        a["security"] = bool(effective.get("security", {}).get("enabled", False))
+    if "security_mode" not in a["_given"]:
+        a["security_mode"] = str(effective.get("security", {}).get("mode", "quick"))
     if not a["changed"]:
         print("agent-verify: -Changed 至少要给一个文件")
+        return 2
+    model_receipt = str(a.get("model_receipt", "")).strip()
+    if model_receipt and a.get("receipt") and os.path.abspath(model_receipt) == os.path.abspath(a["receipt"]):
+        print("agent-verify: --model-receipt 不能和 -Receipt 同一个路径（审计原文与模型视图必须分开）")
         return 2
     if a["lang"].lower() not in LANGS:
         print(f"agent-verify: -Lang 必须是 {sorted(LANGS)} 之一")
@@ -968,6 +1074,8 @@ def main(argv):
 
     doc = {"root": root, "lang": lang, "profile": profile, "changed": a["changed"],
            "at": datetime.now().astimezone().isoformat(timespec="microseconds")}
+    doc["settings"] = agent_settings.receipt_echo(a["_effective_settings"],
+                                                   a["_settings_meta"])
     if agent_id:
         # appended field only: subagent participation recorded on the receipt; no flag, no key
         doc["agent_id"] = agent_id
@@ -989,6 +1097,11 @@ def main(argv):
             emit_delta(a["receipt"], doc, steps, delta_ctx)
         else:
             emit_receipt(a["receipt"], doc, steps, a.get("compact"))
+        if a.get("model_receipt"):
+            # Separate surfaces: the caller keeps the full (or delta) audit receipt
+            # and gives the model only the compact routing view.  No field used by a
+            # gate is removed from the audit artifact.
+            write_view(a["model_receipt"], compact_view(doc, steps), True)
         return code
 
     # --- 0. memory brief: what this project already knows ------------------------------
@@ -1016,6 +1129,39 @@ def main(argv):
             print(ln)
         print("agent-verify: 拒绝 -- preflight 判红，坏代码不要落到磁盘上")
         return finish("refused by preflight", 1)
+
+    # --- 2.1 security gate: static/dynamic/runtime evidence before any write ----------
+    # Opt-in through --security or settings.security.enabled; the default is
+    # OFF so existing chains/tests keep their timing.  A high/critical finding
+    # or a required scanner gap refuses; the report path/hash travels in the
+    # receipt so agent_audit can verify the same evidence later.
+    if a.get("security"):
+        mode = str(a.get("security_mode", "") or
+                   effective.get("security", {}).get("mode", "quick")).lower()
+        timeout_s = float(effective.get("security", {}).get("timeout_s", 900)) + 30
+        report_rel = os.path.join("target", "agent-security", "security-gate.json")
+        report_abs = os.path.join(root, report_rel)
+        sec_args = [SECURITY, "--root", root, "--mode", mode, "--out", report_abs, "--json"]
+        if str(a.get("settings", "")).strip():
+            sec_args += ["--settings", os.path.abspath(str(a["settings"]).strip())]
+        sr = step(sec_args, timeout=timeout_s)
+        sdoc = json_tail(sr) or {}
+        sverdict = str(sdoc.get("verdict", "")).lower()
+        doc["security"] = {"verdict": sverdict or "unreadable",
+                           "exit": sr["code"], "mode": mode,
+                           "findings": (sdoc.get("summary") or {}).get("findings", 0),
+                           "blocking": (sdoc.get("summary") or {}).get("blocking", 0),
+                           "gaps": len(sdoc.get("gaps") or []),
+                           "report": report_rel.replace("\\", "/")}
+        if os.path.isfile(report_abs):
+            doc["security"]["sha256"] = file_hash(report_abs)
+        add("security-gate", sr, "ok" if sr["code"] == 0 and sverdict == "pass" else "refused")
+        if sr["code"] != 0 or sverdict != "pass":
+            for ln in sr["out"][-8:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- security gate 未通过（高危/关键发现或必需扫描器缺口；"
+                  "报告在 target/agent-security/security-gate.json）")
+            return finish("refused by security gate", 1)
 
     # --- 2.2 handoff gate: is this the same tree the previous agent handed over? ------
     # trit-orch::handoff_gate's tri-state table, host-side. Unknown is NOT permission:
@@ -1261,8 +1407,15 @@ def main(argv):
                 add("policy", pb, "refused")
                 print("agent-verify: 拒绝 -- policy 批量分类结果不可解析（fail-closed，不许静默放行）")
                 return finish("refused by policy", 1)
-            policy_log = [{"command": r.get("command"), "exit": r.get("exit"),
-                           "output": (r.get("lines") or [])[-3:]} for r in prs]
+            policy_log = []
+            for r in prs:
+                evidence = policy_evidence(r.get("lines"), r.get("exit"))
+                entry = {"command": r.get("command"), "exit": r.get("exit")}
+                if evidence:
+                    # empty output is the common allow case: omit the key instead of
+                    # writing output=[] for every command in the audit receipt.
+                    entry["output"] = evidence
+                policy_log.append(entry)
             policy_ok = all(r.get("exit") == 0 for r in prs)
             doc["policy"] = policy_log
             add("policy", {"out": [], "code": 0 if policy_ok else 1, "seconds": pb["seconds"]},
@@ -1550,10 +1703,20 @@ def main(argv):
 
     print(f"agent-verify: {verdict}  (proven={str(proven).lower()}, wall={total_run}s, "
           f"changed={len(changes)})")
-    for l in run_log:
-        print(f"  {l['command']}  -> exit {l['exit']} in {l['seconds']}s")
-    for c in changes:
-        print(f"  {c}")
+    if a.get("brief"):
+        failed = [l for l in run_log if l.get("exit") != 0]
+        print(f"  commands: {len(run_log)} run, {len(failed)} failed")
+        for l in failed:
+            print(f"  FAIL {l['command']}  -> exit {l['exit']} in {l['seconds']}s")
+    else:
+        for l in run_log:
+            print(f"  {l['command']}  -> exit {l['exit']} in {l['seconds']}s")
+    if a.get("brief"):
+        if changes:
+            print(f"  changes: {len(changes)} (details in receipt)")
+    else:
+        for c in changes:
+            print(f"  {c}")
     # Appended tail, appended receipt field only -- the existing output above is unchanged.
     if "resume_checkpoint" in doc:
         print(f"  resume checkpoint: {doc['resume_checkpoint']}")
