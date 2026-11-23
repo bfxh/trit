@@ -755,7 +755,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"work-bench: {metrics['tasks']} tasks / {metrics['checks']} checks / "
               f"reference {metrics['passed']}/{metrics['checks']} / "
               f"negative {neg['negative_caught']}/{neg['negative_total']} / wall {wall}s")
-    bad = metrics["failed"] > 0 or neg["negative_caught"] < neg["negative_total"]
+    bad = any(r["metrics"]["failed"] for r in runs) or neg["negative_caught"] < neg["negative_total"]
     return 0 if (not args.Strict or not bad) else 1
 
 
