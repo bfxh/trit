@@ -11,8 +11,8 @@
 rows*ceil(cols/group)*4 + rows*4。
 
 用法：
-  python scripts/wsp_budget.py --budget 10782720 --out budget.json
-  python scripts/wsp_budget.py --model ... --layers 12 --group 32
+  python scripts/wsp_budget.py --model all-MiniLM-L12-v2.safetensors --budget 10782720 --out budget.json
+  python scripts/wsp_budget.py --model all-MiniLM-L12-v2.safetensors --layers 12 --group 32
 """
 from __future__ import annotations
 
@@ -119,11 +119,11 @@ def allocate(errors: dict[int, list[float]], costs: dict[int, list[int]], budget
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default=r"C:\Users\lbx13\Downloads\all-MiniLM-L12-v2.safetensors")
+    parser.add_argument("--model", required=True)
     parser.add_argument("--layers", type=int, default=12)
     parser.add_argument("--group", type=int, default=32)
     parser.add_argument("--budget", type=int, default=None)
-    parser.add_argument("--out", default=r"C:\Users\lbx13\Downloads\trit-results\budget-l12-int3.json")
+    parser.add_argument("--out", default="budget.json")
     args = parser.parse_args()
 
     model = Path(args.model)
