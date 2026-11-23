@@ -11,8 +11,8 @@
   {
     "name": "mv: residuum 把 x/y 写反（伴随律失效）",
     "file": "crates/trit-mv/src/lib.rs",
-    "old": "                u32::try_from(u64::from(self.levels) + u64::from(y) - u64::from(x)).unwrap_or(0)",
-    "new": "                u32::try_from(u64::from(self.levels) + u64::from(x) - u64::from(y)).unwrap_or(0)",
+    "old": "                let raw = levels\n                    .saturating_sub(u64::from(x))\n                    .saturating_add(u64::from(y));",
+    "new": "                let raw = levels\n                    .saturating_sub(u64::from(y))\n                    .saturating_add(u64::from(x));",
     "pkg": "trit-mv",
     "filter": "residuum_adjunction_holds_for_left_continuous_norms",
     "runner": "cargo"

@@ -1,8 +1,7 @@
-//! 字节级匹配引擎（从 `sigscan.rs` 拆出，控制单文件行数预算）：
-//! hex 串（通配 + 跳跃 + 确定性预算）与文本串（XOR 密钥展开 × 变体 +
-//! nocase 折叠 + fullword 词边界）。
+//! 字节级 hex 匹配引擎（从 `sigscan.rs` 拆出，控制单文件行数预算）：
+//! hex 串（通配 + 跳跃 + 确定性预算）。文本串匹配见 [`super::text_match`]。
 
-use super::{HexByte, HexPattern, Jump, MAX_HITS, TextPattern};
+use super::{HexByte, HexPattern, Jump, MAX_HITS};
 
 /// 单模式扫描的步数预算（段尝试 + 首段候选比较合计）。跳跃模式的回溯在
 /// 对抗数据上会指数爆炸（`{ 90 [0-4096] 90 [0-4096] … }` 配全 0x90 数据），
@@ -39,27 +38,58 @@ pub(super) fn find_hex(data: &[u8], hp: &HexPattern) -> (Vec<u64>, bool) {
 /// 从 `pos` 起，按 `rest` 的（跳跃, 段）序列依次匹配——每段起点 ∈
 /// `[前段末尾+min, 前段末尾+max]`（YARA 跳跃语义），全部段落位即成功。
 /// 每次段尝试扣一步预算，耗尽即整条放弃（fail-closed 不挂起）。
+///
+/// 显式栈迭代（取代逐段递归）：帧 = (段下标, 前段末尾位置, 本段下一候选起点)。
+/// DFS 顺序、首命中即返回、无命中回溯与原递归逐一对应；预算口径不变——
+/// 每个段候选尝试扣 1 步，耗尽返回 false（不挂起、不假清白）。
 fn extend_rest(data: &[u8], rest: &[(Jump, Vec<HexByte>)], pos: usize, budget: &mut u64) -> bool {
-    let Some((jump, chunk)) = rest.first() else {
-        return true; // 没有后续段：首段落位即整条命中
-    };
-    let start = pos.saturating_add(jump.min as usize);
-    let last = pos.saturating_add(jump.max as usize);
-    for seg_start in start..=last {
+    let mut stack: Vec<(usize, usize, usize)> = Vec::new();
+    let mut seg = 0usize;
+    let mut cur_pos = pos;
+    // `usize::MAX` = 新进一段，候选起点重置为本段 min；回溯帧带回下一候选。
+    let mut seg_start = usize::MAX;
+    while seg < rest.len() {
+        let (jump, chunk) = &rest[seg];
+        let start = cur_pos.saturating_add(jump.min as usize);
+        let last = cur_pos.saturating_add(jump.max as usize);
+        if seg_start == usize::MAX {
+            seg_start = start;
+        }
+        if seg_start > last {
+            // 本段候选耗尽 → 回溯上一段
+            let Some((s, p, n)) = stack.pop() else {
+                return false;
+            };
+            seg = s;
+            cur_pos = p;
+            seg_start = n;
+            continue;
+        }
         *budget = budget.saturating_sub(1);
         if *budget == 0 {
             return false; // 预算耗尽：放弃（不挂起）
         }
         if seg_start + chunk.len() > data.len() {
-            break;
+            // 起点更大的候选同样越界 → 结束本段，回溯
+            let Some((s, p, n)) = stack.pop() else {
+                return false;
+            };
+            seg = s;
+            cur_pos = p;
+            seg_start = n;
+            continue;
         }
-        if chunk_matches(data, seg_start, chunk)
-            && extend_rest(data, &rest[1..], seg_start + chunk.len(), budget)
-        {
-            return true;
+        if chunk_matches(data, seg_start, chunk) {
+            // 候选成立：压入本段下一候选，推进到下一段
+            stack.push((seg, cur_pos, seg_start + 1));
+            seg += 1;
+            cur_pos = seg_start + chunk.len();
+            seg_start = usize::MAX;
+        } else {
+            seg_start += 1;
         }
     }
-    false
+    true
 }
 
 fn chunk_matches(data: &[u8], pos: usize, chunk: &[HexByte]) -> bool {
@@ -70,71 +100,6 @@ fn chunk_matches(data: &[u8], pos: usize, chunk: &[HexByte]) -> bool {
         })
 }
 
-/// 文本匹配：逐（XOR 密钥 × 变体）展开后找全部命中（nocase = ASCII 折叠；
-/// fullword = 词边界）。预算按滑窗步数计——256 路 xor 在大文件上会如实
-/// 耗尽为「扫描不完整」→ Unknown（fail-closed，不夸大覆盖）。
-pub(super) fn find_text(data: &[u8], tp: &TextPattern) -> (Vec<u64>, bool) {
-    let mut hits = Vec::new();
-    let mut budget = SCAN_BUDGET;
-    let mut complete = true;
-    let keys: Vec<u8> = match tp.xor {
-        Some((lo, hi)) => (lo..=hi).collect(),
-        None => vec![0x00], // 无 xor：单"密钥"恒等
-    };
-    'keys: for key in keys {
-        for variant in &tp.variants {
-            // 变体逐字节 XOR（wide 亦然——组合语义的边界见模块注记）
-            let mut needle: Vec<u8> = variant.bytes.iter().map(|b| b ^ key).collect();
-            if needle.is_empty() {
-                continue;
-            }
-            if tp.nocase {
-                needle.make_ascii_lowercase();
-            }
-            let mut from = 0usize;
-            while from + needle.len() <= data.len() {
-                budget = budget.saturating_sub(1);
-                if budget == 0 {
-                    complete = false;
-                    break 'keys; // 预算耗尽：停止搜索（不挂起、不假清白）
-                }
-                let hit = if tp.nocase {
-                    data[from..from + needle.len()].to_ascii_lowercase() == needle
-                } else {
-                    &data[from..from + needle.len()] == needle.as_slice()
-                };
-                if hit && (!tp.fullword || word_bounded(data, from, needle.len(), variant.wide)) {
-                    hits.push(from as u64);
-                    if hits.len() >= MAX_HITS {
-                        complete = false; // 命中表封顶截断 = 不完整
-                        break 'keys;
-                    }
-                    from += needle.len(); // 非重叠推进（对齐官方与既有行为）
-                } else {
-                    from += 1;
-                }
-            }
-        }
-    }
-    hits.sort_unstable();
-    hits.dedup();
-    (hits, complete)
-}
-
-/// fullword 的词边界：命中前后不得是「字母数字下划线」；宽串按宽字符判
-///（前邻 = 两字节 `(字母, 0x00)`，后邻同理）。
-fn word_bounded(data: &[u8], pos: usize, len: usize, wide: bool) -> bool {
-    // 官方 fullword 的词字符 = **仅字母数字**（yara-python 实测判定：
-    // `ab_cat_cd` 官方 HIT——下划线不算词字符，与正则 `\b` 不同）。
-    let is_word = |b: u8| b.is_ascii_alphanumeric();
-    if wide {
-        let preceded = pos >= 2 && is_word(data[pos - 2]) && data[pos - 1] == 0x00;
-        let followed =
-            pos + len + 1 < data.len() && is_word(data[pos + len]) && data[pos + len + 1] == 0x00;
-        !preceded && !followed
-    } else {
-        let preceded = pos > 0 && is_word(data[pos - 1]);
-        let followed = pos + len < data.len() && is_word(data[pos + len]);
-        !preceded && !followed
-    }
-}
+#[path = "text_match.rs"]
+mod text_match;
+pub(super) use text_match::find_text;
