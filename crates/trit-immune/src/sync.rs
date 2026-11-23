@@ -19,7 +19,6 @@ use crate::dag::{ImmuneDag, NodeId};
 use crate::delta::{self, Delta, Stamped};
 use crate::hlc::Hlc;
 use crate::journal::{self, Journal};
-use crate::verdict::ExploitEvidence;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -49,23 +48,24 @@ pub struct MergeOutcome {
 /// 结果与 `replicas` 的输入顺序无关（确定性收敛）。
 pub fn merge_replicas(replicas: Vec<(u32, Vec<Stamped>)>) -> MergeOutcome {
     // 1) 去重：stamp 即 Delta 身份（克隆副本共享相同戳），保留首次出现。
-    //    BTreeMap 迭代序 = Hlc 全序 = merge_order 的结果。
-    let mut uniq: BTreeMap<Hlc, Stamped> = BTreeMap::new();
-    for (_, stream) in &replicas {
+    //    BTreeMap 迭代序 = Hlc 全序 = merge_order 的结果；同时记下首次提供该戳的
+    //    副本标号——命名空间归属以副本流标号为准，不按戳上的 writer 字段（审计 F39-2）。
+    let mut uniq: BTreeMap<Hlc, (u32, Stamped)> = BTreeMap::new();
+    for (w, stream) in &replicas {
         for s in stream {
-            uniq.entry(s.ts).or_insert_with(|| s.clone());
+            uniq.entry(s.ts).or_insert_with(|| (*w, s.clone()));
         }
     }
 
-    // 2) 每个写者的"自有 spawn 本地 id"：在其本副本日志里按序推演——
-    //    副本日志里任何 Spawn 都在创建该副本视角下的下一个本地节点。
+    // 2) 每个写者的"自有 spawn 本地 id"：按本副本日志顺序推演；自有归属按首次提供
+    //    该戳的副本标号判定，共同前缀里的 Spawn 归原作者副本，不进本副本自有表。
     let mut own_local: HashMap<u32, Vec<u32>> = HashMap::new();
     for (w, stream) in &replicas {
         let mut local = 1u32; // #0 是根
         let mut list = Vec::new();
         for s in stream {
             if matches!(s.delta, Delta::Spawn { .. }) {
-                if s.ts.writer == *w {
+                if uniq.get(&s.ts).map(|(p, _)| *p) == Some(*w) {
                     list.push(local);
                 }
                 local += 1;
@@ -79,9 +79,9 @@ pub fn merge_replicas(replicas: Vec<(u32, Vec<Stamped>)>) -> MergeOutcome {
     // 3) 全序重放 + 本地 id → 全局 id 改写
     let mut dag = ImmuneDag::empty();
     let mut outcome = MergeOutcome::default();
-    for s in uniq.into_values() {
-        let w = s.ts.writer;
-        let translated = translate_delta(&own_local, &own_global, w, &s.delta);
+    for (prov, s) in uniq.into_values() {
+        let w = prov;
+        let translated = translate::translate_delta(&own_local, &own_global, w, &s.delta);
         let d = match translated {
             Ok(d) => d,
             Err(reason) => {
@@ -131,81 +131,6 @@ pub fn merge_replicas(replicas: Vec<(u32, Vec<Stamped>)>) -> MergeOutcome {
     }
     outcome.dag = dag;
     outcome
-}
-
-/// 把写者 `w` 本地命名空间里的节点引用改写成全局 id。
-/// 共同前缀（早于该写者第一个自有 spawn 的本地 id）恒等映射——前缀按原序最先重放。
-fn translate(
-    own_local: &HashMap<u32, Vec<u32>>,
-    own_global: &HashMap<u32, Vec<u32>>,
-    w: u32,
-    x: u32,
-) -> Result<u32, String> {
-    let (locals, globals) = match (own_local.get(&w), own_global.get(&w)) {
-        (Some(l), Some(g)) => (l, g),
-        _ => return Ok(x), // 未见其日志的写者：按共同前缀处理
-    };
-    match locals.binary_search(&x) {
-        // 本地 id 已登记、但还没在全序里重放到（伪造的「引用先于 spawn」乱序戳）：
-        // 按隔离处理，**绝不** `globals[i]` 越界——那会在 journal 写锁内 panic、毒死整个
-        // 服务（H2：单请求永久 DoS）。
-        Ok(i) => globals
-            .get(i)
-            .copied()
-            .ok_or_else(|| format!("写者 #{w} 引用了尚未重放的本地节点 #{x:02}")),
-        Err(0) => Ok(x), // 共同前缀
-        Err(_) => Err(format!("写者 #{w} 引用了未知本地节点 #{x:02}")),
-    }
-}
-
-fn translate_delta(
-    own_local: &HashMap<u32, Vec<u32>>,
-    own_global: &HashMap<u32, Vec<u32>>,
-    w: u32,
-    delta: &Delta,
-) -> Result<Delta, String> {
-    Ok(match delta {
-        Delta::Root { .. } | Delta::Spawn { .. } => delta.clone(),
-        Delta::Record {
-            id,
-            verdict,
-            evidence,
-            note,
-        } => Delta::Record {
-            id: NodeId(translate(own_local, own_global, w, id.0)?),
-            verdict: *verdict,
-            evidence: match evidence {
-                Some(e) => Some(ExploitEvidence {
-                    vector: e.vector.clone(),
-                    payload: e.payload.clone(),
-                    target: NodeId(translate(own_local, own_global, w, e.target.0)?),
-                    round: e.round,
-                }),
-                None => None,
-            },
-            note: note.clone(),
-        },
-        Delta::Quarantine { id, note } => Delta::Quarantine {
-            id: NodeId(translate(own_local, own_global, w, id.0)?),
-            note: note.clone(),
-        },
-        Delta::HumanReview { id, verdict, note } => Delta::HumanReview {
-            id: NodeId(translate(own_local, own_global, w, id.0)?),
-            verdict: *verdict,
-            note: note.clone(),
-        },
-        Delta::CrossLink {
-            from,
-            to,
-            pass,
-            note,
-        } => Delta::CrossLink {
-            from: NodeId(translate(own_local, own_global, w, from.0)?),
-            to: NodeId(translate(own_local, own_global, w, to.0)?),
-            pass: *pass,
-            note: note.clone(),
-        },
-    })
 }
 
 /// 日志传输帧：`trit-immune-log v1` + `WRITER` 行 + 日志行（与 journal v2 行同格式）。
@@ -364,6 +289,8 @@ pub fn anti_entropy(a: &mut Journal, b: &mut Journal) -> io::Result<(MergeOutcom
     Ok((ma, mb))
 }
 
+mod translate;
+
 /// TCP 传输（std）。
 ///
 /// 安全边界：只接受字面 `IP:端口`（[`SocketAddr`]），不做域名解析、不请求 URL——
@@ -371,5 +298,9 @@ pub fn anti_entropy(a: &mut Journal, b: &mut Journal) -> io::Result<(MergeOutcom
 /// 帧格式：8 字节大端长度 + UTF-8 日志帧（上限 64 MiB）。
 pub mod tcp;
 
+#[cfg(test)]
+mod merge_prefix_tests;
+#[cfg(test)]
+mod merge_tests;
 #[cfg(test)]
 mod tests;

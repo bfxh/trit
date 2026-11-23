@@ -13,6 +13,8 @@ pub enum Severity {
     Error,
     Warning,
     Note,
+    /// 级别未识别 / 无法判定：**fail-closed**——不归入良性 `Note`，也不参与 `+1` 记账。
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,10 +45,14 @@ pub fn parse_rustc_stream(text: &str) -> Vec<Diagnostic> {
         let Some(msg) = v.get("message") else {
             continue;
         };
-        let severity = match msg.get("level").and_then(|l| l.as_str()) {
-            Some("error") => Severity::Error,
-            Some("warning") => Severity::Warning,
-            _ => Severity::Note,
+        // 级别先去首尾空白、转小写再归并；规范化后仍不在 rustc 规范级别集合内的，
+        // 归 [`Severity::Unknown`]（fail-closed），绝不静默当成良性 `Note` 抬成 +1。
+        let raw_level = msg.get("level").and_then(|l| l.as_str()).unwrap_or("");
+        let severity = match raw_level.trim().to_ascii_lowercase().as_str() {
+            "error" => Severity::Error,
+            "warning" => Severity::Warning,
+            "note" | "help" => Severity::Note,
+            _ => Severity::Unknown,
         };
         let message = msg
             .get("message")
@@ -92,11 +98,14 @@ pub fn has_json(text: &str) -> bool {
         .any(|l| json::parse(l.trim()).is_ok())
 }
 
-/// 层裁决（检查类语义）：任一 error → `-1`；否则任一 warning → `0`；干净 → `+1`。
+/// 层裁决（检查类语义）：任一 error → `-1`；否则任一 warning / 未识别级别 → `0`；干净 → `+1`。
 pub fn layer_verdict(diags: &[Diagnostic]) -> Trit {
     if diags.iter().any(|d| d.severity == Severity::Error) {
         Trit::Vulnerable
-    } else if diags.iter().any(|d| d.severity == Severity::Warning) {
+    } else if diags
+        .iter()
+        .any(|d| d.severity == Severity::Warning || d.severity == Severity::Unknown)
+    {
         Trit::Unknown
     } else {
         Trit::Hardened
@@ -104,35 +113,4 @@ pub fn layer_verdict(diags: &[Diagnostic]) -> Trit {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SAMPLE: &str = concat!(
-        r#"{"reason":"compiler-message","message":{"level":"error","message":"mismatched types","code":{"code":"E0308","explanation":null},"spans":[{"file_name":"src/main.rs","line_start":3,"line_end":3,"is_primary":true}]}}"#,
-        "\n",
-        "\n",
-        r#"{"reason":"compiler-message","message":{"level":"warning","message":"unused variable: `x`","code":null,"spans":[{"file_name":"src/lib.rs","line_start":7,"line_end":7}]}}"#,
-        "\n",
-        r#"{"reason":"build-finished","success":false}"#,
-        "\n",
-        "这不是 JSON 的进度行\n",
-    );
-
-    #[test]
-    fn parses_rustc_stream() {
-        let d = parse_rustc_stream(SAMPLE);
-        assert_eq!(d.len(), 2, "build-finished 与垃圾行应被跳过");
-        assert_eq!(d[0].severity, Severity::Error);
-        assert_eq!(d[0].code.as_deref(), Some("E0308"));
-        assert_eq!(d[0].file, "src/main.rs");
-        assert_eq!(d[0].line, Some(3));
-        assert_eq!(d[1].severity, Severity::Warning);
-        assert_eq!(d[1].code, None);
-        // 层裁决：检查类语义
-        assert_eq!(layer_verdict(&d), Trit::Vulnerable);
-        assert_eq!(layer_verdict(&d[1..]), Trit::Unknown);
-        assert_eq!(layer_verdict(&[]), Trit::Hardened);
-        assert!(has_json(SAMPLE));
-        assert!(!has_json("纯文本\n没有 JSON"));
-    }
-}
+mod tests;

@@ -360,10 +360,10 @@ impl Net {
             }
             for li in (0..self.layers.len()).rev() {
                 if li + 1 < self.layers.len() {
-                    for c in 0..d.len() {
-                        for i in 0..n {
-                            if pre_relu[li][c][i] <= 0.0 {
-                                d[c][i] = 0.0;
+                    for (c, dc) in d.iter_mut().enumerate() {
+                        for (dc_i, pre) in dc.iter_mut().zip(pre_relu[li][c].iter()).take(n) {
+                            if *pre <= 0.0 {
+                                *dc_i = 0.0;
                             }
                         }
                     }

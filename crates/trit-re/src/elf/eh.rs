@@ -142,12 +142,12 @@ fn parse_eh_fde(
     sixty_four: bool,
 ) -> Option<(u64, u64)> {
     let mut position = cursor;
-    let field_addr = section_addr + position as u64;
+    let field_addr = section_addr.checked_add(position as u64)?;
     let begin = match encoding {
         0x1b => {
             let relative = i32::from_le_bytes(data.get(position..position + 4)?.try_into().ok()?);
             position += 4;
-            field_addr.wrapping_add(relative as i64 as u64)
+            field_addr.checked_add_signed(relative as i64)?
         }
         0x03 => {
             let absolute = u32::from_le_bytes(data.get(position..position + 4)?.try_into().ok()?);

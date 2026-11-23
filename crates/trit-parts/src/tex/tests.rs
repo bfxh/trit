@@ -267,12 +267,10 @@ fn stylize_knobs_move_their_own_factor_monotonically() {
         h,
     )
     .stroke;
-    assert!(s2 > s0, "模糊应拉长相关长度（{} vs {}）", s2, s0);
+    assert!(s2 > s0, "模糊应拉长相关长度（{s2} vs {s0}）");
     assert!(
         s_sharp <= s0 + 1e-3,
-        "锐化不该拉长相关长度（{} vs {}）",
-        s_sharp,
-        s0
+        "锐化不该拉长相关长度（{s_sharp} vs {s0}）",
     );
 }
 

@@ -99,7 +99,7 @@ fn run_command(
         }
         fs::write(path, text).with_context(|| format!("写 {} 失败", path.display()))?;
     }
-    let report = analyze::analyze(&events);
+    let report = analyze::analyze(&events)?;
     Ok((
         analyze::to_json(&report),
         Some(analyze::has_findings(&report)),
@@ -124,7 +124,7 @@ fn read_events(path: &PathBuf) -> Result<Vec<Event>> {
 
 fn analyze_file(path: &PathBuf) -> Result<(serde_json::Value, Option<bool>)> {
     let events = read_events(path)?;
-    let report = analyze::analyze(&events);
+    let report = analyze::analyze(&events)?;
     Ok((
         analyze::to_json(&report),
         Some(analyze::has_findings(&report)),

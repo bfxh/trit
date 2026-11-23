@@ -166,7 +166,7 @@ fn cmd_log(args: &[String]) -> Result<(), CliError> {
             break;
         }
         let Ok((ts, d)) = parse_stamped_line(line) else {
-            println!("{:4}: <坏行如实展示> {line}", i);
+            println!("{i:4}: <坏行如实展示> {line}");
             continue;
         };
         println!("{:4} {} {}", i, ts, delta::encode(&d));
@@ -333,21 +333,7 @@ fn cmd_checkout(args: &[String]) -> Result<(), CliError> {
         return Err(CliError::Runtime(format!("节点 #{n:02} 不存在")));
     }
     // 重放：只保留 n0..=n（含父链闭包），打印时间旅行视图
-    let mut view = trit_immune::ImmuneDag::root("时间旅行视图");
-    for node in &dag.nodes()[..=n as usize] {
-        let kind = node.kind;
-        let parent = node
-            .parent
-            .map(|p| NodeId(p.0.min(view.nodes().len() as u32 - 1)))
-            .unwrap_or(NodeId(0));
-        let id = view.spawn(parent, kind, &node.title);
-        if node.quarantined {
-            view.quarantine(id, "checkout：保留隔离标记");
-        }
-        for e in &node.history {
-            view.record(id, e.verdict, None, &e.note);
-        }
-    }
+    let view = checkout::build_checkout_view(&dag, n)?;
     println!("节点 #{n:02} 时的全图（{} 节点）：", view.nodes().len());
     print!("{}", view.render());
     Ok(())
@@ -517,6 +503,9 @@ fn help_text() -> String {
 默认账本：当前目录 repo.tritj（-f 可指定）。"
         .to_string()
 }
+
+#[path = "trit/checkout.rs"]
+mod checkout;
 
 #[cfg(test)]
 // 二进制 crate 根的子模块按 `src/bin/` 寻址，这里用 `#[path]` 把测试留在同名目录里

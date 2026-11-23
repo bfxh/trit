@@ -243,7 +243,7 @@ fn coordinate_without_provider_is_reported() {
     assert!(s.fleet.coord_edges().is_empty(), "没有提供者不得凭空连边");
     assert!(s.fleet.sync_coordinates("坐标反熵").unwrap().is_empty());
     let gaps = s.fleet.coord_gaps();
-    assert_eq!(gaps.len(), 1, "未覆盖的坐标必须进 0 态候选：{:?}", gaps);
+    assert_eq!(gaps.len(), 1, "未覆盖的坐标必须进 0 态候选：{gaps:?}");
     assert_eq!(gaps[0].reason, GapReason::NoProvider);
     assert!(gaps[0].note().contains("无提供者"), "{}", gaps[0].note());
     s.cleanup();
