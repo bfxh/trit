@@ -679,32 +679,7 @@ fn cooccurrence_ordered_discriminates_address_order() {
         (0x1080, &["exec"]),
     ]);
     assert_eq!(interleaved.cooccurrence_ordered(trio, true), Ternary::True);
-
     // 边界不精确 → Unknown（与无序同口径）
     assert_eq!(ok.cooccurrence_ordered(trio, false), Ternary::Unknown);
 }
-
-#[test]
-fn checked_sum_legal_lengths_unchanged() {
-    use super::checked_sum_u64;
-    // 正例：合法长度/大小求和与原 `sum()` 逐值一致。
-    assert_eq!(checked_sum_u64([0u64, 1, 2, 3].into_iter()), Some(6));
-    assert_eq!(checked_sum_u64([].into_iter()), Some(0));
-    // 边界相邻：MAX - 1 + 1 = MAX，不溢出。
-    assert_eq!(
-        checked_sum_u64([u64::MAX - 1, 1].into_iter()),
-        Some(u64::MAX)
-    );
-}
-
-#[test]
-fn checked_sum_rejects_overflowing_sizes() {
-    use super::checked_sum_u64;
-    // 极端：单个超大 size 与任何正值相加即溢出 → `None`（不回绕、不 panic）。
-    assert_eq!(checked_sum_u64([u64::MAX, 1].into_iter()), None);
-    assert_eq!(
-        checked_sum_u64([u64::MAX / 2 + 1, u64::MAX / 2 + 1].into_iter()),
-        None
-    );
-    assert_eq!(checked_sum_u64([u64::MAX, 0].into_iter()), Some(u64::MAX));
-}
+mod checked;

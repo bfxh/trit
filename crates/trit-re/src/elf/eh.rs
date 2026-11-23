@@ -142,7 +142,6 @@ fn parse_eh_fde(
     sixty_four: bool,
 ) -> Option<(u64, u64)> {
     let mut position = cursor;
-    // checked：节地址 + 游标本是未受控偏移，恶意近上限地址不得回绕成垃圾 FDE 区间。
     let field_addr = section_addr.checked_add(position as u64)?;
     let begin = match encoding {
         0x1b => {

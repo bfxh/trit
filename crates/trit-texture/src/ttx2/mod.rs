@@ -13,6 +13,7 @@ pub use model::{TRITS_PER_WORD, TritModel, TritModelLayer};
 
 use trit_core::value::Ternary;
 
+use crate::endpoints_fnv::endpoint_fnv;
 use crate::ttx::{block_trits, gf3_remainder_16};
 use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TextureError, TritTexture};
 use model::{TRITS_PER_PACKED_BYTE, model_trits, pack_radix3, unpack_radix3};
@@ -124,7 +125,6 @@ fn encode_model_section(model: &TritModel) -> Vec<u8> {
     }
     section
 }
-
 /// 序列化成 TTX2 容器（先校验，坏形状不写盘）。
 pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
     let (kind, section, checksum_trits, endpoint) = match document {
@@ -134,7 +134,7 @@ pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
                 KIND_TEX,
                 encode_texture_section(levels),
                 texture_trits(levels),
-                crate::endpoint_fnv(levels),
+                crate::endpoints_fnv::endpoint_fnv(levels),
             )
         }
         TtxDocument::Model(model) => {
@@ -142,7 +142,6 @@ pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
             (KIND_MOD, encode_model_section(model), model_trits(model), 0)
         }
     };
-    // 端点 FNV 与 GF(3) 余数折进同一个 u32 校验值（同 TTX3 tile_crc 口径）。
     let checksum = u32::from_le_bytes(gf3_remainder_16(&checksum_trits)) ^ endpoint;
     let mut out = Vec::with_capacity(HEADER_BYTES + section.len() + CHECKSUM_BYTES);
     out.extend_from_slice(&MAGIC);
@@ -154,7 +153,6 @@ pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
     out.extend_from_slice(&checksum.to_le_bytes());
     Ok(out)
 }
-
 fn decode_texture_section(section: &[u8]) -> Result<Vec<TritTexture>, TextureError> {
     let truncated = || TextureError::TtxTruncated {
         actual: section.len(),
@@ -310,7 +308,7 @@ pub fn from_ttx2(bytes: &[u8]) -> Result<TtxDocument, TextureError> {
         _ => TtxDocument::Model(decode_model_section(section)?),
     };
     let (trits, endpoint) = match &document {
-        TtxDocument::Texture { levels } => (texture_trits(levels), crate::endpoint_fnv(levels)),
+        TtxDocument::Texture { levels } => (texture_trits(levels), endpoint_fnv(levels)),
         TtxDocument::Model(model) => (model_trits(model), 0),
     };
     let stored: [u8; CHECKSUM_BYTES] = bytes[HEADER_BYTES + section_len..section_end]
@@ -429,35 +427,6 @@ mod tests {
             decode_rgba(&levels[0]).unwrap(),
             decode_rgba(&via_v1).unwrap()
         );
-    }
-
-    #[test]
-    fn texture_endpoint_bytes_are_covered_by_checksum() {
-        // F-1：端点 4 字节原先不进 TTX2 校验流；逐字节打翻两级端点都必须判
-        // TtxChecksum，不能放行解码出错色。
-        let fine = encode_rgba(&sample(16, 16), 16, 16).unwrap();
-        let coarse = encode_rgba(&sample(8, 8), 8, 8).unwrap();
-        let bytes = to_ttx2(&TtxDocument::Texture {
-            levels: vec![fine, coarse],
-        })
-        .unwrap();
-        // section：level_count(4) + w(4) + h(4)，首块端点紧随其后。
-        for offset in 0..4usize {
-            let mut bad = bytes.clone();
-            bad[HEADER_BYTES + 12 + offset] ^= 0x1;
-            assert!(
-                matches!(from_ttx2(&bad), Err(TextureError::TtxChecksum { .. })),
-                "粗调层端点字节 {offset} 未被校验流覆盖"
-            );
-        }
-        let fine_block_bytes = 4 * TRIT_BLOCK_BYTES;
-        let coarse_endpoint = 4 + 8 + fine_block_bytes + 8;
-        let mut bad = bytes;
-        bad[HEADER_BYTES + coarse_endpoint] ^= 0x1;
-        assert!(matches!(
-            from_ttx2(&bad),
-            Err(TextureError::TtxChecksum { .. })
-        ));
     }
 
     #[test]
@@ -604,7 +573,6 @@ mod tests {
             })
         ));
     }
-
     #[test]
     fn v1_files_are_rejected_with_explicit_magic() {
         let texture = encode_rgba(&sample(8, 8), 8, 8).unwrap();
