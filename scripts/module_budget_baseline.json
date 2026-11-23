@@ -1556,11 +1556,19 @@
     },
     {
       "file": "crates/trit-export/src/lib.rs",
-      "lines": 322
+      "lines": 321
+    },
+    {
+      "file": "crates/trit-export/src/names.rs",
+      "lines": 14
     },
     {
       "file": "crates/trit-export/tests/gguf.rs",
       "lines": 140
+    },
+    {
+      "file": "crates/trit-export/tests/gguf_read_duplicate.rs",
+      "lines": 82
     },
     {
       "file": "crates/trit-float/src/format.rs",
@@ -3952,7 +3960,7 @@
     },
     {
       "file": "crates/trit-parts/src/tpm.rs",
-      "lines": 234
+      "lines": 246
     },
     {
       "file": "crates/trit-parts/src/uv.rs",
@@ -4045,6 +4053,10 @@
     {
       "file": "crates/trit-parts/tests/tconv_tpc_limits.rs",
       "lines": 51
+    },
+    {
+      "file": "crates/trit-parts/tests/tpm_shape.rs",
+      "lines": 120
     },
     {
       "file": "crates/trit-parts/tests/weights_bounds.rs",
@@ -4572,7 +4584,11 @@
     },
     {
       "file": "crates/trit-texture/src/gguf.rs",
-      "lines": 775
+      "lines": 560
+    },
+    {
+      "file": "crates/trit-texture/src/gguf/regions.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-texture/src/lib.rs",
@@ -4645,6 +4661,14 @@
     {
       "file": "crates/trit-texture/tests/aniso_quality.rs",
       "lines": 119
+    },
+    {
+      "file": "crates/trit-texture/tests/gguf_import.rs",
+      "lines": 228
+    },
+    {
+      "file": "crates/trit-texture/tests/gguf_overlap.rs",
+      "lines": 115
     },
     {
       "file": "crates/trit-texture/tests/mip_sampler.rs",
@@ -5360,15 +5384,19 @@
     },
     {
       "file": "crates/trit-wspace/src/wsp2.rs",
-      "lines": 106
+      "lines": 107
     },
     {
       "file": "crates/trit-wspace/src/wsp2/bytes.rs",
       "lines": 77
     },
     {
+      "file": "crates/trit-wspace/src/wsp2/geom.rs",
+      "lines": 122
+    },
+    {
       "file": "crates/trit-wspace/src/wsp2/index.rs",
-      "lines": 679
+      "lines": 681
     },
     {
       "file": "crates/trit-wspace/src/wsp2/index_io.rs",
@@ -5637,6 +5665,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp2_extra.rs",
       "lines": 46
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp2_index_geom.rs",
+      "lines": 115
     },
     {
       "file": "crates/trit-wspace/tests/wsp3.rs",
