@@ -184,4 +184,3 @@ python tools/sandbox_run.py -Root . -CapacityLease cap-... -CapacityDir <state> 
 - **尚未接入**：`capacity_lease` 还没有和 `cargo`/`ninja` 的 jobserver 打通；
   `sandbox_run` 目前要求调用方显式传 lease，不会自己 `reserve`。下一步是把
   jobserver 的并发令牌映射成同一份租约。
-
