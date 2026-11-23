@@ -143,6 +143,7 @@
 | [AGENT-TEXT-GUARD.md](engineering/AGENT-TEXT-GUARD.md) | 外部文字污染门：不可信数据封套、隐形字符剥离、NFKD/多层编码扫描、派发输入 `prompt_guard` 与产物 `output_guard`、59/59 自测、81 例红队、90 例变形矩阵与自适应攻击边界 |
 | [AGENT-REDTEAM.md](engineering/AGENT-REDTEAM.md) | 入口红队：81 例文字语料（0 攻击漏检、0 overblock）、沙盒 junction/硬链接/忽略文件及本轮 reparse 路径洞、修复与残余边界 |
 | [AGENT-COMPLETION-PROVENANCE.md](engineering/AGENT-COMPLETION-PROVENANCE.md) | 编排完成回执：`finish` 默认要求 executor `Receipt`，伪造 `Passed` 报 `unattested_evidence`；CLI/库层回归与诚实边界 |
+| [AGENT-METRICS.md](engineering/AGENT-METRICS.md) | 回执观测面：full/compact/坏回执的 verdict、step、run、成本、预算、claims 与 per-agent/lang/profile 统计；`agent_metrics.py` 178/178 自测，6 条真实场景聚合 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |

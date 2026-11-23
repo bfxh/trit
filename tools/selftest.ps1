@@ -5144,6 +5144,22 @@ if (-not $anPy) {
 }
 
 
+# ==============================================================================
+# AR. agent_verify 回执指标：full/compact/坏回执的 verdict/step/run/成本/分组统计
+if (-not $anPy) {
+    "  SKIP  AR1 找不到可用的 Python，跳过 agent 回执指标自测"
+    $skipped++
+} else {
+    $arOut = @(& $anPy (Join-Path $tools 'agent_metrics.py') -SelfTest 2>&1)
+    $arMatch = [regex]::Match(($arOut -join ' '), 'agent-metrics self-test: (\d+)/(\d+)')
+    $arOk = ($LASTEXITCODE -eq 0) -and $arMatch.Success -and `
+        ([int]$arMatch.Groups[1].Value -eq [int]$arMatch.Groups[2].Value) -and `
+        ([int]$arMatch.Groups[1].Value -ge 100)
+    Assert-True $arOk `
+        'AR1 agent_verify 回执指标 100+ 项：60 条合成 full/compact/坏回执、6 条真实 dry-run/pass/fail/refuse/suspend/compact 场景、verdict/step/run/成本/预算/claims/分组/分位统计' "e=$LASTEXITCODE"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }
