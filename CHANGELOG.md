@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（第四轮：work-bench + PTC + CI/CD）
+
+- `work-bench`：20 个真实工作任务、15 类、81 条确定性检查、20 个负例；参考
+  81/81、负例 20/20，`-SelfTest` 182/182，支持 `-Candidates` 只读实际产物。
+- `cmd_driver.py`：PTC 风格命令驱动，plan 预检、argv 不经过 shell、逐步 verify、
+  不盲重试、错误分类，摘要与本地 receipt 分离；自测 34/34，work-bench 计划
+  4/4 步、质量门 13/13、零重试。
+- `scripts/agent_quality_gate.py`：CI/发布共用质量门，包装
+  `cmd_driver -SelfTest` + `cmd_driver -Plan testdata/work-bench/ptc-plan.json`，
+  输出 `trit-agent-quality-gate/v1`，断言 34/34、81/81、20/20、4/4、13/13。
+- `.github/workflows/agent-quality.yml`：PR 触及 work-bench / cmd-driver / 夹具时
+  在 Ubuntu + Windows 运行质量门，artifact 保留 7 天，不进入 release assets。
+- `release.yml`：新增 `agent-quality` 前置门，`build` 依赖它；发布下载 artifact
+  限定 `pattern: trit-*`，`agent-quality-evidence` 与 receipt 不暴露给用户；
+  `release` job 只在 tag 上发布，手动 dispatch 不会误发。
+- `docs/engineering/CI-CD.md`：开发内部（命令、自测、错误分类、receipt、CI job）
+  与用户交付（二进制、SHA256SUMS、release notes）分层，CI 预算与排障口径。
+
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 
 - `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]

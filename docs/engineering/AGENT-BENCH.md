@@ -79,7 +79,7 @@
 python tools/agent_bench.py -List
 python tools/agent_bench.py -SelfTest
 python tools/agent_bench.py -Run -Out bench.json
-python tools/agent_bench.py -Run -Candidates E:\tmp\solutions -Out bench.json
+python tools/agent_bench.py -Run -Candidates target/agent-bench-solutions -Out target/agent-bench.json
 python tools/agent_bench.py -Run -Repeat 2 -Out bench.json
 ```
 

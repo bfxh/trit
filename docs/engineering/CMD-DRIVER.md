@@ -77,7 +77,7 @@ plan.json
 
 ```powershell
 python tools/cmd_driver.py -SelfTest
-python tools/cmd_driver.py -Plan testdata/work-bench/ptc-plan.json -Out F:\trit-target-data\ptc-receipt.json
+python tools/cmd_driver.py -Plan testdata/work-bench/ptc-plan.json -Out target/agent-quality/ptc-receipt.json
 python tools/cmd_driver.py -Plan <plan.json> -Out <receipt.json> -DryRun
 ```
 

@@ -104,10 +104,10 @@ OSWorld 的办公/长程工作流切片。本仓库只实现一个**本地、合
 python tools/work_bench.py -SelfTest
 work-bench self-test: 182/182
 
-python tools/work_bench.py -Run -Out E:\tmp\work-bench-report-20.json
+python tools/work_bench.py -Run -Out target/agent-quality/work-bench-report.json
 work-bench: 20 tasks / 81 checks / reference 81/81 / negative 20/20 / wall 0.428s
 
-python tools/work_bench.py -Run -Repeat 2 -Out E:\tmp\work-bench-repeat2-20.json
+python tools/work_bench.py -Run -Repeat 2 -Out target/agent-quality/work-bench-repeat2.json
 两次运行：reference 81/81、negative 20/20、repeat_all_ok=true，wall 0.552s
 ```
 
@@ -132,7 +132,7 @@ python tools/work_bench.py -Run -Repeat 2 -Out E:\tmp\work-bench-repeat2-20.json
 4. `work_bench.py -Run -Repeat 2`，核验 `repeat_all_ok=true`。
 
 ```powershell
-python tools/cmd_driver.py -Plan testdata/work-bench/ptc-plan.json -Out F:\trit-target-data\ptc-receipt.json
+python tools/cmd_driver.py -Plan testdata/work-bench/ptc-plan.json -Out target/agent-quality/ptc-receipt.json
 ```
 
 实测：
