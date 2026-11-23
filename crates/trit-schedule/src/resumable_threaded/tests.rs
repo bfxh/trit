@@ -185,50 +185,6 @@ fn task_panic_fails_the_run_instead_of_hanging() {
     assert!(report.completed.contains(&"ok".to_string()), "{report:?}");
 }
 
-#[test]
-fn failure_after_stop_does_not_promote_dependents() {
-    // #634：一个任务 Failed 置 stop 后，threaded 不得再把依赖任务跑完并记
-    // completed；依赖只能出现在 cancelled，不能同时落在两个集合里。
-    //
-    // The old fixture raced on wall-clock sleeps (a=30ms vs b=20ms): a loaded
-    // runner could schedule b late, let a finish, and legitimately promote c
-    // before the failure landed. Gate a on b's failure flag instead, so the
-    // test asserts the invariant, not the runner's scheduling latency.
-    let b_failed = Arc::new(AtomicUsize::new(0));
-    struct Slow(Arc<AtomicUsize>);
-    impl ResumableTask for Slow {
-        fn step(&mut self, _ctx: &StepContext) -> Progress {
-            while self.0.load(Ordering::SeqCst) == 0 {
-                std::thread::sleep(Duration::from_millis(1));
-            }
-            Progress::Done
-        }
-    }
-    struct FailSet(Arc<AtomicUsize>);
-    impl ResumableTask for FailSet {
-        fn step(&mut self, ctx: &StepContext) -> Progress {
-            // Mark cancellation before the failure is committed, so the other
-            // worker's Done cannot race the scheduler lock and promote c.
-            ctx.cancel.cancel();
-            self.0.store(1, Ordering::SeqCst);
-            Progress::Failed("boom".to_string())
-        }
-    }
-    let specs = vec![
-        ResumableSpec::new("a", vec![], Slow(b_failed.clone())).with_priority(0),
-        ResumableSpec::new("b", vec![], FailSet(b_failed)).with_priority(10),
-        ResumableSpec::new("c", vec![dep("a")], Counter::new(1)).with_priority(0),
-    ];
-    let report = run_resumable_threaded(specs, RuntimeConfig::new(2), CancelToken::new()).unwrap();
-    let (id, message) = report.failed.as_ref().expect("b 必须记为失败");
-    assert_eq!(id, "b");
-    assert_eq!(message, "boom");
-    assert!(!report.completed.contains(&"a".to_string()), "{report:?}");
-    assert!(report.cancelled.contains(&"a".to_string()), "{report:?}");
-    assert!(!report.completed.contains(&"c".to_string()), "{report:?}");
-    assert!(report.cancelled.contains(&"c".to_string()), "{report:?}");
-}
-
 struct HoldThenDone {
     done: usize,
     hold_ms: u64,

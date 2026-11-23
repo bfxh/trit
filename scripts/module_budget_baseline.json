@@ -2276,7 +2276,7 @@
     },
     {
       "file": "crates/trit-learn/src/forecast.rs",
-      "lines": 222
+      "lines": 221
     },
     {
       "file": "crates/trit-learn/src/json.rs",
@@ -4544,7 +4544,7 @@
     },
     {
       "file": "crates/trit-schedule/src/resumable_threaded/tests.rs",
-      "lines": 305
+      "lines": 274
     },
     {
       "file": "crates/trit-schedule/src/runtime/execute.rs",
@@ -4561,6 +4561,10 @@
     {
       "file": "crates/trit-schedule/src/runtime/types.rs",
       "lines": 284
+    },
+    {
+      "file": "crates/trit-schedule/tests/stop_promotion.rs",
+      "lines": 67
     },
     {
       "file": "crates/trit-simd/build.rs",

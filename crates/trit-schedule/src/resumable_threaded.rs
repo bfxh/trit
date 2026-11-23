@@ -400,10 +400,8 @@ fn worker(shared: Arc<(Mutex<Shared>, Condvar)>, cancel: CancelToken) {
             continue;
         };
         let requirements = state.requirements[position];
-        // 资源预检在 running 计数自增之前：capacity=None 时准入不做累计加法预检，
-        // 两个 u32::MAX 需求并发相加仍会溢出。溢出按结构化失败处理（对齐
-        // execute.rs:310-319）：置 failed/stop、排空 ready、notify_all，绝不
-        // expect panic；此路径不自增 running、不计入 used。
+        // 资源累计溢出按结构化失败处理：置 failed/stop、排空 ready、notify_all，
+        // 不自增 running、不计入 used，绝不 expect panic。
         let Some(new_used) = state.used.checked_add(requirements) else {
             state.failed = Some((id.clone(), "资源累计溢出".to_string()));
             state.stop = true;
@@ -427,9 +425,7 @@ fn worker(shared: Arc<(Mutex<Shared>, Condvar)>, cancel: CancelToken) {
             cancel: cancel.clone(),
         };
         loop {
-            // 复审 H06：`task.step` 的 panic 曾直接穿透 worker——running/资源
-            // 不归还、不 notify，其余 worker 与调用方永久等待。包住并走与
-            // `Progress::Failed` 相同的收尾路径（归还、置 failed、stop、notify）。
+            // panic 不得穿透 worker：走 Failed 收尾，归还槽位并 notify_all。
             let progress = catch_unwind(AssertUnwindSafe(|| task.step(&ctx)))
                 .unwrap_or_else(|_| Progress::Failed("任务 panic".to_string()));
             state = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -459,28 +455,21 @@ fn worker(shared: Arc<(Mutex<Shared>, Condvar)>, cancel: CancelToken) {
                 }
                 Progress::Done => {
                     lease.release_locked(&mut state);
-                    // A Done that lands after cancellation was requested must
-                    // not be counted as completed or promote dependents. The
-                    // cancellation can be visible before the failing worker
-                    // takes the scheduler lock, so checking only `state.stop`
-                    // leaves a promotion window.
+                    // 取消可能先于失败 worker 拿锁可见，Done 必须查 CancelToken。
                     if cancel.is_cancelled() {
                         state.cancelled.insert(id);
-                        state.idle += 1;
-                        wake.notify_all();
-                        break;
-                    }
-                    state.completed.insert(id);
-                    // 已置停后不再 promote 后继：依赖任务留在 cancelled，避免同一任务
-                    // 同时进入 completed 与 cancelled（对齐 execute.rs:335 的守卫）。
-                    if !state.stop {
-                        let nexts = state.dependents[position].clone();
-                        for next in nexts {
-                            state.indegree[next] -= 1;
-                            if state.indegree[next] == 0 {
-                                let next_priority = state.priorities[next];
-                                let next_id = state.ids[next].clone();
-                                state.ready.push((next_priority, next_id, next));
+                    } else {
+                        state.completed.insert(id);
+                        // 已置停后不再 promote 后继。
+                        if !state.stop {
+                            let nexts = state.dependents[position].clone();
+                            for next in nexts {
+                                state.indegree[next] -= 1;
+                                if state.indegree[next] == 0 {
+                                    let next_priority = state.priorities[next];
+                                    let next_id = state.ids[next].clone();
+                                    state.ready.push((next_priority, next_id, next));
+                                }
                             }
                         }
                     }
