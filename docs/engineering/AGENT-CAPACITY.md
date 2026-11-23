@@ -3,7 +3,7 @@
 > 定位：回答“这个智能体现在能不能开这么多并发/吃这么多内存”，以及“同一台机器上
 > 别的项目已经占了多少”。它补的是 `subagent_dispatch` 在调用 provider 之前的
 > **资源准入**，不是模型质量门，也不是命令沙盒。
-> 状态：**已跑通**（复算：`python tools/capacity_lease.py --self-test` 20/20；`python tools/subagent_dispatch.py --self-test` 25/25；`python tools/sandbox_run.py --self-test` 41/41；全量 `tools/selftest.ps1` 675/675）。
+> 状态：**已跑通**（复算：`python tools/capacity_lease.py --self-test` 21/21；`python tools/subagent_dispatch.py --self-test` 25/25；`python tools/sandbox_run.py --self-test` 41/41；全量 `tools/selftest.ps1` 675/675）。
 
 ## 1. 为什么不是“CL 绿了就上”
 
@@ -151,7 +151,7 @@ python tools/sandbox_run.py -Root . -CapacityLease cap-... -CapacityDir <state> 
 
 ## 7. 证据（已跑）
 
-`capacity_lease.py --self-test` **20/20**：
+`capacity_lease.py --self-test` **21/21**：
 
 - 探针能力字段，含 GPU/磁盘/IO 维度；
 - 批准、释放、释放后容量归还；
@@ -167,7 +167,7 @@ python tools/sandbox_run.py -Root . -CapacityLease cap-... -CapacityDir <state> 
 
 另跑：`subagent_dispatch --self-test` **25/25**、`sandbox_run --self-test` **41/41**
 （含 live lease、超额内存、缺失/过期租约 fail-closed）；`python tools/checks.py run -Ci`
-里 C047 会重跑容量自测 20/20。
+里 C047 会重跑容量自测 21/21。
 
 ## 8. 边界（诚实）
 
@@ -184,3 +184,4 @@ python tools/sandbox_run.py -Root . -CapacityLease cap-... -CapacityDir <state> 
 - **尚未接入**：`capacity_lease` 还没有和 `cargo`/`ninja` 的 jobserver 打通；
   `sandbox_run` 目前要求调用方显式传 lease，不会自己 `reserve`。下一步是把
   jobserver 的并发令牌映射成同一份租约。
+

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed（C047 CI 确定性：负载注入不再让容量自测随共享 runner 抖动）
+
+- `capacity_lease.probe` 新增 `load_override`，自测固定 `load1=0.0`，并新增
+  `load_override=3.0` 的容量扣减断言；`capacity_lease.py --self-test` 21/21。
+  CI 的 C047 不再因为 GitHub 共享 runner 的真实 load1 是 5/6 而误报，容量
+  准入逻辑本身不变。
+
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 
 - `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]
