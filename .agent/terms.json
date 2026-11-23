@@ -50,7 +50,7 @@
       ],
       "mix": "co",
       "anchors": [
-        "AGENT-GUARDRAILS.md:843:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
+        "AGENT-GUARDRAILS.md:846:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
         "tools/agent_verify.py:1619:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
@@ -150,7 +150,7 @@
       ],
       "anchors": [
         "tools/run_caps.py:32:Honest strength statement -- this is a resource cap, NOT a security boundary:",
-        "AGENT-GUARDRAILS.md:352:## 协议四：资源帽协议（何时开 --caps）"
+        "AGENT-GUARDRAILS.md:355:## 协议四：资源帽协议（何时开 --caps）"
       ],
       "status": "active"
     },
@@ -187,7 +187,7 @@
       "mix": "none",
       "anchors": [
         "tools/journal.py:214:journal: end -- ",
-        "AGENT-GUARDRAILS.md:846:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
+        "AGENT-GUARDRAILS.md:849:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
       ],
       "status": "active"
     },
@@ -202,7 +202,7 @@
       ],
       "mix": "none",
       "anchors": [
-        "AGENT-GUARDRAILS.md:824:1. **`verdict`**——只有这几种，各是什么一眼定论：",
+        "AGENT-GUARDRAILS.md:827:1. **`verdict`**——只有这几种，各是什么一眼定论：",
         "tools/agent_verify.py:1658:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
@@ -285,7 +285,7 @@
       ],
       "anchors": [
         "tools/signal.py:14:Honest boundary: classify is rule triage, not a model judgment",
-        "AGENT-GUARDRAILS.md:429:classify 是规则匹配，不是模型判断"
+        "AGENT-GUARDRAILS.md:432:classify 是规则匹配，不是模型判断"
       ],
       "status": "active"
     },
@@ -301,7 +301,7 @@
       "mix": "none",
       "anchors": [
         "tools/policy.py:260:def checkout_kind(root_path):",
-        "AGENT-GUARDRAILS.md:551:**主检出判定只有一个机器无关判据：`.git` 是目录。**"
+        "AGENT-GUARDRAILS.md:554:**主检出判定只有一个机器无关判据：`.git` 是目录。**"
       ],
       "status": "active"
     },
