@@ -1,10 +1,11 @@
 //! MiniLM BERT 6 层的 f32 / 三值前向（只三值化线性权重，LN/GELU/softmax 保持 f32）。
 mod config;
+mod loader;
+mod sidecars;
 use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
 use crate::gelu::gelu;
-pub(crate) use config::BertConfig;
-mod loader;
 use crate::linear::Linear;
+pub(crate) use config::BertConfig;
 pub(crate) struct BertLayer {
     pub(crate) query: Linear,
     pub(crate) key: Linear,
@@ -24,9 +25,6 @@ pub(crate) struct Bert {
     pub(crate) scales: Option<Vec<LayerScales>>,
 }
 impl Bert {
-    pub(crate) fn load(file: &str, config: BertConfig) -> Self {
-        loader::load(file, config)
-    }
     pub(crate) fn set_scales(&mut self, scales: Vec<LayerScales>) {
         self.scales = Some(scales);
     }

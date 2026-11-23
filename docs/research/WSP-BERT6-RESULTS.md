@@ -333,7 +333,7 @@ TRIT_NO_LAYERS=1 cargo run --release -p trit-wspace --example bert6 --   --file 
 读法：
 
 1. **f32 基线自己随子集扩大而下降**（0.9230 / 0.9235 → 0.8274）：前 128 句是容易样本。
-   之前几节「距 f32 差 0.19 / 0.09」的对比全部建立在乐观基线上，对外引用必须换成全量口径。
+   之前几节「距 f32 差 0.19 / 0.09」的对比全部建立在乐观基线上，对外报数必须换成全量口径。
 2. **GPTQ 相对 absmean 的净增益随样本扩大收窄**：+0.0735 → +0.0491 → **+0.0253**。
    方向仍然一致（三次都是正），但量级远小于 64 对的读数。
 3. **per-group 在全量上几乎无额外收益**（+0.0020，Spearman +0.0037）：§3.12 的 +0.02~+0.04
@@ -343,13 +343,86 @@ TRIT_NO_LAYERS=1 cargo run --release -p trit-wspace --example bert6 --   --file 
 5. 全量口径下结论：**权重侧 GPTQ 是有效但收益有限的一刀（+0.025）**；per-group 无效；
    想再往上走需要更大 rank 侧车、QAT 或混合精度，而不是继续调 scale 粒度。
 
+## 3.15 低秩残差侧车：全量 rank 16 回收 55% 的权重差距，代价是字节 ×2
+
+三值主干 `W ≈ s·T` 把误差 `R = W − s·T` 整块丢掉；GPTQ 只是把 R 在 Hessian 方向上压小，
+并没有把 R 留下来。本节把 R 的前 r 个奇异三元组留成 f32 侧车：
+
+```text
+y = s·(T x) + U_r Σ_r V_rᵀ x
+```
+
+`rank = min(rows, cols)` 时行为上等价于完整 f32 线性层（8 句数据上 `rel_l2 = 2.6e-7`，
+sidecar 参数 15.9M，是 dense 的 1.5×）；更小的 rank 是同一组奇异向量的**前缀**，
+`set_rank` 只收缩不重排，所以**权重误差**关于 rank 单调。STS 是句向量余弦的排序指标，
+不保证随权重误差单调——全量上 rank 64 就出现了这种回落（见读法 3）。
+
+侧车按 `rank·(rows + cols)` 个 f32 存储；分解走 `RᵀR` / `R Rᵀ` 的 Jacobi 全分解
+（`crates/trit-wspace/src/residual.rs`），36 个矩阵一次性构建约 100 s
+（全量进程实测 `build_ms = 100.8`；8 句空载对照：无侧车 0.17 s、有侧车 81.9 s）。
+
+复算（全量 1379 对）：
+
+```bash
+TRIT_NO_LAYERS=1 cargo run --release -p trit-wspace --example bert6 -- \
+  --file "$HF_HOME/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/model.safetensors" \
+  --data-dir "$TRIT_DATA/miniLM-bert6-sts-full" \
+  --activation-mode f32 --gptq-group 32 --sidecar-svd 16,64,128 \
+  --out "$TRIT_DATA/tmpfull-svd.json"
+```
+
+| rank | 侧车参数 / dense f32 | 侧车字节 / 三值主干字节 | `rel_l2` | `cosine` | Pearson | Spearman | 差距回收 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 0（GPTQ g32，§3.14） | 0 | 0 | 1.1365 | 0.5192 | 0.7143 | 0.7190 | — |
+| 16 | 6.25% | 1.0× | 0.8736 | 0.5908 | **0.7769** | **0.7776** | **55%** |
+| 64 | 25% | 4.0× | 0.7912 | 0.6413 | 0.7677 | 0.7696 | 47% |
+| 128 | 50% | 8.0× | 0.6580 | 0.7584 | **0.7995** | **0.7966** | **75%** |
+| f32 权重基线（§3.14） | — | — | — | — | 0.8274 | 0.8203 | 100% |
+
+读法（全量口径）：
+
+1. **rank 16 回收 55% 的权重差距**（`(0.7769−0.7143)/(0.8274−0.7143)`），代价是侧车字节
+   恰好等于 2-bit 三值主干（权重存储 ×2，折合 dense f32 的 12.5%，不含 scale/bias）。
+   这是目前性价比最好的一档：比 GPTQ 的 +0.0253 大一个量级。
+2. **rank 128 回收 75%**（0.7995），但侧车是主干字节的 8×、dense 参数的 50%。
+   16→128 的 Pearson 差 0.0226；按 Fisher z（n=1379，1 SE ≈ 0.027 z ≈ 0.010 r）约 **2.3 SE**，
+   超出噪声。
+3. **rank 64 不是 rank 16 和 128 的单调中间点**：它的 `rel_l2`（0.7912）和 `cosine`（0.6413）
+   都比 rank 16（0.8736 / 0.5908）好，Pearson 反而低 0.0092（0.7677 vs 0.7769）。
+   这个差按同一口径只有 **0.9 SE**，不能判「64 比 16 差」，但足以否证
+   「STS 随权重误差单调」这个假设：**报侧车读数必须同时给 `rel_l2` 与 STS，不能拿前者代理后者**。
+4. **存储口径**：主干 1 trit = 2 bit；侧车 1 参数 = 4 B。「×N」只算权重，不含 per-group
+   scale/bias，也不含容器开销。
+5. **[B] 归类**：侧车是二进制硬件上的混合精度实现（f32 附加张量 + 约 100 s 离线构建），
+   不是三值原生红利；能回收多少误差取决于 rank 与 GPTQ 残差结构，结论只在给定 rank 下成立。
+   二进制基线是同字节预算的「三值主干 + f32 侧车」本身（`rank = 0` 行与 f32 行），
+   没有拿三值去比未压缩的 f32 权重。
+
+### 3.15.1 128 对先导（同一代码路径）
+
+先导集是 STS test 前 128 对。绝对值与全量不可直接比（容易样本偏乐观），只用来选 rank：
+
+| rank | `rel_l2` | `cosine` | Pearson | Spearman |
+|---|---:|---:|---:|---:|
+| 0（GPTQ g32） | 1.0393 | 0.5562 | 0.7893 | 0.8084 |
+| 16 | 0.8627 | 0.6185 | 0.8378 | 0.8680 |
+| 32 | 0.8236 | 0.6298 | 0.8508 | 0.8790 |
+| 64 | 0.7952 | 0.6451 | 0.8636 | 0.8863 |
+| 128 | 0.6555 | 0.7645 | 0.8950 | 0.9169 |
+| f32 权重基线 | — | — | 0.9235 | 0.9430 |
+
+128 对上 rank 16 增益 +0.0485、rank 128 +0.1057；全量对应 +0.0626 / +0.0852。
+两档方向一致，但绝对值不能混用；报数一律用全量。
+
 ## 4. 未证栏
 
-- 只有 8 句、`8×64` token；不是大规模语料。
+- 基础对齐与逐层快照只有 8 句、`8×64` token；STS 读数另有 128 对与 1379 对两档，但都不是
+  训练/检索任务。
 - 只三值化线性权重；LN/GELU/softmax/残差保持 f32。全三值激活已做 `ternary-all`，
-  cosine 只有 0.03（见 §3.5）；没有 QAT / 学习式 scale / 混合精度。
-- 只测 absmean 逐行三值化；没有 GPTQ / per-group / 残差侧车。
-- 没有任务头（检索/分类），`cosine 0.47` 不能直接换算成任务掉点。
+  cosine 只有 0.03（见 §3.5）；没有 QAT、学习式 scale、逐层混合精度（部分层保 f32）。
+- absmean / GPTQ / per-group / SVD 残差侧车都测过；侧车只在 `examples/bert6` 的前向里验证，
+  **没有进 WSP/TTX 容器，也没有导出/加载路径**，因此上面的字节数是估算不是落地格式。
+- 没有任务头（检索/分类），`cosine` 与 Pearson 不能直接换算成任务掉点。
 - GELU 用 erf 近似；f32 对齐 6e-7，但严格逐位复现仍需与 PyTorch 用同一近似。
 - 只从第 0 层输入开始；embedding/tokenizer 不在 Rust 侧。
 
@@ -358,6 +431,11 @@ TRIT_NO_LAYERS=1 cargo run --release -p trit-wspace --example bert6 --   --file 
 - `examples/export_bert6.py`：导出 input/mask/reference/layer0..5；
 - `crates/trit-wspace/src/activations.rs`：`read_matrix`（`WSPACT1`）/
   `read_mask`（`WSPMSK1`）；
-- `examples/bert6/main.rs` + `model.rs`：6 层 Rust 前向，输出
-  `f32_vs_reference` / `real_ternary_vs_f32` / `random_ternary_vs_f32` /
-  `output_stage` 统计。
+- `crates/trit-wspace/src/residual.rs`：`LowRankResidual`（`R = W − s·T` 的 top-r SVD，
+  `build` / `set_rank` / `projections` / `correction`），`tests/residual.rs` 守满秩重构、
+  截断单调与宽/高两种取向；
+- `examples/bert6/`：`main.rs` 入口；`run/main_flow.rs` 主流程、`run/modes.rs` 激活模式、
+  `run/sidecar_svd.rs` 侧车 rank 扫描、`model/` 前向与加载、`linear/` f32/三值线性层；
+  输出 `f32_vs_reference` / `real_ternary_vs_f32` / `random_ternary_vs_f32` /
+  `output_stage` / `sidecar_svd` 统计。
+- CLI：`--activation-mode f32 --gptq-group 32 --sidecar-svd 0,16,32,64,128`。

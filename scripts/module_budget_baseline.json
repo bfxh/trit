@@ -4764,11 +4764,23 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/linear.rs",
-      "lines": 41
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/dense.rs",
+      "lines": 25
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/kinds.rs",
+      "lines": 25
     },
     {
       "file": "crates/trit-wspace/examples/bert6/linear/quant.rs",
-      "lines": 79
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/quant/quant_impl.rs",
+      "lines": 130
     },
     {
       "file": "crates/trit-wspace/examples/bert6/main.rs",
@@ -4776,15 +4788,27 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 171
+      "lines": 169
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config.rs",
-      "lines": 43
+      "lines": 35
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config/builders.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/loader.rs",
-      "lines": 92
+      "lines": 88
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/loader/h.rs",
+      "lines": 8
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/sidecars.rs",
+      "lines": 51
     },
     {
       "file": "crates/trit-wspace/examples/bert6/norm.rs",
@@ -4800,15 +4824,31 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run.rs",
-      "lines": 130
+      "lines": 3
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/args.rs",
-      "lines": 41
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/args/parse.rs",
+      "lines": 59
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/data.rs",
       "lines": 33
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/main_flow.rs",
+      "lines": 139
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/modes.rs",
+      "lines": 83
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/sidecar_svd.rs",
+      "lines": 68
     },
     {
       "file": "crates/trit-wspace/examples/bert6/scales.rs",
@@ -4820,7 +4860,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/sidecar_layer.rs",
-      "lines": 61
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sidecar_layer/sidecar.rs",
+      "lines": 67
     },
     {
       "file": "crates/trit-wspace/examples/bert6/stats.rs",
@@ -5299,6 +5343,10 @@
       "lines": 9
     },
     {
+      "file": "crates/trit-wspace/src/residual.rs",
+      "lines": 345
+    },
+    {
       "file": "crates/trit-wspace/src/safetensors.rs",
       "lines": 496
     },
@@ -5553,6 +5601,10 @@
     {
       "file": "crates/trit-wspace/tests/repair_scope.rs",
       "lines": 117
+    },
+    {
+      "file": "crates/trit-wspace/tests/residual.rs",
+      "lines": 182
     },
     {
       "file": "crates/trit-wspace/tests/safetensors.rs",
