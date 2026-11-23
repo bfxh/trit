@@ -104,6 +104,14 @@ v6e 把这一个降级挪到层 9 的同一类矩阵。两者形状、字节、�
 `K10K11` 再把 Q3、K4 两个 int4 升级平移到 K10、K11；全部 9 张 int4 仍是同形状，
 总字节、`proxy_err_ratio=0.91552` 仍然不变，只有位置变了。
 
+运行时报告现在也按预算图复算实际字节（`crates/trit-wspace/examples/bert6/run/weight_format/`）：
+`TRIT_BUDGET` 存在时 `weight_bytes` 改为 `actual_bytes_with_metadata`，
+并额外给出 `budget_actual_bytes / budget_weight_bytes / budget_metadata_bytes /
+mixed_bits / budget_group`。L12/K10K11 的 128 smoke 报告为：
+`budget_actual_bytes=10,782,720`、`budget_weight_bytes=7,962,624`、
+`budget_metadata_bytes=2,820,096`、`mixed_bits={2:3,3:60,4:9}`、
+`ratio_vs_f32=0.126953125`。
+
 ## 3. 读数
 
 128 对（用于 smoke，不作最终判据）：
@@ -269,9 +277,9 @@ CI 跨 0；`K10K11` 对 I10 的 Spearman 下界只有 `+0.000048`，只能算“
   运行时 `bits==2` 实际走已有的三值 `QuantLinear`（absmean/GPTQ 三值），
   两者字节数相同，但误差语义不同。2-bit 块的代理误差不能当三值路径真实误差。
 - **字节账不含容器对齐/打包**：只算线性权重 + scale + bias；实际格式若加头、
-  对齐、索引，总字节会变。运行时 JSON 的 `weight_format` 仍按全局
-  `TRIT_WEIGHT_BITS` 报账，**mixed 的实际总字节还没有接进报告**；本文的
-  10,782,720 是离线按块复算值，不是报告里的 `weight_bytes=7,962,624`。
+  对齐、索引，总字节会变。运行时报告已把 mixed 的 `actual_bytes_with_metadata`
+  接进 `weight_format`（`budget_actual_bytes` / `mixed_bits`），但仍是离线公式值，
+  不是容器序列化后的字节。
 - **只有一种分配族**：9 升 3 降；128 上扫了 O/I/F 的 33 个降级交换、Q3/K4 各 15 个
   升级目标，全量只验证 I10/F3/I10+F3/K4→K11/Q3→K11/K10K11 等少数点。
   没有搜索全部 72 块的组合，也没有 int5/f32/侧车候选。

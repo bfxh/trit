@@ -4804,7 +4804,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config/budget.rs",
-      "lines": 49
+      "lines": 48
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config/builders.rs",
@@ -4896,7 +4896,15 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/weight_format.rs",
-      "lines": 42
+      "lines": 4
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/weight_format/account.rs",
+      "lines": 71
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/weight_format/report.rs",
+      "lines": 73
     },
     {
       "file": "crates/trit-wspace/examples/bert6/scales.rs",
