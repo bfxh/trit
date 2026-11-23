@@ -51,7 +51,7 @@
       "mix": "co",
       "anchors": [
         "AGENT-GUARDRAILS.md:846:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
-        "tools/agent_verify.py:1716:\"clean\" if je[\"code\"] == 0 else (\"changed\" if je[\"code\"] == 1 else \"failed\"))"
+        "tools/agent_verify.py:1722:\"clean\" if je[\"code\"] == 0 else (\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -86,7 +86,7 @@
       "mix": "exclusive",
       "anchors": [
         "tools/agent_verify.py:157:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:242:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:244:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -203,7 +203,7 @@
       "mix": "none",
       "anchors": [
         "AGENT-GUARDRAILS.md:827:1. **`verdict`**——只有这几种，各是什么一眼定论：",
-        "tools/agent_verify.py:1797:verdict = (\"command failed\" if not ran_ok else"
+        "tools/agent_verify.py:1807:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -968,6 +968,27 @@
       "action": "update",
       "term": "verdict",
       "reason": "post-run alignment-post block shifted agent_verify; re-anchor to current code",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T05:35:26+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "v3 run-command provenance fields shifted agent_verify; re-anchor to current lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T05:35:26+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "v3 run-command provenance fields shifted agent_verify; re-anchor to current lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T05:35:26+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "v3 run-command provenance fields shifted agent_verify; re-anchor to current lines",
       "loosened": "drop-anchor"
     }
   ]

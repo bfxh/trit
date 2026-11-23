@@ -9,6 +9,7 @@
 - 这条需求仍然挂在最初的目标上；
 - 这个产物实现的确实是这条需求，而不是顺手加的另一件事；
 - 这条证据能定位到产物/测试里的具体位置；
+- 这条证据宣称的测试命令是否真的在本次 run 里成功跑过；
 - 这次改动的每个文件都能被某条需求解释；
 - 改动没有落进明确划出的 non-goal 范围；
 - 两条需求没有互相矛盾。
@@ -81,6 +82,47 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
 但需求的父链最终仍必须落到根。`alignment/1` 与 `alignment/2` 不能混用
 `goal`/`goals` 字段。
 
+### 证据绑定实际 run：`alignment/3`
+
+`alignment/1`、`alignment/2` 的证据只证明“文件在、locator 命中”，一个陈旧的
+测试文件也能当证据。`alignment/3` 把证据再绑到**本次实际成功的 run 命令**：
+
+```json
+{
+  "schema": "alignment/3",
+  "goals": [{"id": "G1", "text": "把输入整理成可验收的产物", "parent": null}],
+  "requirements": [
+    {"id": "R1", "text": "产物包含目标字段", "priority": "must", "parent": "G1",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["src/a.py"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "src/a.py"}],
+  "evidence": [
+    {"id": "E1", "path": "tests/test_a.py", "locator": "text:test_a",
+     "kind": "run", "command": "python -m pytest tests/test_a.py"}
+  ]
+}
+```
+
+规则：
+
+- `goals` 形状与 `alignment/2` 相同，仍是一棵单根目标树；
+- v3 的 evidence 额外接受 `kind`（`file`/`run`）与 `command`；`kind=run` 必须
+  声明非空 `command`，且 command 必须点名证据文件路径；
+- v3 的 `must` 需求至少要有**一条** `kind=run` 证据；`strict` 下 `should` 同，
+  `--lenient` 只把 should 的缺口降为 warning；`may` 只警告；
+- 预检验证的是**声明**：命令形状、路径、哈希、locator 都成立，回执记
+  `counts.provenance=1`、`counts.provenance_verified=0`；
+- `agent_verify` 在 post-run 把本次 `run[]` 中 exit=0 的命令传给 gate，命令
+  必须按空白/路径分隔符/大小写归一后**精确匹配**，否则
+  `evidence-not-executed`，post 为 `unaligned`。此时回执的
+  `provenance_verified` 才变成 1；
+- `alignment_gate check --run-command "..."` 可单独复算同一条件；不传
+  `--run-command` 只得到 declared 证据，不冒充已执行。
+
+命令匹配只能证明“这条命令真的跑过且成功”，不能证明它真的在测这条需求；
+`true # tests/test_a.py` 这种命令仍可能钻空子。语义充分性仍要靠人/测试设计，
+这是本门明确的诚实边界。
+
 ### 生成骨架：`scaffold`
 
 `scaffold` 从目标与需求文本生成一份**故意不完整**的 `alignment/2` 清单：
@@ -100,10 +142,12 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 | 字段 | 约束 |
 |---|---|
 | `goal`（v1） | 恰好一个；`id`/`text` 非空 |
-| `goals`（v2） | 至少一个；恰好一个 `parent=null` 的根；子目标父链必须落到根，不能断/环 |
+| `goals`（v2/v3） | 至少一个；恰好一个 `parent=null` 的根；子目标父链必须落到根，不能断/环 |
 | `requirements` | 至少一条；`text` 非空；`priority` 为 `must/should/may`，缺省按 `must` |
 | `requirements.parent` | 必须存在，且父链最终落到根 `goal`；不能成环 |
 | `requirements.artifacts/evidence` | 必须引用已存在的 id；`must` 至少各一条有效引用 |
+| `evidence.kind`（v3） | `file` 或 `run`；`run` 额外要求 `command`，且 command 必须点名证据路径 |
+| `evidence.command`（v3） | `run` 的声明命令；post-run 必须在本次 exit=0 的 run 命令里精确匹配 |
 | `artifacts/evidence.path` | 仓库相对路径；不能绝对、`..` 逃逸或经符号链接逃出 root |
 | `sha256` | 可选；64 位十六进制，必须与磁盘内容一致 |
 | `locator` | 可选；`Lx`、`Lx-Ly` 或 `text:<片段>`，必须命中 |
@@ -118,12 +162,13 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 
 1. schema、字段类型、id 唯一性、未知字段；
 2. 每条需求的 parent 链是否落到唯一根 goal；v2 还检查每个子目标是否落到同一个根，是否有环/断链/多个根；
-3. `must` 需求是否同时有有效产物与有效证据；`strict` 下 `should` 也一样；
+3. `must` 需求是否同时有有效产物与有效证据；`strict` 下 `should` 也一样；v3 还要求一条 run-bound 证据；
 4. artifact/evidence 的 id 是否存在、文件是否存在、sha256、locator 是否命中；
-5. 每条变更是否被某条需求的 `changes` 或某个 artifact 路径覆盖；
-6. 变更是否落进 `non_goals`；
-7. 需求之间是否声明了矛盾；
-8. 所有路径是否在 root 内（含 realpath 检查）。
+5. v3 的 run 证据 command 是否点名证据路径；post-run 是否在本次成功 run 命令里精确出现；
+6. 每条变更是否被某条需求的 `changes` 或某个 artifact 路径覆盖；
+7. 变更是否落进 `non_goals`；
+8. 需求之间是否声明了矛盾；
+9. 所有路径是否在 root 内（含 realpath 检查）。
 
 退出码：
 
@@ -150,6 +195,8 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 
 - `journal-end` 的 `added/deleted/modified` 路径作为 `--changed` 重跑 gate；
 - 产物/证据重新按磁盘内容验哈希与 locator；
+- v3 的 `kind=run` 证据命令必须出现在本次 exit=0 的 `run[]` 里，否则
+  `evidence-not-executed`；只声明“会跑”不算跑过；
 - 实际变更必须挂到 requirement 或 artifact；落进 `non_goal` 仍拒绝；
 - 清单被 run 改坏、journal 失败导致无法证明实际落盘，一律按 drift/unknown 处理；
 - 失败 verdict 是 `unaligned after run`，exit 1；journal 已保留，成本/记忆仍会记账，
@@ -162,11 +209,11 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 
 ## 测试读数
 
-- `python tools/alignment_gate.py self-test`：**65/65**
+- `python tools/alignment_gate.py self-test`：**79/79**
 - `python tools/alignment_gate.py stress --cases 100`：**200 用例，valid 100 aligned，mutated 100 rejected，0 errors**
 - `python tools/agent_settings.py --self-test`：**30/30**
-- `tools/selftest.ps1` 的 AL27–AL35：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝
-- 全仓 `tools/selftest.ps1`：**705 passed / 0 failed / 0 skipped**
+- `tools/selftest.ps1` 的 AL27–AL37：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝
+- 全仓 `tools/selftest.ps1`：**707 passed / 0 failed / 0 skipped**
 
 ## 诚实边界
 
@@ -174,6 +221,10 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
   不对，仍要靠人/评审。
 - `locator` 只证明片段存在，不证明该片段就是充分证据；它把“有证据”降级为
   “可定位证据”，不替代 claim audit 与测试。
+- v3 的 command 匹配只证明“这条命令真的跑过且成功”，不证明它真的在测这条需求；
+  `true # tests/test_a.py` 仍可钻空子。语义充分性要靠人/测试设计。
+- v3 预检的 `alignment.status=aligned` 是**声明对齐**；`provenance_verified` 只有
+  post-run 或显式 `--run-command` 才非零，不要把两者混读。
 - `alignment-post` 只看 journal 覆盖范围内的实际差异；journal 明确跳过的目录
   （`target`/`.git`/`.journal`/`node_modules` 等）不会被它发现，这是 journal 的
   既有作用域，不是对齐门在放水。

@@ -4386,7 +4386,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
-$alTotal = 35
+$alTotal = 37
 if (-not $alPy) {
     "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
     $skipped += $alTotal
@@ -4958,6 +4958,48 @@ print("ALDRV done")
         -and $al35doc.alignment.post.status -eq 'unaligned' `
         -and $al35doc.alignment.post.failures -ge 1) `
         "AL35 run 改了带 sha256 的产物→post-run 哈希漂移拒绝" "e=$al35 p=$($al35doc.alignment.post.status) f=$($al35doc.alignment.post.failures)"
+
+    # AL36-AL37: alignment/3 把 must 证据绑定到本次实际成功的 run 命令。
+    $alV3Doc = @'
+{
+  "schema": "alignment/3",
+  "goals": [{"id": "G1", "text": "core.f 返回 1", "parent": null}],
+  "requirements": [
+    {"id": "R1", "text": "core.f 的实现", "priority": "must", "parent": "G1",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["pkg/core.py"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "pkg/core.py"}],
+  "evidence": [{"id": "E1", "path": "tests/test_core.py", "locator": "text:test_f",
+               "kind": "run",
+               "command": "python -c \"exec(open('tests/test_core.py').read())\""}]
+}
+'@
+    New-File $alManifest $alV3Doc
+    $alV3Plan = Join-Path $AlW 'plan-v3.json'
+    New-File $alV3Plan @'
+{"proven":true,"commands":["printf '\\n# v3\\n' >> pkg/core.py","python -c \"exec(open('tests/test_core.py').read())\""],"unproven":[]}
+'@
+    $al36rc = Join-Path $Work "al-wd36.json"
+    $al36 = Invoke-AlAv $al36rc @('--alignment', $alManifest) -PlanPath $alV3Plan
+    $al36doc = Read-AlReceipt $al36rc
+    Assert-True ($al36 -eq 0 -and $al36doc.alignment.post.status -eq 'aligned' `
+        -and $al36doc.alignment.counts.provenance -eq 1 `
+        -and $al36doc.alignment.counts.provenance_verified -eq 0 `
+        -and $al36doc.alignment.post.counts.provenance_verified -eq 1) `
+        "AL36 alignment/3 声明证据→实际 command 跑过后 post 验证 provenance=1" "e=$al36 p=$($al36doc.alignment.post.status)"
+
+    $alV3DriftPlan = Join-Path $AlW 'plan-v3-drift.json'
+    New-File $alV3DriftPlan @'
+{"proven":true,"commands":["printf '\\n# v3 drift\\n' >> pkg/core.py","python -c \"print(open('tests/test_core.py').read())\""],"unproven":[]}
+'@
+    $al37rc = Join-Path $Work "al-wd37.json"
+    $al37 = Invoke-AlAv $al37rc @('--alignment', $alManifest) -PlanPath $alV3DriftPlan
+    $al37doc = Read-AlReceipt $al37rc
+    Assert-True ($al37 -eq 1 -and $al37doc.verdict -eq 'unaligned after run' `
+        -and $al37doc.alignment.post.status -eq 'unaligned' `
+        -and $al37doc.alignment.post.counts.provenance_verified -eq 0 `
+        -and $al37doc.alignment.post.failures -ge 1) `
+        "AL37 alignment/3 声明 command 实际没跑→post 拒绝，provenance 不升级" "e=$al37 v=$($al37doc.verdict)"
 }
 
 

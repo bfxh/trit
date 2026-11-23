@@ -212,17 +212,19 @@ HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -
                 off unless the flag or settings.security.enabled says otherwise)
   alignment:    [--alignment <manifest>] [--alignment-lenient]
                 (goal -> requirement -> artifact/evidence/change explicit graph;
-                alignment/1 single goal or alignment/2 one-root goal tree with
-                subgoals; missing manifests, orphan requirements, missing evidence,
-                dangling refs, hash/locator mismatch, unlinked changes and non-goal
-                changes
+                alignment/1 single goal, alignment/2 one-root goal tree, or
+                alignment/3 evidence bound to an actual successful run command;
+                missing manifests, orphan requirements, missing evidence, dangling
+                refs, hash/locator mismatch, unlinked changes and non-goal changes
                 refuse before any write. Auto-runs when the project has
                 .agent/alignment.json and settings.alignment.enabled is true;
                 --alignment overrides the path, --alignment-lenient downgrades
                 should-requirement gaps to warnings. must gaps always refuse.
                 After the run, journal-end's actual changed paths are fed back
-                through the same gate (alignment-post); a run that writes outside
-                the declared graph ends as "unaligned after run", not a pass.)
+                through the same gate (alignment-post); alignment/3 run commands
+                are matched against the actual successful run[] entries. A run
+                that writes outside the declared graph, or whose evidence command
+                never ran, ends as "unaligned after run", not a pass.)
   delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
                 (subagent chains: only changed fields + hash refs for unchanged ones;
                 --rebuild <delta> --against <prev> [--out <full.json>] reconstructs
@@ -422,11 +424,14 @@ def json_tail(result):
     return None
 
 
-def alignment_probe(root, manifest, changed, lenient):
+def alignment_probe(root, manifest, changed, lenient, executed=None):
     """Run alignment_gate.py and return (step result, parsed report)."""
     args = [ALIGNMENT, "--root", root, "--manifest", manifest, "--json"]
     if changed:
         args += ["--changed", ",".join(changed)]
+    for command in executed or []:
+        if str(command).strip():
+            args += ["--run-command", str(command)]
     if lenient:
         args.append("--lenient")
     result = step(args, timeout=120)
@@ -449,7 +454,8 @@ def alignment_summary(adoc, root, manifest_path):
         "score": adoc.get("score"),
         "must_score": adoc.get("must_score"),
         "counts": {k: acounts.get(k) for k in
-                   ("goals", "requirements", "must", "artifacts", "evidence", "changed", "linked_changes")},
+                   ("goals", "requirements", "must", "artifacts", "evidence",
+                    "provenance", "provenance_verified", "changed", "linked_changes")},
         "failures": len(adoc.get("failures", []) or []),
         "warnings": len(adoc.get("warnings", []) or []),
     }
@@ -1737,7 +1743,11 @@ def main(argv):
                               if p != store_rel and not p.startswith(store_rel + "/")]
         post_lenient = a.get("alignment_lenient") or not align_cfg.get("strict", True)
         if je["code"] in (0, 1):
-            par, padoc = alignment_probe(root, alignment_manifest, actual_changes, post_lenient)
+            executed = [r.get("command") for r in doc.get("run", [])
+                        if isinstance(r, dict) and r.get("exit") == 0
+                        and isinstance(r.get("command"), str) and r.get("command").strip()]
+            par, padoc = alignment_probe(root, alignment_manifest, actual_changes, post_lenient,
+                                        executed=executed)
             post_status = str(padoc.get("status", "")).lower()
             doc["alignment"]["post"] = alignment_summary(padoc, root, alignment_manifest)
             post_ok = par["code"] == 0 and post_status == "aligned"

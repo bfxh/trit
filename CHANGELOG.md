@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（第十轮：证据绑定实际 run 命令）
+
+- `tools/alignment_gate.py` 新增 `alignment/3`：沿用 `alignment/2` 的单根目标树，
+  evidence 增加 `kind`（`file`/`run`）与 `command`；`kind=run` 必须点名证据文件。
+  `must` 需求至少一条 run-bound 证据，strict 下 should 同，lenient 只降 should，
+  may 只警告。预检记 `counts.provenance`（声明），不冒充已执行。
+- `alignment_gate.py` 新增 `--run-command`：post-run 可把本次成功命令传入；命令按
+  空白/路径分隔符/大小写归一后精确匹配，匹配成功才记 `provenance_verified`。
+- `tools/agent_verify.py` 的 post-run `alignment-post` 自动传入本次 `run[]` 中
+  exit=0 的命令；v3 证据命令没有实际跑过时 `evidence-not-executed`，最终 verdict
+  `unaligned after run`，journal/成本/记忆仍保留。
+- `tools/selftest.ps1` 新增 AL36–AL37：v3 声明命令实际跑过→post 升级 provenance；
+  声明命令没跑→post 拒绝且 `provenance_verified=0`。`$alTotal` 35→37。
+- `alignment_gate.py self-test` 65→**79/79**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **707 passed / 0 failed / 0 skipped**（含 AL27–AL37）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补 v3 schema、命令绑定、declared/verified 区别、
+  诚实边界；`docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
 ### Added（第九轮：run 后对齐复核）
 
 - `tools/agent_verify.py`：新增 post-run `alignment-post`。`journal-end` 拿到
