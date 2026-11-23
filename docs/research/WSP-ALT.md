@@ -2,7 +2,7 @@
 
 > 状态：BIAS/SCALE 的 M1 已在 `feat/wsp-bias-scale` 实现并跑完 128/1379 对；
 > **端到端负结果，不进 PR**。BUDGET 的 M1 已在 `feat/wsp-budget` 跑完严格同字节
-> 全量，Spearman 过 10k CI，Pearson 不过；详见 `docs/results/WSP-BUDGET-RESULTS.md`。
+> 全量，Spearman 过 10k CI，Pearson 不过；详见 `WSP-BUDGET-RESULTS.md`。
 > 其余方案仍是草案。层内预演只覆盖 L12 第 0 层 `query/key/value`，不是全模型，
 > 也不是 STS。文中所有“误差下降”都是层内重建或层输出范数，不能直接当
 > Pearson/Spearman 结论。
@@ -113,7 +113,7 @@ M1 最小改动：
 4. JSON 报告 `bias_corr_norm`、`bias_corr_max`，字节账不变；
 5. 测试：零残差时 `c=0`；确定性；无 NaN；字节数逐位不变。
 
-开关：`TRIT_CALIB_BIAS=1`、`TRIT_CALIB=<dir>`（M1 可只支持第 0 层 Q/K/V）。
+开关：`TRIT_CALIB_BIAS=1`、`TRIT_CALIB=<dir>`（M1 只接到第 0 层 Q/K/V，复算见 §3.5）。
 
 ### 3.4 判据与风险
 
@@ -276,7 +276,7 @@ Spearman 过判据，Pearson 不过；结论只能写“Spearman-only 同字节�
 不能写“追平 int4”（距 int4 Spearman 还差 `0.0139`）。关键失败是代理：
 `v6e` 与 v1 的代理误差比同为 `0.91552`，只换了一个同形状 int2 块的位置，
 全量 Spearman 就差 `0.001882`；权重 MSE 代理看不见块在残差流中的位置。
-完整读数、字节账、边界与复算命令见 `docs/results/WSP-BUDGET-RESULTS.md`。
+完整读数、字节账、边界与复算命令见 `WSP-BUDGET-RESULTS.md`。
 
 ## 6. WSP-MXQ 在新排序里的位置
 
@@ -317,7 +317,7 @@ MXQ（32 列 group 内 3/4/5）
 ### 7.2 WSP-SLIM：结构化剪枝 + WSP 日志
 
 - 按 head / FFN 神经元打分，删掉低贡献单元；用现有 Patch/Journal/Audit 记录
-  “删了哪些行/列”，支持精确回滚；
+  “删了哪些行/列”，作为回滚依据（草案，未实现）；
 - 它与量化是不同压缩轴：量化省每权重位宽，剪枝省整行/整列；
 - 风险：改形状，加载器和前向都要改；BERT 残差宽度不变时，删 head 不一定省字节；
   应先做“零输出 head”的 STS 敏感性，再决定是否值得。
@@ -340,7 +340,7 @@ MXQ（32 列 group 内 3/4/5）
 
 ## 9. 推荐执行顺序与判据
 
-### Stage 0（已完成，负结果）：BIAS + SCALE
+### Stage 0（已完成，见 §3.5，负结果）：BIAS + SCALE
 
 1. 第 0 层 Q/K/V 接 `μ` 和 `h`，开 `TRIT_CALIB_BIAS=1` / `TRIT_CALIB_SCALE=1`；
 2. 128 对 smoke 有 +0.0011（int3）、+0.0001（int4）；
@@ -348,14 +348,14 @@ MXQ（32 列 group 内 3/4/5）
 4. 结论：停。代码留在 `feat/wsp-bias-scale`，不扩全层、不进 PR；
    负结果写入本文 §3.5 与 `LESSONS.md`。
 
-### Stage 1（已完成）：BUDGET（“压缩”目标）
+### Stage 1（已完成，见 §5.5）：BUDGET（“压缩”目标）
 
 1. 总字节固定在 **int3 的实际工件字节 10,782,720 B**（不是 weight-only 7,962,624 B）；
 2. 按矩阵分配，不按单 group，先控制元数据；
 3. 结果：`v6e` 严格同字节，全量 `+0.002246 / +0.004775`；Spearman 10k CI
    `[+0.002017, +0.007754]` 过判据，Pearson CI 跨 0。距 int4 Spearman 仍差 `0.0139`；
 4. 结论：BUDGET 在 int3 同字节上是 **Spearman-only 小胜**，不是“3-bit 追平 int4”；
-   下一步先补位置敏感度，不继续手调块。详见 `docs/results/WSP-BUDGET-RESULTS.md`。
+   下一步先补位置敏感度，不继续手调块。详见 `WSP-BUDGET-RESULTS.md`。
 
 ### Stage 2（2–3 天）：MXQ
 
