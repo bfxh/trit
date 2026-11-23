@@ -1,10 +1,7 @@
-//! bert6 的主流程（从 `run.rs` 拆出守住行数预算）。
-
 use crate::activation::ActivationMode;
 use crate::model::{Bert, BertConfig};
 use crate::report::{compare, layer_refs};
 use crate::scales::load_scales;
-use crate::sidecar;
 use crate::stats::{input_stats, random_like};
 use crate::sts::{load_pairs, metrics, sentence_vectors};
 use args::Args;
@@ -17,6 +14,7 @@ mod data;
 mod modes;
 #[path = "sidecar_svd.rs"]
 mod sidecar_svd;
+mod weight_format;
 
 pub(crate) fn run() {
     let Args {
@@ -72,7 +70,7 @@ pub(crate) fn run() {
     });
     let layer_refs = layer_refs(&data_dir, &f32_layers, &mask, hidden);
     let sidecar = if activation_arg == "all" {
-        sidecar::run(
+        crate::sidecar::run(
             &file,
             &input,
             &mask,
@@ -117,6 +115,7 @@ pub(crate) fn run() {
         "f32_vs_reference": compare(&f32_out, &reference, &mask, hidden),
         "f32_layers_vs_reference": layer_refs,
         "f32_sts": f32_sts,
+        "weight_format": weight_format::report(hidden),
         "sidecar": sidecar,
         "sidecar_svd": sidecar_svd,
         "modes": modes,
