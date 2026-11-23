@@ -60,8 +60,14 @@ SKIP_UNTRACKED = (".journal/", ".agent/handoff/", ".agent/resume/",
 
 
 def git(root, args, binary=False):
+    # Read-only git calls must not take optional locks. git status otherwise
+    # refreshes .git/index and can leave a transient index.lock under a
+    # concurrent sandbox matrix, which the host-write detector would misread
+    # as a sandbox escape even though the host manifest is byte-identical.
+    env = dict(os.environ)
+    env["GIT_OPTIONAL_LOCKS"] = "0"
     p = subprocess.run(["git", "-C", root, *args], capture_output=True,
-                       text=not binary)
+                       text=not binary, env=env)
     if binary:
         return p.returncode, p.stdout
     return p.returncode, (p.stdout or "")

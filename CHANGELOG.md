@@ -179,6 +179,15 @@
   `selftest` 仍 675/675。
 - 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
   `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。
+### Fixed（沙盒宿主写检测：并发只读 git 不再制造 `index.lock` 假阳性）
+
+- `tools/handoff.py` 的只读 git 调用统一设 `GIT_OPTIONAL_LOCKS=0`：`git status` / `git diff`
+  不再刷新 `.git/index`、不再留下 transient `.git/index.lock`。此前 40 沙盒矩阵并发时，
+  `tools/sandbox_run.py` 的 0.35 s settle 窗口会把并发读留下的 lock 误判成 `host-mutated`；
+  实测失败 case 的宿主前后指纹完全相同，只有 `index_lock_new=true / index_lock_stable=true`。
+- 压力验证：5 轮 × 8 个并发矩阵（1600 case）**0 失败**；单矩阵 40/40、hostwrite 5/5。
+  全量 selftest **676/0/0**，AN3 通过（修复前 675/1）。未放宽 `sandbox_run.py` 的锁判定窗口。
+
 ### Added（Rust doctor 主入口：`trit-doctor` 七面 + Belnap 四值 + 同机 A/B）
 
 - 新增 `crates/trit-doctor`，并切换为 doctor 的主入口：`cargo install --path crates/trit-doctor --locked`

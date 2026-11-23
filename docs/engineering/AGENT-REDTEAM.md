@@ -75,7 +75,7 @@
 | 写 `.agent` / `.git` / `.qoder` | `verdict=ok`，`host.mutated=false` | `host-mutated`，exit 3 |
 | 写 `.git/index` 或覆盖 `target` 已有文件 | `verdict=ok` | `.git/index` 按暂存条目语义哈希（并发 stat cache 重写不算）；缓存文件按 name/size/mtime；均 `host-mutated` |
 | 同 size 覆盖后 `os.utime` 恢复 mtime | `host.mutated=false` | 64 MiB 总预算内文件按 sha256 内容哈希，`host-mutated` |
-| 留下 `.git/index.lock` | 被当 transient 整文件跳过 | 运行前后存在性检查 + 0.35 秒稳定窗口；新锁持续存在即 `host-mutated` |
+| 留下 `.git/index.lock` | 被当 transient 整文件跳过 | 运行前后存在性检查 + 0.35 秒稳定窗口；只读 git 调用设 `GIT_OPTIONAL_LOCKS=0`，不让并发读自己造锁；新锁持续存在即 `host-mutated` |
 | 用 `.AGENT` / `.agent.` 变体绕过组件表 | 复制 `.agent` secret | 大小写 + 尾点归一后拒绝 |
 
 修复点：
@@ -88,6 +88,7 @@
   做指纹；64 MiB 总预算内文件加 sha256 内容哈希；`.git/index` 用暂存条目语义哈希
   （`git ls-files --stage -z`），避免并发 `git status` 刷新 stat cache 造成假阳性；
   `.git/index.lock` 退出 manifest，改为运行前后存在性检查 + 0.35 秒稳定窗口；
+  只读 git 调用设 `GIT_OPTIONAL_LOCKS=0`，避免并发 `git status` / `git diff` 制造假锁；
 - `MAX_HOST_FILES=200000`，超限判 `host-unprovable`，不再把看不见的忽略文件当没发生。
 
 `tools/sandbox_run.py --self-test` 41/41；`sandbox_matrix --cases 40 --parallel 8`

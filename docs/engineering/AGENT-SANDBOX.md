@@ -47,7 +47,8 @@ workspace 沙盒补的就是这个空档：把 cwd 移出宿主、只给声明�
    文件在 64 MiB 总预算内都按 sha256 内容哈希（超过预算判 `host-unprovable`），
    封住“同 size 覆盖 + `os.utime` 恢复 mtime”；构建缓存小文件仍只做 name/size/mtime；
    `.git/index.lock` 不进 manifest，运行后若从无到有、且经过 0.35 秒仍存在，才判
-   `host-mutated`（并发 `git status` 的瞬时锁不算）；
+   `host-mutated`；`handoff` 的只读 git 调用设 `GIT_OPTIONAL_LOCKS=0`，避免并发
+   `git status` / `git diff` 自己制造锁，0.35 秒窗口只兜外部进程留下的锁；
    超过 200000 文件判 `host-unprovable`，不静默降级。
 6. 宿主变了且没有 `-AllowHostWrite` → `host-mutated`，exit 3；成功默认清掉 workdir，
    `-Keep` 留现场。
