@@ -162,11 +162,14 @@ tag push 后：
 | XLSX 任务失败 | preflight 是否报 `openpyxl` 缺失；CI 固定 `openpyxl==3.1.5` |
 | `release` 没有发布 | 是否 tag 触发；`guard` 是否版本不一致；`build` 是否被 `agent-quality` 拦住 |
 | Release 出现内部文件 | 检查 `download-artifact` 的 `pattern` 是否仍为 `trit-*`；不得改成 `*` |
+| `mutation` PREFLIGHT 报“锚点出现 0 次” | 函数被拆分/移动；用 `rg -n '<old 锚点片段>' scripts/mutants/*.json` 找到条目，把 `file` 同步到新文件，再 `python scripts/mutation_check.py --pkg <crate> --only '<名字>'` 复跑该条 |
+| PR 全绿但 `mergeStateStatus=BLOCKED` | 对照 `gh api repos/<owner>/<repo>/branches/main/protection/required_status_checks`；改 MSRV 或 job 名后必须同步分支保护的 `required_status_checks` |
 
 ## 8. 未落地 / 边界
 
 - 分支保护与 required checks 是 GitHub 仓库设置，不在本仓库文件里；本文只保证
-  workflow 名称与触发条件可供配置。
+  workflow 名称与触发条件可供配置。改 `MSRV (1.xx)` 这类 job 名时，必须同时更新
+  GitHub 分支保护的 required check 上下文，否则检查全绿但 PR 仍会 `BLOCKED`。
 - 当前质量门矩阵是 Ubuntu + Windows；macOS 由 `release.yml#build` 的构建、host test
   与 smoke 覆盖，未单独跑 Python 质量门。
 - 没有制品签名、SLSA provenance 或可重复构建声明；`SHA256SUMS` 只做传输完整性校验。
