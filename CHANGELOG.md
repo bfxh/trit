@@ -9,7 +9,7 @@
   `TRIT_F32_LAYERS`（整层保 f32 的敏感度诊断）、`TRIT_LAYERS=6|12`（层数，默认 6）。
   新 `src/gptq/bits.rs`、`examples/bert6/linear/uniform/gptq.rs`、
   `model/loader/wrap/uniform.rs`、`model/config/opts/env.rs`、`tests/gptq_bits.rs`；
-  `run/weight_format.rs` 报位宽/字节账。模块预算 1478 files，debt 0。
+  `run/weight_format.rs` 报位宽/字节账。模块预算 1479 files，debt 0。
 - **1379 对全量**：int5 g128 Pearson **0.829203** / Spearman **0.821784**，
   f32 基线 **0.827406** / **0.820325**；总字节 7,050,240 B（含 scale/bias，
   f32 的 16.57%，6.03× 压缩），高 +0.00180 / +0.00146。
@@ -18,8 +18,11 @@
   int4 g32 为 0.826061 / 0.819354（6,718,464 B，仅低 0.00135，同字节 rank16 0.776944）；
   4-bit GPTQ g32 `rel_l2` 从 0.2750 降到 0.2271，Pearson 只涨 0.000068 到 0.826129，
   仍低 f32 0.00128，误差补偿补不回同字节的 STS 差距。
-  按单相关系数 1 SE ≈ 0.011 r，+0.00180 只有约 0.16 SE，且 group 由 128 对先导选出，
-  **只算字面越过，不作显著结论**。
+  按单相关系数 1 SE ≈ 0.011 r，+0.00180 只有约 0.16 SE；1251 对留出集 Δ 仍为
+  +0.001785，但 10k 配对 bootstrap 95% CI 含 0、单侧 p=0.075，
+  **只算方向稳定、不作显著结论**。
+- **留出集/bootstrap**：`TRIT_DUMP_PREDS=1` 导出逐对余弦；后 1251 对 f32 0.813994 /
+  g128 0.815779（Δ +0.001785），选档泄漏不是符号来源，但幅度仍不显著。
 - **128 对**：int4 g32 0.9191 vs 同字节 rank16 0.8378（均 6,718,464 B）；
   int5 g32 0.9254、g64 0.9259、g128 0.9248；int6 0.9232、int8 0.9233；
   int4 GPTQ 0.9214；int3 0.8906。位宽/group/权重误差都不单调。
