@@ -70,6 +70,36 @@ DEFAULTS = {
         "auto_install": False,
         "max_probe_s": 20,
     },
+    # Model context envelope.  These are planning budgets, not a vendor
+    # tokenizer's exact limit; the planner refuses rather than silently cutting.
+    "context": {
+        "window_tokens": 1_000_000,
+        "auto_compact_at": 850_000,
+        "target_tokens": 700_000,
+        "recent_keep": 6,
+        "preserve_tool_evidence": True,
+    },
+    # Search selection: relevance/safety/authority/freshness/diversity under a
+    # token budget.  Thresholds are deliberately conservative and test-pinned.
+    "search": {
+        "enabled": True,
+        "max_results": 10,
+        "budget_tokens": 12_000,
+        "min_relevance": 0.15,
+        "max_result_tokens": 2_000,
+        "dedupe": True,
+        "freshness_half_life_days": 30,
+        "trusted_domains": [],
+        "safety_block": ["critical", "high"],
+    },
+    # Reasoning effort is selected deterministically from query/result signals
+    # unless the user pins it with mode=fixed.
+    "reasoning": {
+        "mode": "auto",
+        "effort": "medium",
+        "min_effort": "low",
+        "max_effort": "high",
+    },
 }
 
 TOP_LEVEL = set(DEFAULTS)
@@ -136,7 +166,7 @@ def validate(settings, source="settings"):
     unknown = sorted(set(settings) - TOP_LEVEL)
     if unknown:
         raise ValueError(f"{source}: unknown top-level keys: {unknown}")
-    for key in ("receipt", "audit", "security", "lsp"):
+    for key in ("receipt", "audit", "security", "lsp", "context", "search", "reasoning"):
         if key in settings and not isinstance(settings[key], dict):
             raise ValueError(f"{source}: {key} must be an object")
     for key in ("name", "policy_profile"):
@@ -187,6 +217,54 @@ def validate(settings, source="settings"):
         raise ValueError(f"{source}: lsp.mode is invalid")
     if "auto_install" in lsp and not isinstance(lsp["auto_install"], bool):
         raise ValueError(f"{source}: lsp.auto_install must be boolean")
+    ctx = settings.get("context", {})
+    for key in ("window_tokens", "auto_compact_at", "target_tokens", "recent_keep"):
+        if key in ctx and (isinstance(ctx[key], bool) or not isinstance(ctx[key], int)
+                           or ctx[key] < 0):
+            raise ValueError(f"{source}: context.{key} must be a non-negative integer")
+    for key in ("preserve_tool_evidence",):
+        if key in ctx and not isinstance(ctx[key], bool):
+            raise ValueError(f"{source}: context.{key} must be boolean")
+    if "window_tokens" in ctx and ctx["window_tokens"] <= 0:
+        raise ValueError(f"{source}: context.window_tokens must be > 0")
+    if "auto_compact_at" in ctx and ctx["auto_compact_at"] <= 0:
+        raise ValueError(f"{source}: context.auto_compact_at must be > 0")
+    if "target_tokens" in ctx and ctx["target_tokens"] <= 0:
+        raise ValueError(f"{source}: context.target_tokens must be > 0")
+    if "auto_compact_at" in ctx and "window_tokens" in ctx \
+            and ctx["auto_compact_at"] > ctx["window_tokens"]:
+        raise ValueError(f"{source}: context.auto_compact_at must be <= window_tokens")
+    if "target_tokens" in ctx and "auto_compact_at" in ctx \
+            and ctx["target_tokens"] > ctx["auto_compact_at"]:
+        raise ValueError(f"{source}: context.target_tokens must be <= auto_compact_at")
+    srch = settings.get("search", {})
+    for key in ("max_results", "budget_tokens", "max_result_tokens", "freshness_half_life_days"):
+        if key in srch and (isinstance(srch[key], bool) or not isinstance(srch[key], int)
+                            or srch[key] <= 0):
+            raise ValueError(f"{source}: search.{key} must be a positive integer")
+    if "min_relevance" in srch:
+        value = srch["min_relevance"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            raise ValueError(f"{source}: search.min_relevance must be in [0, 1]")
+    if "dedupe" in srch and not isinstance(srch["dedupe"], bool):
+        raise ValueError(f"{source}: search.dedupe must be boolean")
+    if "trusted_domains" in srch and (not isinstance(srch["trusted_domains"], list)
+                                      or not all(isinstance(x, str) for x in srch["trusted_domains"])):
+        raise ValueError(f"{source}: search.trusted_domains must be a string list")
+    if "safety_block" in srch and (not isinstance(srch["safety_block"], list)
+                                   or any(x not in ("critical", "high", "medium", "low")
+                                          for x in srch["safety_block"])):
+        raise ValueError(f"{source}: search.safety_block is invalid")
+    reason = settings.get("reasoning", {})
+    if "mode" in reason and reason["mode"] not in ("auto", "fixed"):
+        raise ValueError(f"{source}: reasoning.mode must be auto or fixed")
+    for key in ("effort", "min_effort", "max_effort"):
+        if key in reason and reason[key] not in ("low", "medium", "high"):
+            raise ValueError(f"{source}: reasoning.{key} must be low/medium/high")
+    if "min_effort" in reason and "max_effort" in reason:
+        order = {"low": 0, "medium": 1, "high": 2}
+        if order[reason["min_effort"]] > order[reason["max_effort"]]:
+            raise ValueError(f"{source}: reasoning.min_effort > max_effort")
     return True
 
 
@@ -248,6 +326,20 @@ def receipt_echo(settings, meta):
         "lsp": {
             "mode": settings.get("lsp", {}).get("mode", "on-demand"),
             "auto_install": settings.get("lsp", {}).get("auto_install", False),
+        },
+        "context": {
+            "window_tokens": settings.get("context", {}).get("window_tokens", 1_000_000),
+            "auto_compact_at": settings.get("context", {}).get("auto_compact_at", 850_000),
+            "target_tokens": settings.get("context", {}).get("target_tokens", 700_000),
+        },
+        "search": {
+            "max_results": settings.get("search", {}).get("max_results", 10),
+            "budget_tokens": settings.get("search", {}).get("budget_tokens", 12_000),
+            "min_relevance": settings.get("search", {}).get("min_relevance", 0.15),
+        },
+        "reasoning": {
+            "mode": settings.get("reasoning", {}).get("mode", "auto"),
+            "effort": settings.get("reasoning", {}).get("effort", "medium"),
         },
     }
 
@@ -335,6 +427,35 @@ def _self_test():
         validate(settings4)
         ok(meta4["source"] == "builtin", "no config -> builtin")
         ok(settings4["audit"]["require_full"] is True, "default keeps full audit")
+        ok(settings4["context"]["window_tokens"] == 1_000_000
+           and settings4["context"]["auto_compact_at"] == 850_000
+           and settings4["context"]["target_tokens"] == 700_000,
+           "default context envelope is 1M/850K/700K")
+        echo4 = receipt_echo(settings4, meta4)
+        ok(echo4["context"]["auto_compact_at"] == 850_000
+           and echo4["search"]["budget_tokens"] == 12_000
+           and echo4["reasoning"]["mode"] == "auto",
+           "receipt echoes context/search/reasoning")
+        ok("C:" not in json.dumps(echo4) and "/tmp" not in json.dumps(echo4),
+           "new settings echo has no absolute path")
+
+        # Bad context/search/reasoning shapes must be loud.
+        for label, doc in (
+                ("target over trigger",
+                 {"version": 1, "context": {"auto_compact_at": 100, "target_tokens": 101}}),
+                ("zero context window",
+                 {"version": 1, "context": {"window_tokens": 0}}),
+                ("bad search budget",
+                 {"version": 1, "search": {"budget_tokens": 0}}),
+                ("bad reasoning effort",
+                 {"version": 1, "reasoning": {"effort": "max"}})):
+            with open(bad, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+            try:
+                load_settings(root, explicit=bad, env=env)
+                ok(False, label)
+            except ValueError:
+                ok(True, label)
 
     print(f"agent-settings self-test: {checks}/{checks}")
     return 0

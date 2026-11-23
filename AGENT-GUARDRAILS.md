@@ -52,13 +52,16 @@
 
 ## 多用户设置：默认强，用户可调，证据不丢
 
-`tools/agent_settings.py` 把回执、审计、安全门和 LSP 策略做成可配置层，优先级是
+`tools/agent_settings.py` 把回执、审计、安全门、LSP、上下文预算、搜索与推理强度
+策略做成可配置层，优先级是
 **内置默认 < 用户设置 < 项目 `.agent/settings.json` < 显式 `--settings` 文件 < 显式 CLI 参数**。
 默认档叫 `deepseek-strict`：完整审计回执照旧落盘，模型只读 compact 视图；安全门默认
 关闭（避免每条命令都付扫描成本），但 `--security` 或项目设置打开后，高危/关键发现
-在 run 之前就拒绝。用户设置路径：Windows `%APPDATA%\trit\agent\settings.json`，
+在 run 之前就拒绝。上下文默认 **1M 窗口 / 850K 触发 / 700K 目标**，压缩只做抽取
+摘要且锚点溢出时 fail-closed；搜索默认带安全/权威/新鲜度/去重/token 预算评分，
+推理强度默认 auto。用户设置路径：Windows `%APPDATA%\trit\agent\settings.json`，
 POSIX `$XDG_CONFIG_HOME/trit/agent/settings.json`（无则 `~/.config/...`）。设置回执里
-只写 `name/source/sources/policy_profile` 等路由字段，不写本机绝对路径。
+只写 `name/source/sources/policy_profile` 与数值/模式，不写本机绝对路径。
 
 一次性审计不是"把证据删到能一次看完"，而是把**完整回执 + 扫描报告 + 哈希**交给
 `tools/agent_audit.py` 折叠成一个 PASS/FAIL。回执里的 `security.report` 会被自动

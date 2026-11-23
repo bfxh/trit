@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（第六轮：上下文预算 + 搜索评分 + 自动推理强度）
+
+- `tools/context_window.py`：1M 窗口 / 850K 触发 / 700K 目标的确定性预算规划器。
+  保 system、首末 user、pinned、tool evidence；中间低优先级消息按序丢弃，并把
+  索引/角色/关键行写成 `compressed_summary`。锚点 + 摘要仍超目标时
+  `status=refused`、退出码 3，不返回半截 transcript；摘要超出证据行上限也拒绝。23/23 自测。
+- `tools/search_policy.py`：搜索结果 relevance（覆盖率+BM25+短语）、
+  `context_guard` 安全门、权威/新鲜度、MMR 去重、token 硬预算和
+  `max_results` 双帽；每条落选带原因。`choose_effort` 按对比/因果/多跳/
+  高 stakes/时效/歧义/冲突信号自动选 low/medium/high，并给
+  `search_depth/max_results/verify`。22/22 自测。
+- `agent_settings.py` 默认档新增 `context/search/reasoning` 三段，校验非法
+  envelope、搜索预算/阈值/effort；`receipt_echo` 只回显数值/模式，不带绝对
+  路径。设置自测 23/23。
+- 注册表新增 C074/C075/C076（fast tier），`selftest.ps1` 新增 AV9/AV10/AV11；
+  两个模块各有 `stress --cases 100` 随机不变量测试，`context_search_cross.py`
+  14/14 验搜索证据在压缩后仍保留、项目设置两侧共用、溢出退出 3 不返回半截；
+  文档 `docs/engineering/AGENT-CONTEXT-SEARCH.md` 与 `docs/ERRORS.md`
+  L163/L164/L165 记录机制、阈值和诚实边界。
+
 ### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
 
 - `tools/agent_settings.py`：用户级 `%APPDATA%\trit\agent\settings.json`（POSIX

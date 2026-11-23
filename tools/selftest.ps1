@@ -5278,10 +5278,10 @@ if (-not $anPy) {
 
 
 # ==============================================================================
-# AV. 用户设置 / 一次性审计 / 安全门 / 100+ LSP 注册表
-$avTotal = 8
+# AV. 用户设置 / 一次性审计 / 安全门 / 100+ LSP 注册表 / 上下文预算 / 搜索策略
+$avTotal = 11
 if (-not $anPy) {
-    "  SKIP  AV1-AV8 找不到可用的 Python，跳过设置/审计/安全/LSP 门"
+    "  SKIP  AV1-AV11 找不到可用的 Python，跳过设置/审计/安全/LSP/上下文/搜索/交叉门"
     $skipped += $avTotal
 } else {
     $avSettings = @(& $anPy (Join-Path $tools 'agent_settings.py') --self-test 2>&1)
@@ -5289,7 +5289,7 @@ if (-not $anPy) {
     Assert-True (($LASTEXITCODE -eq 0) -and $avSettingsMatch.Success -and `
         ([int]$avSettingsMatch.Groups[1].Value -eq [int]$avSettingsMatch.Groups[2].Value) -and `
         ([int]$avSettingsMatch.Groups[1].Value -ge 16)) `
-        'AV1 用户级/项目级/显式设置优先级、null 删除、未知键拒绝、回执不含绝对路径 16/16' "e=$LASTEXITCODE"
+        'AV1 用户级/项目级/显式设置优先级、null 删除、未知键拒绝、回执不含绝对路径 23/23' "e=$LASTEXITCODE"
 
     $avAudit = @(& $anPy (Join-Path $tools 'agent_audit.py') --self-test 2>&1)
     $avAuditMatch = [regex]::Match(($avAudit -join ' '), 'agent-audit self-test: (\d+)/(\d+)')
@@ -5371,6 +5371,31 @@ if (-not $anPy) {
     Assert-True ($avExtRc -eq 0 -and $avExtDoc -and $avExtDoc.verdict -eq 'pass' `
         -and ($avExtIds -contains 'secrets') -and ($avExtIds -contains 'privacy')) `
         'AV8 外部项目没有 scripts/ 时仍用 trit 的审计引擎跑 secrets/privacy（不是空扫描）' "e=$avExtRc"
+
+    # AV9: 1M/850K/700K context planner is deterministic and fail-closed.
+    $avCtx = @(& $anPy (Join-Path $tools 'context_window.py') self-test 2>&1)
+    $avCtxMatch = [regex]::Match(($avCtx -join ' '), 'context-window self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avCtxMatch.Success -and `
+        ([int]$avCtxMatch.Groups[1].Value -eq [int]$avCtxMatch.Groups[2].Value) -and `
+        ([int]$avCtxMatch.Groups[1].Value -ge 20)) `
+        'AV9 1M 窗口/850K 触发/700K 目标：锚点保留、抽取摘要、锚点溢出/摘要上限拒绝 23/23' "e=$LASTEXITCODE"
+
+    # AV10: search scoring is precision/safety/budget aware and effort is explainable.
+    $avSearch = @(& $anPy (Join-Path $tools 'search_policy.py') self-test 2>&1)
+    $avSearchMatch = [regex]::Match(($avSearch -join ' '), 'search-policy self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avSearchMatch.Success -and `
+        ([int]$avSearchMatch.Groups[1].Value -eq [int]$avSearchMatch.Groups[2].Value) -and `
+        ([int]$avSearchMatch.Groups[1].Value -ge 18)) `
+        'AV10 搜索评分：相关/安全/权威/新鲜度/去重/预算 + 自动推理强度 22/22' "e=$LASTEXITCODE"
+
+    # AV11: cross-module seam — selected evidence survives compaction, settings
+    # flow through both CLIs, overflow exits 3 without a half transcript.
+    $avCross = @(& $anPy (Join-Path $tools 'context_search_cross.py') 2>&1)
+    $avCrossMatch = [regex]::Match(($avCross -join ' '), 'context-search-cross self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avCrossMatch.Success -and `
+        ([int]$avCrossMatch.Groups[1].Value -eq [int]$avCrossMatch.Groups[2].Value) -and `
+        ([int]$avCrossMatch.Groups[1].Value -ge 12)) `
+        'AV11 上下文 × 搜索接缝：选中证据保留、项目设置共用、溢出 fail-closed 14/14' "e=$LASTEXITCODE"
 }
 
 
