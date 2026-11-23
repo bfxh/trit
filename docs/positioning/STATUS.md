@@ -26,7 +26,7 @@
 | 名字 | 定义处 | 内联 `#[test]` | 被 bin 用 | 被仓内其他模块用 | `tests/` 提及（代码行） | 读数在哪 | 按 §1 判 |
 |---|---|---|---|---|---|---|---|
 | `DepthNet` | `crates/trit-parts/src/depthnet.rs:25` | 7 | 4 | 2 | **11** | 本文件 §2.3 + `docs/results/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
-| `TpmModel` | `crates/trit-parts/src/tpm.rs:36` | 1 | 5 | 3 | **2** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
+| `TpmModel` | `crates/trit-parts/src/tpm.rs:36` | 1 | 5 | 3 | **7** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
 | `DepthUNet` | `crates/trit-parts/src/depthunet.rs:113` | 3 | 1 | 0 | **7** | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
 | `DepthHead` | `crates/trit-parts/src/depth.rs:14` | 3 | 1 | 0 | **0** | — | **组件**（名字已经是对的） |
 | `MatNet` | `crates/trit-parts/src/matnet.rs:41` | 3 | 1 | 0 | **7** | — | **组件**（名字像整机，§4 第 4 条已把改名提案否证） |
@@ -98,7 +98,7 @@ python scripts/model_status.py --self-test
 - `scripts/layers.py`、`docs_hygiene.py`、`tech_collide.py` **都还没进 CI**（`.github` 目录被别的会话认领中）。现在说"门"，指的是本地可判红 + 变异钉住，不是 CI 拦得住。
 - 本轮重算 §2 那张表时，我第一次用了 `grep -c X crates/trit-parts/tests/*.rs | awk -F: '{s+=$2}'`：
   只有一个文件时 `grep -c` **不带文件名前缀**，`$2` 是空的 ⇒ 六个类型全报 0，看着像"补的测试没生效"。
-  换成 `cat … | grep -c` 才拿到真数（`DepthUNet` 8 处 / `TriModel` 1 处 / `TpmModel` 2 处）。
+  换成 `cat … | grep -c` 才拿到真数（`DepthUNet` 8 处 / `TriModel` 1 处 / `TpmModel` 7 处）。
   又一次"判据的输入不是我刚读到的"同型错误（这类在跨智能体纪律里已累计登记），记在这儿是为了让它可查。
 - §2.3 那条"膨胀可达集"的夹具第一版选了角落 `(15,15)`，理由是"离冲击够远"；实测抽头只落在 **dil 的整数倍**格点上，
   15 不在 `dil=3` 的格子里 ⇒ 红的是夹具。改成 `(6,6)` 并实测依赖集（`dil=1`→16 个像素、`dil=3`→最远 (9,9)）才成立。
