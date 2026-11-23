@@ -2,9 +2,11 @@
 """alignment-gate: 目标 -> 需求 -> 产物/证据/变更 的显式对齐门。
 
 许多智能体只回答“做完了”，却不回答“这件事和那个目标/需求/产物是不是同一个东西”。
-本门把这种关系写成可审计的 alignment/1 清单，并在动手前拒绝：
+本门把这种关系写成可审计的 alignment/1（单目标，兼容旧清单）或 alignment/2
+（单根目标树 + 子目标）清单，并在动手前拒绝：
 
   - 需求没有父目标，或父链断掉/成环；
+  - 子目标没有父目标、父链断掉/成环，或出现多个根目标；
   - must 需求没有产物、没有证据；strict 下 should 也一样；
   - 引用了不存在的 artifact/evidence id；
   - 产物/证据文件不存在、哈希不符、locator 指不到内容；
@@ -16,6 +18,8 @@
   python tools/alignment_gate.py --root . --manifest .agent/alignment.json \
       --changed src/a.rs,tests/a.rs --json
   python tools/alignment_gate.py --root . --manifest .agent/alignment.json --lenient
+  python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.json \
+      --goal "目标" --requirement "需求一" --requirement "需求二"
   python tools/alignment_gate.py self-test
   python tools/alignment_gate.py stress --cases 100
 
@@ -35,10 +39,15 @@ import re
 import sys
 import tempfile
 
-SCHEMA = "alignment/1"
-TOP_FIELDS = {"schema", "goal", "requirements", "artifacts", "evidence",
+SCHEMA_V1 = "alignment/1"
+SCHEMA_V2 = "alignment/2"
+SCHEMAS = (SCHEMA_V1, SCHEMA_V2)
+SCHEMA = SCHEMA_V1  # 旧清单的默认形状（helpers 与旧测试沿用）
+TOP_FIELDS = {"schema", "goal", "goals", "requirements", "artifacts", "evidence",
               "non_goals", "allow_unlinked", "notes"}
-GOAL_FIELDS = {"id", "text", "notes"}
+GOAL_V1_FIELDS = {"id", "text", "notes"}
+GOAL_V2_FIELDS = {"id", "text", "parent", "notes"}
+GOAL_FIELDS = GOAL_V1_FIELDS  # 兼容旧名字
 REQ_FIELDS = {"id", "text", "priority", "parent", "artifacts", "evidence",
               "changes", "contradicts", "notes", "tags", "owner"}
 ART_FIELDS = {"id", "path", "locator", "sha256", "kind", "notes", "tags"}
@@ -215,7 +224,7 @@ def _build_report(root, manifest_path):
         "manifest": _display(root, manifest_path),
         "score": 0.0,
         "must_score": 0.0,
-        "counts": {"requirements": 0, "must": 0, "artifacts": 0, "evidence": 0,
+        "counts": {"goals": 0, "requirements": 0, "must": 0, "artifacts": 0, "evidence": 0,
                    "changed": 0, "linked_changes": 0},
         "coverage": {"requirements_with_artifact": 0, "requirements_with_evidence": 0,
                      "requirements_full": 0, "must_full": 0, "goals_covered": 0},
@@ -239,10 +248,119 @@ def load_manifest(root, manifest_path):
     if not isinstance(doc, dict):
         _fail(report, "manifest-unreadable", "对齐清单必须是 JSON 对象")
         return None, report
-    if doc.get("schema") != SCHEMA:
-        _fail(report, "schema-mismatch", f"schema 必须是 {SCHEMA!r}，实际 {doc.get('schema')!r}")
+    if doc.get("schema") not in SCHEMAS:
+        _fail(report, "schema-mismatch",
+              f"schema 必须是 {' 或 '.join(repr(s) for s in SCHEMAS)}，实际 {doc.get('schema')!r}")
         return None, report
+    report["schema"] = doc.get("schema")
     return doc, report
+
+
+def _read_goals(doc, report):
+    """Validate the goal layer and return ({goal_id: goal}, root_id).
+
+    alignment/1 keeps the legacy single `goal` object.  alignment/2 uses `goals`
+    with an optional `parent`, allows subgoals, and requires exactly one root.
+    """
+    schema = doc.get("schema")
+    if schema == SCHEMA_V1:
+        if "goals" in doc:
+            _fail(report, "goals-field",
+                  "alignment/1 使用 goal 单对象；要子目标请改用 alignment/2 的 goals 数组")
+        goal = doc.get("goal")
+        if not isinstance(goal, dict):
+            _fail(report, "goal-missing", "必须有一个 goal 对象")
+            return {}, ""
+        _unknown_fields(goal, GOAL_V1_FIELDS, "goal", "goal", report)
+        goal_id = str(goal.get("id", "")).strip()
+        if not goal_id:
+            _fail(report, "goal-invalid", "goal.id 不能为空")
+        if not _nonempty_str(goal.get("text"), goal_id or None, "goal.text"):
+            _fail(report, "goal-invalid", "goal.text 不能为空", goal_id or None)
+        if goal_id:
+            goal["_id"] = goal_id
+            report["goal"] = goal_id
+            report["counts"]["goals"] = 1
+        return ({goal_id: goal} if goal_id else {}), goal_id
+
+    if schema != SCHEMA_V2:
+        return {}, ""
+
+    if "goal" in doc:
+        _fail(report, "goal-field",
+              "alignment/2 使用 goals 数组；单目标也写成 goals:[{...}]")
+    raw = _as_list(doc.get("goals"), None, "goals", report)
+    if not raw:
+        _fail(report, "goals-missing", "alignment/2 至少需要一个 goal")
+        return {}, ""
+
+    goal_map = {}
+    for i, goal in enumerate(raw):
+        node = f"goal[{i}]"
+        if not isinstance(goal, dict):
+            _fail(report, "goal-invalid", f"{node} 必须是对象", node)
+            continue
+        _unknown_fields(goal, GOAL_V2_FIELDS, node, "goal", report)
+        goal_id = str(goal.get("id", "")).strip()
+        if not goal_id:
+            _fail(report, "goal-invalid", f"{node} 缺少 id", node)
+            continue
+        if goal_id in goal_map:
+            _fail(report, "duplicate-id", f"goal id 重复：{goal_id}", goal_id)
+            continue
+        if not _nonempty_str(goal.get("text"), goal_id, "goal.text"):
+            _fail(report, "goal-invalid", f"{goal_id} 的 text 不能为空", goal_id)
+        goal["_id"] = goal_id
+        goal_map[goal_id] = goal
+
+    report["counts"]["goals"] = len(goal_map)
+    parent_of = {}
+    roots = []
+    for goal_id, goal in goal_map.items():
+        parent = goal.get("parent")
+        if parent is None:
+            roots.append(goal_id)
+            continue
+        if not isinstance(parent, str) or not parent.strip():
+            _fail(report, "goal-parent",
+                  f"{goal_id} 的 parent 必须是 goal id 或 null", goal_id)
+            continue
+        parent = parent.strip()
+        parent_of[goal_id] = parent
+        if parent not in goal_map:
+            _fail(report, "unknown-goal-parent",
+                  f"{goal_id} 的 parent 不存在：{parent}", goal_id)
+
+    if len(roots) != 1:
+        _fail(report, "goal-root",
+              f"必须有且只有一个根 goal（parent=null），实际 {len(roots)} 个：{roots}")
+        root_id = ""
+    else:
+        root_id = roots[0]
+        report["goal"] = root_id
+
+    # Every goal must reach the unique root; cycles and unknown parents fail.
+    for goal_id in goal_map:
+        seen = []
+        cur = goal_id
+        while cur in goal_map:
+            if cur in seen:
+                _fail(report, "goal-cycle",
+                      f"goal parent 链成环：{' -> '.join(seen + [cur])}", goal_id)
+                break
+            seen.append(cur)
+            parent = parent_of.get(cur)
+            if parent is None:
+                if root_id and cur != root_id:
+                    _fail(report, "goal-not-root",
+                          f"{goal_id} 的 goal 链没有落到根 {root_id}（实际 {cur}）", goal_id)
+                break
+            cur = parent
+        else:
+            if cur:
+                _fail(report, "goal-not-root",
+                      f"{goal_id} 的 goal 链没有落到根 {root_id or '<none>'}（实际 {cur}）", goal_id)
+    return goal_map, root_id
 
 
 def validate(root, doc, changed=None, strict=True):
@@ -255,21 +373,10 @@ def validate(root, doc, changed=None, strict=True):
     # while walking the graph.  Work on a copy so a second validation of the
     # same caller object cannot see its own synthetic fields as unknown keys.
     doc = copy.deepcopy(doc)
+    report["schema"] = doc.get("schema", SCHEMA)
     _unknown_fields(doc, TOP_FIELDS, "manifest", "manifest", report)
 
-    goal = doc.get("goal")
-    goal_id = ""
-    if not isinstance(goal, dict):
-        _fail(report, "goal-missing", "必须有一个 goal 对象")
-    else:
-        _unknown_fields(goal, GOAL_FIELDS, "goal", "goal", report)
-        goal_id = str(goal.get("id", "")).strip()
-        if not goal_id:
-            _fail(report, "goal-invalid", "goal.id 不能为空")
-        if not _nonempty_str(goal.get("text"), goal_id or None, "goal.text"):
-            _fail(report, "goal-invalid", "goal.text 不能为空", goal_id or None)
-        if goal_id:
-            report["goal"] = goal_id
+    goal_map, goal_id = _read_goals(doc, report)
 
     requirements = _as_list(doc.get("requirements"), None, "requirements", report)
     artifacts = _as_list(doc.get("artifacts"), None, "artifacts", report)
@@ -292,7 +399,7 @@ def validate(root, doc, changed=None, strict=True):
 
     # --- ids: one namespace for goal/requirements/artifacts/evidence/non_goals -----
     ids = {}
-    if goal_id:
+    for goal_id in goal_map:
         ids[goal_id] = "goal"
     for kind, items, spec in (("requirement", requirements, REQ_FIELDS),
                               ("artifact", artifacts, ART_FIELDS),
@@ -325,7 +432,7 @@ def validate(root, doc, changed=None, strict=True):
                     if isinstance(n, dict) and n.get("_id")}
 
     # --- requirement shape/parent chain ------------------------------------------
-    valid_parents = set(req_map) | ({goal_id} if goal_id else set())
+    valid_parents = set(req_map) | set(goal_map)
     parent_of = {}
     for i, req in enumerate(requirements):
         if not isinstance(req, dict):
@@ -362,11 +469,9 @@ def validate(root, doc, changed=None, strict=True):
             seen.append(cur)
             cur = parent_of.get(cur, "")
         else:
-            if goal_id and cur != goal_id:
+            if cur not in goal_map:
                 _fail(report, "goal-not-reached",
-                      f"{rid} 的 parent 链没有终止在 goal {goal_id}（实际 {cur or '<empty>'}）", rid)
-            elif not goal_id and cur:
-                _fail(report, "goal-not-reached", f"{rid} 的 parent 链没有 goal 可落", rid)
+                      f"{rid} 的 parent 链没有终止在任何 goal（实际 {cur or '<empty>'}）", rid)
 
     # --- artifacts/evidence: path, hash, locator --------------------------------
     artifact_ok = set()
@@ -604,7 +709,7 @@ def _emit(report, as_json, out_path):
     cov = report["coverage"]
     _say(f"alignment: {report['status']} (score={report['score']:.3f}, "
          f"must={report['must_score']:.3f}) goal={report.get('goal', '-')} "
-         f"req={c['requirements']} must={c['must']} artifacts={c['artifacts']} "
+         f"goals={c['goals']} req={c['requirements']} must={c['must']} artifacts={c['artifacts']} "
          f"evidence={c['evidence']} changed={c['changed']} linked={c['linked_changes']}")
     _say(f"  coverage: artifact={cov['requirements_with_artifact']}/{c['requirements']} "
          f"evidence={cov['requirements_with_evidence']}/{c['requirements']} "
@@ -624,6 +729,65 @@ def run_check(args):
     report = check(root, manifest, args.changed, not args.lenient)
     _emit(report, args.json, args.out)
     return report["exit"]
+
+
+def _scaffold(args):
+    """Write a deliberately incomplete alignment/2 skeleton.
+
+    The skeleton names one root goal and the requirement texts, but leaves
+    artifacts/evidence/changes empty on purpose: the gate must still refuse
+    until the caller does the thinking and fills the graph.  This is a
+    checklist generator, not an auto-alignment claim.
+    """
+    root = os.path.abspath(args.root or os.getcwd())
+    goal = str(getattr(args, "goal", "") or "").strip()
+    requirements = [str(x).strip() for x in (getattr(args, "requirement", []) or []) if str(x).strip()]
+    if not goal:
+        _say("alignment_gate scaffold: --goal 不能为空")
+        return 2
+    if not requirements:
+        _say("alignment_gate scaffold: 至少给一个 --requirement（重复传参）")
+        return 2
+    out = str(getattr(args, "manifest", "") or ".agent/alignment.json")
+    try:
+        rel = os.path.relpath(out, root) if os.path.isabs(out) else out
+        _norm, full = _safe_rel(root, rel, None, "manifest")
+    except (AlignmentFailure, ValueError) as e:
+        _say(f"alignment_gate scaffold: {getattr(e, 'message', str(e))}")
+        return 2
+    if os.path.isdir(full):
+        _say(f"alignment_gate scaffold: 目标是目录而不是文件：{_display(root, full)}")
+        return 2
+    if os.path.exists(full) and not getattr(args, "force", False):
+        _say(f"alignment_gate scaffold: 已存在，未覆盖（要覆盖加 --force）：{_display(root, full)}")
+        return 2
+    doc = {
+        "schema": SCHEMA_V2,
+        "goals": [{"id": "G1", "text": goal}],
+        "requirements": [
+            {"id": f"R{i + 1}", "text": text, "priority": "must", "parent": "G1",
+             "artifacts": [], "evidence": [], "changes": []}
+            for i, text in enumerate(requirements)
+        ],
+        "artifacts": [],
+        "evidence": [],
+        "non_goals": [],
+        "allow_unlinked": [],
+        "notes": "scaffold: artifacts/evidence/changes 故意留空；补齐前 gate 不会 aligned",
+    }
+    try:
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        tmp = full + ".tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(doc, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+        os.replace(tmp, full)
+    except OSError as e:
+        _say(f"alignment_gate scaffold: 写不出 {_display(root, full)}：{e}")
+        return 2
+    _say(f"scaffold: wrote {_display(root, full)} (goal=1, requirements={len(requirements)}, "
+         "artifacts/evidence/changes=empty -> gate will refuse until filled)")
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -656,6 +820,14 @@ def _base_doc():
     }
 
 
+def _base_v2_doc():
+    doc = _base_doc()
+    doc["schema"] = SCHEMA_V2
+    del doc["goal"]
+    doc["goals"] = [{"id": "G1", "text": "把输入整理成可验收的产物", "parent": None}]
+    return doc
+
+
 def _selftest():
     checks = 0
 
@@ -683,6 +855,37 @@ def _selftest():
         ok(r["score"] == 1.0 and r["must_score"] == 1.0, "覆盖率 1.0")
         ok(r["coverage"]["goals_covered"] == 1, "goal 覆盖")
         ok(r["coverage"]["requirements_full"] == 2, "两条需求全链")
+        ok(r["counts"]["goals"] == 1, "v1 单目标计数")
+
+        d = _base_v2_doc()
+        r = status(root, d)
+        ok(r["status"] == "aligned" and r["schema"] == SCHEMA_V2, "v2 单根目标 aligned")
+        r = check(root, _write(root, "v2.json", json.dumps(_base_v2_doc(), ensure_ascii=False)))
+        ok(r["status"] == "aligned" and r["schema"] == SCHEMA_V2, "v2 清单经 check/load 仍 aligned")
+        d = _base_v2_doc()
+        d["goals"].append({"id": "G2", "text": "子目标", "parent": "G1"})
+        d["requirements"][0]["parent"] = "G2"
+        r = status(root, d)
+        ok(r["status"] == "aligned" and r["counts"]["goals"] == 2, "v2 子目标链 aligned")
+        d = _base_v2_doc()
+        d["goals"].append({"id": "G2", "text": "子目标", "parent": "G1"})
+        d["goals"][0]["parent"] = "G2"
+        expect(status(root, d), "goal-cycle", "v2 goal 成环")
+        d = _base_v2_doc()
+        d["goals"].append({"id": "G2", "text": "第二个根", "parent": None})
+        expect(status(root, d), "goal-root", "v2 多个根")
+        d = _base_v2_doc()
+        d["goals"][0]["parent"] = "G9"
+        expect(status(root, d), "unknown-goal-parent", "v2 未知 goal parent")
+        d = _base_v2_doc()
+        del d["goals"]
+        expect(status(root, d), "goals-missing", "v2 缺 goals")
+        d = _base_v2_doc()
+        d["goal"] = {"id": "G1", "text": "混用 field"}
+        expect(status(root, d), "goal-field", "v2 混用 goal 字段")
+        d = _base_doc()
+        d["goals"] = [{"id": "G1", "text": "混用 field"}]
+        expect(status(root, d), "goals-field", "v1 混用 goals 字段")
 
         d = _base_doc(); del d["goal"]
         expect(status(root, d), "goal-missing", "缺 goal")
@@ -760,7 +963,7 @@ def _selftest():
         expect(status(root, d), "bad-path", ".. 逃逸")
         d = _base_doc(); d["artifacts"][0]["path"] = "C:/abs.py"
         expect(status(root, d), "bad-path", "绝对路径")
-        d = _base_doc(); d["schema"] = "alignment/2"
+        d = _base_doc(); d["schema"] = "alignment/9"
         r = check(root, _write(root, "m1.json", json.dumps(d, ensure_ascii=False)))
         ok(r["status"] == "unknown" and r["exit"] == 3, "错误 schema -> unknown")
         _write(root, "bad.json", "{")
@@ -785,6 +988,30 @@ def _selftest():
         expect(status(root, d), "changes-invalid", "changes 非数组")
         d = _base_doc(); d["non_goals"][0]["paths"] = []
         expect(status(root, d), "non-goal-paths", "non_goal 无路径")
+
+        scaffold = os.path.join(root, "scaffold.json")
+        args = argparse.Namespace(root=root, manifest="scaffold.json", goal="对齐骨架",
+                                  requirement=["需求一", "需求二"], force=False)
+        ok(_scaffold(args) == 0 and os.path.isfile(scaffold), "scaffold 写出清单")
+        sdoc = json.loads(open(scaffold, encoding="utf-8").read())
+        ok(sdoc.get("schema") == SCHEMA_V2 and len(sdoc.get("goals", [])) == 1
+           and len(sdoc.get("requirements", [])) == 2, "scaffold 形状 v2/goal/requirements")
+        r = check(root, scaffold, changed=["src/a.py"])
+        expect(r, "missing-evidence", "scaffold 未填证据仍拒绝")
+        expect(r, "unlinked-change", "scaffold 未填 changes 仍拒绝")
+        before = open(scaffold, encoding="utf-8").read()
+        ok(_scaffold(args) == 2 and open(scaffold, encoding="utf-8").read() == before,
+           "scaffold 不覆盖已有清单")
+        args.force = True
+        ok(_scaffold(args) == 0, "scaffold --force 覆盖")
+        args = argparse.Namespace(root=root, manifest="../escape.json", goal="逃逸",
+                                  requirement=["需求"], force=True)
+        ok(_scaffold(args) == 2 and not os.path.exists(os.path.join(td, "escape.json")),
+           "scaffold 拒绝 root 外路径")
+        args = argparse.Namespace(root=root, manifest="empty.json", goal="没有需求",
+                                  requirement=[], force=True)
+        ok(_scaffold(args) == 2 and not os.path.exists(os.path.join(root, "empty.json")),
+           "scaffold 没需求不落盘")
 
         r1 = status(root, _base_doc(), ["src/a.py"])
         r2 = status(root, _base_doc(), ["src/a.py"])
@@ -851,7 +1078,8 @@ def _stress(cases):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(prog="alignment_gate")
-    parser.add_argument("cmd", nargs="?", default="check", choices=("check", "self-test", "stress"))
+    parser.add_argument("cmd", nargs="?", default="check",
+                        choices=("check", "self-test", "stress", "scaffold"))
     parser.add_argument("--root", default="")
     parser.add_argument("--manifest", default="")
     parser.add_argument("--changed", action="append", default=[])
@@ -859,6 +1087,9 @@ def main(argv=None):
     parser.add_argument("--lenient", action="store_true")
     parser.add_argument("--out", default="")
     parser.add_argument("--cases", type=int, default=100)
+    parser.add_argument("--goal", default="")
+    parser.add_argument("--requirement", action="append", default=[])
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args(argv)
     if args.cmd == "self-test":
         return _selftest()
@@ -867,6 +1098,8 @@ def main(argv=None):
             _say("alignment_gate: --cases must be > 0")
             return 2
         return _stress(args.cases)
+    if args.cmd == "scaffold":
+        return _scaffold(args)
     changed = []
     for item in args.changed:
         changed.extend([x.strip() for x in item.split(",") if x.strip()])

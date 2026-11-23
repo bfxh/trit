@@ -55,13 +55,54 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
 哪些产物实现”；`evidence` 是“哪些证据能证明它”；`changes` 是“本次允许
 改哪些路径”。三者都是显式边，不写就是断链。
 
+### 多目标/子目标 `alignment/2`
+
+单个目标容易把多个诉求压成一句话，最后“都完成了”但没人知道各自对应哪一条。
+`alignment/2` 用一棵**单根目标树**保留层级；旧 `alignment/1` 继续兼容：
+
+```json
+{
+  "schema": "alignment/2",
+  "goals": [
+    {"id": "G1", "text": "把输入整理成可验收的产物"},
+    {"id": "G2", "text": "补齐验收证据", "parent": "G1"}
+  ],
+  "requirements": [
+    {"id": "R1", "text": "产物包含目标字段", "priority": "must", "parent": "G2",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["src/a.py"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "src/a.py"}],
+  "evidence": [{"id": "E1", "path": "tests/test_a.py", "locator": "text:test_a"}]
+}
+```
+
+规则：`goals` 至少一个；`parent` 缺省/`null` 表示根；**必须有且只有一个根**；
+每个子目标的父链必须落到这个根，不能断开或成环。需求可以挂到任意子目标，
+但需求的父链最终仍必须落到根。`alignment/1` 与 `alignment/2` 不能混用
+`goal`/`goals` 字段。
+
+### 生成骨架：`scaffold`
+
+`scaffold` 从目标与需求文本生成一份**故意不完整**的 `alignment/2` 清单：
+`artifacts`、`evidence`、`changes` 留空，所以 gate 仍会拒绝。它只帮人把
+“目标树/需求清单”先摆出来，不代替补证据：
+
+```bash
+python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.json \
+  --goal "把输入整理成可验收的产物" \
+  --requirement "产物包含目标字段" --requirement "补齐验收证据"
+```
+
+已存在清单时默认不覆盖；需要重写才加 `--force`。输出路径必须在项目 root 内。
+
 ### 字段约束
 
 | 字段 | 约束 |
 |---|---|
-| `goal` | 恰好一个；`id`/`text` 非空 |
+| `goal`（v1） | 恰好一个；`id`/`text` 非空 |
+| `goals`（v2） | 至少一个；恰好一个 `parent=null` 的根；子目标父链必须落到根，不能断/环 |
 | `requirements` | 至少一条；`text` 非空；`priority` 为 `must/should/may`，缺省按 `must` |
-| `requirements.parent` | 必须存在，且父链最终落到 `goal`；不能成环 |
+| `requirements.parent` | 必须存在，且父链最终落到根 `goal`；不能成环 |
 | `requirements.artifacts/evidence` | 必须引用已存在的 id；`must` 至少各一条有效引用 |
 | `artifacts/evidence.path` | 仓库相对路径；不能绝对、`..` 逃逸或经符号链接逃出 root |
 | `sha256` | 可选；64 位十六进制，必须与磁盘内容一致 |
@@ -76,7 +117,7 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
 `alignment_gate.py` 检查：
 
 1. schema、字段类型、id 唯一性、未知字段；
-2. 每条需求的 parent 链是否落到唯一 goal，是否有环；
+2. 每条需求的 parent 链是否落到唯一根 goal；v2 还检查每个子目标是否落到同一个根，是否有环/断链/多个根；
 3. `must` 需求是否同时有有效产物与有效证据；`strict` 下 `should` 也一样；
 4. artifact/evidence 的 id 是否存在、文件是否存在、sha256、locator 是否命中；
 5. 每条变更是否被某条需求的 `changes` 或某个 artifact 路径覆盖；
@@ -103,11 +144,11 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
 
 ## 测试读数
 
-- `python tools/alignment_gate.py self-test`：**47/47**
+- `python tools/alignment_gate.py self-test`：**65/65**
 - `python tools/alignment_gate.py stress --cases 100`：**200 用例，valid 100 aligned，mutated 100 rejected，0 errors**
 - `python tools/agent_settings.py --self-test`：**30/30**
-- `tools/selftest.ps1` 的 AL27–AL31：通过清单继续 run、缺证据拒绝、清单缺失 unknown、lenient 只警告、不传 `--alignment` 时自动发现
-- 全仓 `tools/selftest.ps1`：**701 passed / 0 failed / 0 skipped**
+- `tools/selftest.ps1` 的 AL27–AL32：通过清单继续 run、缺证据拒绝、清单缺失 unknown、lenient 只警告、不传 `--alignment` 时自动发现、v2 子目标链通过并记录 `goals=2`
+- 全仓 `tools/selftest.ps1`：**702 passed / 0 failed / 0 skipped**
 
 ## 诚实边界
 
@@ -115,7 +156,8 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
   不对，仍要靠人/评审。
 - `locator` 只证明片段存在，不证明该片段就是充分证据；它把“有证据”降级为
   “可定位证据”，不替代 claim audit 与测试。
-- 没有 LLM 评审、没有自动补链；清单必须由执行者显式写出，写不出就应该拒绝。
+- 没有 LLM 评审；`scaffold` 只生成空骨架，不自动补产物/证据/变更，因此骨架本身
+  仍会被拒。清单必须由执行者显式写出，写不出就应该拒绝。
 - 不替代 `security_gate`、`claim_audit`、`handoff`、`constraints`：它只管
   goal/requirement/artifact/evidence/change 这一条轴。
 

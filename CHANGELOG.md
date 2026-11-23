@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added（第八轮：对齐清单目标层级与骨架生成）
+
+- `tools/alignment_gate.py` 新增 `alignment/2`：`goals` 单根目标树，goal 可带
+  `parent` 形成子目标；必须有且只有一个 `parent=null` 的根，每个子目标的父链
+  必须落到该根，断链/成环/多根/未知父目标都 fail-closed。需求可挂到子目标，
+  但需求父链最终仍须落到根；旧 `alignment/1` 与 `goal` 单对象保持兼容，混用
+  `goal`/`goals` 直接拒绝。`counts` 新增 `goals`，`agent_verify` 回执同步保留。
+- `tools/alignment_gate.py` 新增 `scaffold`：从 `--goal` 与重复的
+  `--requirement` 生成 `alignment/2` 骨架；`artifacts/evidence/changes` 故意
+  留空，gate 仍会拒绝，避免“生成清单=对齐”。已有清单默认不覆盖，`--force`
+  才重写；输出路径必须留在 root 内。
+- `tools/agent_verify.py` 的 alignment 回执 `counts` 增加 `goals`；`tools/selftest.ps1`
+  新增 AL32（v2 子目标链经 `agent_verify` 通过并记录 `goals=2`），`$alTotal`
+  31→32。
+- `tools/alignment_gate.py self-test` 47→**65/65**；`stress --cases 100` 仍为
+  200 用例、0 errors；`agent_settings --self-test` **30/30**；全仓
+  `tools/selftest.ps1` **702 passed / 0 failed / 0 skipped**（含 AL27–AL32）。
+- 文档/台账：`docs/engineering/AGENT-ALIGNMENT.md` 补 v2 schema、scaffold、
+  检查表与诚实边界；`docs/ERRORS.md` L167、`.agent/checks/registry.json` C077
+  同步覆盖；`docs/README.md` 更新索引。
+
 ### Added（第七轮：智能体目标/需求/产物/证据/变更对齐门）
 
 - `tools/alignment_gate.py`：新增 `alignment/1` 清单与 fail-closed 门。

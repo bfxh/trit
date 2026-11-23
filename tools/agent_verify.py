@@ -211,8 +211,10 @@ HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -
                 off unless the flag or settings.security.enabled says otherwise)
   alignment:    [--alignment <manifest>] [--alignment-lenient]
                 (goal -> requirement -> artifact/evidence/change explicit graph;
-                missing manifests, orphan requirements, missing evidence, dangling
-                refs, hash/locator mismatch, unlinked changes and non-goal changes
+                alignment/1 single goal or alignment/2 one-root goal tree with
+                subgoals; missing manifests, orphan requirements, missing evidence,
+                dangling refs, hash/locator mismatch, unlinked changes and non-goal
+                changes
                 refuse before any write. Auto-runs when the project has
                 .agent/alignment.json and settings.alignment.enabled is true;
                 --alignment overrides the path, --alignment-lenient downgrades
@@ -1502,7 +1504,7 @@ def main(argv):
             "score": adoc.get("score"),
             "must_score": adoc.get("must_score"),
             "counts": {k: acounts.get(k) for k in
-                       ("requirements", "must", "artifacts", "evidence", "changed", "linked_changes")},
+                       ("goals", "requirements", "must", "artifacts", "evidence", "changed", "linked_changes")},
             "failures": len(adoc.get("failures", []) or []),
             "warnings": len(adoc.get("warnings", []) or []),
         }
