@@ -651,7 +651,36 @@ g64/g128 的选档集，留出集取后 1251 对，不参与选档：
 
 默认不设 `TRIT_THREADS` 仍是 1 线程，不设 `TRIT_SKIP_DIAG` 仍输出 random 诊断，
 所以 CI 与既有复现命令不受影响。24 线程的收益来自 24 个物理核；线程数超过 batch
-时会被截到 batch。
+时会被截到 batch。缓存 f32 后只跑量化前向的线程扩展：1/6/12/24 线程分别为
+148.66 / 25.85 / 14.18 / 8.24 s（128 对 int5），24 线程仍有约 1.7× 于 12 线程。
+
+### 3.16.7 f32 基线缓存：同模型同数据跨趟复用，量化 STS 逐位不变
+
+第 3.16.6 的 24 线程已经把 1379 对压到约 173 s，但每趟仍重算一次 f32 real 前向；
+f32 只服务 `f32_sts`、`real_vs_f32` 和 `f32_vs_reference`，同一模型 + 同一
+`data_dir` + 同一 layers 下结果不变。新增 `TRIT_F32_CACHE=<json>`：
+
+- 首次运行算 f32，并把 `f32_sts`（含 `TRIT_DUMP_PREDS=1` 的 preds）写入缓存；
+- 后续命中直接复用，跳过 f32 Bert 加载和前向，只跑量化模型；
+- 缓存键含 `schema=1/model/data_dir/hidden/batch/seq/layers`，键不符不会误用；
+- `activation=all` 或带 `--sidecar-svd` 时禁用缓存，因为这些路径依赖完整 `f32_out`；
+- 命中时 `f32_vs_reference`、`real_vs_f32`、`random_vs_f32`、逐层对照写 `null`，
+  量化模型的 STS 不受影响；f32 的 271 MB 输出不缓存。
+
+实测（L12、int5、24 线程、跳诊断）：
+
+| 运行 | 无缓存 | 缓存命中 | 加速 |
+|---|---:|---:|---:|
+| 128 对 | 16.3 s | 8.0 s | 2.0× |
+| 1379 对 | 173.1 s | 88.6 s | 1.95× |
+| 1379 对 int4 | — | 85.2 s | — |
+
+缓存命中后的 f32/int5/int4 `f32_sts` 与 `modes.f32.sts`（含 preds）和未缓存跑
+逐位相同：128 对 f32 `0.9318602118665735`、int5 `0.9304698138104717`；1379 对
+f32 `0.8375945675304496 / 0.8308938533093636`、int5
+`0.8365400335581058 / 0.8305785821400108`、int4
+`0.8375051638742783 / 0.8320473843142945`。缓存读写用 `serde_json` 的
+`float_roundtrip` 特性，否则 preds 会出现 1 ULP 的重解析差。
 
 ## 4. 未证栏
 
@@ -675,7 +704,8 @@ g64/g128 的选档集，留出集取后 1251 对，不参与选档：
 - `crates/trit-wspace/src/residual.rs`：`LowRankResidual`（`R = W − s·T` 的 top-r SVD，
   `build` / `set_rank` / `projections` / `correction`），`tests/residual.rs` 守满秩重构、
   截断单调与宽/高两种取向；
-- `examples/bert6/`：`main.rs` 入口；`run/main_flow.rs` 主流程、`run/modes.rs` 激活模式、
+- `examples/bert6/`：`main.rs` 入口；`run/main_flow.rs` 主流程、`run/f32_base.rs` f32 基线缓存、
+  `run/modes.rs` 激活模式、
   `run/sidecar_svd.rs` 侧车 rank 扫描、`run/weight_format.rs` 字节账、`model/` 前向与加载、
   `linear/` f32 / 三值 / 均匀位宽线性层；`sts/metrics.rs` 指标与逐对预测；输出
   `f32_vs_reference` / `real_ternary_vs_f32` / `random_ternary_vs_f32` / `output_stage` /
@@ -687,7 +717,8 @@ g64/g128 的选档集，留出集取后 1251 对，不参与选档：
   `TRIT_F32_LAYERS=0,5`（整层保 f32）、`TRIT_LAYERS=6|12`（模型层数）、
   `TRIT_DUMP_PREDS=1`（在 STS 结果里附逐对余弦，供留出集/bootstrap 用）、
   `TRIT_THREADS=24|auto`（全量按句并行，逐位一致）、
-  `TRIT_SKIP_DIAG=1`（跳过 random 诊断前向，`random_vs_f32` 记 null）。
+  `TRIT_SKIP_DIAG=1`（跳过 random 诊断前向，`random_vs_f32` 记 null）、
+  `TRIT_F32_CACHE=<json>`（跨趟复用同模型同数据的 f32 `f32_sts`，量化 STS 逐位不变）。
 - 12 层数据必须用 L12 自己的 embedding 重导第 0 层；`export_bert6.py` 支持
   `TRIT_MODEL_ID=sentence-transformers/all-MiniLM-L12-v2`。本轮的 L12 第 0 层由
   同一 tokenizer/embedding 公式离线重算，并用 L6 的 `input.f32` 对照，`rel_l2` 8.6e-8。

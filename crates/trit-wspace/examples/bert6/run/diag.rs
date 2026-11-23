@@ -11,27 +11,26 @@ pub(crate) fn skip() -> bool {
 }
 
 pub(crate) fn f32_inputs(
-    bert: &Bert,
+    bert: Option<&Bert>,
     input: &[f32],
     mask: &[u8],
     batch: usize,
     seq: usize,
     seed: u64,
 ) -> (Vec<f32>, Vec<f32>) {
-    if skip() {
+    let Some(bert) = bert.filter(|_| !skip()) else {
         return (Vec::new(), Vec::new());
-    }
+    };
     let random = random_like(input, seed);
     let out = bert.forward(&random, mask, batch, seq, false).0;
     (random, out)
 }
-
 pub(crate) fn quant_random(
     bert: &Bert,
     request: &Request,
     capture: bool,
 ) -> (Vec<f32>, Vec<Vec<f32>>) {
-    if skip() {
+    if skip() || request.f32_random.is_empty() {
         return (Vec::new(), Vec::new());
     }
     let (out, stages, _) = bert.forward(
@@ -44,15 +43,9 @@ pub(crate) fn quant_random(
     (out, stages)
 }
 
-pub(crate) fn random_vs_f32(out: &[f32], request: &Request) -> Value {
-    if out.is_empty() {
-        Value::Null
-    } else {
-        json!(compare(
-            out,
-            request.f32_random,
-            request.mask,
-            request.hidden
-        ))
+pub(crate) fn vs_f32(out: &[f32], reference: &[f32], request: &Request) -> Value {
+    if out.is_empty() || reference.is_empty() {
+        return Value::Null;
     }
+    json!(compare(out, reference, request.mask, request.hidden))
 }

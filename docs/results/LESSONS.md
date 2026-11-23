@@ -68,6 +68,12 @@
    同一趟降到 171.7 s（34.7×），f32/int5 的 Pearson、Spearman 与 1379 个 preds
    逐位不变（maxdiff 0）。并行只切 batch，不动句内层序与归约顺序；`capture=true`
    的逐层快照仍走串行。见 §3.16.6。
+11. **同一模型/数据的 f32 基线可以跨趟缓存**。同一 `model + data_dir + layers`
+   下 f32 `f32_sts` 不随量化位宽变；缓存命中后只跑量化前向，1379 对从 173.1 s
+   降到 88.6 s（1.95×），128 对从 16.3 s 到 8.0 s，f32/int4/int5 的 preds 逐位
+   不变。代价是 `f32_vs_reference` / `real_vs_f32` / `random_vs_f32` 变 null；
+   `activation=all` 或带 sidecar 时必须禁用缓存。JSON 缓存必须开
+   `serde_json` 的 `float_roundtrip`，否则重解析 preds 会差 1 ULP。见 §3.16.7。
 
 ## 4. 工程经验
 

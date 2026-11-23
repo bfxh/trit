@@ -4872,7 +4872,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/diag.rs",
-      "lines": 58
+      "lines": 51
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/f32_base.rs",
+      "lines": 98
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/main_flow.rs",

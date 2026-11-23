@@ -39,8 +39,14 @@
   跳过两次 random 诊断前向。1379 对 L12 int5 从 99 分 22 秒降到 171.7 s（34.7×），
   int4 174.0 s；128 对从约 10 分钟降到 17 s。全量 f32/int5 的 Pearson、Spearman 与
   1379 个 preds 均与旧路径逐位相同（maxdiff 0）。默认仍 1 线程 + 全诊断，CI 不受影响。
-  新 `model/forward.rs`、`model/parallel.rs`、`run/diag.rs`，模块预算 1482 files，debt 0。
-- 文档：`docs/research/WSP-BERT6-RESULTS.md` §3.16、`docs/results/LESSONS.md` 第 9–10 条。
+  新 `model/forward.rs`、`model/parallel.rs`、`run/diag.rs`。
+- **f32 基线缓存**：`TRIT_F32_CACHE=<json>` 跨趟复用同模型/同 `data_dir`/同 layers 的
+  `f32_sts`，命中后只跑量化前向。1379 对 173.1 s → 88.6 s（1.95×），128 对
+  16.3 s → 8.0 s；f32/int4/int5 的 `f32_sts`、`modes.f32.sts` 与 preds 逐位不变。
+  命中时 `f32_vs_reference` / `real_vs_f32` / `random_vs_f32` 记 null，`activation=all`
+  或带 sidecar 时禁用。新 `run/f32_base.rs`；`serde_json` 开 `float_roundtrip` 防
+  重解析 1 ULP 漂移。模块预算 1483 files，debt 0。
+- 文档：`docs/research/WSP-BERT6-RESULTS.md` §3.16、`docs/results/LESSONS.md` 第 9–11 条。
 
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 

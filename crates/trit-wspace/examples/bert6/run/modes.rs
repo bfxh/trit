@@ -62,9 +62,9 @@ pub(crate) fn evaluate(request: &Request) -> (Map<String, Value>, Option<Stages>
         modes.insert(
             mode.key().to_string(),
             json!({
-                "real_vs_f32": compare(&real_out, request.f32_out, request.mask, request.hidden),
+                "real_vs_f32": super::diag::vs_f32(&real_out, request.f32_out, request),
                 "real_vs_reference": compare(&real_out, request.reference, request.mask, request.hidden),
-                "random_vs_f32": super::diag::random_vs_f32(&random_out, request),
+                "random_vs_f32": super::diag::vs_f32(&random_out, request.f32_random, request),
                 "sts": metrics(&sentence_vectors(&real_out, request.mask, request.batch, request.seq, request.hidden), request.pairs),
             }),
         );
