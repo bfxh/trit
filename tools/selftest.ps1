@@ -5151,8 +5151,12 @@ if (-not $anPy) {
     $skipped++
 } else {
     $aqOut = @(& $anPy (Join-Path $tools 'session_gate.py') -SelfTest 2>&1)
-    Assert-True ($LASTEXITCODE -eq 0 -and (($aqOut -join ' ') -match 'session-gate self-test: 17/17')) `
-        'AQ1 会话存储门控 17/17：greedy/context/structure/external 判定、oracle F1 与 retention proxy、profile-shift 已知缺陷、memory skip 不写 entry、store 才写、gate 账本逐条留痕、audit 认账' "e=$LASTEXITCODE"
+    $aqMatch = [regex]::Match(($aqOut -join ' '), 'session-gate self-test: (\d+)/(\d+)')
+    $aqOk = ($LASTEXITCODE -eq 0) -and $aqMatch.Success -and `
+        ([int]$aqMatch.Groups[1].Value -eq [int]$aqMatch.Groups[2].Value) -and `
+        ([int]$aqMatch.Groups[1].Value -ge 100)
+    Assert-True $aqOk `
+        'AQ1 会话存储门控 100+ 项：greedy/context/structure/external 判定、oracle F1 与 retention、profile-shift 已知缺陷、120 条矩阵会话、metrics/per-user/per-domain/bench、memory skip 不写 entry、store 才写、gate 账本逐条留痕、audit 认账' "e=$LASTEXITCODE"
 }
 
 

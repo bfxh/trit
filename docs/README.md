@@ -136,7 +136,7 @@
 | [BUILD-PERF.md](engineering/BUILD-PERF.md) | 构建性能：本机 / CI 实测、缓存边界、采纳与未采纳项 |
 | [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×）、simchain 第七面接入（AI30–AI35）、ledger/registry 成本实测与不扩缓存的理由、Rust / 三进制 / 四进制评估与剩余待办 |
 | [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
-| [AGENT-SESSION-GATE.md](engineering/AGENT-SESSION-GATE.md) | 会话级存储门控原语：PerMem-Bench 的 `long-horizon / transient` 判定、greedy/context/structure/external 四路、`memory.py -Gate skip` 不写 entry、gate 账本与 8 条夹具读数；明确只是门控边界，不是 LLM 个性化记忆成品 |
+| [AGENT-SESSION-GATE.md](engineering/AGENT-SESSION-GATE.md) | 会话级存储门控原语：`long-horizon / transient` 判定、greedy/context/structure/external 四路、`memory.py -Gate skip` 不写 entry、gate 账本、8 条夹具 + 120 条矩阵、`-Metrics`/`-Bench` 指标与 325/325 自测；明确只是门控边界，不是 LLM 个性化记忆成品 |
 | [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；20/20 自测与诚实边界 |
 | [AGENT-MODELS.md](engineering/AGENT-MODELS.md) | 子智能体按角色选模型：`route/probe/call`、配置 schema、密钥只走环境变量、16 条路由自测、25 条派发与输出隔离自测、未落地项 |
 | [AGENT-MODEL-MANIFEST.md](engineering/AGENT-MODEL-MANIFEST.md) | 前端/后端模型与插件清单：人类面/智能体面分工、后端默认不接前端面板、多模态准入、论文式面板顺序与任务 brief；清单为模板，不是已接入声明 |
