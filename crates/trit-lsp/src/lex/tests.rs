@@ -49,22 +49,17 @@ fn every_token_lands_on_char_boundaries() {
     for s in samples {
         let toks = tokens(s);
         for t in &toks {
-            assert!(t.start <= t.end, "start > end in {:?}", s);
-            assert!(t.end <= s.len(), "end past the string in {:?}", s);
+            assert!(t.start <= t.end, "start > end in {s:?}");
+            assert!(t.end <= s.len(), "end past the string in {s:?}");
             assert!(
                 s.is_char_boundary(t.start),
-                "start not on a boundary in {:?}",
-                s
+                "start not on a boundary in {s:?}"
             );
-            assert!(
-                s.is_char_boundary(t.end),
-                "end not on a boundary in {:?}",
-                s
-            );
-            assert_eq!(&s[t.start..t.end], t.text, "token text mismatch in {:?}", s);
+            assert!(s.is_char_boundary(t.end), "end not on a boundary in {s:?}");
+            assert_eq!(&s[t.start..t.end], t.text, "token text mismatch in {s:?}");
         }
         for w in toks.windows(2) {
-            assert!(w[0].end <= w[1].start, "overlapping tokens in {:?}", s);
+            assert!(w[0].end <= w[1].start, "overlapping tokens in {s:?}");
         }
     }
 }

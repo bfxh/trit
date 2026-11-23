@@ -1,6 +1,11 @@
-//! `Pattern` 构造器（从 sigscan.rs 拆出守模块预算）：hex 串 / 文本串。
+//! `Pattern` hex 串构造器（从 sigscan.rs 拆出守模块预算）；文本串见
+//! [`super::text_pattern`]。
 
-use super::{HexByte, HexPattern, Jump, MAX_JUMP, Pattern, TextPattern, TextVariant};
+use super::{HexByte, HexPattern, Jump, MAX_JUMP, Pattern};
+
+/// hex 串段数上限（#632：旧实现逐段递归，段数超栈容量即栈溢出 abort）；
+/// 超限按"不支持该规则"结构化拒绝。
+pub const MAX_HEX_CHUNKS: usize = 4096;
 
 impl Pattern {
     /// 解析 hex 串：两位十六进制（空格分隔可选）、`??` 通配、
@@ -59,48 +64,11 @@ impl Pattern {
         if rest.iter().any(|(_, chunk)| chunk.is_empty()) {
             return Err("跳跃后必须有字节段（以跳跃结尾不合法）".into());
         }
+        let chunks = 1 + rest.len();
+        if chunks > MAX_HEX_CHUNKS {
+            return Err(format!("hex 段数 {chunks} 超过上限 {MAX_HEX_CHUNKS}"));
+        }
         Ok(Pattern::Hex(HexPattern { lead, rest }))
-    }
-
-    /// 文本串：`nocase`（ASCII 大小写折叠，两形态都生效）；`wide` 对齐
-    /// YARA 语义——`false` = 仅 ASCII 原样，`true` = 仅 UTF-16LE 变体。
-    pub fn text(needle: &str, nocase: bool, wide: bool) -> Self {
-        Self::text_ext(needle, nocase, wide, false, None, false)
-    }
-
-    /// 全参构造（解析器用）：`ascii_too` 与 `wide` 同开 = 双变体都试；
-    /// `xor = Some((lo, hi))` 密钥闭区间展开（对变体最终字节逐位 XOR）；
-    /// `fullword` 词边界。
-    pub fn text_ext(
-        needle: &str,
-        nocase: bool,
-        wide: bool,
-        ascii_too: bool,
-        xor: Option<(u8, u8)>,
-        fullword: bool,
-    ) -> Self {
-        let ascii = TextVariant {
-            bytes: needle.as_bytes().to_vec(),
-            wide: false,
-        };
-        let wided = TextVariant {
-            bytes: needle
-                .encode_utf16()
-                .flat_map(|u| u.to_le_bytes())
-                .collect(),
-            wide: true,
-        };
-        let variants = match (wide, ascii_too) {
-            (false, _) => vec![ascii],
-            (true, false) => vec![wided],
-            (true, true) => vec![ascii, wided],
-        };
-        Pattern::Text(TextPattern {
-            variants,
-            nocase,
-            xor,
-            fullword,
-        })
     }
 }
 
@@ -120,3 +88,6 @@ fn parse_hex_byte(tok: &str) -> Result<HexByte, String> {
         u8::from_str_radix(tok, 16).map_err(|e| e.to_string())?,
     ))
 }
+
+#[path = "text_pattern.rs"]
+mod text_pattern;
