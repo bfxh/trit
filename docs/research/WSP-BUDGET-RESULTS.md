@@ -110,7 +110,8 @@ v6e 把这一个降级挪到层 9 的同一类矩阵。两者形状、字节、�
 mixed_bits / budget_group`。L12/K10K11 的 128 smoke 报告为：
 `budget_actual_bytes=10,782,720`、`budget_weight_bytes=7,962,624`、
 `budget_metadata_bytes=2,820,096`、`mixed_bits={2:3,3:60,4:9}`、
-`ratio_vs_f32=0.126953125`。
+`ratio_vs_f32=0.126953125`。用这个新报告重跑 K10K11 全量，STS 仍是
+`0.823478805209325 / 0.820549002888985`，与旧结果逐位一致。
 
 ## 3. 读数
 
