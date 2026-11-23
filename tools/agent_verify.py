@@ -14,6 +14,7 @@ the caller has to remember the order. The order IS the safety property --
     affected      (the subset, only if it carries a proof)
     policy        (we are allowed to run this at all)
     constraints   (this change is allowed at all)
+    alignment     (goal -> requirement -> artifact/evidence/change graph)
     journal-begin (we can prove and undo what it writes)
     run           (only now; with --caps each command is wrapped by run_caps.py)
     journal-end   (what it actually wrote)
@@ -150,6 +151,7 @@ HANDOFF = os.path.join(TOOLS, "handoff.py")
 CLAIMS = os.path.join(os.path.dirname(TOOLS), "scripts", "agent_claims.py")
 RUN_CAPS = os.path.join(TOOLS, "run_caps.py")
 SECURITY = os.path.join(TOOLS, "security_gate.py")
+ALIGNMENT = os.path.join(TOOLS, "alignment_gate.py")
 
 BUDGET_NOTE = ("declaration-based gate: the tool layer cannot measure model-side token "
                "usage; --budget-token is the caller's declared remaining budget "
@@ -179,7 +181,7 @@ ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attes
                "the budget gate consumes the chain balance when it exists, stays "
                "declaration-based (labeled declared-only) when it does not")
 
-HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audited receipt.
+HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -> run -> journal, one audited receipt.
 
   agent-verify.sh -Root <dir> -Changed <files> -Lang rust|python|node|go
                     [-Profile read-only|workspace-write|full] [-DryRun]
@@ -207,6 +209,14 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
                 (static/dynamic/runtime gate; high/critical or a required scanner
                 gap refuses before any write; report path+hash go in the receipt;
                 off unless the flag or settings.security.enabled says otherwise)
+  alignment:    [--alignment <manifest>] [--alignment-lenient]
+                (goal -> requirement -> artifact/evidence/change explicit graph;
+                missing manifests, orphan requirements, missing evidence, dangling
+                refs, hash/locator mismatch, unlinked changes and non-goal changes
+                refuse before any write. Auto-runs when the project has
+                .agent/alignment.json and settings.alignment.enabled is true;
+                --alignment overrides the path, --alignment-lenient downgrades
+                should-requirement gaps to warnings. must gaps always refuse.)
   delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
                 (subagent chains: only changed fields + hash refs for unchanged ones;
                 --rebuild <delta> --against <prev> [--out <full.json>] reconstructs
@@ -291,6 +301,7 @@ def parse_args(argv):
            "store": "", "plan": "", "allow": [], "agent_id": "", "spent_token": "",
            "compact": False, "brief": False, "model_receipt": "",
            "security": False, "security_mode": "",
+           "alignment": "", "alignment_lenient": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
            "claim_gate": False, "claim_who": "", "claims_ledger": "", "handoff": "",
            "second_opinion": False, "no_derivations": False, "delta": False,
@@ -333,6 +344,11 @@ def parse_args(argv):
             out["_given"].add("parallel_gates")
             i += 1
             continue
+        if name in ("alignment-lenient", "alignmentlenient"):
+            out["alignment_lenient"] = True
+            out["_given"].add("alignment_lenient")
+            i += 1
+            continue
         val = argv[i + 1] if i + 1 < len(argv) else ""
         if name == "changed":
             out["changed"].extend([x for x in val.split(",") if x.strip()])
@@ -352,6 +368,7 @@ def parse_args(argv):
                    "model-receipt": "model_receipt", "modelreceipt": "model_receipt",
                    "settings": "settings", "settings-file": "settings", "settingsfile": "settings",
                    "security-mode": "security_mode", "securitymode": "security_mode",
+                   "alignment": "alignment",
                    "gate-deadline-affected": "gate_deadline_affected",
                    "gate-deadline-policy": "gate_deadline_policy",
                    "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)
@@ -440,7 +457,7 @@ def session_file(root, task_id):
 
 
 STABLE_HEAD = ("root", "lang", "profile", "changed", "settings", "security", "agent_id", "handoff", "claim",
-               "caps", "plan",
+               "alignment", "caps", "plan",
                "policy", "steps", "run", "changes", "claims", "watchdog",
                "verdict", "exit")
 VOLATILE_ORDER = ("budget", "cost", "wall_s", "steps_seconds", "run_seconds",
@@ -1445,6 +1462,57 @@ def main(argv):
     finally:
         if pool is not None:
             pool.shutdown(wait=True)
+
+    # --- 5.25 alignment: does the change still mean what the goal says? --------------
+    # The gate is a graph, not a prose check: each requirement must name its parent
+    # goal, its artifacts, its evidence and (optionally) the changed paths it owns.
+    # Missing must-evidence, dangling ids, hash/locator mismatches, unlinked changes
+    # and declared non-goal changes refuse before journal-begin.  A project opts in
+    # by creating .agent/alignment.json; --alignment overrides the path.  Unknown
+    # (missing/unreadable manifest) is not a pass.
+    alignment_manifest = str(a.get("alignment", "")).strip()
+    align_cfg = effective.get("alignment", {}) if isinstance(effective, dict) else {}
+    if not isinstance(align_cfg, dict):
+        align_cfg = {}
+    if not alignment_manifest and align_cfg.get("enabled", True):
+        candidate = os.path.join(root, str(align_cfg.get("manifest", ".agent/alignment.json")))
+        if os.path.isfile(candidate):
+            alignment_manifest = candidate
+    if alignment_manifest:
+        if not os.path.isabs(alignment_manifest):
+            alignment_manifest = os.path.join(root, alignment_manifest)
+        a_args = [ALIGNMENT, "--root", root, "--manifest", alignment_manifest, "--json"]
+        if a["changed"]:
+            a_args += ["--changed", ",".join(a["changed"])]
+        if a.get("alignment_lenient") or not align_cfg.get("strict", True):
+            a_args.append("--lenient")
+        ar = step(a_args, timeout=120)
+        adoc = json_tail(ar) or {}
+        astatus = str(adoc.get("status", "")).lower()
+        acounts = adoc.get("counts", {}) if isinstance(adoc.get("counts"), dict) else {}
+        try:
+            rel_manifest = os.path.relpath(alignment_manifest, root).replace("\\", "/")
+            if rel_manifest.startswith("../"):
+                rel_manifest = os.path.basename(alignment_manifest)
+        except ValueError:
+            rel_manifest = os.path.basename(alignment_manifest)
+        doc["alignment"] = {
+            "manifest": rel_manifest,
+            "status": astatus or "unreadable",
+            "score": adoc.get("score"),
+            "must_score": adoc.get("must_score"),
+            "counts": {k: acounts.get(k) for k in
+                       ("requirements", "must", "artifacts", "evidence", "changed", "linked_changes")},
+            "failures": len(adoc.get("failures", []) or []),
+            "warnings": len(adoc.get("warnings", []) or []),
+        }
+        add("alignment", ar, "ok" if ar["code"] == 0 and astatus == "aligned" else "refused")
+        if ar["code"] != 0 or astatus != "aligned":
+            for ln in ar["out"][-10:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- alignment gate 未通过（目标/需求/产物/证据/变更没有对齐；"
+                  "unknown 不是通行证，先补清单或修引用）")
+            return finish("refused by alignment", 1)
 
     # --- 5.5 claim audit: model statements are checked against reality -----------------
     # After constraints, before journal-begin: a run does not get to start on top of

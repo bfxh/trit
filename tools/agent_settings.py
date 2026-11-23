@@ -100,6 +100,15 @@ DEFAULTS = {
         "min_effort": "low",
         "max_effort": "high",
     },
+    # Goal/requirement/artifact/evidence alignment.  The gate runs when a
+    # project manifest exists (or --alignment names one).  enabled=False opts
+    # out of auto-detection; enabled=True does not synthesize a manifest, so a
+    # project without one is unchanged.  CI should pass --alignment to require it.
+    "alignment": {
+        "enabled": True,
+        "manifest": ".agent/alignment.json",
+        "strict": True,
+    },
 }
 
 TOP_LEVEL = set(DEFAULTS)
@@ -166,7 +175,8 @@ def validate(settings, source="settings"):
     unknown = sorted(set(settings) - TOP_LEVEL)
     if unknown:
         raise ValueError(f"{source}: unknown top-level keys: {unknown}")
-    for key in ("receipt", "audit", "security", "lsp", "context", "search", "reasoning"):
+    for key in ("receipt", "audit", "security", "lsp", "context", "search", "reasoning",
+                "alignment"):
         if key in settings and not isinstance(settings[key], dict):
             raise ValueError(f"{source}: {key} must be an object")
     for key in ("name", "policy_profile"):
@@ -265,6 +275,20 @@ def validate(settings, source="settings"):
         order = {"low": 0, "medium": 1, "high": 2}
         if order[reason["min_effort"]] > order[reason["max_effort"]]:
             raise ValueError(f"{source}: reasoning.min_effort > max_effort")
+    align = settings.get("alignment", {})
+    if "enabled" in align and not isinstance(align["enabled"], bool):
+        raise ValueError(f"{source}: alignment.enabled must be boolean")
+    if "strict" in align and not isinstance(align["strict"], bool):
+        raise ValueError(f"{source}: alignment.strict must be boolean")
+    if "manifest" in align:
+        manifest = align["manifest"]
+        if not isinstance(manifest, str) or not manifest.strip():
+            raise ValueError(f"{source}: alignment.manifest must be a non-empty string")
+        raw = manifest.replace("\\", "/")
+        norm = os.path.normpath(raw).replace("\\", "/")
+        if (os.path.isabs(manifest) or raw.startswith("../") or raw == ".."
+                or ".." in norm.split("/") or (len(manifest) > 1 and manifest[1] == ":")):
+            raise ValueError(f"{source}: alignment.manifest must stay inside the project root")
     return True
 
 
@@ -340,6 +364,10 @@ def receipt_echo(settings, meta):
         "reasoning": {
             "mode": settings.get("reasoning", {}).get("mode", "auto"),
             "effort": settings.get("reasoning", {}).get("effort", "medium"),
+        },
+        "alignment": {
+            "enabled": settings.get("alignment", {}).get("enabled", True),
+            "strict": settings.get("alignment", {}).get("strict", True),
         },
     }
 
@@ -436,10 +464,16 @@ def _self_test():
            and echo4["search"]["budget_tokens"] == 12_000
            and echo4["reasoning"]["mode"] == "auto",
            "receipt echoes context/search/reasoning")
+        ok(settings4["alignment"]["enabled"] is True
+           and settings4["alignment"]["strict"] is True
+           and settings4["alignment"]["manifest"] == ".agent/alignment.json",
+           "default alignment gate is on when a manifest exists")
+        ok(echo4["alignment"] == {"enabled": True, "strict": True},
+           "receipt echoes alignment toggle")
         ok("C:" not in json.dumps(echo4) and "/tmp" not in json.dumps(echo4),
            "new settings echo has no absolute path")
 
-        # Bad context/search/reasoning shapes must be loud.
+        # Bad context/search/reasoning/alignment shapes must be loud.
         for label, doc in (
                 ("target over trigger",
                  {"version": 1, "context": {"auto_compact_at": 100, "target_tokens": 101}}),
@@ -448,7 +482,17 @@ def _self_test():
                 ("bad search budget",
                  {"version": 1, "search": {"budget_tokens": 0}}),
                 ("bad reasoning effort",
-                 {"version": 1, "reasoning": {"effort": "max"}})):
+                 {"version": 1, "reasoning": {"effort": "max"}}),
+                ("bad alignment enabled",
+                 {"version": 1, "alignment": {"enabled": "yes"}}),
+                ("bad alignment strict",
+                 {"version": 1, "alignment": {"strict": 1}}),
+                ("alignment manifest escapes",
+                 {"version": 1, "alignment": {"manifest": "../outside.json"}}),
+                ("alignment manifest middle escape",
+                 {"version": 1, "alignment": {"manifest": "cfg/../../outside.json"}}),
+                ("alignment manifest drive path",
+                 {"version": 1, "alignment": {"manifest": "C:/outside.json"}})):
             with open(bad, "w", encoding="utf-8") as fh:
                 json.dump(doc, fh)
             try:
