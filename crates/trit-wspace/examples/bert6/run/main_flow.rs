@@ -2,7 +2,7 @@ use crate::activation::ActivationMode;
 use crate::model::{Bert, BertConfig};
 use crate::report::{compare, layer_refs};
 use crate::scales::load_scales;
-use crate::stats::{input_stats, random_like};
+use crate::stats::input_stats;
 use crate::sts::{load_pairs, metrics, sentence_vectors};
 use args::Args;
 use serde_json::json;
@@ -10,6 +10,7 @@ use serde_json::json;
 mod args;
 #[path = "data.rs"]
 mod data;
+mod diag;
 #[path = "modes.rs"]
 mod modes;
 #[path = "sidecar_svd.rs"]
@@ -48,8 +49,7 @@ pub(crate) fn run() {
         &sentence_vectors(&f32_out, &mask, batch, seq, hidden),
         &pairs,
     );
-    let random_input = random_like(&input, seed);
-    let (f32_random, _, _) = f32_bert.forward(&random_input, &mask, batch, seq, false);
+    let (random_input, f32_random) = diag::f32_inputs(&f32_bert, &input, &mask, batch, seq, seed);
     let (modes, all_stages) = modes::evaluate(&modes::Request {
         file: &file,
         gptq_dir: gptq_dir.clone(),
