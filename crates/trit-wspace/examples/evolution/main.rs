@@ -165,7 +165,7 @@ fn main() {
         })
         .collect();
     // 化石记录：基因组哈希 → 历史 fitness（不重复评估，但记住成绩——防重复发明）。
-    let mut hypothesis = json!({"layer_bias": [0.5, 0.5], "note": "无先验，均匀变异"});
+    let mut hypothesis: serde_json::Value;
     let mut fossil_rejects = 0usize;
     let mut hypothesis_hits = 0usize;
     let mut hypothesis_trials = 0usize;

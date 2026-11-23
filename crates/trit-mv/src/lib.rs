@@ -169,7 +169,12 @@ impl Chain {
                 }
             }
             TNorm::Lukasiewicz => {
-                u32::try_from(u64::from(self.levels) + u64::from(y) - u64::from(x)).unwrap_or(0)
+                // R(x, y) = min(n, max(0, n − x + y))：下溢用饱和减法兜底，上界夹回链顶。
+                let levels = u64::from(self.levels);
+                let raw = levels
+                    .saturating_sub(u64::from(x))
+                    .saturating_add(u64::from(y));
+                u32::try_from(raw.min(levels)).unwrap_or(0)
             }
             TNorm::NilpotentMinimum => {
                 if x <= y {
@@ -228,138 +233,5 @@ pub enum MvError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn chains() -> Vec<Chain> {
-        (1..=5).map(|n| Chain::new(n).unwrap()).collect()
-    }
-
-    #[test]
-    fn tnorm_axioms_hold_on_small_chains() {
-        for chain in chains() {
-            for kind in TNorm::ALL {
-                for x in chain.values() {
-                    for y in chain.values() {
-                        // 交换律
-                        assert_eq!(
-                            chain.t_norm(kind, x, y).unwrap(),
-                            chain.t_norm(kind, y, x).unwrap(),
-                            "{kind:?} 交换律失败 x={x} y={y}"
-                        );
-                        // 单位元：top
-                        assert_eq!(
-                            chain.t_norm(kind, chain.top(), x).unwrap(),
-                            x,
-                            "{kind:?} 单位元失败 x={x}"
-                        );
-                        // 单调性
-                        for x2 in x..=chain.top() {
-                            assert!(
-                                chain.t_norm(kind, x, y).unwrap()
-                                    <= chain.t_norm(kind, x2, y).unwrap(),
-                                "{kind:?} 单调性失败 x={x} x2={x2} y={y}"
-                            );
-                        }
-                        // 结合律
-                        for z in chain.values() {
-                            let left = chain
-                                .t_norm(kind, chain.t_norm(kind, x, y).unwrap(), z)
-                                .unwrap();
-                            let right = chain
-                                .t_norm(kind, x, chain.t_norm(kind, y, z).unwrap())
-                                .unwrap();
-                            assert_eq!(left, right, "{kind:?} 结合律失败 x={x} y={y} z={z}");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn conorm_is_dual_of_norm() {
-        for chain in chains() {
-            for kind in TNorm::ALL {
-                for x in chain.values() {
-                    for y in chain.values() {
-                        let dual = chain
-                            .neg(
-                                chain
-                                    .t_norm(kind, chain.neg(x).unwrap(), chain.neg(y).unwrap())
-                                    .unwrap(),
-                            )
-                            .unwrap();
-                        assert_eq!(chain.t_conorm(kind, x, y).unwrap(), dual);
-                        assert_eq!(
-                            chain.t_conorm(kind, chain.bottom(), x).unwrap(),
-                            x,
-                            "conorm 单位元失败"
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn residuum_adjunction_holds_for_left_continuous_norms() {
-        for chain in chains() {
-            for kind in [TNorm::Minimum, TNorm::Lukasiewicz, TNorm::NilpotentMinimum] {
-                for x in chain.values() {
-                    for y in chain.values() {
-                        for z in chain.values() {
-                            let product = chain.t_norm(kind, x, y).unwrap();
-                            let implication = chain.residuum(kind, x, z).unwrap();
-                            assert_eq!(
-                                product <= z,
-                                y <= implication,
-                                "{kind:?} 伴随失败 x={x} y={y} z={z}"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn drastic_has_no_residuum() {
-        let chain = Chain::new(3).unwrap();
-        let err = chain.residuum(TNorm::Drastic, 1, 2).unwrap_err();
-        assert!(matches!(err, MvError::NoResiduum { .. }), "{err}");
-    }
-
-    #[test]
-    fn negation_and_weak_ops_are_exact() {
-        let chain = Chain::new(4).unwrap();
-        for x in chain.values() {
-            assert_eq!(chain.neg(chain.neg(x).unwrap()).unwrap(), x);
-            assert_eq!(chain.weak_and(x, chain.top()).unwrap(), x);
-            assert_eq!(chain.weak_or(x, chain.bottom()).unwrap(), x);
-        }
-    }
-
-    #[test]
-    fn guards_and_bounds_are_structured() {
-        assert!(matches!(Chain::new(0), Err(MvError::TooFewLevels)));
-        assert!(matches!(
-            Chain::new(MAX_LEVELS + 1),
-            Err(MvError::TooManyLevels { .. })
-        ));
-        let chain = Chain::new(2).unwrap();
-        assert!(matches!(chain.neg(3), Err(MvError::OutOfRange { .. })));
-        assert!(matches!(
-            chain.t_norm(TNorm::Minimum, 1, 3),
-            Err(MvError::OutOfRange { .. })
-        ));
-    }
-
-    #[test]
-    fn ratios_cover_endpoints() {
-        let chain = Chain::new(10).unwrap();
-        assert!((chain.ratio(0) - 0.0).abs() < f64::EPSILON);
-        assert!((chain.ratio(10) - 1.0).abs() < f64::EPSILON);
-        assert!((chain.ratio(5) - 0.5).abs() < f64::EPSILON);
-    }
-}
+#[path = "lib_tests.rs"]
+mod tests;
