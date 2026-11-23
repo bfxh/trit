@@ -5176,6 +5176,32 @@ if (-not $anPy) {
 }
 
 
+# ==============================================================================
+# AT. 工作任务产物基准：参考产物必须过，负例必须被拦，原生 XLSX 公式必须真读
+if (-not $anPy) {
+    "  SKIP  AT1/AT2 找不到可用的 Python，跳过工作任务产物基准"
+    $skipped += 2
+} else {
+    $atOut = @(& $anPy (Join-Path $tools 'work_bench.py') -SelfTest 2>&1)
+    $atMatch = [regex]::Match(($atOut -join ' '), 'work-bench self-test: (\d+)/(\d+)')
+    $atOk = ($LASTEXITCODE -eq 0) -and $atMatch.Success -and `
+        ([int]$atMatch.Groups[1].Value -eq [int]$atMatch.Groups[2].Value) -and `
+        ([int]$atMatch.Groups[1].Value -ge 180)
+    Assert-True $atOk `
+        'AT1 工作任务产物基准 180+ 项：20 个文档/数据/表格/邮件/日历/文件整理/合规任务、81 条检查、参考产物全过、负例全拦' "e=$LASTEXITCODE"
+
+    $atReport = Join-Path $Work 'work-bench-xlsx.json'
+    & $anPy (Join-Path $tools 'work_bench.py') -Run -Task data-budget-xlsx -Strict -Quiet -Out $atReport | Out-Null
+    $atRunRc = $LASTEXITCODE
+    $atDoc = if (Test-Path $atReport) { Get-Content $atReport -Raw | ConvertFrom-Json } else { $null }
+    $atRunOk = ($atRunRc -eq 0) -and $atDoc `
+        -and ([int]$atDoc.reference.passed -eq 5) -and ([int]$atDoc.reference.total -eq 5) `
+        -and ([int]$atDoc.negative.caught -eq 1) -and ([int]$atDoc.negative.total -eq 1)
+    Assert-True $atRunOk `
+        'AT2 单个 XLSX 工作任务真实执行：reference 5/5、negative 1/1、B3 必须为 =SUM(B2:B3)' "e=$atRunRc"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }
