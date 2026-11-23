@@ -179,6 +179,25 @@
   `selftest` 仍 675/675。
 - 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
   `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。
+### Added（Rust doctor 主入口：`trit-doctor` 七面 + Belnap 四值 + 同机 A/B）
+
+- 新增 `crates/trit-doctor`，并切换为 doctor 的主入口：`cargo install --path crates/trit-doctor --locked`
+  后直接跑 `trit-doctor`。复刻 `tools/doctor.py` 的七面（selftest / ledger / registry / backlog /
+  git / gates / simchain），输出同一份 `--json` schema。状态层用 `trit-belnap::B4`（OK=T、WARN=B、
+  FAIL=F、UNAVAILABLE=N），聚合算子 `B4::and`；不改 SHA-256 指纹、文件系统 stat 与 JSON 编码。
+- `tools/doctor.py` 保留为 reference oracle 与无 Rust 二进制的回退，不改成转发壳；两条实现独立，
+  A/B 继续当回归。`tools/selftest.ps1` 的 AI 组优先调用 release 二进制，cargo 可用但构建失败时
+  AI0 判红；无 cargo 的机器才回退 Python。AI 组 39/39 PASS（AI0 钉住构建，其余 38 条走
+  `trit-doctor.exe`）。
+- gates 面复用 `.agent/doctor-cache.json`（指纹算法逐字节对齐）；git 面冷跑 `git`，暖跑按
+  “树指纹 + HEAD + index + refs 树 + packed-refs”缓存到 `.agent/trit-doctor-git-cache.json`，
+  该文件进 `.gitignore`，不污染 `git status`。
+- `tools/doctor_ab.ps1`：可重跑的 Python/Rust 同机 A/B（暖态中位 < 0.15 s + 除顶层 `at` 外 JSON
+  逐字节一致）。结果：Python 0.673 s / Rust 0.110 s（6.1×，n=7）；`--refresh` 1.393 s / 1.109 s
+  （1.26×，n=3）；真仓暖/暖与冷/冷 JSON 均一致，`--fingerprint` 同为 `aa2a0409faea0812`。
+- `cargo test -p trit-doctor` 16/16，clippy `-D warnings` 干净；release 二进制 4,598,936 字节。
+  边界：无 cargo 机器的预置二进制交付与校验和签名仍未定；坏 JSON 的错误文案因 serde 与 Python
+  解析器不同而不逐字一致，状态仍为 UNAVAILABLE。
 
 ### Added（入口加固第二轮：长 base64、跨段/多语言、二进制与宿主内容哈希）
 

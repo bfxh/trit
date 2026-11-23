@@ -39,7 +39,7 @@ function New-File([string]$path, [string]$content) {
 }
 
 # 跑完落盘：汇总行 + UTC 时间戳写进 .agent/last-selftest.json（gitignore，不进公开树）。
-# doctor.py 的 selftest 面只读这份记录（doctor 不自己跑 selftest）；AI 组用同一函数做
+# doctor 的 selftest 面只读这份记录（doctor 不自己跑 selftest）；AI 组用同一函数做
 # 落盘往返，保证写与读同源。汇总串刻意不含 work 目录——本机路径不留痕（L93/L107 同族纪律）。
 function Write-SelftestRecord([string]$Root, [int]$Passed, [int]$Failed, [int]$Skipped) {
     $dir = Join-Path $Root '.agent'
@@ -3274,7 +3274,7 @@ if (-not $ahPy) {
 
 ""
 "== AI. doctor: 项目自感知快照 -- 聚合有出处的证据面，不是闸 =="
-# doctor.py 读的是落盘证据：selftest 汇总记录（本文件尾部写入）、台账固化列 vs selftest
+# doctor 读的是落盘证据：selftest 汇总记录（本文件尾部写入）、台账固化列 vs selftest
 # 断言号（双向对账：台账声称的断言号必须真实存在；selftest 引用的 L 号必须还在台账里）、
 # registry 可跑性、欠账+git、privacy/docs 门。任何一面 FAIL 都不改变 doctor 的退出码——
 # 它是观测面，判定闸在 policy/constraints。台账回归清点的真实缺口数记录在 docs/ERRORS.md L118。
@@ -3285,11 +3285,51 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $aiSrc) { continue }
     if ((& $aiSrc -c 'print(1)' 2>$null) -eq '1') { $aiPy = $aiSrc; break }
 }
-$aiTotal = 38
+
+# 主入口是 Rust `trit-doctor`（crates/trit-doctor）；Python `tools/doctor.py` 只作
+# reference oracle。这里优先解析并构建 release 二进制；没有 cargo / 构建失败时退回
+# Python，AI 断言语义保持不变——但正常开发机上必须验证主入口。
+$aiRs = $null
+$aiCargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
+if (-not $aiCargo) {
+    $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME }
+        elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE '.cargo' }
+        elseif ($env:HOME) { Join-Path $env:HOME '.cargo' } else { $null }
+    if ($cargoHome) {
+        $cargoLeaf = if ($IsWindows) { 'bin\cargo.exe' } else { 'bin/cargo' }
+        $cargoCand = Join-Path $cargoHome $cargoLeaf
+        if (Test-Path -LiteralPath $cargoCand) { $aiCargo = $cargoCand }
+    }
+}
+if ($aiCargo) {
+    $aiMetaText = (& $aiCargo metadata --format-version 1 --no-deps 2>$null) -join "`n"
+    if ($LASTEXITCODE -eq 0 -and $aiMetaText) {
+        $aiTarget = ($aiMetaText | ConvertFrom-Json).target_directory
+        $aiCandidate = if ($IsWindows) {
+            Join-Path $aiTarget 'release\trit-doctor.exe'
+        } else {
+            Join-Path $aiTarget 'release/trit-doctor'
+        }
+        $aiOldWrap = $env:RUSTC_WRAPPER
+        if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) { $env:RUSTC_WRAPPER = '' }
+        & $aiCargo build --release -p trit-doctor --quiet 2>&1 | Out-Null
+        $aiBuildCode = $LASTEXITCODE
+        $env:RUSTC_WRAPPER = $aiOldWrap
+        if ($aiBuildCode -eq 0 -and (Test-Path -LiteralPath $aiCandidate)) { $aiRs = $aiCandidate }
+    }
+}
+$aiTotal = 39
 if (-not $aiPy) {
-    "  SKIP  AI0 找不到可用的 Python，跳过 doctor 检查"
+    "  SKIP  AI0 找不到可用的 Python（AI 夹具需要），跳过 doctor 检查"
     $skipped += $aiTotal
 } else {
+    if ($aiCargo) {
+        Assert-True ($null -ne $aiRs) 'AI0 主入口：cargo 可用时 trit-doctor 必须构建成功' `
+            'cargo build --release -p trit-doctor 失败，已回退 Python reference'
+    } else {
+        "  SKIP  AI0 无 cargo，doctor 走 Python reference"
+        $skipped++
+    }
     $aiEnc = New-Object System.Text.UTF8Encoding($false)
     $aiDocRoot = Join-Path $Work 'ai-doctor'
     $aiG = Join-Path $aiDocRoot 'g-clean'
@@ -3316,8 +3356,13 @@ if (-not $aiPy) {
                 ($registryJson + "`n"), $script:aiEnc)
         }
     }
-    function Invoke-AiDoctor([string]$root) {
-        return @(& $script:aiPy (Join-Path $script:tools 'doctor.py') --root $root --json 2>&1)
+    function Invoke-AiDoctor([string]$root, [switch]$Refresh) {
+        $cliArgs = @('--root', $root, '--json')
+        if ($Refresh) { $cliArgs += '--refresh' }
+        if ($script:aiRs) {
+            return @(& $script:aiRs @cliArgs 2>&1)
+        }
+        return @(& $script:aiPy (Join-Path $script:tools 'doctor.py') @cliArgs 2>&1)
     }
     function Get-AiFace($doc, [string]$name) {
         return @($doc.faces | Where-Object { $_.face -eq $name })[0]
@@ -3474,8 +3519,7 @@ if (-not $aiPy) {
     $aiGateC1 = Get-AiFace $aiC1Doc 'gates'
     $aiC2Doc = ((Invoke-AiDoctor $aiG) -join "`n") | ConvertFrom-Json
     $aiGateC2 = Get-AiFace $aiC2Doc 'gates'
-    $aiC3Doc = ((@(& $script:aiPy (Join-Path $script:tools 'doctor.py') --root $aiG --json --refresh) `
-        -join "`n") | ConvertFrom-Json)
+    $aiC3Doc = ((Invoke-AiDoctor $aiG -Refresh) -join "`n") | ConvertFrom-Json
     $aiGateC3 = Get-AiFace $aiC3Doc 'gates'
     [IO.File]::WriteAllText((Join-Path $aiG 'finger.txt'), "1`n", $aiEnc)
     $aiC4Doc = ((Invoke-AiDoctor $aiG) -join "`n") | ConvertFrom-Json

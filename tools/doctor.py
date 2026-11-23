@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""doctor: project health snapshot -- the agent self-awareness entry point.
+"""doctor: project health snapshot -- the agent self-awareness reference oracle.
 
-    python tools/doctor.py [--root DIR] [--json]
+    python -I tools/doctor.py [--root DIR] [--json]
+
+REFERENCE ORACLE: the primary entry is the Rust `trit-doctor` command
+(`cargo install --path crates/trit-doctor --locked` then `trit-doctor`). This Python
+implementation is kept as the byte-for-byte comparison oracle for A/B and as the fallback
+where the Rust binary is unavailable. The faces and schema below are the contract both
+implementations must satisfy.
 
 Aggregates only evidence-backed faces. Every face carries an evidence pointer and a
 collection timestamp; nothing is inferred, nothing is diagnosed here. "Does the project

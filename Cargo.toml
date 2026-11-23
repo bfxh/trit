@@ -48,6 +48,7 @@ members = [
     "crates/trit-re",
     "crates/trit-immune",
     "crates/trit-orch",
+    "crates/trit-doctor",
     "crates/trit-wspace",
 ]
 

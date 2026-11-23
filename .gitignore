@@ -84,3 +84,6 @@ cognition/corpus/
 
 # 数据管线产物（本地/CI 生成，不入库）
 data-pipeline-out/
+
+# Rust 主入口 trit-doctor 的 git 面暖缓存：同上，本机状态，不得污染 git status
+.agent/trit-doctor-git-cache.json

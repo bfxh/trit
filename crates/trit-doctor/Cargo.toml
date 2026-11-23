@@ -1,0 +1,20 @@
+[package]
+name = "trit-doctor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "项目自感知快照的 Rust 试点：七面证据聚合 + Belnap 四值状态格"
+publish = false
+
+[[bin]]
+name = "trit-doctor"
+path = "src/main.rs"
+
+[dependencies]
+trit-core.workspace = true
+trit-belnap.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+regex = "1.13.1"

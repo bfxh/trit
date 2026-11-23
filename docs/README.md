@@ -134,7 +134,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [BUILD-PERF.md](engineering/BUILD-PERF.md) | 构建性能：本机 / CI 实测、缓存边界、采纳与未采纳项 |
-| [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×）、simchain 第七面接入（AI30–AI35）、ledger/registry 成本实测与不扩缓存的理由、Rust / 三进制 / 四进制评估与剩余待办 |
+| [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×）、simchain 第七面接入（AI30–AI35）、ledger/registry 成本实测与不扩缓存的理由、Rust `trit-doctor` 主入口（七面 + Belnap 四值，暖态 0.110 s / 6.1×，Python 留作 reference oracle）与剩余待办 |
 | [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
 | [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；20/20 自测与诚实边界 |
 | [AGENT-MODELS.md](engineering/AGENT-MODELS.md) | 子智能体按角色选模型：`route/probe/call`、配置 schema、密钥只走环境变量、16 条路由自测、25 条派发与输出隔离自测、未落地项 |

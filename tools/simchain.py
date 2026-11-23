@@ -101,12 +101,12 @@ DURABILITY BOUNDARY (Windows, stated not hidden)
   power cut is a stated boundary. Process kills lose no OS-buffered writes, so
   in-simulator kill scenarios do exercise "a confirmed entry survives the crash".
 
-FORWARD INTERFACE (for tools/doctor.py, which does not know about this yet)
+CONSUMER INTERFACE (doctor：Rust `trit-doctor` 主入口，Python `tools/doctor.py` reference)
   Every simulate run writes the report JSON (default <cwd>/.agent/last-simchain.json,
   override with --report) carrying at least: seeds, faults, scenarios, invariants_ok,
-  violations, duration_s. doctor.py reads .agent/last-selftest.json the same way;
-  when it grows a simchain face it will read this file as-is. Machine-local state:
-  keep the path gitignored, like last-selftest.json.
+  violations, duration_s. Both doctor implementations read this file as-is for the
+  simchain face (the selftest face reads .agent/last-selftest.json the same way).
+  Machine-local state: keep the path gitignored, like last-selftest.json.
 
 EXIT  simulate: 0 every scenario held its invariants; 1 at least one violation was
       recorded (the report names them); 2 bad invocation. Output is pure ASCII.
@@ -909,7 +909,7 @@ def main(argv):
             fh.write("\n")
         print(f"simchain: report written {a.report} "
               f"(seeds={a.runs} faults={len(fams)} violations={total['violations']} "
-              f"duration_s={duration}) -- forward interface for tools/doctor.py")
+              f"duration_s={duration}) -- simchain face evidence for doctor")
     except OSError as ex:
         print(f"simchain: report write failed ({ex})")
         return 1
