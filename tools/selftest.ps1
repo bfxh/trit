@@ -5160,6 +5160,22 @@ if (-not $anPy) {
 }
 
 
+# ==============================================================================
+# AS. 真实任务基准：22 个代码/策略夹具，gold 必须过、negative 必须被检出
+if (-not $anPy) {
+    "  SKIP  AS1 找不到可用的 Python，跳过 agent 真实任务基准"
+    $skipped++
+} else {
+    $asOut = @(& $anPy (Join-Path $tools 'agent_bench.py') -SelfTest 2>&1)
+    $asMatch = [regex]::Match(($asOut -join ' '), 'agent-bench self-test: (\d+)/(\d+)')
+    $asOk = ($LASTEXITCODE -eq 0) -and $asMatch.Success -and `
+        ([int]$asMatch.Groups[1].Value -eq [int]$asMatch.Groups[2].Value) -and `
+        ([int]$asMatch.Groups[1].Value -ge 300)
+    Assert-True $asOk `
+        'AS1 agent 真实任务基准 300+ 项：28 个夹具、25 个参考补丁、25 个负例、policy/budget/dry-run 场景，Python/Node/Go/Rust 真实测试执行与 agent_verify 回执' "e=$LASTEXITCODE"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }

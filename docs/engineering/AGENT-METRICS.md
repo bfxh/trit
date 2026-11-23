@@ -87,7 +87,7 @@ groups/python: runs=6 success_rate=0.3333
   - 聚合断言覆盖 verdict/exit、step/run 秒数、成本/预算、claims、字节分位、
     per-agent/lang/profile、strict。
 - `tools/selftest.ps1` 的 AR1 调同一自测，要求 `passed == total` 且总数 ≥100；
-  本分支全量 selftest **676 passed / 0 failed / 0 skipped**。
+  本分支全量 selftest **677 passed / 0 failed / 0 skipped**。
 
 ## 5. 边界（诚实）
 
