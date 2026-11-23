@@ -2,14 +2,17 @@
 """alignment-gate: 目标 -> 需求 -> 产物/证据/变更 的显式对齐门。
 
 许多智能体只回答“做完了”，却不回答“这件事和那个目标/需求/产物是不是同一个东西”。
-本门把这种关系写成可审计的 alignment/1（单目标，兼容旧清单）或 alignment/2
-（单根目标树 + 子目标）清单，并在动手前拒绝：
+本门把这种关系写成可审计的 alignment/1（单目标，兼容旧清单）、alignment/2
+（单根目标树 + 子目标）或 alignment/3（证据再绑定到本次实际成功的 run 命令）
+清单，并在动手前拒绝：
 
   - 需求没有父目标，或父链断掉/成环；
   - 子目标没有父目标、父链断掉/成环，或出现多个根目标；
   - must 需求没有产物、没有证据；strict 下 should 也一样；
   - 引用了不存在的 artifact/evidence id；
   - 产物/证据文件不存在、哈希不符、locator 指不到内容；
+  - alignment/3 的 must 证据没有声明会证明它的 run 命令，或该命令没有在本
+    次 run 的成功记录里（post-run 复核）；
   - 变更文件没有挂到任何需求，或落进显式 non_goal 路径；
   - 两条需求声明互相矛盾；
   - 路径绝对化、`..` 逃逸或符号链接逃出 root。
@@ -18,6 +21,8 @@
   python tools/alignment_gate.py --root . --manifest .agent/alignment.json \
       --changed src/a.rs,tests/a.rs --json
   python tools/alignment_gate.py --root . --manifest .agent/alignment.json --lenient
+  python tools/alignment_gate.py --root . --manifest .agent/alignment.json \
+      --run-command "python -m pytest tests/test_a.py"
   python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.json \
       --goal "目标" --requirement "需求一" --requirement "需求二"
   python tools/alignment_gate.py self-test
@@ -41,7 +46,8 @@ import tempfile
 
 SCHEMA_V1 = "alignment/1"
 SCHEMA_V2 = "alignment/2"
-SCHEMAS = (SCHEMA_V1, SCHEMA_V2)
+SCHEMA_V3 = "alignment/3"
+SCHEMAS = (SCHEMA_V1, SCHEMA_V2, SCHEMA_V3)
 SCHEMA = SCHEMA_V1  # 旧清单的默认形状（helpers 与旧测试沿用）
 TOP_FIELDS = {"schema", "goal", "goals", "requirements", "artifacts", "evidence",
               "non_goals", "allow_unlinked", "notes"}
@@ -52,8 +58,10 @@ REQ_FIELDS = {"id", "text", "priority", "parent", "artifacts", "evidence",
               "changes", "contradicts", "notes", "tags", "owner"}
 ART_FIELDS = {"id", "path", "locator", "sha256", "kind", "notes", "tags"}
 EV_FIELDS = {"id", "path", "locator", "sha256", "notes", "tags"}
+EV_FIELDS_V3 = EV_FIELDS | {"kind", "command"}
 NG_FIELDS = {"id", "text", "paths", "notes"}
 PRIORITIES = ("must", "should", "may")
+EVIDENCE_KINDS = ("file", "run")
 LOCATOR_RX = re.compile(r"^L(\d+)(?:-L?(\d+))?$")
 SHA_RX = re.compile(r"^[0-9a-fA-F]{64}$")
 CHANGE_BAD_RX = re.compile(r"^[A-Za-z]:[\\/]")
@@ -145,6 +153,11 @@ def _check_locator(full, locator, node):
                            f"locator 只支持 Lx、Lx-Ly 或 text:<片段>：{token!r}", node)
 
 
+def _norm_command(value):
+    """Whitespace/backslash/case-insensitive command identity for provenance."""
+    return " ".join(str(value).replace("\\", "/").split()).lower()
+
+
 def _check_sha(full, sha, node):
     if sha is None:
         return True
@@ -225,8 +238,10 @@ def _build_report(root, manifest_path):
         "score": 0.0,
         "must_score": 0.0,
         "counts": {"goals": 0, "requirements": 0, "must": 0, "artifacts": 0, "evidence": 0,
+                   "provenance": 0, "provenance_verified": 0,
                    "changed": 0, "linked_changes": 0},
         "coverage": {"requirements_with_artifact": 0, "requirements_with_evidence": 0,
+                     "requirements_with_provenance": 0, "requirements_provenance_verified": 0,
                      "requirements_full": 0, "must_full": 0, "goals_covered": 0},
         "failures": [],
         "warnings": [],
@@ -259,8 +274,9 @@ def load_manifest(root, manifest_path):
 def _read_goals(doc, report):
     """Validate the goal layer and return ({goal_id: goal}, root_id).
 
-    alignment/1 keeps the legacy single `goal` object.  alignment/2 uses `goals`
-    with an optional `parent`, allows subgoals, and requires exactly one root.
+    alignment/1 keeps the legacy single `goal` object.  alignment/2 and
+    alignment/3 use `goals` with an optional `parent`, allow subgoals, and
+    require exactly one root.
     """
     schema = doc.get("schema")
     if schema == SCHEMA_V1:
@@ -283,15 +299,15 @@ def _read_goals(doc, report):
             report["counts"]["goals"] = 1
         return ({goal_id: goal} if goal_id else {}), goal_id
 
-    if schema != SCHEMA_V2:
+    if schema not in (SCHEMA_V2, SCHEMA_V3):
         return {}, ""
 
     if "goal" in doc:
         _fail(report, "goal-field",
-              "alignment/2 使用 goals 数组；单目标也写成 goals:[{...}]")
+              f"{schema} 使用 goals 数组；单目标也写成 goals:[{{...}}]")
     raw = _as_list(doc.get("goals"), None, "goals", report)
     if not raw:
-        _fail(report, "goals-missing", "alignment/2 至少需要一个 goal")
+        _fail(report, "goals-missing", f"{schema} 至少需要一个 goal")
         return {}, ""
 
     goal_map = {}
@@ -363,7 +379,7 @@ def _read_goals(doc, report):
     return goal_map, root_id
 
 
-def validate(root, doc, changed=None, strict=True):
+def validate(root, doc, changed=None, strict=True, executed=None):
     root = os.path.abspath(root)
     report = _build_report(root, os.path.join(root, ".agent", "alignment.json"))
     if not isinstance(doc, dict):
@@ -373,8 +389,10 @@ def validate(root, doc, changed=None, strict=True):
     # while walking the graph.  Work on a copy so a second validation of the
     # same caller object cannot see its own synthetic fields as unknown keys.
     doc = copy.deepcopy(doc)
-    report["schema"] = doc.get("schema", SCHEMA)
+    schema = doc.get("schema", SCHEMA)
+    report["schema"] = schema
     _unknown_fields(doc, TOP_FIELDS, "manifest", "manifest", report)
+    evidence_fields = EV_FIELDS_V3 if schema == SCHEMA_V3 else EV_FIELDS
 
     goal_map, goal_id = _read_goals(doc, report)
 
@@ -403,7 +421,7 @@ def validate(root, doc, changed=None, strict=True):
         ids[goal_id] = "goal"
     for kind, items, spec in (("requirement", requirements, REQ_FIELDS),
                               ("artifact", artifacts, ART_FIELDS),
-                              ("evidence", evidence, EV_FIELDS),
+                              ("evidence", evidence, evidence_fields),
                               ("non_goal", non_goals, NG_FIELDS)):
         for i, item in enumerate(items):
             node = f"{kind}[{i}]"
@@ -493,10 +511,21 @@ def validate(root, doc, changed=None, strict=True):
             _fail(report, e.code, e.message, e.node or aid)
 
     evidence_ok = set()
+    evidence_prov = set()
+    evidence_verified = set()
+    executed_norm = None
+    if executed is not None:
+        executed_norm = {_norm_command(x) for x in executed
+                         if isinstance(x, str) and x.strip()}
     for i, ev in enumerate(evidence):
         if not isinstance(ev, dict):
             continue
         eid = ev.get("_id") or f"evidence[{i}]"
+        kind = ev.get("kind", "file") if schema == SCHEMA_V3 else "file"
+        if schema == SCHEMA_V3 and kind not in EVIDENCE_KINDS:
+            _fail(report, "evidence-kind",
+                  f"{eid} 的 kind 必须是 file 或 run：{kind!r}", eid)
+            continue
         path = ev.get("path")
         if not isinstance(path, str) or not path.strip():
             _fail(report, "evidence-path", f"{eid} 缺少 path", eid)
@@ -509,6 +538,24 @@ def validate(root, doc, changed=None, strict=True):
             ev["_path"] = norm
         except AlignmentFailure as e:
             _fail(report, e.code, e.message, e.node or eid)
+            continue
+        if schema == SCHEMA_V3 and kind == "run":
+            command = ev.get("command")
+            if not isinstance(command, str) or not command.strip():
+                _fail(report, "evidence-command",
+                      f"{eid} 是 run 证据，但没有声明 command", eid)
+                continue
+            if norm.lower() not in _norm_command(command):
+                _fail(report, "evidence-command-path",
+                      f"{eid} 的 command 没有点名证据文件 {norm}", eid)
+                continue
+            evidence_prov.add(eid)
+            if executed_norm is not None:
+                if _norm_command(command) in executed_norm:
+                    evidence_verified.add(eid)
+                else:
+                    _fail(report, "evidence-not-executed",
+                          f"{eid} 声明的 command 没有出现在本次成功 run 记录里：{command!r}", eid)
 
     # --- non_goals must be concrete path globs ---------------------------------
     for i, ng in enumerate(non_goals):
@@ -552,11 +599,19 @@ def validate(root, doc, changed=None, strict=True):
                 _fail(report, "missing-evidence-ref", f"{rid} 引用了不存在的 evidence：{eid!r}", rid)
         has_art = any(aid in artifact_ok for aid in arts if isinstance(aid, str))
         has_ev = any(eid in evidence_ok for eid in evs if isinstance(eid, str))
+        has_prov = schema == SCHEMA_V3 and any(
+            eid in evidence_prov for eid in evs if isinstance(eid, str))
+        has_verified = schema == SCHEMA_V3 and any(
+            eid in evidence_verified for eid in evs if isinstance(eid, str))
         priority = req.get("_priority", "must")
         if has_art:
             report["coverage"]["requirements_with_artifact"] += 1
         if has_ev:
             report["coverage"]["requirements_with_evidence"] += 1
+        if has_prov:
+            report["coverage"]["requirements_with_provenance"] += 1
+        if has_verified:
+            report["coverage"]["requirements_provenance_verified"] += 1
         if has_art and has_ev:
             total_full += 1
         if priority == "must":
@@ -567,6 +622,9 @@ def validate(root, doc, changed=None, strict=True):
                 _fail(report, "missing-artifact", f"{rid} 是 must，但没有有效产物", rid)
             if not has_ev:
                 _fail(report, "missing-evidence", f"{rid} 是 must，但没有有效证据", rid)
+            if schema == SCHEMA_V3 and not has_prov:
+                _fail(report, "missing-provenance",
+                      f"{rid} 是 must，但没有绑定 run command 的证据", rid)
         elif priority == "should":
             if strict and not has_art:
                 _fail(report, "missing-artifact", f"{rid} 是 should（strict），但没有有效产物", rid)
@@ -576,11 +634,21 @@ def validate(root, doc, changed=None, strict=True):
                 _fail(report, "missing-evidence", f"{rid} 是 should（strict），但没有有效证据", rid)
             elif not has_ev:
                 _warn(report, "missing-evidence", f"{rid} 是 should，但没有有效证据", rid)
+            if schema == SCHEMA_V3 and not has_prov:
+                if strict:
+                    _fail(report, "missing-provenance",
+                          f"{rid} 是 should（strict），但没有绑定 run command 的证据", rid)
+                else:
+                    _warn(report, "missing-provenance",
+                          f"{rid} 是 should，但没有绑定 run command 的证据", rid)
         else:
             if not has_art:
                 _warn(report, "optional-no-artifact", f"{rid} 是 may，没有产物（仅警告）", rid)
             if not has_ev:
                 _warn(report, "optional-no-evidence", f"{rid} 是 may，没有证据（仅警告）", rid)
+            if schema == SCHEMA_V3 and not has_prov:
+                _warn(report, "optional-no-provenance",
+                      f"{rid} 是 may，没有绑定 run command 的证据（仅警告）", rid)
         req["_artifacts"] = arts
         req["_evidence"] = evs
 
@@ -644,7 +712,9 @@ def validate(root, doc, changed=None, strict=True):
                               f"{rid} 的 changes glob 没有匹配任何本次变更：{p}", rid)
 
     report["counts"].update({"requirements": len(req_map), "artifacts": len(artifact_ok),
-                             "evidence": len(evidence_ok)})
+                             "evidence": len(evidence_ok),
+                             "provenance": len(evidence_prov),
+                             "provenance_verified": len(evidence_verified)})
     report["counts"]["must"] = must_total
     report["coverage"].update({"requirements_full": total_full, "must_full": must_full,
                                "goals_covered": 1 if goal_id and req_map else 0})
@@ -661,7 +731,7 @@ def validate(root, doc, changed=None, strict=True):
     return report
 
 
-def check(root, manifest, changed=None, strict=True):
+def check(root, manifest, changed=None, strict=True, executed=None):
     root = os.path.abspath(root)
     manifest_abs = manifest if os.path.isabs(manifest) else os.path.join(root, manifest)
     root_real = os.path.realpath(root)
@@ -678,7 +748,7 @@ def check(root, manifest, changed=None, strict=True):
     doc, report = load_manifest(root, manifest_real)
     if doc is None:
         return report
-    got = validate(root, doc, changed, strict)
+    got = validate(root, doc, changed, strict, executed=executed)
     got["manifest"] = report["manifest"]
     if report["failures"]:
         # syntax-level failures (schema/bad JSON) are known-unreadable, not aligned
@@ -715,6 +785,10 @@ def _emit(report, as_json, out_path):
          f"evidence={cov['requirements_with_evidence']}/{c['requirements']} "
          f"full={cov['requirements_full']}/{c['requirements']} "
          f"must_full={cov['must_full']}/{c['must']}")
+    if report.get("schema") == SCHEMA_V3:
+        _say(f"  provenance: declared={c['provenance']} verified={c['provenance_verified']} "
+             f"req_declared={cov['requirements_with_provenance']}/{c['requirements']} "
+             f"req_verified={cov['requirements_provenance_verified']}/{c['requirements']}")
     for f in report["failures"]:
         _say(f"  E {f['code']}: {f['message']}")
     for w in report["warnings"]:
@@ -726,7 +800,8 @@ def run_check(args):
     manifest = args.manifest or os.path.join(root, ".agent", "alignment.json")
     if not os.path.isabs(manifest):
         manifest = os.path.join(root, manifest)
-    report = check(root, manifest, args.changed, not args.lenient)
+    report = check(root, manifest, args.changed, not args.lenient,
+                   executed=args.run_command or None)
     _emit(report, args.json, args.out)
     return report["exit"]
 
@@ -828,6 +903,14 @@ def _base_v2_doc():
     return doc
 
 
+def _base_v3_doc():
+    doc = _base_v2_doc()
+    doc["schema"] = SCHEMA_V3
+    doc["evidence"] = [{"id": "E1", "path": "tests/test_a.py", "locator": "text:test_a",
+                        "kind": "run", "command": "python -m pytest tests/test_a.py"}]
+    return doc
+
+
 def _selftest():
     checks = 0
 
@@ -837,8 +920,8 @@ def _selftest():
         if not cond:
             raise AssertionError(msg)
 
-    def status(root, doc, changed=None, strict=True):
-        return validate(root, doc, changed, strict)
+    def status(root, doc, changed=None, strict=True, executed=None):
+        return validate(root, doc, changed, strict, executed=executed)
 
     def expect(report, code, msg):
         ok(any(f["code"] == code for f in report["failures"]), f"{msg}（实际 {report['failures']}）")
@@ -886,6 +969,43 @@ def _selftest():
         d = _base_doc()
         d["goals"] = [{"id": "G1", "text": "混用 field"}]
         expect(status(root, d), "goals-field", "v1 混用 goals 字段")
+
+        d = _base_v3_doc()
+        r = status(root, d)
+        ok(r["status"] == "aligned" and r["schema"] == SCHEMA_V3, "v3 声明清单 aligned")
+        ok(r["counts"]["provenance"] == 1 and r["counts"]["provenance_verified"] == 0,
+           "v3 preflight 只记 declared provenance")
+        r = status(root, d, executed=["python -m pytest tests/test_a.py"])
+        ok(r["status"] == "aligned" and r["counts"]["provenance_verified"] == 1,
+           "v3 成功 run command 证明证据")
+        ok(r["coverage"]["requirements_provenance_verified"] == 2,
+           "v3 两条需求的证据都经实际命令验证")
+        r = status(root, d, executed=["pytest -q"])
+        expect(r, "evidence-not-executed", "v3 声明的 command 实际没跑")
+        r = status(root, d, executed=["python -m pytest tests/test_a.py -q"])
+        expect(r, "evidence-not-executed", "v3 command 只允许精确匹配")
+        d = _base_v3_doc(); d["evidence"][0]["kind"] = "file"
+        expect(status(root, d), "missing-provenance", "v3 must 不能只给静态文件证据")
+        d = _base_v3_doc(); d["evidence"][0]["command"] = "python -m pytest"
+        expect(status(root, d), "evidence-command-path", "v3 command 必须点名证据文件")
+        d = _base_v3_doc(); d["evidence"][0]["command"] = ""
+        expect(status(root, d), "evidence-command", "v3 run 证据缺 command")
+        d = _base_v3_doc(); d["evidence"][0]["kind"] = "shell"
+        expect(status(root, d), "evidence-kind", "v3 非法 evidence kind")
+        d = _base_v3_doc(); d["evidence"][0]["receipt"] = "run.json"
+        expect(status(root, d), "unknown-field", "v3 evidence 不接受未建模字段")
+        d = _base_v3_doc()
+        d["requirements"] = [{"id": "R1", "text": "只做可选", "priority": "may",
+                              "parent": "G1", "artifacts": ["A1"], "evidence": ["E1"]}]
+        d["evidence"][0]["kind"] = "file"
+        r = status(root, d)
+        ok(r["status"] == "aligned" and any(w["code"] == "optional-no-provenance"
+                                             for w in r["warnings"]),
+           "v3 may 静态证据只警告缺 provenance")
+        d = _base_v3_doc(); d["goal"] = {"id": "G1", "text": "混用"}
+        expect(status(root, d), "goal-field", "v3 混用 goal 字段")
+        d = _base_v2_doc(); d["evidence"][0]["kind"] = "run"
+        expect(status(root, d), "unknown-field", "v2 不接受 v3 evidence 字段")
 
         d = _base_doc(); del d["goal"]
         expect(status(root, d), "goal-missing", "缺 goal")
@@ -1083,6 +1203,7 @@ def main(argv=None):
     parser.add_argument("--root", default="")
     parser.add_argument("--manifest", default="")
     parser.add_argument("--changed", action="append", default=[])
+    parser.add_argument("--run-command", action="append", default=[])
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--lenient", action="store_true")
     parser.add_argument("--out", default="")
