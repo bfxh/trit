@@ -4386,7 +4386,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
-$alTotal = 38
+$alTotal = 39
 if (-not $alPy) {
     "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
     $skipped += $alTotal
@@ -4770,6 +4770,10 @@ print("ALDRV done")
     & git -c user.email=a@b -c user.name=al commit -qm init 2>&1 | Out-Null
     Pop-Location
     New-File (Join-Path $AlW "plan.json") '{"proven":true,"commands":["true","true"],"unproven":[]}'
+    $alWritePlan = Join-Path $AlW 'plan-al-write.json'
+    New-File $alWritePlan @'
+{"proven":true,"commands":["printf '\\n# al-write\\n' >> pkg/core.py"],"unproven":[]}
+'@
     & $alPy (Join-Path $tools 'constraints.py') init -Root $AlW | Out-Null
 
     function Invoke-AlAv([string]$receipt, [string[]]$extra, [switch]$NoPlan, [string]$PlanPath, [string]$ChangedFile = 'pkg/core.py') {
@@ -4840,7 +4844,7 @@ print("ALDRV done")
 '@
     New-File $alManifest $alDoc
     $al27rc = Join-Path $Work "al-wd27.json"
-    $al27 = Invoke-AlAv $al27rc @('--alignment', $alManifest)
+    $al27 = Invoke-AlAv $al27rc @('--alignment', $alManifest) -PlanPath $alWritePlan
     $al27doc = Read-AlReceipt $al27rc
     $al27steps = @($al27doc.steps | ForEach-Object { $_.step })
     Assert-True ($al27 -eq 0 -and $al27doc.alignment.status -eq 'aligned' `
@@ -4867,7 +4871,7 @@ print("ALDRV done")
     $alWarn = $alDoc.Replace('"artifacts": ["A1"], "evidence": ["E1"]}', '"artifacts": ["A1"], "evidence": []}')
     New-File $alManifest $alWarn
     $al30rc = Join-Path $Work "al-wd30.json"
-    $al30 = Invoke-AlAv $al30rc @('--alignment', $alManifest, '--alignment-lenient')
+    $al30 = Invoke-AlAv $al30rc @('--alignment', $alManifest, '--alignment-lenient') -PlanPath $alWritePlan
     $al30doc = Read-AlReceipt $al30rc
     Assert-True ($al30 -eq 0 -and $al30doc.alignment.status -eq 'aligned' `
         -and $al30doc.alignment.warnings -ge 1) `
@@ -4876,7 +4880,7 @@ print("ALDRV done")
     # 自动发现路径：不传 --alignment，项目里的 .agent/alignment.json 仍要被链读到。
     New-File $alManifest $alDoc
     $al31rc = Join-Path $Work "al-wd31.json"
-    $al31 = Invoke-AlAv $al31rc @()
+    $al31 = Invoke-AlAv $al31rc @() -PlanPath $alWritePlan
     $al31doc = Read-AlReceipt $al31rc
     Assert-True ($al31 -eq 0 -and $al31doc.alignment.status -eq 'aligned' `
         -and @($al31doc.steps | Where-Object { $_.step -eq 'alignment' }).Count -eq 1) `
@@ -4900,7 +4904,7 @@ print("ALDRV done")
 '@
     New-File $alManifest $alV2Doc
     $al32rc = Join-Path $Work "al-wd32.json"
-    $al32 = Invoke-AlAv $al32rc @('--alignment', $alManifest)
+    $al32 = Invoke-AlAv $al32rc @('--alignment', $alManifest) -PlanPath $alWritePlan
     $al32doc = Read-AlReceipt $al32rc
     Assert-True ($al32 -eq 0 -and $al32doc.alignment.status -eq 'aligned' `
         -and $al32doc.alignment.counts.goals -eq 2) `
@@ -5024,6 +5028,22 @@ print("ALDRV done")
         -and $al38doc.alignment.status -eq 'unaligned' `
         -and ($al38steps -notcontains 'run')) `
         "AL38 non_goal 对象级排除被 requirement 引用→preflight 拒绝，run 不启动" "e=$al38 v=$($al38doc.verdict)"
+
+    $alNoOpPlan = Join-Path $AlW 'plan-al-noop.json'
+    New-File $alNoOpPlan '{"proven":true,"commands":["true"],"unproven":[]}'
+    New-File $alManifest $alDoc
+    $al39rc = Join-Path $Work "al-wd39.json"
+    $al39 = Invoke-AlAv $al39rc @('--alignment', $alManifest) -PlanPath $alNoOpPlan
+    $al39doc = Read-AlReceipt $al39rc
+    $al39steps = @($al39doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al39 -eq 1 -and $al39doc.verdict -eq 'unaligned after run' `
+        -and $al39doc.alignment.post.status -eq 'unaligned' `
+        -and $al39doc.alignment.post.counts.changed_known -eq 1 `
+        -and $al39doc.alignment.post.counts.changed -eq 0 `
+        -and $al39doc.alignment.post.failures -ge 1 `
+        -and ($al39steps -contains 'alignment-post')) `
+        "AL39 空实际变更集不再免检：声明了 core 但 run 没写→post 拒绝（changed_known=1, changed=0）" `
+        "e=$al39 v=$($al39doc.verdict) known=$($al39doc.alignment.post.counts.changed_known) changed=$($al39doc.alignment.post.counts.changed)"
 }
 
 

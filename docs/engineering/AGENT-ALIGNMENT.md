@@ -53,8 +53,8 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
 ```
 
 `parent` 是“这条需求对齐到哪个上层目标/需求”；`artifacts` 是“这条需求由
-哪些产物实现”；`evidence` 是“哪些证据能证明它”；`changes` 是“本次允许
-改哪些路径”。三者都是显式边，不写就是断链。
+哪些产物实现”；`evidence` 是“哪些证据能证明它”；`changes` 是“本次应当发生
+并归属它的路径（字面是承诺、glob 是范围）”。三者都是显式边，不写就是断链。
 
 ### 多目标/子目标 `alignment/2`
 
@@ -150,6 +150,26 @@ non_goal 因此还接受两个显式排除列表：
 这不是 LLM 语义理解，而是把“明确排除”的对象也写进同一张图；non_goal 文本的
 语义真假仍由人负责。
 
+### 声明变更必须实际发生
+
+`changes` 不是“可能会改”的注释，而是对本次 run 的承诺。预检没有实际变更集时只
+校验声明形状，`counts.changed_known=0`，不冒充已经发生过；post-run 拿到 journal
+的实际 `added/deleted/modified` 后用 `--changed-set` 显式标记“实际变更集已知且完整”，
+即使它是空集，`counts.changed_known=1`。
+
+单独传 `--changed` 只表示“这些路径参与覆盖/挂链检查”，它可能是子集，**不会**
+强制每条声明的 changes 都兑现；只有 `--changed-set` 才触发完整兑现检查。这样预检
+里 `agent_verify -Changed pkg/core.py` 不会因为清单还声明了别的路径而误拒。
+
+- 每个 requirement 的每条 `changes` 都必须在实际变更集中有见证：字面路径要求精确
+  出现；glob 至少匹配一条实际路径；
+- 缺少任何一条即 `declared-change-missing`：`must` 永远拒绝；`strict` 下 `should`
+  拒绝，`--lenient` 下 `should` 只警告；`may` 只警告；
+- 空实际变更集不是免检通行证；历史上 no-op smoke 曾出现 `changed=0` 仍 aligned，
+  这个洞由 AL39 钉死；
+- 实际变更集只证明“路径确实动过”，不证明改得对；内容正确性仍由 artifact 的
+  `sha256`、evidence 的 locator 和真实测试负责。
+
 ### 生成骨架：`scaffold`
 
 `scaffold` 从目标与需求文本生成一份**故意不完整**的 `alignment/2` 清单：
@@ -172,6 +192,7 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 | `goals`（v2/v3） | 至少一个；恰好一个 `parent=null` 的根；子目标父链必须落到根，不能断/环 |
 | `requirements` | 至少一条；`text` 非空；`priority` 为 `must/should/may`，缺省按 `must` |
 | `requirements.parent` | 必须存在，且父链最终落到根 `goal`；不能成环 |
+| `requirements.changes` | 仓库相对字面路径或 glob；实际变更集已知时，每条声明都必须有实际路径见证，否则 `declared-change-missing` |
 | `requirements.artifacts/evidence` | 必须引用已存在的 id；`must` 至少各一条有效引用 |
 | `evidence.kind`（v3） | `file` 或 `run`；`run` 额外要求 `command`，且 command 必须点名证据路径 |
 | `evidence.command`（v3） | `run` 的声明命令；post-run 必须在本次 exit=0 的 run 命令里精确匹配 |
@@ -194,10 +215,11 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 4. artifact/evidence 的 id 是否存在、文件是否存在、sha256、locator 是否命中；
 5. v3 的 run 证据 command 是否点名证据路径；post-run 是否在本次成功 run 命令里精确出现；
 6. 每条变更是否被某条需求的 `changes` 或某个 artifact 路径覆盖；
-7. 变更是否落进 `non_goals`，以及 requirement 是否引用了 non_goal 明确排除的
+7. 实际变更集已知时，每条 requirement 的 `changes` 是否都实际发生（字面精确命中 / glob 至少一条）；
+8. 变更是否落进 `non_goals`，以及 requirement 是否引用了 non_goal 明确排除的
    artifact/evidence、声明了重叠的字面路径或相同的 glob；
-8. 需求之间是否声明了矛盾；
-9. 所有路径是否在 root 内（含 realpath 检查）。
+9. 需求之间是否声明了矛盾；
+10. 所有路径是否在 root 内（含 realpath 检查）。
 
 退出码：
 
@@ -222,7 +244,9 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 带 `sha256` 的产物、让 evidence 的 locator 失效。`agent_verify` 在 `journal-end`
 拿到**实际落盘路径**后，再用同一份清单和同一套 gate 复核：
 
-- `journal-end` 的 `added/deleted/modified` 路径作为 `--changed` 重跑 gate；
+- `journal-end` 的 `added/deleted/modified` 路径作为 `--changed` 重跑 gate，并用
+  `--changed-set` 显式标记变更集已知（空集也算已知）；
+- 实际变更必须兑现每条 requirement 的 `changes`，否则 `declared-change-missing`；
 - 产物/证据重新按磁盘内容验哈希与 locator；
 - v3 的 `kind=run` 证据命令必须出现在本次 exit=0 的 `run[]` 里，否则
   `evidence-not-executed`；只声明“会跑”不算跑过；
@@ -233,16 +257,18 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 - 若 `Store` 显式放在项目 root 内，thin bookkeeping 的 store 路径会从“产品变更”
   中过滤，避免把 journal 自己的副本当成业务产物。
 
-回执里的 `alignment.post` 记录 post-run 的 `status/score/must_score/counts/failures/warnings`。
-它仍在同一个 `alignment` 稳定字段内，不新增顶层波动键。
+回执里的 `alignment.post` 记录 post-run 的 `status/score/must_score/counts/failures/warnings`；
+`counts.changed_known=1` 明确表示实际变更集已知（即使 `counts.changed=0`），
+`0` 只表示预检尚未拿到实际变更集。它仍在同一个 `alignment` 稳定字段内，不新增
+顶层波动键。
 
 ## 测试读数
 
-- `python tools/alignment_gate.py self-test`：**90/90**
+- `python tools/alignment_gate.py self-test`：**98/98**
 - `python tools/alignment_gate.py stress --cases 100`：**200 用例，valid 100 aligned，mutated 100 rejected，0 errors**
 - `python tools/agent_settings.py --self-test`：**30/30**
-- `tools/selftest.ps1` 的 AL27–AL38：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝、non_goal 对象级排除在 preflight 拒绝且 run 不启动
-- 全仓 `tools/selftest.ps1`：**708 passed / 0 failed / 0 skipped**
+- `tools/selftest.ps1` 的 AL27–AL39：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝、non_goal 对象级排除在 preflight 拒绝且 run 不启动、空实际变更集下声明变更未兑现被 post 拒绝
+- 全仓 `tools/selftest.ps1`：**709 passed / 0 failed / 0 skipped**
 
 ## 诚实边界
 

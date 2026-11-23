@@ -14,12 +14,15 @@
   - alignment/3 的 must 证据没有声明会证明它的 run 命令，或该命令没有在本
     次 run 的成功记录里（post-run 复核）；
   - 变更文件没有挂到任何需求，或落进显式 non_goal 路径；
+  - 实际变更集已知时，requirement 声明的 changes 没有实际兑现（空集也不是免检）；
   - 两条需求声明互相矛盾；
   - 路径绝对化、`..` 逃逸或符号链接逃出 root。
 
 用法：
   python tools/alignment_gate.py --root . --manifest .agent/alignment.json \
       --changed src/a.rs,tests/a.rs --json
+  python tools/alignment_gate.py --root . --manifest .agent/alignment.json \
+      --changed-set --json          # actual changed set known, even if empty
   python tools/alignment_gate.py --root . --manifest .agent/alignment.json --lenient
   python tools/alignment_gate.py --root . --manifest .agent/alignment.json \
       --run-command "python -m pytest tests/test_a.py"
@@ -254,9 +257,10 @@ def _build_report(root, manifest_path):
         "must_score": 0.0,
         "counts": {"goals": 0, "requirements": 0, "must": 0, "artifacts": 0, "evidence": 0,
                    "provenance": 0, "provenance_verified": 0,
-                   "changed": 0, "linked_changes": 0},
+                   "changed": 0, "changed_known": 0, "linked_changes": 0},
         "coverage": {"requirements_with_artifact": 0, "requirements_with_evidence": 0,
                      "requirements_with_provenance": 0, "requirements_provenance_verified": 0,
+                     "requirements_with_changes": 0, "requirements_changes_realized": 0,
                      "requirements_full": 0, "must_full": 0, "goals_covered": 0},
         "failures": [],
         "warnings": [],
@@ -394,7 +398,7 @@ def _read_goals(doc, report):
     return goal_map, root_id
 
 
-def validate(root, doc, changed=None, strict=True, executed=None):
+def validate(root, doc, changed=None, strict=True, executed=None, changed_known=False):
     root = os.path.abspath(root)
     report = _build_report(root, os.path.join(root, ".agent", "alignment.json"))
     if not isinstance(doc, dict):
@@ -739,13 +743,19 @@ def validate(root, doc, changed=None, strict=True, executed=None):
                   f"{pair[0]}|{pair[1]}")
 
     # --- changed files: every change must align to a requirement or artifact ------
+    # `changed` alone is a caller-supplied coverage set (it may be a subset);
+    # only `changed_known` says the full actual set is known, so only that can
+    # prove every declared change actually happened.
+    coverage_known = changed is not None or changed_known
+    full_known = changed_known
     changed_norm = []
-    if changed is not None:
+    if coverage_known:
         try:
-            changed_norm = _norm_changed(root, changed)
+            changed_norm = _norm_changed(root, changed or [])
         except AlignmentFailure as e:
             _fail(report, e.code, e.message)
             changed_norm = []
+        report["counts"]["changed_known"] = 1 if full_known else 0
         report["counts"]["changed"] = len(changed_norm)
         linked = set()
         for path in changed_norm:
@@ -768,14 +778,26 @@ def validate(root, doc, changed=None, strict=True, executed=None):
             else:
                 _fail(report, "unlinked-change", f"变更没有对齐到任何 requirement：{path}")
         report["counts"]["linked_changes"] = len(linked)
-        # a declared change glob that matches nothing is a stale alignment claim
-        for rid, req in req_map.items():
-            patterns = req.get("changes") if isinstance(req.get("changes"), list) else []
-            if patterns and changed_norm:
-                for p in patterns:
-                    if not any(_glob_match(path, [str(p)]) for path in changed_norm):
-                        _warn(report, "change-pattern-unmatched",
-                              f"{rid} 的 changes glob 没有匹配任何本次变更：{p}", rid)
+        # A declared change is a promise: only the full actual set can witness it.
+        # An empty set is not a free pass (the old no-op smoke proved that hole);
+        # must/strict failures, may warns.
+        if full_known:
+            for rid, req in req_map.items():
+                patterns = req.get("changes") if isinstance(req.get("changes"), list) else []
+                if not patterns:
+                    continue
+                report["coverage"]["requirements_with_changes"] += 1
+                missing = [str(p) for p in patterns
+                           if not any(_glob_match(path, [str(p)]) for path in changed_norm)]
+                if not missing:
+                    report["coverage"]["requirements_changes_realized"] += 1
+                    continue
+                message = f"{rid} 声明的变更在本次实际变更中不存在：{', '.join(missing)}"
+                priority = req.get("_priority", "must")
+                if priority == "must" or (priority == "should" and strict):
+                    _fail(report, "declared-change-missing", message, rid)
+                else:
+                    _warn(report, "declared-change-missing", message, rid)
 
     report["counts"].update({"requirements": len(req_map), "artifacts": len(artifact_ok),
                              "evidence": len(evidence_ok),
@@ -797,7 +819,7 @@ def validate(root, doc, changed=None, strict=True, executed=None):
     return report
 
 
-def check(root, manifest, changed=None, strict=True, executed=None):
+def check(root, manifest, changed=None, strict=True, executed=None, changed_known=False):
     root = os.path.abspath(root)
     manifest_abs = manifest if os.path.isabs(manifest) else os.path.join(root, manifest)
     root_real = os.path.realpath(root)
@@ -814,7 +836,8 @@ def check(root, manifest, changed=None, strict=True, executed=None):
     doc, report = load_manifest(root, manifest_real)
     if doc is None:
         return report
-    got = validate(root, doc, changed, strict, executed=executed)
+    got = validate(root, doc, changed, strict, executed=executed,
+                   changed_known=changed_known)
     got["manifest"] = report["manifest"]
     if report["failures"]:
         # syntax-level failures (schema/bad JSON) are known-unreadable, not aligned
@@ -866,8 +889,13 @@ def run_check(args):
     manifest = args.manifest or os.path.join(root, ".agent", "alignment.json")
     if not os.path.isabs(manifest):
         manifest = os.path.join(root, manifest)
-    report = check(root, manifest, args.changed, not args.lenient,
-                   executed=args.run_command or None)
+    changed = []
+    for item in args.changed:
+        changed.extend([x.strip() for x in item.split(",") if x.strip()])
+    known = bool(changed) or bool(getattr(args, "changed_set", False))
+    report = check(root, manifest, changed if known else None, not args.lenient,
+                   executed=args.run_command or None,
+                   changed_known=bool(getattr(args, "changed_set", False)))
     _emit(report, args.json, args.out)
     return report["exit"]
 
@@ -986,8 +1014,9 @@ def _selftest():
         if not cond:
             raise AssertionError(msg)
 
-    def status(root, doc, changed=None, strict=True, executed=None):
-        return validate(root, doc, changed, strict, executed=executed)
+    def status(root, doc, changed=None, strict=True, executed=None, changed_known=False):
+        return validate(root, doc, changed, strict, executed=executed,
+                        changed_known=changed_known)
 
     def expect(report, code, msg):
         ok(any(f["code"] == code for f in report["failures"]), f"{msg}（实际 {report['failures']}）")
@@ -1126,18 +1155,46 @@ def _selftest():
         expect(status(root, d, changed=["misc/x.py"]), "unlinked-change", "变更未对齐")
         d = _base_doc(); d["requirements"][0]["changes"] = ["lib/**"]
         ok(status(root, d, changed=["lib/x.py"])["status"] == "aligned", "glob 对齐变更")
-        d = _base_doc(); d["allow_unlinked"] = ["generated/**"]
+        d = _base_doc(); d["requirements"][0]["changes"] = []
+        d["allow_unlinked"] = ["generated/**"]
         ok(status(root, d, changed=["generated/x.py"])["status"] == "aligned", "allow_unlinked")
         d = _base_doc(); d["non_goals"][0]["paths"] = ["src/**"]
         expect(status(root, d, changed=["src/a.py"]), "non-goal-change", "变更落进 non_goal")
         d = _base_doc(); d["requirements"][0]["changes"] = ["src/a.py"]
-        r = status(root, d, changed=["src/a.py"])
-        ok(not any(w["code"] == "change-pattern-unmatched" for w in r["warnings"]),
-           "匹配的 changes glob 不警告")
+        r = status(root, d, changed=["src/a.py"], changed_known=True)
+        ok(r["status"] == "aligned" and r["coverage"]["requirements_changes_realized"] == 1,
+           "匹配的 declared change 才算已实现")
+        d = _base_doc(); d["requirements"][0]["changes"] = ["src/old.py"]
+        r = status(root, d, changed=["src/a.py"], changed_known=True)
+        expect(r, "declared-change-missing", "声明的变更没有实际发生")
         d = _base_doc(); d["requirements"][0]["changes"] = ["src/old.py"]
         r = status(root, d, changed=["src/a.py"])
-        ok(any(w["code"] == "change-pattern-unmatched" for w in r["warnings"]),
-           "未匹配的 changes glob 警告")
+        ok(r["status"] == "aligned" and not any(f["code"] == "declared-change-missing"
+                                                for f in r["failures"]),
+           "preflight 的 --changed 是覆盖集，不强制声明变更全部兑现")
+        d = _base_doc(); d["requirements"][0]["changes"] = ["src/a.py"]
+        ok(status(root, d)["status"] == "aligned", "preflight 无实际变更集时只声明")
+        expect(status(root, d, changed=[], changed_known=True),
+               "declared-change-missing", "空实际变更集不是免检通行证")
+        r = status(root, d, changed=[], changed_known=True)
+        ok(r["counts"]["changed_known"] == 1 and r["counts"]["changed"] == 0,
+           "changed_known 区分空集与未提供")
+        d = _base_doc(); d["requirements"][0]["changes"] = ["src/**"]
+        ok(status(root, d, changed=["src/a.py"], changed_known=True)["status"] == "aligned",
+           "glob 覆盖实际变更")
+        d = _base_doc(); d["requirements"][0]["changes"] = ["src/a.py", "src/old.py"]
+        expect(status(root, d, changed=["src/a.py"], changed_known=True),
+               "declared-change-missing", "一个声明命中不能掩盖另一个声明缺失")
+        d = _base_doc(); d["requirements"][0]["changes"] = []
+        d["requirements"][1]["changes"] = ["src/old.py"]
+        expect(status(root, d, changed=[], changed_known=True), "declared-change-missing",
+               "strict 下 should 的声明变更缺失也拒绝")
+        d = _base_doc(); d["requirements"][0]["changes"] = []
+        d["requirements"][1]["changes"] = ["src/old.py"]
+        r = status(root, d, changed=[], changed_known=True, strict=False)
+        ok(r["status"] == "aligned" and
+           any(w["code"] == "declared-change-missing" for w in r["warnings"]),
+           "lenient 下 should 声明变更缺失只警告")
         d = _base_doc()
         expect(status(root, d, changed=["../escape.py"]), "bad-change", "changed 逃逸")
 
@@ -1297,6 +1354,8 @@ def main(argv=None):
     parser.add_argument("--root", default="")
     parser.add_argument("--manifest", default="")
     parser.add_argument("--changed", action="append", default=[])
+    parser.add_argument("--changed-set", action="store_true",
+                        help="actual changed set is known, even when it is empty")
     parser.add_argument("--run-command", action="append", default=[])
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--lenient", action="store_true")
@@ -1315,9 +1374,6 @@ def main(argv=None):
         return _stress(args.cases)
     if args.cmd == "scaffold":
         return _scaffold(args)
-    changed = []
-    for item in args.changed:
-        changed.extend([x.strip() for x in item.split(",") if x.strip()])
     return run_check(args)
 
 

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（第十二轮：声明变更必须实际发生）
+
+- `alignment_gate.py` 新增“声明变更兑现”检查：实际变更集已知时，每条
+  requirement 的每条 `changes` 都必须有见证——字面路径精确出现、glob 至少命中
+  一条实际路径；缺失记 `declared-change-missing`，`must` 永远拒绝，`strict` 下
+  `should` 拒绝、`--lenient` 下只警告。
+- 新增 `--changed-set`：显式标记实际变更集已知且完整；空集也必须兑现声明，关闭
+  “no-op run 仍 aligned”的洞。单独 `--changed` 仍只是覆盖子集，不强制所有声明兑现；
+  `counts.changed_known` 区分“完整已知”（1）和“预检/子集”（0）。
+- `agent_verify` 的 `alignment-post` 始终传 `--changed-set`；`alignment.post.counts`
+  增加 `changed_known`。`coverage` 增加 `requirements_with_changes` /
+  `requirements_changes_realized`。
+- `tools/selftest.ps1` 新增 AL39：声明 `pkg/core.py` 但 plan 只跑 `true`→post
+  `unaligned after run`（changed_known=1, changed=0）；AL27/AL30/AL31/AL32 改用
+  会实际写 `pkg/core.py` 的 plan。`$alTotal` 38→39。
+- `alignment_gate.py self-test` 90→**98/98**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **709 passed / 0 failed / 0 skipped**（含 AL27–AL39）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补声明变更兑现与 `changed_known` 口径；
+  `docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
 ### Added（第十一轮：non-goal 对象级排除与声明范围）
 
 - `tools/alignment_gate.py` 的 `non_goals` 新增 `artifacts`/`evidence` 显式排除列表：
