@@ -50,8 +50,8 @@
       ],
       "mix": "co",
       "anchors": [
-        "tools/agent_verify.py:1466:\"changed\" if je[\"code\"] == 1 else \"failed\"))",
-        "AGENT-GUARDRAILS.md:788:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
+        "AGENT-GUARDRAILS.md:791:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
+        "tools/agent_verify.py:1528:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -85,8 +85,8 @@
       ],
       "mix": "exclusive",
       "anchors": [
-        "tools/agent_verify.py:129:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:192:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:141:declaration-based gate: the tool layer cannot measure model-side token",
+        "tools/agent_verify.py:208:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -105,7 +105,7 @@
       ],
       "anchors": [
         "tools/ledger.py:2:keep token cost and wall-clock cost in separate columns, on purpose",
-        "tools/agent_verify.py:138:wall is tool-measured per command; tokens are caller-declared"
+        "tools/agent_verify.py:150:wall is tool-measured per command; tokens are caller-declared"
       ],
       "status": "active"
     },
@@ -187,7 +187,7 @@
       "mix": "none",
       "anchors": [
         "tools/journal.py:214:journal: end -- ",
-        "AGENT-GUARDRAILS.md:791:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
+        "AGENT-GUARDRAILS.md:794:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
       ],
       "status": "active"
     },
@@ -202,8 +202,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "tools/agent_verify.py:1505:verdict = (\"command failed\" if not ran_ok else",
-        "AGENT-GUARDRAILS.md:769:1. **`verdict`**——只有这几种，各是什么一眼定论："
+        "AGENT-GUARDRAILS.md:772:1. **`verdict`**——只有这几种，各是什么一眼定论：",
+        "tools/agent_verify.py:1567:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -639,6 +639,76 @@
       "action": "update",
       "term": "failed",
       "reason": "AGENT-GUARDRAILS 命令块新增行，failed 权威行 784->788，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:50+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:50+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:50+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:51+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:51+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:28:10+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:28:10+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:28:11+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:31:30+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "policy empty output key omitted; quotes unchanged, lines moved down",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:31:30+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "policy empty output key omitted; quotes unchanged, lines moved down",
       "loosened": "drop-anchor"
     }
   ]

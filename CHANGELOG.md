@@ -19,6 +19,16 @@
   `release` job 只在 tag 上发布，手动 dispatch 不会误发。
 - `docs/engineering/CI-CD.md`：开发内部（命令、自测、错误分类、receipt、CI job）
   与用户交付（二进制、SHA256SUMS、release notes）分层，CI 预算与排障口径。
+- `agent_verify` 回执降 token（不丢判定）：新增 `--model-receipt <path>`，完整审计
+  回执照旧保留，另写 compact 路由视图供模型/父代理读取；allow 的通用两行政策文案
+  不再逐命令重复，逐条仍保留 `command + exit`，无特殊证据时省略空 `output`；
+  新增 `--brief`，成功 stdout 只打命令汇总与 `changes: N`，失败命令才逐条列出。
+  同路径保护：`--model-receipt` 与 `-Receipt` 指向同一路径直接拒绝。
+  自测新增 AF14b–AF14e（500 条 policy 去重、WARN 保留、模型视图与审计分离、
+  brief stdout），全量 selftest **685 passed / 0 failed / 0 skipped**。
+  实测（20 命令、2 轮中位、`true`）：full receipt **5,738 B**（原 8,558 B，降 33.0%），
+  compact **1,541 B**（full 的 26.9%，省 73.1%），policy 字段 **561 B**（原约 2,860 B
+  compact JSON）；bytes/4 仅为上下文代理，不是模型侧 token 实测。
 
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 

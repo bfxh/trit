@@ -639,6 +639,9 @@ python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --compact -Receipt .agent/last-receipt.json        # 单行机读回执（子代理协作）
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
+  --brief --model-receipt .agent/last-model.json \
+  -Receipt .agent/last-receipt.json                  # 审计原文 + 模型视图（成功只打失败命令）
+python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --parallel-gates -Receipt .agent/last-receipt.json # 三个只读门并发（写面仍串行）
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --spent-token <本次实测 token> --agent-id <id> -Receipt .agent/last-receipt.json
@@ -798,3 +801,17 @@ agent-verify 的回执（`-Receipt` 指定的 JSON，或 stdout 尾部）按三�
    （verdict/exit/proven/wall_s）、每步 `{step,verdict,exit,seconds}`、每条 run 命令
    `{command,exit,seconds}`、budget 数字、cost、agent_id、changes 计数；砍掉自由文本
    证据。实测见 `python tools/bench_orchestration.py`。
+6. **`--model-receipt <path>`**（模型视图，不替代审计）——`-Receipt` 仍写完整审计回执，
+   同时另写一份 compact 路由视图。模型/父代理优先读这份，不要 `cat` 整份 full receipt；
+   需要核对拒绝原因、WARN 或原始输出时再回审计原文。
+7. **`--brief`**——stdout 成功时只打一行命令汇总，失败命令才逐条列出；变更只打
+   `changes: N`，完整路径仍在回执 `changes[]`。它只减少模型看到的成功行，不改判定。
+8. **policy 回执去重**——allow 的两行通用文案不再逐命令重复；WARN/DENY 和特殊
+   allow 说明仍保留。逐条判定仍是 `command + exit`；没有特殊说明时 `policy[]`
+   省略 `output` 键，原始 policy 输出可由 `policy.py` 重放取得。
+
+读数口径（`bench_orchestration.py -Commands 20 -Rounds 2`，两轮中位，命令为
+`true`；bytes/4 只是上下文代理，不是模型侧 token 实测）：full receipt **5,738 B**
+（改动前 8,558 B，降 **33.0%**），compact **1,541 B**（为 full 的 **26.9%**，
+省 **73.1%**），其中 20 条 policy 字段 **561 B**（改动前约 2,860 B compact JSON）。
+delta 为 full 的 **0.341×**；`--brief` 进一步把成功命令的 stdout 收敛为一行汇总。

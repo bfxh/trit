@@ -2629,6 +2629,52 @@ if (-not $afPy) {
     $cb = (Get-Item (Join-Path $Work 'af-rc2-compact.json')).Length
     Assert-True ($cb * 4 -lt $fb) 'AF14 compact 显著小于 full（≥4 倍；典型 run 实测由 bench 报数）' "full=$fb compact=$cb"
 
+    # --- AF14b-AF14d: policy allow 去重、WARN 保留、模型视图、brief stdout ---
+    # 500 条 allow 的 policy 回执不再重复通用两行文案；命令/exit 判定仍逐条保留。
+    # echo 重定向会留下一条“write allowed inside workspace”的特殊说明，这是
+    # 允许语义而不是通用 allow 模板，保留；只断言通用模板没被复制 500 次。
+    $afPolGeneric = @($afBigDoc.policy | ForEach-Object { @($_.output) } `
+        | Where-Object { $_ -match '^policy: OK\s+.*reads or executes$' -or $_ -match '^policy: allow \([A-Za-z0-9_-]+, network=(?:on|off)\)$' })
+    Assert-True (@($afBigDoc.policy).Count -eq 500 -and $afPolGeneric.Count -eq 0) `
+        'AF14b policy allow 通用文案不逐命令重复（500 条命令+exit 仍在）' "generic=$($afPolGeneric.Count)"
+
+    # WARN 是 exit=0 的 advisory，不能被 allow 去重误删。
+    $AfWarn = Join-Path $Work 'af-policy-warn'
+    New-AvFixture $AfWarn
+    New-File (Join-Path $AfWarn 'plan.json') '{"proven":true,"commands":["git add -A"],"unproven":[]}'
+    $storeWarn = Join-Path $Work 'af-store-policy-warn'
+    $null = Invoke-Av $AfWarn $storeWarn (Join-Path $Work 'af-policy-warn.json')
+    $afWarnDoc = Read-Receipt (Join-Path $Work 'af-policy-warn.json')
+    $afWarnLines = @($afWarnDoc.policy | ForEach-Object { @($_.output) } | Where-Object { $_ -match 'WARN' })
+    Assert-True ($LASTEXITCODE -eq 0 -and $afWarnLines.Count -gt 0) `
+        'AF14c policy allow 去重保留 WARN 行（advisory 不静默）' "warn_lines=$($afWarnLines.Count)"
+
+    # 完整审计与模型视图分文件：model view 是 compact，full 仍带 policy。
+    $AfModel = Join-Path $Work 'af-model-view'
+    New-AvFixture $AfModel
+    New-File (Join-Path $AfModel 'plan.json') '{"proven":true,"commands":["echo m1 > m1.txt","echo m2 > m2.txt"],"unproven":[]}'
+    $storeModel = Join-Path $Work 'af-store-model-view'
+    $rcAudit = Join-Path $Work 'af-model-audit.json'
+    $rcModelView = Join-Path $Work 'af-model-view.json'
+    $null = Invoke-Av $AfModel $storeModel $rcAudit @('--model-receipt', $rcModelView)
+    $afAuditDoc = Read-Receipt $rcAudit
+    $afModelDoc = Read-Receipt $rcModelView
+    Assert-True ($LASTEXITCODE -eq 0 -and (Test-Path $rcModelView) `
+        -and (Get-Item $rcModelView).Length -lt (Get-Item $rcAudit).Length `
+        -and $afModelDoc.verdict -eq $afAuditDoc.verdict -and $null -eq $afModelDoc.policy) `
+        'AF14d --model-receipt 写 compact 模型视图、完整审计仍保留 policy' "model=$((Get-Item $rcModelView).Length) full=$((Get-Item $rcAudit).Length)"
+
+    # --brief 成功时只留汇总，失败命令才逐条；判定/回执不变。
+    $AfBrief = Join-Path $Work 'af-brief'
+    New-AvFixture $AfBrief
+    New-File (Join-Path $AfBrief 'plan.json') '{"proven":true,"commands":["echo b1 > b1.txt","echo b2 > b2.txt"],"unproven":[]}'
+    $storeBrief = Join-Path $Work 'af-store-brief'
+    $afBriefOut = @(Invoke-Av $AfBrief $storeBrief (Join-Path $Work 'af-brief.json') @('--brief'))
+    $afBriefText = (@($afBriefOut) -join "`n")
+    Assert-True ($LASTEXITCODE -eq 0 -and $afBriefText -notmatch 'echo b1.*-> exit' `
+        -and $afBriefText -match 'commands: 2 run, 0 failed') `
+        'AF14e --brief 成功只打汇总，不逐条打印成功命令' $afBriefText
+
     # --- AF15-AF18: cost 记账往返与预算闸打通 ---
     $AfCost = Join-Path $Work 'af-cost'
     New-AvFixture $AfCost

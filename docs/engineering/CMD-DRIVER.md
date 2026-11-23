@@ -83,6 +83,10 @@ python tools/cmd_driver.py -Plan <plan.json> -Out <receipt.json> -DryRun
 
 `-DryRun` 只跑 preflight，不执行命令。`-Quiet` 在成功时只留退出码；失败仍打印首失败摘要。退出码：`0` 全过/干跑成功，`1` 执行或核验失败，`2` plan 非法或预检失败。
 
+PTC 与 `agent_verify` 共享同一条分层：完整回执/日志留在本地，模型只读摘要或
+compact 模型视图。`agent_verify` 的 `--model-receipt`（审计原文 + compact 路由视图）
+和 `--brief`（成功只打汇总）见 `AGENT-GUARDRAILS.md` 的“回执怎么读”。
+
 本机实测：
 
 ```text
@@ -91,7 +95,7 @@ cmd-driver: 4/4 steps ok / quality-gates 13/13 / retries 0 / errors 0
             context 117B (local-detail 51172B) / wall 1.92s
 ```
 
-完整仓库自测（`pwsh tools/selftest.ps1`）：**681 passed / 0 failed / 0 skipped**，
+完整仓库自测（`pwsh tools/selftest.ps1`）：**685 passed / 0 failed / 0 skipped**，
 新增 `AU1`（驱动自测）和 `AU2`（work-bench 一条计划 4 步）都在全量里通过。
 
 `ptc-plan.json` 用**一条命令**完成 work-bench 的 preflight、`-SelfTest 182/182`、`-Run 81/81 + negative 20/20`、`-Repeat 2` 一致；质量门没有降低，且摘要只把 117B 回给模型，51KB 报告留在本地。
