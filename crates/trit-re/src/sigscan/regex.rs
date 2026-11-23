@@ -319,8 +319,8 @@ impl<'a> Parser<'a> {
             };
             // 范围 a-z（`-` 在类内 = 范围连接，字面 `-` 放头尾或转义）
             if self.peek() == Some(b'-')
+                && self.src.get(self.pos + 1).is_some()
                 && self.src.get(self.pos + 1).copied() != Some(b']')
-                && !self.src.get(self.pos + 1).is_none()
             {
                 self.pos += 1;
                 let hi_c = self.peek().ok_or("类范围缺上界")?;
@@ -364,7 +364,7 @@ impl<'a> Parser<'a> {
                 let h1 = self.hex_digit()? as u32;
                 let h2 = self.hex_digit()? as u32;
                 Some((h1 * 16 + h2) as u8)
-            }
+            },
             c => Some(c),
         })
     }
@@ -752,6 +752,7 @@ mod tests {
         assert_eq!(hits("def$", b"abc\ndef"), vec![4]);
         assert_eq!(hits("abc$", b"abc\ndef"), Vec::<u64>::new()); // $ = 文件尾断言
         assert_eq!(hits("a.c", b"a\nc"), Vec::<u64>::new()); // . 不含 \n
+
         assert_eq!(hits("a.c", b"axc"), vec![0]);
         assert_eq!(hits("aa", b"aaaa"), vec![0, 1, 2]); // 重叠全报
     }
