@@ -18,7 +18,8 @@
   本仓发现并修复 `libsqlite3-sys 0.37.0`（RUSTSEC-2026-0459）与
   `rustix 1.1.5`（RUSTSEC-2026-0486）两个 high；`rusqlite` 升到 `=0.41.0`、
   `rustix` 升到 `1.1.6` 后 `cargo audit` 为 0 vulnerabilities，剩 2 条 medium
-  unmaintained（`fxhash`、`rustls-pemfile`）。
+  unmaintained（`fxhash`、`rustls-pemfile`）。`rusqlite 0.41` 需要 rustc 1.89，
+  本仓 MSRV 由 1.88 上调到 1.89（CI 与 `required-checks.txt` 同步）。
 - `tools/lsp_registry.json` + `tools/lsp_registry.py`：138 条 LSP 注册表，覆盖
   Rust/C/C++/Go/Python/TS/JS/Java/C#/Ruby/PHP/Kotlin/Scala/Clojure/Elixir/Haskell/
   OCaml/F#/Terraform/Ansible/Docker/GraphQL/Prisma/Zig/Nim/R/Julia 等；命令
@@ -39,6 +40,10 @@
   LSP plan、外部项目扫描；全仓 **693 passed / 0 failed / 0 skipped**。真实
   `security_gate --mode static` 本仓 PASS（clippy/unsafe 0 findings，2 条 medium
   依赖 unmaintained）；`agent_verify` 夹具 full 8,285 B / compact 1,151 B。
+- POSIX 修正：`tools/signal.py` 会遮蔽标准库 `signal`，新安全门在 Ubuntu 的
+  `subprocess` 超时/kill 路径曾崩在 `signal.SIGKILL`；`security_gate` /
+  `agent_verify` 现在在导入 `subprocess` 前临时移开 `tools/`，WSL 复跑安全门
+  自测 19/19。`docs/security/SECURITY-SCAN.md` 已补进 `docs/README.md` 索引。
 
 ### Added（第四轮：work-bench + PTC + CI/CD）
 

@@ -51,7 +51,7 @@
       "mix": "co",
       "anchors": [
         "AGENT-GUARDRAILS.md:843:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
-        "tools/agent_verify.py:1608:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
+        "tools/agent_verify.py:1619:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -85,8 +85,8 @@
       ],
       "mix": "exclusive",
       "anchors": [
-        "tools/agent_verify.py:143:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:215:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:154:declaration-based gate: the tool layer cannot measure model-side token",
+        "tools/agent_verify.py:226:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -105,7 +105,7 @@
       ],
       "anchors": [
         "tools/ledger.py:2:keep token cost and wall-clock cost in separate columns, on purpose",
-        "tools/agent_verify.py:152:wall is tool-measured per command; tokens are caller-declared"
+        "tools/agent_verify.py:163:wall is tool-measured per command; tokens are caller-declared"
       ],
       "status": "active"
     },
@@ -203,7 +203,7 @@
       "mix": "none",
       "anchors": [
         "AGENT-GUARDRAILS.md:824:1. **`verdict`**——只有这几种，各是什么一眼定论：",
-        "tools/agent_verify.py:1647:verdict = (\"command failed\" if not ran_ok else"
+        "tools/agent_verify.py:1658:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -800,6 +800,69 @@
       "action": "update",
       "term": "worktree",
       "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:50:31+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:50:32+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:50:32+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:50:32+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
       "loosened": "drop-anchor"
     }
   ]

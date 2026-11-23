@@ -11,7 +11,7 @@
 - [ ] `cargo fmt --all -- --check`
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] `cargo test --workspace`
-- [ ] MSRV 1.88 可构建（CI `MSRV (1.88)` job）
+- [ ] MSRV 1.89 可构建（CI `MSRV (1.89)` job）
 - [ ] 变异门：改动面有登记条目，`python scripts/mutation_check.py --pkg <改动面>` 全绿
 - [ ] 门脚本自测：`snapshot` / `deps plan` / `vendor` / `mutation gate`
 - [ ] `python scripts/secret_scan.py`（合成夹具用 `secret-scan: allow` 显式豁免）

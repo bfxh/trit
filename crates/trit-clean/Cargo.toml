@@ -15,5 +15,6 @@ thiserror = "2.0.21"
 
 [dev-dependencies]
 # 三值语义对拍用真 SQLite（bundled 随 crate 编译，三平台一致）。
-# 0.40 起用了 rustc 1.89 的 cfg_select!（未声明 MSRV），本仓 MSRV 1.88 ⇒ 钉 0.39。
+# 0.41 需要 rustc 1.89；本仓 MSRV 随之上调到 1.89（libsqlite3-sys 0.39.1 修复
+# RUSTSEC-2026-0459 的 C SQLite CVE，0.39 仍带漏洞版本）。
 rusqlite = { version = "=0.41.0", features = ["bundled"] }

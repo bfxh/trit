@@ -2,7 +2,7 @@
 name = "trit-immune"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "三进制免疫系统核心：{-1,0,+1} 渗透测试裁决 + DeltaDB 式因果 DAG（Kleene K3）"
 license = "MIT OR Apache-2.0"
 readme = "README.md"

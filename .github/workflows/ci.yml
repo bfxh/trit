@@ -665,7 +665,7 @@ jobs:
           engine: sat
 
   msrv:
-    name: MSRV (1.88)
+    name: MSRV (1.89)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -688,7 +688,7 @@ jobs:
           fi
           { echo "args="; echo "only_docs=false"; } >> "$GITHUB_OUTPUT"
           echo "收窄不可用，走全量"
-      - uses: dtolnay/rust-toolchain@360a4e93673de6630fac2478bc9e35244b01a759 # 1.88
+      - uses: dtolnay/rust-toolchain@d92bbbb03544f480ed5c7ba4b54020e4ed2c4f65 # 1.89
         if: steps.crates.outputs.only_docs != 'true'
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: steps.crates.outputs.only_docs != 'true'
