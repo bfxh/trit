@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added（第七轮：智能体目标/需求/产物/证据/变更对齐门）
+
+- `tools/alignment_gate.py`：新增 `alignment/1` 清单与 fail-closed 门。
+  单一 goal；每条 requirement 必须显式 `parent` 且父链终止在 goal（断链/成环拒绝）；
+  `artifacts/evidence` 引用必须存在且指向仓库内真实文件，支持 `sha256` 与
+  `Lx`/`Lx-Ly`/`text:<片段>` locator；`must` 必须有有效产物+证据，`strict`
+  下 `should` 同，`--lenient` 只降为 warning；本次 `changed` 每个路径必须挂到
+  requirement 的 `changes` 或 artifact 路径；落进 `non_goals` 路径直接拒绝；
+  requirement 间 `contradicts` 直接拒绝；绝对路径、`..` 逃逸、符号链接逃出
+  root 拒绝；清单缺失/坏 JSON/schema 不符返回 `unknown`（退出码 3），不当作
+  通过。自测 **47/47**；`stress --cases 100` 生成 **200 用例**，valid
+  100 aligned、mutated 100 rejected、0 errors。
+- `tools/agent_settings.py`：新增 `alignment.enabled/manifest/strict` 默认与
+  校验；`manifest` 必须是非空项目内相对路径；回执只回显 `enabled/strict`，
+  不暴露路径。自测 **30/30**。
+- `tools/agent_verify.py`：新增 `--alignment <manifest>`、`--alignment-lenient`；
+  alignment 步骤位于 `constraints` 之后、`claim-audit`/`journal-begin` 之前，
+  非 aligned 时 verdict `refused by alignment`、exit 1、不启动 `run`；回执新增
+  `alignment` 稳定字段（manifest/status/score/must_score/counts/failures/warnings）。
+- `tools/selftest.ps1`：AL 组新增 AL27–AL31（有效清单继续 run、must 缺证据拒绝、
+  清单缺失 unknown、lenient 只警告、不传 `--alignment` 自动发现），`$alTotal` 26→31。
+- `.agent/checks/registry.json` 新增 C077（fast tier，覆盖 L167）；
+  `docs/ERRORS.md` 新增 L167；`docs/engineering/AGENT-ALIGNMENT.md` 记录 schema、
+  检查表、接入方式、测试读数与诚实边界；`docs/README.md` 增索引行。
+- 全仓 `tools/selftest.ps1`：**701 passed / 0 failed / 0 skipped**（含 AL27–AL31）。
+
 ### Added（第六轮：上下文预算 + 搜索评分 + 自动推理强度）
 
 - `tools/context_window.py`：1M 窗口 / 850K 触发 / 700K 目标的确定性预算规划器。

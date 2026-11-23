@@ -4386,7 +4386,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
-$alTotal = 26
+$alTotal = 31
 if (-not $alPy) {
     "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
     $skipped += $alTotal
@@ -4816,6 +4816,68 @@ print("ALDRV done")
     & $alPy (Join-Path $tools 'agent_verify.py') -Root $AlW -Changed 'pkg/core.py' `
         -Lang python --gate-deadline-affected 0 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 2) "AL22 deadline 0/负数→exit 2（坏调用，不是关掉看门狗）" "e=$LASTEXITCODE"
+
+    # --- AL27-AL31: alignment gate 接入 chain（目标/需求/产物/证据/变更） -------------
+    $alManifestDir = Join-Path $AlW '.agent'
+    New-Item -ItemType Directory -Force -Path $alManifestDir | Out-Null
+    $alManifest = Join-Path $alManifestDir 'alignment.json'
+    $alDoc = @'
+{
+  "schema": "alignment/1",
+  "goal": {"id": "G1", "text": "core.f 返回 1"},
+  "requirements": [
+    {"id": "R1", "text": "core.f 的实现", "priority": "must", "parent": "G1",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["pkg/core.py"]},
+    {"id": "R2", "text": "测试覆盖", "priority": "should", "parent": "G1",
+     "artifacts": ["A1"], "evidence": ["E1"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "pkg/core.py"}],
+  "evidence": [{"id": "E1", "path": "tests/test_core.py", "locator": "text:test_f"}]
+}
+'@
+    New-File $alManifest $alDoc
+    $al27rc = Join-Path $Work "al-wd27.json"
+    $al27 = Invoke-AlAv $al27rc @('--alignment', $alManifest)
+    $al27doc = Read-AlReceipt $al27rc
+    $al27steps = @($al27doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al27 -eq 0 -and $al27doc.alignment.status -eq 'aligned' `
+        -and ($al27steps -contains 'alignment') -and ($al27steps -contains 'run')) `
+        "AL27 对齐清单通过→chain 继续 run，回执记录 alignment=aligned" "e=$al27 s=$($al27doc.alignment.status)"
+
+    $alBad = $alDoc.Replace('"evidence": ["E1"], "changes"', '"evidence": [], "changes"')
+    New-File $alManifest $alBad
+    $al28rc = Join-Path $Work "al-wd28.json"
+    $al28 = Invoke-AlAv $al28rc @('--alignment', $alManifest)
+    $al28doc = Read-AlReceipt $al28rc
+    $al28steps = @($al28doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al28 -eq 1 -and $al28doc.verdict -eq 'refused by alignment' `
+        -and $al28doc.alignment.status -eq 'unaligned' -and ($al28steps -notcontains 'run')) `
+        "AL28 must 缺证据→alignment 拒绝，run 不启动" "e=$al28 v=$($al28doc.verdict)"
+
+    $al29rc = Join-Path $Work "al-wd29.json"
+    $al29 = Invoke-AlAv $al29rc @('--alignment', (Join-Path $AlW 'missing-alignment.json'))
+    $al29doc = Read-AlReceipt $al29rc
+    Assert-True ($al29 -eq 1 -and $al29doc.verdict -eq 'refused by alignment' `
+        -and $al29doc.alignment.status -eq 'unknown') `
+        "AL29 清单不可读→unknown 不是通行证，整链拒绝" "e=$al29 s=$($al29doc.alignment.status)"
+
+    $alWarn = $alDoc.Replace('"artifacts": ["A1"], "evidence": ["E1"]}', '"artifacts": ["A1"], "evidence": []}')
+    New-File $alManifest $alWarn
+    $al30rc = Join-Path $Work "al-wd30.json"
+    $al30 = Invoke-AlAv $al30rc @('--alignment', $alManifest, '--alignment-lenient')
+    $al30doc = Read-AlReceipt $al30rc
+    Assert-True ($al30 -eq 0 -and $al30doc.alignment.status -eq 'aligned' `
+        -and $al30doc.alignment.warnings -ge 1) `
+        "AL30 lenient 下 should 缺证据只记 warning，不拒绝" "e=$al30 w=$($al30doc.alignment.warnings)"
+
+    # 自动发现路径：不传 --alignment，项目里的 .agent/alignment.json 仍要被链读到。
+    New-File $alManifest $alDoc
+    $al31rc = Join-Path $Work "al-wd31.json"
+    $al31 = Invoke-AlAv $al31rc @()
+    $al31doc = Read-AlReceipt $al31rc
+    Assert-True ($al31 -eq 0 -and $al31doc.alignment.status -eq 'aligned' `
+        -and @($al31doc.steps | Where-Object { $_.step -eq 'alignment' }).Count -eq 1) `
+        "AL31 不传 --alignment：项目清单被自动发现并进入链" "e=$al31 s=$($al31doc.alignment.status)"
 }
 
 

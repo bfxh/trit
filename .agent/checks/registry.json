@@ -1410,6 +1410,25 @@
       "run": "python3 tools/context_search_cross.py",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C077",
+      "title": "目标/需求/产物/证据/变更对齐门：父链、悬空引用、哈希/locator、未挂变更、non-goal、矛盾",
+      "kind": "cmd",
+      "covers": [
+        "L167"
+      ],
+      "scope": [
+        "tools/alignment_gate.py",
+        "tools/agent_settings.py",
+        "tools/agent_verify.py"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T03:00:00+08:00",
+      "run": "python3 tools/alignment_gate.py self-test && python3 tools/alignment_gate.py stress --cases 100 && python3 tools/agent_settings.py --self-test",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
