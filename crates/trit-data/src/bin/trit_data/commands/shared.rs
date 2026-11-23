@@ -1,5 +1,6 @@
 #[path = "input.rs"]
 pub mod input;
+pub(crate) use super::usage::usage;
 use std::path::Path;
 
 pub(crate) fn write_lines(path: &Path, lines: &[String]) {
@@ -20,13 +21,6 @@ pub(crate) fn created_unix() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
-}
-
-pub(crate) fn usage() -> ! {
-    die("用法: trit-data gate --jsonl <轨迹.jsonl> [--out <目录>] [--allow-unverified]
-      trit-data compare --a <a.jsonl> --b <b.jsonl>
-      trit-data decontaminate --jsonl <in> --bench <bench.jsonl> [--ngram 13] [--threshold 0.2] [--out <目录>]
-      trit-data mix --jsonl <in> [--total 1000] [--weights code=0.7,writing=0.3] [--out <目录>]")
 }
 
 pub(crate) fn die(msg: &str) -> ! {

@@ -4,12 +4,16 @@ mod card;
 mod compare;
 #[path = "decontaminate.rs"]
 mod decontaminate;
+#[path = "route.rs"]
+mod route;
 #[path = "dispatch.rs"]
 mod dispatch;
 #[path = "gate.rs"]
 mod gate;
 #[path = "json.rs"]
 mod json;
+#[path = "label.rs"]
+mod label;
 #[path = "lang.rs"]
 mod lang;
 #[path = "lang_opts.rs"]
@@ -24,10 +28,16 @@ mod pipeline_batch;
 mod pipeline_diff;
 #[path = "pipeline_report.rs"]
 mod pipeline_report;
+#[path = "pipeline_opts.rs"]
+mod pipeline_opts;
+#[path = "pipeline_trajectories.rs"]
+mod pipeline_trajectories;
 #[path = "project.rs"]
 mod project;
 #[path = "shared.rs"]
 mod shared;
+#[path = "usage.rs"]
+mod usage;
 #[path = "pipeline_run.rs"]
 mod pipeline_run;
 #[path = "repo.rs"]
@@ -46,5 +56,7 @@ mod repo_out;
 mod repo_show;
 #[path = "repo_stats.rs"]
 mod repo_stats;
+#[path = "rewrite.rs"]
+mod rewrite;
 #[path = "report_extra.rs"]
 mod report_extra;

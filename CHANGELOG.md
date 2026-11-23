@@ -2,6 +2,116 @@
 
 ## [Unreleased]
 
+### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
+
+- `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]
+  [--mix-total N] [--mix-weights …] [--out <dir>] [gate 参数…]`：一条命令串起
+  `gate` 三支 → 可选 `rewrite`（只送 deferred）→ 按标签配额 `mix`，输出
+  `accepted/deferred/rejected.jsonl`、`rewritten.*`、`mix.json`、`mixed.jsonl`、
+  `trajectory.pipeline.report.json` 与 `manifest.json`。目录输入递归收 `*.jsonl`。
+  读数（`testdata/trajectories.jsonl` 4 条，Windows PowerShell 前缀重写器）：
+  gate accept 2 / defer 1 / reject 1；rewrite 1 条 deferred → accept 1、保真通过率 100%；
+  `--mix-total 2` → 可用 3 / 选中 2（`code 2→1`、`writing 1→1`），manifest 9 个数据文件。
+- `.github/workflows/data-pipeline.yml` 在仓库级管线后跑同一条轨迹管线
+  （`--cmd "sed s/^/first/" --mix-total 2`），并把 `trajectory.pipeline.report.json` 贴进摘要。
+- `trit-wspace gguf-audit <dir> [--out <json>]`：模型级 GGUF 复验。逐张量比较 WSP1 字节、
+  语义核心（trits / 三值 bias / scale 位模式），并显式列出 `biasf`、manifest `vector`/`bias`
+  标记丢失；`ok=true` 只声明语义核心，不把已知损失判红。
+  真实 all-MiniLM-L6-v2（103 张量）复验：逐字节 **67/103**、语义核心 **103/103**、
+  `biasf` 丢失 **36**、manifest `vector` **0/63** 保留、`bias` **0/37** 保留；
+  GGUF 4,772,288 B / 有效张量 4,762,066 B。旧账与现状一致，导出层 4 项全绿不再冒充模型层全绿。
+  模块拆分后测试：`pipeline_trajectories` **2 passed**；`gguf_cli` **6 passed** +
+  `gguf_audit` **1 passed**；`cargo test --workspace` **3418 passed / 0 failed**（378 个 test binary）。
+- 文档：`docs/research/GGUF-TRIT.md` 更新模型级读数表与复算命令；
+  `docs/research/TERNARY-AUDIT.md` 增加 §3.3 与 `[D]` 归类；`docs/reference/AGENT-DATA.md`
+  增加轨迹管线口径；`docs/reference/REPO-SCAN.md` 增加轨迹级入口。
+- 修复（承上一轮）：Unix 超时进程组终止改为 `sh -c "kill -9 -<pid>"`，去掉 `unsafe extern`，
+  通过 `trit-data` 的 `#![deny(unsafe_code)]`。
+- 测试修复：`trit-learn` 的 manifest 临时目录只按 PID 命名，两个用例并行时互删同一路径；
+  改为按线程 ID 唯一后 `cargo test -p trit-learn` **46 passed**。
+
+### Added（复核二期：rewrite 聚合读数 + 超时进程树 + 量化有损审计 + 黄金语料回灌）
+
+- `rewrite.report.json` 新增 `metrics`（stdout 同步打印）：
+  `fidelity{attempted,passed,rate}`、`gate_decisions{accept,defer,reject,accept_share,defer_share}`、
+  `length_ratio{p10,p50,p90,samples}`、`failure_reasons[{reason,count}]`。
+  3 条 demo：keep → 保真通过率 100%、长度 p50=1.0000；`drop` → 0%、`fidelity=3`。
+- 超时终止进程树：Unix `process_group(0)` + `sh -c "kill -9 -<pid>"`（纯 safe）；Windows `taskkill /PID <pid> /T /F`，
+  失败再退回 `Child::kill`。新增 `tests/rewrite_kill.rs`（Windows）：包装器拉起
+  `Start-Sleep 20` 孙进程，`--timeout 2` 后孙进程必须消失（1 passed）。
+- `codec_verify` 新增量化审计（4 项 / 194 例）：逐元素误差界
+  `|w − dequant(q(w))| ≤ scale·max(beta,1−beta)`（96 数据集 / 129,816 元素，max err/scale=0.899964）、
+  再量化幂等 96/96、NaN→Unknown、同种子读数可复现。
+  同比特预算读数（96 数据集加权）：三元 MSE 0.922640（双导轨 2 bit/trit）vs
+  1-bit 符号基线 1,651.408428、2-bit 四电平基线 183.252992；每比特折算 0.461320 / 91.626496。
+  归类 `[B]`；语料相关，不外推为「三进制普遍更准」。
+- `codec_verify --corpus <dir>`：消费 `ternary_corpus` 的 `truth.csv`（171 行，独立真值表代算 +
+  键集合完整性）与 `balanced.csv`（85 行，独立解析 + 库解码 + 库重编码三查）。
+  带语料 **24 项 / 58,945 例 / 0 失败**；不带 21 项 / 58,517 例。CI step 已改为先生成语料再 `--corpus`。
+- 文档：`docs/research/TERNARY-AUDIT.md` 增加量化读数表、黄金语料消费口径与新的未证栏；
+  `docs/README.md` 索引同步。
+
+### Added（M1 外部依赖铺路：κ 标注包 `label` + 把三进制复核接进 PR CI + rewrite 集成门）
+
+- `trit-data label`（`label.rs` + `label_csv.rs`，纯 Rust 手写 CSV 编解码）：
+  - `label --jsonl <records.jsonl|目录> --sample 500 [--seed 0x…] [--out <dir>]`：先过默认门，
+    按 `decision:主原因` 分层；配额按比例 + 最大余数（每层不超过可用数），
+    层内按 `seed ^ FNV(层名)` 洗牌取前 k，输出按 id 升序。
+    产物 `label.csv`（表头 `id,task_id,model_decision,reasons,human_decision,human_note,text`，
+    人工三列留空；text 含换行按 RFC 4180 加引号）+ `label.report.json`（输入 sha256、
+    seed、抽样规则、strata、counts）。
+  - `label --apply <label.csv> --out <dir>`：`human_decision` 只认 `accept|defer|reject`，
+    空值不默认（`skipped_empty` 计数后整体报错）；写 `model.jsonl` / `human.jsonl`（顺序一致）
+    与 `label.apply.json{rows,skipped_empty,n,agreement,mismatches,human_decisions}`，
+    并打印 `compare` 下一步命令。
+  - 读数（3 条 demo）：`--sample 2` → 2 层 2 条；手填 2 行 → `agreement=0.5`；
+    `compare` → `n=2, observed=0.5000, expected=0.5000, κ=0.0000`（只验证链路，不是 κ 读数）。
+- CI：`.github/workflows/ci.yml` 的 `check` job（`fmt + clippy + test`）在 doctest 之后新增
+  `Audit (ternary codec + quantize + gguf verify)` step，每次 PR 跑
+  `codec_verify --corpus`（24 项 58,945 例）与 `gguf_verify`（4 项 237 例）；本机实测运行合计 <0.5s
+  `quality.yml` 仍只做 cargo-audit / fuzz-smoke（手工 + 周跑），未改为 PR 门。
+- `tests/rewrite_cli.rs`：keep / 保真失败 / 超时三支的端到端门（Linux `sh`、Windows `powershell` 夹具；
+  断言读 `rewrite.report.json` 与 `rewrite.failed.jsonl`，不依赖 stdout 文案）。
+- 修复：`rewrite` 保真失败记录曾重复写 `rewrite` 键（先 `failed()` 再 `put` 同名键），
+  导致 `rewrite.failed.jsonl` 里出现两个 `"rewrite"` 字段；改为一次性构造。
+
+### Added（三进制专项评估：编码可逆与逐位一致的独立复核）
+
+- `codec_verify`（`crates/trit-codec/src/bin/`）：9 形态 × 25 长度的确定性语料
+  （seed `0x9e3779b97f4a7c15`，225 样本 / 22,239 trit），17 项检查 / 58,323 例：
+  pack 往返 + 独立位级 oracle、balanced 边界（i64 全域 41 位）+ 独立文本解析、
+  Hamming 单符号纠错全位置、interleave 往返、RLE 往返与指标口径、delta 往返 + mod 3 独立还原、
+  gray 双射与相邻距离（n≤8）、sparse 往返 + 独立重建、CRC-3 单符号检错、plan 往返。
+- `gguf_verify`（`crates/trit-export/src/bin/`）：1..6 行 × 1..20 列全形状 + 病态张量 +
+  33×129 大张量，4 项检查 / 237 例：逐字段往返（scale 按 `to_bits`，含 `-0.0`/次正规/NaN）、
+  序列化确定性与读回再写一致、magic/版本/截断/重名/零形状拒绝、导出前后 trit 的 pack 字节逐位一致。
+- 读数：两命令均退出 0（`cargo run -q -p trit-codec --bin codec_verify -- --json`、
+  `cargo run -q -p trit-export --bin gguf_verify -- --json`）；
+  口径、A/B/C/D 归类与未证栏见 `docs/research/TERNARY-AUDIT.md`。
+
+### Added（trit-data M1 收口：语言质量策略接入 gate + `rewrite --cmd` 外部重写闭环）
+
+- `LangPolicy { Off, Defer, Strict }`（`lang_policy.rs`，CLI `gate --lang-quality` / `--no-lang-quality`）：
+  默认 `Defer` 保持历史行为（Bad→defer、Uncertain 放过）；`Strict` 下 Bad→硬门 reject
+  （`language_bad`）、Uncertain→软门 defer（`language_uncertain`）；`Off` 只保留语言 allow/deny。
+  语言分类提到硬门判空之前，短文本与长文本走同一口径。
+- `trit-data rewrite --jsonl <deferred.jsonl> --cmd "<外部重写器>" [--timeout 30] [--out <dir>] [gate 参数…]`：
+  stdin 传文本、stdout 收结果；超时 kill（`timeout: 超过 Ns`）、非 0 退出（`exit: <code> <stderr>`）、
+  空输出（`empty:`）与保真检查失败（`fidelity`）一律 fail-closed 保留原文进 `rewrite.failed.jsonl`。
+  产物 `rewritten.accepted/deferred/rejected.jsonl` + `rewrite.report.json`（输入 sha256、命令 argv、
+  `timeout_secs`、`lang_policy`、counts、reasons、manifest 内容级指纹）。
+- 保真口径改进：原文 <100 字用绝对上下限 `b >= a*0.5 && b <= a*4+40`，≥100 字仍用 0.5..=2.0 比例，
+  修掉"短 thought 加一句结构提示必被判截断"的误伤。
+- 读数（真实二进制，3 条 demo 记录）：`gate` 默认 accept 2 / defer 1（`language`）；
+  `--lang-quality strict` accept 0 / reject 1（`language_bad`）/ defer 2（`language_uncertain`）；
+  `--lang-quality off` accept 3。`rewrite` 对默认策略产出的 `deferred.jsonl`：
+  keep → accepted 1；`-Mode drop` → fidelity_failed 1（`length_ratio_ok=false`）；
+  `-Mode sleep` + `--timeout 1` → failed 1（`detail=timeout: 超过 1s`）。
+- 复算：`cargo test -p trit-data --lib`（87 条）、`cargo clippy -p trit-data --all-targets -- -D warnings`、
+  `python scripts/module_budget.py`、`python scripts/test_surface.py`。
+- 未接（不宣称）：500 条人工/LLM judge 标注语料未提供，软门 vs judge 的 Cohen's κ 与硬门一致率无对拍读数；
+  `compare` 已就绪，低于 κ≥0.6 不得宣称有效。见 `docs/reference/AGENT-DATA.md` §8。
+
 ### Security（trit-orch 完成闸、轨迹链与兼容性）
 
 - `Receipt`：新增 `provenance`（`HostMeasured`/`SelfReported`）、`nonce`、`command`、

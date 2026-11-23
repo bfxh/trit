@@ -4,12 +4,12 @@ use super::*;
 
 fn tmp_dir() -> PathBuf {
     let mut path = std::env::temp_dir();
-    path.push(format!("trit-manifest-{}", std::process::id()));
+    let tid = std::thread::current().id();
+    path.push(format!("trit-manifest-{}-{tid:?}", std::process::id()));
     let _ = std::fs::remove_dir_all(&path);
     std::fs::create_dir_all(&path).unwrap();
     path
 }
-
 #[test]
 fn fingerprint_is_order_and_style_independent() {
     let root = tmp_dir();

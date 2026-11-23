@@ -103,6 +103,7 @@
 | [WSP-ROW-GUARD.md](research/WSP-ROW-GUARD.md) | 输出行架构冗余：行复制 + 分歧告警（击杀成本 ×K；tanh 饱和反取证发现） |
 | [WSP-DGA-QAT.md](research/WSP-DGA-QAT.md) | 三值 QAT：DGA 域名检测与家族归因（真实安全数据集） |
 | [GGUF-TRIT.md](research/GGUF-TRIT.md) | 三值权重 GGUF 容器（`trit-export`）的最小 v3 子集 |
+| [TERNARY-AUDIT.md](research/TERNARY-AUDIT.md) | 三进制专项评估：编码可逆、逐位一致、有损量化与 WSP 模型级 GGUF 复验（58,945 + 237 例 + 103 张量） |
 | [FORK-FLUSH.md](FORK-FLUSH.md) | Fork-and-Flush：多智能体任务分叉 + 清空 + 按验收分数选优 |
 | [CRAM-3D-DRIFT.md](research/CRAM-3D-DRIFT.md) | CRAM + 3D 漂移：S 级任务包与 2D 最小切片（设计，未开工） |
 | [CRAM-3D-DRIFT-RESULTS.md](research/CRAM-3D-DRIFT-RESULTS.md) | M0 负结果：轨迹生成器 0% 可行（约束不在 loss） |

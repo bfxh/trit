@@ -122,7 +122,7 @@
 ## 6. 实施顺序
 
 - **M0（本轮）**：`crates/trit-data`：schema + 硬门 + 软门 + 三支决策 + 清单；CLI `gate`；单测。
-- **M1**：语言门特征（教育性/信息密度/语言纯净度）+ 重写闭环 + judge 对拍脚本。
+- **M1**：语言门特征（教育性/信息密度/语言纯净度）+ 重写闭环 + 标注包导出（`label`）与 judge 对拍（`compare`）。
 - **M2**：配比与消融、去污染、数据卡发布；与 `trit-orch` 轨迹（TraceEvent/CAS）对接，直接吃真实运行轨迹。
 
 ## 7. 边界与风险
@@ -140,10 +140,70 @@
   - `language.rs`：可复算文本特征与 `Good / Uncertain / Bad` 三值分类；
   - `rewrite.rs`：数字/URL/代码/引用锚点提取、保真检查（缺失 + 长度比）、重写后送回同一门；
   - `compare.rs`：多类 Cohen's κ；CLI `trit-data compare --a --b`。
-- **M1 未接**：`gate` 主决策仍用内嵌语言规则，尚未把 `LangClass` 接入
-  accept/defer 映射；CLI 尚无 `rewrite` 子命令（需要外部 rewriter 命令与超时/失败回退）。
-- **下一步**：把 `LangClass` 接进 gate（Uncertain → defer，Bad → 可配置 reject/defer），
-  实现 `rewrite --cmd`，并用 500 条人工/LLM judge 标注跑 κ 与硬门一致率。
+- **M1 已接（gate 三支映射，复算：`cargo test -p trit-data --lib`）**：
+  - `lang_policy.rs`：`LangPolicy { Off, Defer, Strict }`，默认 `Defer`（历史行为：Bad→defer、Uncertain 放过）；
+    `Strict` 下 Bad→硬门 reject（原因码 `language_bad`）、Uncertain→软门 defer（`language_uncertain`）；
+    `Off` 只保留语言 allow/deny 列表，不做质量分层。语言分类在硬门判空之前算，短文本也走同一口径。
+  - CLI：`trit-data gate --lang-quality off|defer|strict` 或 `--no-lang-quality`。
+  - 读数（3 条 demo 记录，真实二进制）：默认 → accept 2 / defer 1（`language`）；
+    `strict` → accept 0 / reject 1（`language_bad`）/ defer 2（`language_uncertain`）；`off` → accept 3。
+- **`rewrite --cmd` 已实现（复算：`trit-data rewrite ...`）**：
+  - `trit-data rewrite --jsonl <deferred.jsonl> --cmd "<外部重写器>" [--timeout 30] [--out <dir>] [gate 参数…]`：
+    stdin 传文本、stdout 收结果，三线程并行 + 截止时间轮询；超时 kill（`timeout: 超过 Ns`）、
+    非 0 退出（`exit: <code> <stderr>`）、空输出（`empty:`）一律 fail-closed 保留原文入 `rewrite.failed.jsonl`。
+  - 保真口径：短文本（<100 字）用绝对上下限 `b >= a*0.5 && b <= a*4+40`，长文本仍用 0.5..=2.0 比例；
+    缺锚点或长度不过 → `reason=fidelity`（`length_ratio_ok=false`）。
+  - 产物：`rewritten.accepted/deferred/rejected.jsonl` + `rewrite.failed.jsonl` + `rewrite.report.json`
+    （输入 sha256、命令 argv、超时、`lang_policy`、counts、reasons、manifest 内容级指纹）。
+  - 读数（输入为上面默认策略的 `deferred.jsonl`，1 条 Bad 轨迹）：keep → rewritten 1 / accepted 1（`rewrite.ok=true`、
+    `orig_sha256` 留存）；`-Mode drop` → fidelity_failed 1（`length_ratio_ok=false`）；`-Mode sleep` + `--timeout 1`
+    → failed 1（`reason=timeout`、`detail=timeout: 超过 1s`）。
+  - 聚合读数（`rewrite.report.json.metrics`，stdout 同步打印）：`fidelity{attempted,passed,rate}`、
+    `gate_decisions{accept,defer,reject,accept_share,defer_share}`、`length_ratio{p10,p50,p90,samples}`、
+    `failure_reasons[{reason,count}]`；只有 counts 看不出“重写值不值得”的问题由此关闭。
+    3 条 demo：keep → 保真通过率 100%、长度 p50=1.0000；`drop` → 0%、`failure_reasons` 为 `fidelity=3`。
+  - 超时终止**进程树**：Unix 先 `process_group(0)`，再用 `sh -c "kill -9 -<pid>"` 按进程组终止
+    （纯 safe，不用 FFI）；Windows 用 `taskkill /PID <pid> /T /F`，失败才退回 `Child::kill`。
+    回归 `cargo test -p trit-data --test rewrite_kill`（Windows）：
+    孙进程 `Start-Sleep 20` 在 `--timeout 2` 后消失。
+- **轨迹级一条命令（复算：`cargo test -p trit-data --test pipeline_trajectories`）**：
+  - `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]
+    [--mix-total N] [--mix-weights code=0.7,writing=0.3] [--out <dir>] [gate 参数…]`：
+    目录输入会递归收集 `*.jsonl`；先跑 gate 三支，再把 `deferred` 送可选 rewrite，最后对
+    `gate.accepted + rewritten.accepted` 按标签配额混样。
+  - 产物：`accepted/deferred/rejected.jsonl`、`rewritten.{accepted,deferred,rejected}.jsonl`
+    （启用 rewrite 时）、`rewrite.failed.jsonl`、`mix.json`、`mixed.jsonl`、
+    `trajectory.pipeline.report.json`（输入指纹、gate 原因/比率、rewrite fidelity/长度分位、
+    mix 配额）与 `manifest.json`；`mixed.jsonl` 按输入顺序取，不是重新排序。
+  - 读数（`testdata/trajectories.jsonl` 4 条 + Windows PowerShell 前缀重写器）：gate
+    accept 2 / defer 1 / reject 1；rewrite 1 条 deferred → accept 1、保真通过率 100%；
+    `--mix-total 2` → 可用 3 / 选中 2，配额 `code 2→1`、`writing 1→1`；manifest 9 个数据文件。
+  - CI：`data-pipeline.yml` 在仓库级管线后跑同一条命令（`--cmd "sed s/^/first/" --mix-total 2`），
+    摘要同时贴 `trajectory.pipeline.report.json`。模块拆分后
+    `cargo test -p trit-data --test pipeline_trajectories` **2 passed**。
+- **κ 标注包（复算：`trit-data label ...`）**：
+  - `label --jsonl <records.jsonl|目录> --sample 500 [--seed 0x…] [--out <dir>]`：每行先过默认门，
+    按 `decision:主原因` 分层，比例配额 + 最大余数（每层不超过可用数），层内按 `seed ^ FNV(层名)` 洗牌取前 k；
+    输出 `label.csv`（表头 `id,task_id,model_decision,reasons,human_decision,human_note,text`，人工三列留空）
+    + `label.report.json`（输入 sha256、seed、抽样规则、strata、counts）。
+  - `label --apply <label.csv> --out <dir>`：`human_decision` 只接受 `accept|defer|reject`，空值不默认
+    （计入 `skipped_empty` 后整体报错）；写 `model.jsonl` / `human.jsonl`（顺序一致）与
+    `label.apply.json{rows,skipped_empty,n,agreement,mismatches}`，并打印 `compare` 的下一步命令。
+  - 读数（3 条 demo，`--sample 2`）：抽 2 条（2 层），`accept` 可用 2 / 抽 1、`defer:language` 可用 1 / 抽 1；
+    手填 2 行（一致 1 / 不一致 1）→ `label.apply.json agreement=0.5`；接 `compare` 得
+    `n=2, observed=0.5000, κ=0.0000`。样本只验证 CSV→JSONL→κ 链路，**不构成 κ 验收读数**。
+- **CI 门（每次 PR）**：`ci.yml` 的 `check` job 在 doctest 之后加 `Audit (ternary codec + gguf verify)`
+  step，先产 `target/ternary-corpus` 再跑 `codec_verify --corpus`（24 项 58,945 例，含量化误差界与
+  黄金语料回灌）与 `gguf_verify`（4 项 237 例）；本机运行合计 <0.5s
+  （不含编译），任一失败退出码 2 → step 直接红。`quality.yml` 仍是手工/周跑，不是 PR 门。
+- **rewrite 集成测试（复算：`cargo test -p trit-data --test rewrite_cli`）**：`tests/rewrite_cli.rs`
+  用平台原生 shell 夹具（Linux `sh` / Windows `powershell`）锁死 keep（rewritten 1）、保真失败
+  （`reason=fidelity`、`length_ratio_ok=false`）、超时（`--timeout 1` → `reason=timeout`）三支。
+  该测试顺带抓到并修掉一个真实 bug：保真失败记录曾重复写 `rewrite` 键（`failed(...)` 后又 `put`），
+  导致 `rewrite.failed.jsonl` 出现同名字段两次。
+- **仍是缺口（不宣称）**：500 条人工/LLM judge 标注语料尚未提供，软门 vs judge 的 Cohen's κ 与硬门一致率
+  没有对拍读数；`label`（导出标注包）与 `compare`（算 κ）工具已就绪，填完 `human_decision` 即可跑，
+  低于 κ≥0.6 不得宣称有效。
 
 - **M2 CLI 与数据卡（复算：`trit-data decontaminate ...`、`trit-data mix ...`）**：
   - `trit-data decontaminate --jsonl <in> --bench <bench.jsonl> [--ngram 13] [--threshold 0.2] [--out <dir>]`：

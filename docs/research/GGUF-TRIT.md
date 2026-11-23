@@ -57,16 +57,31 @@ trit-wspace import-gguf model.gguf --out <dir>
   `manifest.json` 记录 `source` / `tensors` / `metadata`（元数据键名列表）。
 - 坏输入（magic/版本/未知类型/非 2D/非法 scale/多层 WSP1）全部报错，不写半成品。
 
-真实模型读数（all-MiniLM-L6-v2，103 个 2D 张量）：
+真实模型读数（all-MiniLM-L6-v2，103 个 2D 张量，2026-11-23 用 `gguf-audit` 复验）：
 
 | 项 | 值 |
 |---|---:|
-| WSP1 目录（导入侧） | 46,632,748 字节 |
-| WSP1 目录（GGUF 往返后） | 46,369,499 字节 |
+| 张量数（导入 / 往返后） | 103 / 103 |
+| WSP1 目录（导入侧，含 manifest） | 46,632,758 字节 |
+| WSP1 目录（GGUF 往返后，含 manifest） | 46,369,454 字节 |
 | GGUF（`TYPE_TRIT`） | 4,772,288 字节 |
 | GGUF 有效张量字节（`trit_bytes`） | 4,762,066 字节 |
 | 往返后 `.wsp` 逐字节一致 | 67 / 103 |
+| 语义核心一致（trits / 三值 bias / scale 位模式） | 103 / 103 |
 | 不一致 | 36 / 103，全部是带 `biasf` 的 `.weight` |
+| manifest `vector` 标记保留 | 0 / 63 |
+| manifest `bias` 标记保留 | 0 / 37 |
+
+复算命令（目录可用 `import-safetensors-dir` 从 safetensors 重建）：
+
+```bash
+trit-wspace gguf-audit tensors/ --out gguf-audit.json
+```
+
+`gguf-audit` 的 `ok=true` 只声明**语义核心**无损，不声明逐字节无损；`bytes_identical=67/103`
+与 `biasf_lost=36` 是已知的容器表达力缺口，审计会显式列出，不混进失败。manifest 的
+`vector` / `bias` 标记在 import 侧没有写回，因此 63 个向量工件与 37 个 bias 配对的标记全部丢失
+（WSP1 文件本身仍按 1D 向量恢复）。
 
 不一致的 36 个文件只差 `biasf` 行与 checksum：`TYPE_TRIT` 只存三值 bias，不存 f32 偏置
 幅度。`biasf` 是 WSP1 的可选读数信息（行为判据仍是三值 bias），所以行为等价、文本不等价。
@@ -79,6 +94,6 @@ trit-wspace import-gguf model.gguf --out <dir>
 - 没有与 llama.cpp 的实测互操作（上游不认识 `TYPE_TRIT`，这是本仓自定义类型）；
   张量名沿用 safetensors 命名，没有映射到 GGML 的 `blk.N.*` 命名。
 - `scales`/`bias` 是必填字段；没有「无 scale」「无 bias」的紧凑变体。
-- GGUF 往返不保留 f32 bias 幅度（36/103 个张量）、manifest 的 `vector` 标记与元数据值
-  （只记录键名）。
+- GGUF 往返不保留 f32 bias 幅度（36/103 个张量）、manifest 的 `vector` / `bias` 标记
+  （63 个 `vector=true`、37 个 `bias=…` 全部未写回）与元数据值（只记录键名）。
 - CLI 一次性读入整个 GGUF 文件；没有流式/ mmap 读取。

@@ -1,5 +1,4 @@
 //! 命令行入口：`read / verify / certify / patch / repair / diff / merge / mcp`。
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::{fs, io::Read, path::Path};
 
@@ -85,6 +84,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "export-safetensors-dir" => cli_safetensors::export_dir(&args[1..]),
         "import-gguf" => cli_gguf::import(&args[1..]),
         "export-gguf" => cli_gguf::export(&args[1..]),
+        "gguf-audit" => cli_gguf::audit(&args[1..]),
         "index-artifact" => cli_block::index_artifact(&args[1..]),
         "read-block" => cli_block::read_block(&args[1..]),
         "split-artifact" => cli_artifact_shard::split(&args[1..]),

@@ -28,7 +28,7 @@ trit-wspace <command>
   export-safetensors <artifact|-> --out <path> [--tensor <name>]
   import-safetensors-dir <file> --out <dir>
   export-safetensors-dir <dir> --out <file>
-  import-gguf <file> --out <dir> | export-gguf <dir> --out <file>
+  import-gguf <file> --out <dir> | export-gguf <dir> --out <file> | gguf-audit <dir> [--out <report.json>]
   index-artifact <artifact.wsp2> --out <idx>
   read-block <artifact.wsp2> --index <idx> --layer N [--row-start R --rows K] [--verify] [--out <path>]
   split-artifact <artifact|-> --rows N --out <dir> | join-artifact <dir> --out <path>

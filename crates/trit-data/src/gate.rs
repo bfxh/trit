@@ -1,10 +1,13 @@
 //! 可复算质量门：硬门 → reject，软门 → defer，否则 accept。
 use std::collections::BTreeSet;
-use trit_core::fingerprint::sha256_hex;
 use crate::content::LabelFilter;
-use crate::language::{LangClass, Limits, classify, features};
+use crate::gate_keys::{has_unrecovered_error, is_sha256};
+use crate::lang_policy::{hard_reason, soft_reason};
+use crate::language::{Limits, classify, features};
 use crate::schema::Trajectory;
 use crate::script::{primary_language, trajectory_text};
+pub use crate::gate_keys::content_key;
+pub use crate::lang_policy::LangPolicy;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
     Accept,
@@ -47,6 +50,7 @@ pub struct Config {
     pub language_gate: bool,
     pub lang_allow: Option<Vec<String>>,
     pub lang_deny: Vec<String>,
+    pub lang_policy: LangPolicy,
     pub dedup: bool,
     pub loop_gate: bool,
 }
@@ -73,6 +77,7 @@ impl Default for Config {
             language_gate: true,
             lang_allow: None,
             lang_deny: Vec::new(),
+            lang_policy: LangPolicy::Defer,
             dedup: true,
             loop_gate: true,
         }
@@ -135,6 +140,15 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
         hard.push("dedup");
     }
 
+    // 语言分类要能进硬门，所以必须在 `hard` 判空之前算；关掉语言门时不算分类。
+    let lang_text = trajectory_text(t);
+    let lang_class = cfg
+        .language_gate
+        .then(|| classify(&features(&lang_text), &Limits::default()));
+    if let Some(r) = hard_reason(cfg.lang_policy, lang_class) {
+        hard.push(r);
+    }
+
     if !hard.is_empty() {
         return Verdict {
             decision: Decision::Reject,
@@ -162,7 +176,6 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
     if !(2..=32).contains(&t.steps.len()) {
         soft.push("length");
     }
-    let lang_text = trajectory_text(t);
     crate::gate_content::apply(cfg, &lang_text, &mut soft);
     if cfg.language_gate {
         let lang = primary_language(&lang_text);
@@ -175,8 +188,8 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
         {
             soft.push("lang_not_allowed");
         }
-        if classify(&features(&lang_text), &Limits::default()) == LangClass::Bad {
-            soft.push("language");
+        if let Some(r) = soft_reason(cfg.lang_policy, lang_class) {
+            soft.push(r);
         }
     }
     if !cfg.require_verified && t.outcome.verifier.eq_ignore_ascii_case("none") {
@@ -194,36 +207,6 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
             reasons: Vec::new(),
         }
     }
-}
-
-/// 内容指纹：任务 id + 每步 tool/args/observation（规范化后）的 SHA-256。
-pub fn content_key(t: &Trajectory) -> String {
-    let mut s = String::from(&t.task_id);
-    for step in &t.steps {
-        s.push('\u{1}');
-        s.push_str(step.tool.as_deref().unwrap_or(""));
-        s.push('\u{1}');
-        s.push_str(step.args.as_deref().unwrap_or(""));
-        s.push('\u{1}');
-        s.push_str(step.observation.as_deref().unwrap_or(""));
-    }
-    sha256_hex(s.as_bytes())
-}
-
-fn is_sha256(s: &str) -> bool {
-    let Some(hex) = s.strip_prefix("sha256:") else {
-        return false;
-    };
-    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
-fn has_unrecovered_error(t: &Trajectory) -> bool {
-    let Some(i) = t.steps.iter().rposition(|s| s.error) else {
-        return false;
-    };
-    !t.steps[i + 1..]
-        .iter()
-        .any(|s| !s.error && !s.observation.as_deref().unwrap_or("").trim().is_empty())
 }
 
 #[cfg(test)]
