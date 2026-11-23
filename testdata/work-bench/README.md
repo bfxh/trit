@@ -75,7 +75,11 @@ python tools/work_bench.py -Run -Out E:\tmp\work-bench-report-20.json
 python tools/work_bench.py -Run -Repeat 2 -Out E:\tmp\work-bench-repeat2-20.json
 python tools/work_bench.py -Run -Task data-budget-xlsx -Strict -Out E:\tmp\one.json
 python tools/work_bench.py -Run -Candidates <candidate-root> -Strict
+python tools/cmd_driver.py -Plan testdata/work-bench/ptc-plan.json -Out F:\trit-target-data\ptc-receipt.json
 ```
+
+`ptc-plan.json` 是同一套任务的一键质量门：preflight、`-SelfTest`、`-Run`、`-Repeat 2` 四步，
+只把摘要交回模型；完整报告和日志留在 receipt。它不跳过任何检查，任一步失败即停止。
 
 `-Candidates <dir>` copies only artifacts that exist under `<candidate-root>/
 <task-id>/...` into a fresh sandbox; missing artifacts fail their checks.  It

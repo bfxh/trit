@@ -146,6 +146,7 @@
 | [AGENT-METRICS.md](engineering/AGENT-METRICS.md) | 回执观测面：full/compact/坏回执的 verdict、step、run、成本、预算、claims 与 per-agent/lang/profile 统计；`agent_metrics.py` 178/178 自测，6 条真实场景聚合 |
 | [AGENT-BENCH.md](engineering/AGENT-BENCH.md) | 真实任务基准：28 个代码/策略夹具、gold+negative 双 patch、Python/Node/Go/Rust 真实测试执行、policy/budget/dry-run/compact 分支；SWE-bench/Terminal-Bench/τ-bench 等谱系与本地切片边界，331/331 自测 |
 | [WORK-BENCH.md](engineering/WORK-BENCH.md) | 工作任务产物基准：20 个文档/数据/表格/邮件/日历/文件整理/合规任务、15 类、81 条确定性检查、参考 81/81 与负例 20/20；原生 XLSX 公式、`-Candidates` 与 182/182 自测 |
+| [CMD-DRIVER.md](engineering/CMD-DRIVER.md) | PTC 命令行降错：plan 预检、argv 无 shell、逐步 verify、无盲重试、错误分类与摘要/本地回执分离；34/34 自测，work-bench 4 步 13/13、81/81 质量不变 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |

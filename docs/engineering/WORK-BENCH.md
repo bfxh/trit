@@ -119,10 +119,32 @@ python tools/work_bench.py -Run -Repeat 2 -Out E:\tmp\work-bench-repeat2-20.json
 直接失败，不会回退到参考产物。候选不会因为“什么都不做”而通过。完整候选产物
 读数 81/81；空候选目录只得到 0/5，`-Strict` 返回 1。
 
-完整仓库自测（`pwsh tools/selftest.ps1`）读数 **679 passed / 0 failed / 0 skipped**，
-其中 `AT1` 和 `AT2` 是本轮新增的工作任务断言。
+完整仓库自测（`pwsh tools/selftest.ps1`）读数 **681 passed / 0 failed / 0 skipped**，
+其中 `AT1`/`AT2` 是工作任务断言，`AU1`/`AU2` 是 PTC 命令行降错断言。
 
-## 6. 边界与下一步
+## 6. 一条命令跑完（PTC 降错）
+
+`testdata/work-bench/ptc-plan.json` 把原来的多条手工命令收成 4 个步骤：
+
+1. preflight：Python/openpyxl；
+2. `work_bench.py -SelfTest`，核验 `182/182`；
+3. `work_bench.py -Run`，核验报告里 `metrics.failed=0`、reference 81/81、negative 20/20；
+4. `work_bench.py -Run -Repeat 2`，核验 `repeat_all_ok=true`。
+
+```powershell
+python tools/cmd_driver.py -Plan testdata/work-bench/ptc-plan.json -Out F:\trit-target-data\ptc-receipt.json
+```
+
+实测：
+
+```text
+cmd-driver: 4/4 steps ok / quality-gates 13/13 / retries 0 / errors 0
+            context 117B (local-detail 51172B) / wall 1.92s
+```
+
+这不是用“少报错”换“少检查”：13 条核验里包含 work-bench 的参考产物 81/81、负例 20/20 和重复一致性；任何一条失败都会让驱动退出 1。完整报告和 stdout/stderr 留在 receipt，摘要只回 117B。`cmd_driver.py` 自身的 34/34 自测覆盖缺失可执行文件、坏 cwd、低磁盘、非零、超时、核验失败、无盲重试和 dry-run。
+
+## 7. 边界与下一步
 
 **已证明**：
 

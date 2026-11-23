@@ -5202,6 +5202,35 @@ if (-not $anPy) {
 }
 
 
+# ==============================================================================
+# AU. PTC 命令行降错驱动：预检、执行、逐步核验、无盲重试、摘要/本地回执分离
+if (-not $anPy) {
+    "  SKIP  AU1/AU2 找不到可用的 Python，跳过命令行降错驱动"
+    $skipped += 2
+} else {
+    $auOut = @(& $anPy (Join-Path $tools 'cmd_driver.py') -SelfTest 2>&1)
+    $auMatch = [regex]::Match(($auOut -join ' '), 'cmd-driver self-test: (\d+)/(\d+)')
+    $auOk = ($LASTEXITCODE -eq 0) -and $auMatch.Success -and `
+        ([int]$auMatch.Groups[1].Value -eq [int]$auMatch.Groups[2].Value) -and `
+        ([int]$auMatch.Groups[1].Value -ge 30)
+    Assert-True $auOk `
+        'AU1 PTC 命令行降错驱动 30+ 项：plan 校验、预检 missing-exe/bad-cwd/low-disk、nonzero/verify/timeout、无盲重试、dry-run、JSON/文件核验、摘要压缩' "e=$LASTEXITCODE"
+
+    $auPlan = Join-Path $repo 'testdata\work-bench\ptc-plan.json'
+    $auReceipt = Join-Path $Work 'ptc-work-bench.json'
+    & $anPy (Join-Path $tools 'cmd_driver.py') -Plan $auPlan -Out $auReceipt -Quiet 2>&1 | Out-Null
+    $auRc = $LASTEXITCODE
+    $auDoc = if (Test-Path $auReceipt) { Get-Content $auReceipt -Raw | ConvertFrom-Json } else { $null }
+    $auGateOk = ($auRc -eq 0) -and $auDoc `
+        -and ($auDoc.summary.verdict -eq 'ok') -and ([int]$auDoc.summary.steps -eq 4) `
+        -and ([int]$auDoc.summary.verification_passed -eq 13) -and ([int]$auDoc.summary.verification_checks -eq 13) `
+        -and ([int]$auDoc.summary.retries -eq 0) -and (@($auDoc.summary.error_classes.PSObject.Properties).Count -eq 0) `
+        -and ([double]$auDoc.summary.context_vs_local_ratio -gt 10)
+    Assert-True $auGateOk `
+        'AU2 work-bench 一条 PTC 计划 4 步全过：quality-gates 13/13、retries 0、无错误分类、摘要/本地回执分离' "e=$auRc"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }
