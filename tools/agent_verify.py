@@ -101,12 +101,23 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+
+# tools/signal.py shadows the stdlib `signal` module when this script is run as
+# `python tools/agent_verify.py`. Load stdlib signal and subprocess with the
+# script dir off sys.path, then restore it for the local tool modules. Without
+# this, POSIX timeout/kill paths resolve tools/signal.py and crash on SIGKILL.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if sys.path and os.path.abspath(sys.path[0]) == _SCRIPT_DIR:
+    del sys.path[0]
+import signal as _stdlib_signal  # noqa: F401 - shadow guard, keeps stdlib in sys.modules
+import subprocess
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import attest  # same tools directory; the budget gate consumes the attest chain balance
 import ledger  # same tools directory; the chain appends cost entries, one writer per chain

@@ -29,10 +29,21 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import time
 from datetime import datetime
+
+# tools/signal.py shadows the stdlib `signal` module when this script is run as
+# `python tools/security_gate.py` (sys.path[0] is tools/). Load stdlib signal
+# and subprocess with the script dir off sys.path, then restore the dir for the
+# local modules. Otherwise every POSIX timeout/kill path raises AttributeError.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if sys.path and os.path.abspath(sys.path[0]) == _SCRIPT_DIR:
+    del sys.path[0]
+import signal as _stdlib_signal  # noqa: F401 - shadow guard, keeps stdlib in sys.modules
+import subprocess
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 import agent_settings
 
