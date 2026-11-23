@@ -1,9 +1,8 @@
 use crate::activation::ActivationMode;
-use crate::model::{Bert, BertConfig};
 use crate::report::{compare, layer_refs};
 use crate::scales::load_scales;
 use crate::stats::input_stats;
-use crate::sts::{load_pairs, metrics, sentence_vectors};
+use crate::sts::load_pairs;
 use args::Args;
 use serde_json::json;
 #[path = "args.rs"]
@@ -11,6 +10,7 @@ mod args;
 #[path = "data.rs"]
 mod data;
 mod diag;
+mod f32_base;
 #[path = "modes.rs"]
 mod modes;
 #[path = "sidecar_svd.rs"]
@@ -40,16 +40,12 @@ pub(crate) fn run() {
     let scales = load_scales(&data_dir);
     let (heads, eps) = (12usize, 1e-12f32);
     let requested = (activation_arg != "all").then(|| ActivationMode::parse(&activation_arg));
-    let f32_bert = Bert::load(
-        &file,
-        BertConfig::new(hidden, eps, false, ActivationMode::F32),
+    let cache_ok = activation_arg != "all" && sidecar_ranks.as_ref().is_none_or(|v| v.is_empty());
+    let f32_base = f32_base::run(
+        &file, &data_dir, &input, &mask, batch, seq, hidden, eps, &pairs, cache_ok,
     );
-    let (f32_out, _, f32_layers) = f32_bert.forward(&input, &mask, batch, seq, data::keep_layers());
-    let f32_sts = metrics(
-        &sentence_vectors(&f32_out, &mask, batch, seq, hidden),
-        &pairs,
-    );
-    let (random_input, f32_random) = diag::f32_inputs(&f32_bert, &input, &mask, batch, seq, seed);
+    let (random_input, f32_random) =
+        diag::f32_inputs(f32_base.bert.as_ref(), &input, &mask, batch, seq, seed);
     let (modes, all_stages) = modes::evaluate(&modes::Request {
         file: &file,
         gptq_dir: gptq_dir.clone(),
@@ -63,18 +59,18 @@ pub(crate) fn run() {
         batch,
         seq,
         pairs: &pairs,
-        f32_out: &f32_out,
+        f32_out: &f32_base.out,
         reference: &reference,
         f32_random: &f32_random,
         scales: &scales,
     });
-    let layer_refs = layer_refs(&data_dir, &f32_layers, &mask, hidden);
+    let layer_refs = layer_refs(&data_dir, &f32_base.layers, &mask, hidden);
     let sidecar = if activation_arg == "all" {
         crate::sidecar::run(
             &file,
             &input,
             &mask,
-            &f32_out,
+            &f32_base.out,
             &scales,
             &pairs,
             batch,
@@ -100,7 +96,7 @@ pub(crate) fn run() {
             batch,
             seq,
             pairs: &pairs,
-            f32_out: &f32_out,
+            f32_out: &f32_base.out,
             scales: &scales,
         },
     );
@@ -112,9 +108,13 @@ pub(crate) fn run() {
             "activation_mode": activation_arg,
             "pairs": pairs.len(),
         },
-        "f32_vs_reference": compare(&f32_out, &reference, &mask, hidden),
+        "f32_vs_reference": if f32_base.out.is_empty() {
+            json!(null)
+        } else {
+            compare(&f32_base.out, &reference, &mask, hidden)
+        },
         "f32_layers_vs_reference": layer_refs,
-        "f32_sts": f32_sts,
+        "f32_sts": f32_base.sts,
         "weight_format": weight_format::report(hidden),
         "sidecar": sidecar,
         "sidecar_svd": sidecar_svd,
