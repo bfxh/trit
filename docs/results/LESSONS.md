@@ -95,9 +95,18 @@
    `+0.000934 / +0.000761`；把层 11 `output.dense` 的 int2 平移到层 3（F3），
    128 对双指标为正，全量 Spearman 反而 `−0.000471`。128 只能筛候选，不能定胜负。
    I10 对纯 int3 的 10k bootstrap CI 两个指标都过 0，但对 v6e 的两个 CI 都跨 0；
-   所以只能写“I10 是当前严格同字节的优先点”，不能写“已证优于 v6e”。复算：
+   所以 I10 只能算中间基线；K10K11 在其上再改两个升级位置。复算：
    `python scripts/wsp_budget_swap.py --base budget-l12-int3-v6e.json --move 11:i>10:i`
    生成同字节预算，再按 `WSP-BUDGET-RESULTS.md` §7 跑全量。
+15. **升级块也有位置，但 128 的增益不能相加**。K10K11 把 I10 的 Q3、K4 两个 int4
+   升级移到 K10、K11：128 对只涨 `+0.001138 / +0.001495`（相对 I10），全量是
+   `+0.001858 / +0.001651`；这次 128 低估。对纯 int3 全量 `+0.005039 / +0.007187`，
+   10k CI 双指标过 0；但对 I10 的 50k Spearman 下界只有 `+0.000048`，对 v6e 的
+   Spearman CI 还跨 0。结论只能写到“K10K11 是当前严格同字节优先点，late key
+   位置略好”，不能写“全面优于 v6e/追平 int4”。K9 再补一个 late key 在 128 上只有
+   `+0.0002–0.0003`，没有全量追。复算：
+   `python scripts/wsp_budget_swap.py --base swap-11ito10i.json --move 3:q>10:k --move 4:k>11:k`
+   再按 `WSP-BUDGET-RESULTS.md` §7 跑全量。
 
 ## 4. 工程经验
 
