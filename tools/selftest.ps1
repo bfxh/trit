@@ -5144,6 +5144,18 @@ if (-not $anPy) {
 }
 
 
+# ==============================================================================
+# AQ. 会话存储门控：skip 不写 memory entry，store 才写，决策单独留账
+if (-not $anPy) {
+    "  SKIP  AQ1 找不到可用的 Python，跳过会话存储门控自测"
+    $skipped++
+} else {
+    $aqOut = @(& $anPy (Join-Path $tools 'session_gate.py') -SelfTest 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and (($aqOut -join ' ') -match 'session-gate self-test: 17/17')) `
+        'AQ1 会话存储门控 17/17：greedy/context/structure/external 判定、oracle F1 与 retention proxy、profile-shift 已知缺陷、memory skip 不写 entry、store 才写、gate 账本逐条留痕、audit 认账' "e=$LASTEXITCODE"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }

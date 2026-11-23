@@ -35,6 +35,7 @@ from datetime import datetime
 MODES = {"init", "note", "brief", "recall", "audit", "list", "revise"}
 KINDS = {"decision", "pitfall", "fact", "todo", "command"}
 SCOPES = {"project", "kernel"}
+GATES = {"store", "skip"}
 
 SECRET_PATTERNS = [
     r"password", r"passwd", r"secret=", r"api[_\-]?key", r"token=",
@@ -50,7 +51,8 @@ def parse_args(argv):
     # bare_mode: the first non-flag token is the mode, so `memory.sh brief -Root x` works
     # without writing `-Mode`. Both forms are accepted because both are natural in a shell.
     positional = [x for x in argv if not x.startswith("-")]
-    out = {"kind": "fact", "scope": "project", "max_lines": 40, "kernel": False}
+    out = {"kind": "fact", "scope": "project", "max_lines": 40, "kernel": False,
+           "session": "", "gate": "", "gate_reason": "", "gate_policy": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -62,7 +64,8 @@ def parse_args(argv):
             "Mode": "mode", "Root": "root", "Kind": "kind", "Title": "title",
             "Detail": "detail", "Evidence": "evidence", "Tags": "tags",
             "Scope": "scope", "Query": "query", "Id": "id", "MaxLines": "max_lines",
-            "Kernel": "kernel",
+            "Kernel": "kernel", "Session": "session", "Gate": "gate",
+            "Gate-Reason": "gate_reason", "Gate-Policy": "gate_policy",
         }.get(name, name.lower())
         if key == "kernel":
             out["kernel"] = True
@@ -114,6 +117,7 @@ class Store:
         self.meta = os.path.join(self.mem, "meta.json")
         self.log = os.path.join(self.mem, "log.jsonl")
         self.brief = os.path.join(self.mem, "BRIEF.md")
+        self.gate = os.path.join(self.mem, "gate.jsonl")
 
     def read(self, path):
         if not os.path.exists(path):
@@ -148,6 +152,13 @@ class Store:
         body = "\n".join(json.dumps(e, ensure_ascii=False, separators=(",", ":"))
                          for e in sorted(entries, key=sort_key))
         self.write(self.log, body + "\n")
+
+    def record_gate(self, session, decision, reason, policy, title, kind):
+        """The gate ledger is evidence, not memory: it survives a skip without a claim."""
+        self.append(self.gate, json.dumps({
+            "at": iso_now(), "session": session, "decision": decision,
+            "reason": reason, "policy": policy, "title": title, "kind": kind,
+        }, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
 def entry_key(kind, title, detail):
@@ -218,7 +229,11 @@ def cmd_note(st, a):
         print(f"memory: 拒绝 -- '{kind}' 条目必须带 -Evidence（命令/退出码/commit），否则审计时无法复核")
         return 1
     detail, tags = a.get("detail", ""), a.get("tags", "")
-    leak = leak_of(f"{title}\n{detail}\n{tags}")
+    gate = a.get("gate", "")
+    session = a.get("session", "").strip()[:128]
+    gate_reason = a.get("gate_reason", "")[:240]
+    gate_policy = (a.get("gate_policy", "") or "external")[:64]
+    leak = leak_of(f"{title}\n{detail}\n{tags}\n{gate_reason}")
     if leak:
         print(f"memory: 拒绝 -- 内容 {leak}，不要写进项目记忆")
         return 1
@@ -226,6 +241,15 @@ def cmd_note(st, a):
     if bad:
         print(f"memory: 拒绝 -- 证据里出现工作区之外的路径 {bad}（记忆只记本项目的事）")
         return 1
+
+    # The gate decides whether this session is worth memory at all. Skip is not
+    # deletion: existing entries stay, and the decision itself goes to gate.jsonl so a
+    # later reader can audit why this session left no note.
+    if gate:
+        st.record_gate(session, gate, gate_reason, gate_policy, title, kind)
+        if gate == "skip":
+            print(f"memory: gated skip session={session} ({gate_reason or 'no reason'})")
+            return 0
 
     key = entry_key(kind, title, detail)
     entries = st.entries()
@@ -235,15 +259,22 @@ def cmd_note(st, a):
         e = same[0]
         e["at"] = iso_now()
         e["evidence"] = a.get("evidence", "")
+        if gate:
+            e.update({"session": session, "gate": gate,
+                      "gate_policy": gate_policy, "gate_reason": gate_reason})
         st.rewrite(entries)
         print(f"memory: updated '{title}' (same claim, no duplicate)")
         return 0
     eid = "m" + uuid.uuid4().hex[:8]
-    entries.append({
+    entry = {
         "id": eid, "at": iso_now(), "kind": kind, "scope": a.get("scope", "project"),
         "title": title, "detail": detail, "evidence": a.get("evidence", ""),
         "tags": tags, "key": key,
-    })
+    }
+    if gate:
+        entry.update({"session": session, "gate": gate,
+                      "gate_policy": gate_policy, "gate_reason": gate_reason})
+    entries.append(entry)
     st.append(st.log, json.dumps(entries[-1], ensure_ascii=False, separators=(",", ":")) + "\n")
     print(f"memory: recorded {eid} [{kind}] {title}")
     return 0
@@ -372,6 +403,17 @@ def cmd_audit(st, a):
         leak = leak_of(f"{e.get('title')} {e.get('detail')}")
         if leak:
             bad.append(f"{eid}: {leak}")
+    if os.path.exists(st.gate):
+        for n, line in enumerate(st.read(st.gate).split("\n"), 1):
+            if not line.strip():
+                continue
+            try:
+                g = json.loads(line)
+            except json.JSONDecodeError:
+                bad.append(f"gate line {n}: bad JSON")
+                continue
+            if g.get("decision") not in GATES or not g.get("session"):
+                bad.append(f"gate line {n}: missing session or bad decision")
     if bad:
         for b in bad:
             print(f"memory: AUDIT FAIL {b}")
@@ -403,6 +445,16 @@ def main(argv):
         return 2
     if a.get("scope") not in SCOPES:
         print("memory: -Scope 必须是 project|kernel")
+        return 2
+    gate = a.get("gate", "")
+    if gate and gate not in GATES:
+        print(f"memory: -Gate 必须是 {sorted(GATES)} 之一")
+        return 2
+    if gate and not a.get("session", "").strip():
+        print("memory: -Gate 需要 -Session（skip 也要留会话 id，否则账本对不上）")
+        return 2
+    if a.get("session", "").strip() and not gate:
+        print("memory: -Session 需要 -Gate store|skip（只记会话 id 不构成门控决定）")
         return 2
     st = Store(os.path.abspath(root))
     return {

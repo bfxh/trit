@@ -1,0 +1,8 @@
+{"user":"u1","session":"s1","text":"项目目标是下周继续迭代，上次进度已完成","domains":["recipe"],"facts":["goal"],"label":"long"}
+{"user":"u1","session":"s2","text":"今天天气怎么样，帮我翻译这句话","domains":["weather"],"label":"transient"}
+{"user":"u1","session":"s3","text":"继续上周的食谱项目，下一步部署","domains":["recipe"],"facts":["next"],"label":"long"}
+{"user":"u1","session":"s4","text":"随便问一下这个食谱项目的天气","domains":["recipe"],"label":"transient"}
+{"user":"u2","session":"s1","text":"my long-term project roadmap; continue sprint","domains":["code"],"facts":["roadmap"],"label":"long"}
+{"user":"u2","session":"s2","text":"quick weather translation","domains":["weather"],"label":"transient"}
+{"user":"u2","session":"s3","text":"what should I do next","domains":["general"],"facts":["next"],"label":"long"}
+{"user":"u2","session":"s4","text":"next milestone for the code project","domains":["code"],"facts":["milestone"],"label":"long"}
