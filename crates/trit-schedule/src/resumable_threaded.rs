@@ -459,6 +459,17 @@ fn worker(shared: Arc<(Mutex<Shared>, Condvar)>, cancel: CancelToken) {
                 }
                 Progress::Done => {
                     lease.release_locked(&mut state);
+                    // A Done that lands after cancellation was requested must
+                    // not be counted as completed or promote dependents. The
+                    // cancellation can be visible before the failing worker
+                    // takes the scheduler lock, so checking only `state.stop`
+                    // leaves a promotion window.
+                    if cancel.is_cancelled() {
+                        state.cancelled.insert(id);
+                        state.idle += 1;
+                        wake.notify_all();
+                        break;
+                    }
                     state.completed.insert(id);
                     // 已置停后不再 promote 后继：依赖任务留在 cancelled，避免同一任务
                     // 同时进入 completed 与 cancelled（对齐 execute.rs:335 的守卫）。
