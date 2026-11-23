@@ -692,13 +692,14 @@
   CI 的 C047 不再因为 GitHub 共享 runner 的真实 load1 是 5/6 而误报，容量
   准入逻辑本身不变。
 ### Added（WSP 均匀位宽对照：4-bit 同字节、5-bit 全量越过 f32）
+### Added（WSP 均匀位宽与 12 层容量：int4 在 1/4 字节稳定越过 f32）
 
 - `bert6` 实验新增均匀对称 per-group 量化：`TRIT_WEIGHT_BITS=2..8`（2 仍是三值，
   3..8 为 int3–int8）、`TRIT_UNIFORM_GPTQ=1`（复用 `gptq/` Hessian 做 OBS 补偿）、
   `TRIT_F32_LAYERS`（整层保 f32 的敏感度诊断）、`TRIT_LAYERS=6|12`（层数，默认 6）。
   新 `src/gptq/bits.rs`、`examples/bert6/linear/uniform/gptq.rs`、
   `model/loader/wrap/uniform.rs`、`model/config/opts/env.rs`、`tests/gptq_bits.rs`；
-  `run/weight_format.rs` 报位宽/字节账。模块预算 1479 files，debt 0。
+  `run/weight_format.rs` 报位宽/字节账。模块预算 1482 files，debt 0。
 - **1379 对全量**：int5 g128 Pearson **0.829203** / Spearman **0.821784**，
   f32 基线 **0.827406** / **0.820325**；总字节 7,050,240 B（含 scale/bias，
   f32 的 16.57%，6.03× 压缩），高 +0.00180 / +0.00146。
@@ -717,9 +718,19 @@
   int4 GPTQ 0.9214；int3 0.8906。位宽/group/权重误差都不单调。
 - **逐层 f32 回退（三值主干）**：末层 f32 0.9023，第 0 层 0.8232、第 2 层 0.8178，
   其余接近 0.7893；9.29 MB 的末层 f32 仍低于 5.31 MB 的 int4 全层 0.9191。
-- **12 层先导（128 对）**：L12 f32 0.927599，L12 int4 0.923549（线性权重 10.62 MB，
-  6 层 f32 的 25%），L12 int5 0.925178；复用 L6 第 0 层输入，未跑全量。
-- 文档：`docs/research/WSP-BERT6-RESULTS.md` §3.16、`docs/results/LESSONS.md` 第 9 条。
+- **12 层全量（修正 embedding）**：先导复用 L6 第 0 层输入是错的（L12 与 L6 的
+  `word_embeddings` `rel_l2` 0.376）；用 L12 自己的 embedding 重导第 0 层后，
+  1379 对上 L12 f32 0.837595 / 0.830894，L12 int4 g32 **0.837505 / 0.832047**
+  （线性权重 10,616,832 B，6 层 f32 的 **25.0%**），L12 int5 g32 0.836540 / 0.830579。
+  L12 int4 对 6 层 f32 高 **+0.010099 / +0.011723**，10k 配对 bootstrap 95% CI
+  (+0.003183, +0.017247)，单侧 p=0.0026；1251 对留出集 p=0.0029，**稳定越过**。
+  L12 int4 对 L12 f32 为 −0.000089 Pearson（统计平手），比 int5 高 0.000965 且字节更少。
+- **评测加速**：`TRIT_THREADS=24|auto` 按句并行（每句独立，逐位一致）；`TRIT_SKIP_DIAG=1`
+  跳过两次 random 诊断前向。1379 对 L12 int5 从 99 分 22 秒降到 171.7 s（34.7×），
+  int4 174.0 s；128 对从约 10 分钟降到 17 s。全量 f32/int5 的 Pearson、Spearman 与
+  1379 个 preds 均与旧路径逐位相同（maxdiff 0）。默认仍 1 线程 + 全诊断，CI 不受影响。
+  新 `model/forward.rs`、`model/parallel.rs`、`run/diag.rs`，模块预算 1482 files，debt 0。
+- 文档：`docs/research/WSP-BERT6-RESULTS.md` §3.16、`docs/results/LESSONS.md` 第 9–10 条。
 
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 

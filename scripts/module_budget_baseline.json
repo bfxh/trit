@@ -5164,7 +5164,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 169
+      "lines": 146
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config.rs",
@@ -5183,6 +5183,10 @@
       "lines": 31
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/model/forward.rs",
+      "lines": 41
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/model/loader.rs",
       "lines": 81
     },
@@ -5197,6 +5201,10 @@
     {
       "file": "crates/trit-wspace/examples/bert6/model/loader/wrap/uniform.rs",
       "lines": 26
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/parallel.rs",
+      "lines": 58
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/sidecars.rs",
@@ -5231,12 +5239,16 @@
       "lines": 33
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/run/diag.rs",
+      "lines": 58
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/run/main_flow.rs",
       "lines": 138
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/modes.rs",
-      "lines": 82
+      "lines": 76
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/sidecar_svd.rs",
