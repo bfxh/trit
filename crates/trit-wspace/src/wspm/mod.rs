@@ -17,6 +17,7 @@
 //! `bias_ref` 指向同容器里的另一个 entry（清单 `bias` 字段的语义），`u32::MAX` 表示无。
 
 mod entry;
+mod overlap;
 
 use crate::error::{Error, Result};
 use crate::net::Net;
@@ -234,17 +235,10 @@ pub fn unpack(bytes: &[u8]) -> Result<ModelPack> {
             return Err(Error::Wire(format!("重复张量名 `{}`", entry.name)));
         }
     }
+    overlap::validate_regions(&entries, payload_end)?;
     let mut nets = Vec::with_capacity(entries.len());
     for entry in &entries {
-        let end = match entry.offset.checked_add(entry.len) {
-            Some(end) if end <= payload_end as u64 => end,
-            _ => {
-                return Err(Error::Wire(format!(
-                    "`{}` blob 越界（offset {} len {}）",
-                    entry.name, entry.offset, entry.len
-                )));
-            }
-        };
+        let end = entry.offset + entry.len;
         let net = decode_auto(&bytes[entry.offset as usize..end as usize])
             .map_err(|error| Error::Wire(format!("`{}` 解码失败：{error}", entry.name)))?;
         let layer = net.layers().first().ok_or(Error::EmptySizes)?;

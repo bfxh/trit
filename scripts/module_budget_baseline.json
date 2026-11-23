@@ -5435,6 +5435,10 @@
       "lines": 264
     },
     {
+      "file": "crates/trit-wspace/src/wspm/overlap.rs",
+      "lines": 35
+    },
+    {
       "file": "crates/trit-wspace/tests/activations.rs",
       "lines": 60
     },
@@ -5681,6 +5685,10 @@
     {
       "file": "crates/trit-wspace/tests/wspm.rs",
       "lines": 345
+    },
+    {
+      "file": "crates/trit-wspace/tests/wspm_overlap.rs",
+      "lines": 232
     },
     {
       "file": "fuzz/fuzz_targets/aiger.rs",
