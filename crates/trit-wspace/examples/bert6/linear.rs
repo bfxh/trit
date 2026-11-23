@@ -1,7 +1,7 @@
-//! 线性层：f32 / 三值（absmean 或 GPTQ 逐列补偿，per-row 或 per-group scale + f32 bias）。
 mod dense;
 mod kinds;
 mod quant;
+pub(crate) mod uniform;
 pub(crate) use quant::QuantLinear;
 pub(crate) struct F32Linear {
     pub(crate) rows: usize,

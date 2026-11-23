@@ -1,8 +1,6 @@
 //! 三值权重的 GPTQ 式逐列补偿（OBS 近似，免训练）。
-//!
 //! [`absmean`] 是原始逐行 absmean 三值化；[`quantize`] 在此之上用校准集的
 //! `H = XᵀX`（`X` 是该层的 f32 输入）逐列量化并补偿尚未处理的列：
-//!
 //! ```text
 //! q_j = clamp(round(w_j / s), -1, 1)
 //! e_j = (w_j - s·q_j) / [H⁻¹]_jj
@@ -14,7 +12,6 @@
 //! **增大** 的方向（实测 H 加权误差从 0.27 涨到 0.86，端到端 STS 从 0.733 掉到 0.492）。
 
 use crate::error::{Error, Result};
-
 mod inverse;
 use inverse::{check_shape, damped_inverse};
 
@@ -115,3 +112,6 @@ pub fn quantize_grouped(
     }
     Ok((trits, scales))
 }
+
+mod bits;
+pub use bits::quantize_grouped_bits;

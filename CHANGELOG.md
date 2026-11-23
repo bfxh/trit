@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added（WSP 均匀位宽对照：4-bit 同字节、5-bit 全量越过 f32）
+
+- `bert6` 实验新增均匀对称 per-group 量化：`TRIT_WEIGHT_BITS=2..8`（2 仍是三值，
+  3..8 为 int3–int8）、`TRIT_UNIFORM_GPTQ=1`（复用 `gptq/` Hessian 做 OBS 补偿）、
+  `TRIT_F32_LAYERS`（整层保 f32 的敏感度诊断）、`TRIT_LAYERS=6|12`（层数，默认 6）。
+  新 `src/gptq/bits.rs`、`examples/bert6/linear/uniform/gptq.rs`、
+  `model/loader/wrap/uniform.rs`、`model/config/opts/env.rs`、`tests/gptq_bits.rs`；
+  `run/weight_format.rs` 报位宽/字节账。模块预算 1478 files，debt 0。
+- **1379 对全量**：int5 g128 Pearson **0.829203** / Spearman **0.821784**，
+  f32 基线 **0.827406** / **0.820325**；总字节 7,050,240 B（含 scale/bias，
+  f32 的 16.57%，6.03× 压缩），高 +0.00180 / +0.00146。
+  int5 g64 也越过（0.828356 / 0.820752，7,382,016 B）；int5 g32 反而低于 f32
+  （0.826859 / 0.819054，8,045,568 B），group 不能从小样本单调外推。
+  int4 g32 为 0.826061 / 0.819354（6,718,464 B，仅低 0.00135，同字节 rank16 0.776944）；
+  4-bit GPTQ g32 `rel_l2` 从 0.2750 降到 0.2271，Pearson 只涨 0.000068 到 0.826129，
+  仍低 f32 0.00128，误差补偿补不回同字节的 STS 差距。
+  按单相关系数 1 SE ≈ 0.011 r，+0.00180 只有约 0.16 SE，且 group 由 128 对先导选出，
+  **只算字面越过，不作显著结论**。
+- **128 对**：int4 g32 0.9191 vs 同字节 rank16 0.8378（均 6,718,464 B）；
+  int5 g32 0.9254、g64 0.9259、g128 0.9248；int6 0.9232、int8 0.9233；
+  int4 GPTQ 0.9214；int3 0.8906。位宽/group/权重误差都不单调。
+- **逐层 f32 回退（三值主干）**：末层 f32 0.9023，第 0 层 0.8232、第 2 层 0.8178，
+  其余接近 0.7893；9.29 MB 的末层 f32 仍低于 5.31 MB 的 int4 全层 0.9191。
+- **12 层先导（128 对）**：L12 f32 0.927599，L12 int4 0.923549（线性权重 10.62 MB，
+  6 层 f32 的 25%），L12 int5 0.925178；复用 L6 第 0 层输入，未跑全量。
+- 文档：`docs/research/WSP-BERT6-RESULTS.md` §3.16、`docs/results/LESSONS.md` 第 9 条。
+
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 
 - `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]

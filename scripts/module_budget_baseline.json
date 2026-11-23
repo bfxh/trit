@@ -4783,6 +4783,14 @@
       "lines": 130
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/linear/uniform.rs",
+      "lines": 34
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/uniform/gptq.rs",
+      "lines": 40
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/main.rs",
       "lines": 16
     },
@@ -4792,19 +4800,35 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config.rs",
-      "lines": 35
+      "lines": 4
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config/builders.rs",
       "lines": 23
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/model/config/opts.rs",
+      "lines": 50
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config/opts/env.rs",
+      "lines": 31
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/model/loader.rs",
-      "lines": 88
+      "lines": 81
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/loader/h.rs",
       "lines": 8
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/loader/wrap.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/loader/wrap/uniform.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/sidecars.rs",
@@ -4840,15 +4864,19 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/main_flow.rs",
-      "lines": 139
+      "lines": 138
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/modes.rs",
-      "lines": 83
+      "lines": 82
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/sidecar_svd.rs",
       "lines": 68
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/weight_format.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-wspace/examples/bert6/scales.rs",
@@ -5231,6 +5259,10 @@
       "lines": 117
     },
     {
+      "file": "crates/trit-wspace/src/gptq/bits.rs",
+      "lines": 69
+    },
+    {
       "file": "crates/trit-wspace/src/gptq/inverse.rs",
       "lines": 84
     },
@@ -5525,6 +5557,10 @@
     {
       "file": "crates/trit-wspace/tests/gptq.rs",
       "lines": 172
+    },
+    {
+      "file": "crates/trit-wspace/tests/gptq_bits.rs",
+      "lines": 117
     },
     {
       "file": "crates/trit-wspace/tests/gptq_group.rs",
