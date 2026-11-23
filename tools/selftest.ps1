@@ -4386,7 +4386,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
-$alTotal = 37
+$alTotal = 38
 if (-not $alPy) {
     "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
     $skipped += $alTotal
@@ -5000,6 +5000,30 @@ print("ALDRV done")
         -and $al37doc.alignment.post.counts.provenance_verified -eq 0 `
         -and $al37doc.alignment.post.failures -ge 1) `
         "AL37 alignment/3 声明 command 实际没跑→post 拒绝，provenance 不升级" "e=$al37 v=$($al37doc.verdict)"
+
+    $alNonGoalDoc = @'
+{
+  "schema": "alignment/3",
+  "goals": [{"id": "G1", "text": "core.f 返回 1", "parent": null}],
+  "requirements": [
+    {"id": "R1", "text": "core.f 的实现", "priority": "must", "parent": "G1",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["pkg/core.py"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "pkg/core.py"}],
+  "evidence": [{"id": "E1", "path": "tests/test_core.py", "locator": "text:test_f",
+               "kind": "run", "command": "python -c \"exec(open('tests/test_core.py').read())\""}],
+  "non_goals": [{"id": "N1", "text": "不碰 core", "paths": ["pkg/core.py"], "artifacts": ["A1"]}]
+}
+'@
+    New-File $alManifest $alNonGoalDoc
+    $al38rc = Join-Path $Work "al-wd38.json"
+    $al38 = Invoke-AlAv $al38rc @('--alignment', $alManifest)
+    $al38doc = Read-AlReceipt $al38rc
+    $al38steps = @($al38doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al38 -eq 1 -and $al38doc.verdict -eq 'refused by alignment' `
+        -and $al38doc.alignment.status -eq 'unaligned' `
+        -and ($al38steps -notcontains 'run')) `
+        "AL38 non_goal 对象级排除被 requirement 引用→preflight 拒绝，run 不启动" "e=$al38 v=$($al38doc.verdict)"
 }
 
 
