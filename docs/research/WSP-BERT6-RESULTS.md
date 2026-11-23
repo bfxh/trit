@@ -694,7 +694,7 @@ f32 `0.8375945675304496 / 0.8308938533093636`、int5
 - **GPU**：L12 int4 线性权重只有 10.6 MB，加 scale/bias 13.4 MB；一次前向的传输和
   调度开销大于可并行的计算量，不划算。
 
-### 3.16.8 层 0 bias/scale 修正：层内 −37%，端到端只是噪声
+### 3.16.8 层 0 bias/scale 修正：旧预演 37% 是 padding 污染，端到端只是噪声
 
 `feat/wsp-bias-scale` 在 L12 第 0 层 Q/K/V 上做了两个零字节修正：
 
@@ -703,9 +703,13 @@ f32 `0.8375945675304496 / 0.8308938533093636`、int5
 - `TRIT_CALIB_SCALE=1`：用对角 Hessian `h_i = Σ_t x_{t,i}^2` 重拟合每组 scale
   `s* = Σ h_i w_i q_i / Σ h_i q_i^2`，码字仍是 max-scale 的 `q`。
 
-校准集是数据文件里按句均匀抽的 2,519 个非 padding token。层内预演（第 0 层 Q/K/V，
-1,024 token 校准、128 token eval、每矩阵 int4 96,768 B）里层输出误差范数降
-37–40%；但同一修正接到 `bert6` 全模型后：
+校准集是数据文件里按句均匀抽的 2,519 个非 padding token。旧层内预演（第 0 层 Q/K/V，
+1,024 token、128 token eval、每矩阵 int4 96,768 B）报“层输出误差降 37–40%”，
+但那个脚本每 172 行抽一个 token、**没有跳 padding**：176,512 行里只有 39,031 个有效
+token，padding 行带共同偏移，全行均值 RMS 0.396，mask-aware 有效 token 只有 0.103。
+用全行均值做 bias 修正会假降 37–40%；用 mask-aware 均值只有 0.4–0.8%
+（query/key/value：0.69% / 0.42% / 0.79%，3-bit 0.76% / 0.85% / 0.81%）。
+同一修正接到 `bert6` 全模型后：
 
 | 数据 | 配置 | int3 Pearson / Spearman | int4 Pearson / Spearman |
 |---|---|---|---|
@@ -719,11 +723,13 @@ f32 `0.8375945675304496 / 0.8308938533093636`、int5
 `0.837595 / 0.830894`，**int4 的 Pearson 与 f32 只差 0.00009**，4-bit 已经在
 统计噪声内；bias/scale 只能把 4-bit 拉回 f32，不可能超过。
 
-原因不是实现错，而是口径错：V 的常数偏移被下一层 LayerNorm/残差消掉；Q/K 的 bias
-主要改 attention logits 的常数/低秩项，softmax 对一部分平移不敏感；而且只修了
-12 层里的第 1 层。层输出误差范数不是 STS 的代理，这条在 §3.16.4 已经出现过一次。
+原因不是实现错，而是两层口径错：一是旧预演把 padding 当校准 token，37% 是假信号；
+二是 mask-aware 后 bias 项本身不到 1%，V 的常数偏移还会被下一层 LayerNorm/残差消掉，
+Q/K 的 bias 主要改 attention logits 的常数/低秩项，softmax 对一部分平移不敏感；
+而且只修了 12 层里的第 1 层。层输出误差范数不是 STS 的代理，这条在 §3.16.4 已经
+出现过一次。
 
-结论：M1 负结果，代码留在本地实验分支，不进 PR；4-bit 不再做权重修正。
+结论：M1 负结果，代码存为 `wsp-bias-scale.patch`，不进 PR；4-bit 不再做权重修正。
 要继续压字节，应转 `WSP-ALT.md` §5 的 BUDGET（目标 int3 字节），或 3-bit
 GPTQ/旋转，而不是继续修 4-bit 的偏差。
 
