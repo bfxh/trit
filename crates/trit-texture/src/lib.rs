@@ -32,9 +32,9 @@
 #![forbid(unsafe_code)]
 
 use trit_core::value::Ternary;
-
 pub mod convert;
 mod endpoints;
+mod endpoints_fnv;
 pub mod error;
 pub mod gguf;
 pub mod mip;

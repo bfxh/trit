@@ -15,7 +15,6 @@ fn rejects_big_endian_explicitly() {
     bytes[5] = 2;
     assert_eq!(parse(&bytes).unwrap_err(), ParseError("大端 ELF 暂不支持"));
 }
-
 #[test]
 fn truncated_header_is_an_error_not_a_panic() {
     let mut bytes = vec![0u8; 20];
@@ -24,3 +23,4 @@ fn truncated_header_is_an_error_not_a_panic() {
     bytes[5] = 1;
     assert!(parse(&bytes).is_err());
 }
+mod eh;

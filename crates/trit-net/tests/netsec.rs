@@ -551,8 +551,7 @@ fn benign_tail_recovers_attacks_hidden_in_the_dragged_dead_zone() {
         selected
             .iter()
             .all(|picked| (4..=11).contains(&picked.feature)),
-        "选维必须全是信号维：{:?}",
-        selected
+        "选维必须全是信号维：{selected:?}",
     );
     let benign_cfg = Config {
         benign_tail: Some(0.05),

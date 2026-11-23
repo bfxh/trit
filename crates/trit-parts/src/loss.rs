@@ -41,8 +41,8 @@ pub fn depth_loss_grad(
     let mut seen = 0usize;
     let mut loss = 0f64;
     let dinv = 1.0 / valid.iter().filter(|&&v| v == 1).count().max(1) as f32;
-    for p in 0..hw {
-        if valid[p] != 1 {
+    for (p, &vp) in valid.iter().enumerate() {
+        if vp != 1 {
             continue;
         }
         seen += 1;

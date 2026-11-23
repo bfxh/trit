@@ -164,7 +164,7 @@ fn x64_address_only_import_is_unknown() {
     assert_eq!(report.imports[0].status, Ternary::Unknown);
     assert!(report.imports[0].note.contains("地址"));
 }
-
+mod addr;
 #[test]
 fn elf_report_skips_object_symbols_without_slots() {
     let symbols = vec![

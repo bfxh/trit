@@ -13,6 +13,7 @@ pub use model::{TRITS_PER_WORD, TritModel, TritModelLayer};
 
 use trit_core::value::Ternary;
 
+use crate::endpoints_fnv::endpoint_fnv;
 use crate::ttx::{block_trits, gf3_remainder_16};
 use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TextureError, TritTexture};
 use model::{TRITS_PER_PACKED_BYTE, model_trits, pack_radix3, unpack_radix3};
@@ -124,23 +125,24 @@ fn encode_model_section(model: &TritModel) -> Vec<u8> {
     }
     section
 }
-
 /// 序列化成 TTX2 容器（先校验，坏形状不写盘）。
 pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
-    let (kind, section, checksum_trits) = match document {
+    let (kind, section, checksum_trits, endpoint) = match document {
         TtxDocument::Texture { levels } => {
             validate_levels(levels)?;
             (
                 KIND_TEX,
                 encode_texture_section(levels),
                 texture_trits(levels),
+                crate::endpoints_fnv::endpoint_fnv(levels),
             )
         }
         TtxDocument::Model(model) => {
             TritModel::new(model.layers.clone())?;
-            (KIND_MOD, encode_model_section(model), model_trits(model))
+            (KIND_MOD, encode_model_section(model), model_trits(model), 0)
         }
     };
+    let checksum = u32::from_le_bytes(gf3_remainder_16(&checksum_trits)) ^ endpoint;
     let mut out = Vec::with_capacity(HEADER_BYTES + section.len() + CHECKSUM_BYTES);
     out.extend_from_slice(&MAGIC);
     out.push(kind);
@@ -148,10 +150,9 @@ pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
     out.extend_from_slice(&0u16.to_le_bytes());
     out.extend_from_slice(&(section.len() as u32).to_le_bytes());
     out.extend_from_slice(&section);
-    out.extend_from_slice(&gf3_remainder_16(&checksum_trits));
+    out.extend_from_slice(&checksum.to_le_bytes());
     Ok(out)
 }
-
 fn decode_texture_section(section: &[u8]) -> Result<Vec<TritTexture>, TextureError> {
     let truncated = || TextureError::TtxTruncated {
         actual: section.len(),
@@ -306,14 +307,14 @@ pub fn from_ttx2(bytes: &[u8]) -> Result<TtxDocument, TextureError> {
         },
         _ => TtxDocument::Model(decode_model_section(section)?),
     };
-    let trits = match &document {
-        TtxDocument::Texture { levels } => texture_trits(levels),
-        TtxDocument::Model(model) => model_trits(model),
+    let (trits, endpoint) = match &document {
+        TtxDocument::Texture { levels } => (texture_trits(levels), endpoint_fnv(levels)),
+        TtxDocument::Model(model) => (model_trits(model), 0),
     };
     let stored: [u8; CHECKSUM_BYTES] = bytes[HEADER_BYTES + section_len..section_end]
         .try_into()
         .unwrap();
-    let expected = gf3_remainder_16(&trits);
+    let expected = (u32::from_le_bytes(gf3_remainder_16(&trits)) ^ endpoint).to_le_bytes();
     if stored != expected {
         return Err(TextureError::TtxChecksum {
             stored: stored[0],
@@ -572,7 +573,6 @@ mod tests {
             })
         ));
     }
-
     #[test]
     fn v1_files_are_rejected_with_explicit_magic() {
         let texture = encode_rgba(&sample(8, 8), 8, 8).unwrap();

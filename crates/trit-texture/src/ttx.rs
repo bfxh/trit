@@ -90,13 +90,13 @@ pub(crate) fn block_trits(block: &[u8; TRIT_BLOCK_BYTES]) -> [Ternary; TRITS_PER
     }
     out
 }
-
 fn checksum(texture: &TritTexture) -> u8 {
     let mut trits = Vec::with_capacity(texture.blocks.len() * TRITS_PER_BLOCK);
     for block in &texture.blocks {
         trits.extend_from_slice(&block_trits(block));
     }
-    gf3_remainder(&trits)[0]
+    // 端点字节经 FNV 折进校验流（同 TTX3 tile_crc 口径）：端点篡改不再能通过闸门。
+    gf3_remainder(&trits)[0] ^ (crate::endpoints_fnv::endpoint_fnv([texture]) & 0xff) as u8
 }
 
 /// 把纹理序列化成 TTX 容器。
