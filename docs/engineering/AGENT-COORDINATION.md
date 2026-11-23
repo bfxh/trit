@@ -4,7 +4,7 @@
 > 接活时凭什么判断“这还是上一棒那棵树”，以及两道门在什么情况下必须拒绝。
 > 边界：只覆盖宿主侧 `tools/agent_verify.py` 的 `--claim-gate` / `--handoff` 与
 > `tools/handoff.py`；不覆盖跨机信封、分布式锁、DeliveryReceipt 四态推进。
-> 状态：**已跑通**（`tools/selftest.ps1` 675/675 全绿，其中 AF23/AF24 共 8 条断言）。
+> 状态：**已跑通**（`tools/selftest.ps1` 696/0/0 全绿，其中 AF23/AF24 共 8 条断言）。
 > 容量/并发协调另见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)：硬件探针 + 跨项目租约 +
 > `subagent_dispatch --capacity auto|enforce` 的 provider 前准入。本文只覆盖认领与交接。
 

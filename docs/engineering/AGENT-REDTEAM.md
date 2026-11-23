@@ -133,7 +133,7 @@ python tools/subagent_dispatch.py --self-test     # 25/25
 python tools/sandbox_run.py --self-test           # 43/43
 python tools/sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04  # 11/11
 python tools/sandbox_matrix.py --cases 40 --parallel 8 --json  # 40/40
-pwsh tools/selftest.ps1                           # 675/675
+pwsh tools/selftest.ps1                           # 696/0/0
 ```
 
 诚实边界：以上都是本地、规则/文件系统层的可复算读数；真实模型是否服从封套

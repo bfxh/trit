@@ -37,6 +37,7 @@
   `sys.executable`）；`testdata/work-bench/ptc-plan.json` 用它代替 PATH
   `python`，避免宿主 PATH 指向另一个缺失 `openpyxl` 的解释器。PTC 计划
   4 步全过、quality-gates 13/13、retries 0。
+- 本轮收口后全仓 `tools/selftest.ps1`：**696 passed / 0 failed / 0 skipped**。
 
 ### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
 
