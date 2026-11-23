@@ -7,7 +7,7 @@ mod sidecars;
 use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
 use crate::gelu::gelu;
 use crate::linear::Linear;
-pub(crate) use config::BertConfig;
+pub(crate) use config::{BertConfig, Budget};
 pub(crate) struct BertLayer {
     pub(crate) query: Linear,
     pub(crate) key: Linear,
