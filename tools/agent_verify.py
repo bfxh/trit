@@ -110,6 +110,7 @@ from datetime import datetime
 
 import attest  # same tools directory; the budget gate consumes the attest chain balance
 import ledger  # same tools directory; the chain appends cost entries, one writer per chain
+import _run  # same tools directory; shared shell choice/exec, no per-command wrapper process
 
 LANGS = {"rust", "python", "node", "go"}
 PROFILES = {"read-only", "workspace-write", "full"}
@@ -1419,17 +1420,24 @@ def main(argv):
                       "--procs", str(caps["procs"]), "--seconds", str(caps["seconds"]),
                       "--", PY, os.path.join(TOOLS, "_run.py"), "-Root", root,
                       "-Command", cmd])
+            code, lines, seconds = r["code"], r["out"], r["seconds"]
         else:
-            r = step([os.path.join(TOOLS, "_run.py"), "-Root", root, "-Command", cmd])
-        entry = {"command": cmd, "exit": r["code"], "seconds": r["seconds"],
-                 "tail": r["out"][-5:]}
+            # Direct call instead of spawning _run.py: one fewer Python process per
+            # command (the dominant per-command term on Windows). The run step still
+            # brackets the execution and records its own seconds/tail, so "did the
+            # guard run before the write" stays answerable.
+            t0 = time.time()
+            code, lines = _run.run_command(root, cmd)
+            seconds = round(time.time() - t0, 2)
+        entry = {"command": cmd, "exit": code, "seconds": seconds,
+                 "tail": lines[-5:]}
         # Appended field only: the caps parameters are evidence, the old shape is untouched.
         if caps:
             entry["caps"] = dict(caps)
         if agent_id:
             entry["agent_id"] = agent_id
         run_log.append(entry)
-        if r["code"] != 0:
+        if code != 0:
             ran_ok = False
     doc["run"] = run_log
     total_run = round(sum(x["seconds"] for x in run_log), 2)

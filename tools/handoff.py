@@ -96,7 +96,7 @@ def state(root):
                             "--no-renames"])
     if rc != 0:
         return None, "git status failed"
-    untracked, total, rows = [], 0, []
+    untracked, total, rows, tracked = [], 0, [], []
     for entry in status.split("\0"):
         if not entry:
             continue
@@ -105,6 +105,8 @@ def state(root):
             path = path.split(" -> ", 1)[1]
         if not path or code != "??":
             rows.append(entry)
+            if path and code != "??":
+                tracked.append(path)
             continue
         # Local coordination/state dirs are not part of the source state the next
         # agent inherits: .journal/ is the chain's snapshot/lock area, .agent/handoff/
@@ -127,10 +129,19 @@ def state(root):
             untracked.append([path, sha256_file(full)])
         except OSError:
             return None, f"untracked file unreadable: {path}"
-    rc, diff = git(root, ["diff", "HEAD", "--binary", "--no-color", "--no-ext-diff"],
-                   binary=True)
-    if rc != 0:
-        return None, "git diff failed"
+    # `git diff HEAD` is the expensive half of this probe on Windows (process start
+    # plus a full index/tree walk). When status shows no tracked change the diff is
+    # empty by definition, so do not pay for it; when it does, restrict the diff to
+    # the paths status just named. Git emits the same per-path hunks in index order,
+    # so the hash stays byte-identical to the unrestricted diff (AF24b pins the
+    # "tree moved -> Unknown" behavior).
+    if not tracked:
+        diff = b""
+    else:
+        rc, diff = git(root, ["diff", "HEAD", "--binary", "--no-color", "--no-ext-diff",
+                              "--", *tracked], binary=True)
+        if rc != 0:
+            return None, "git diff failed"
     if len(diff) > MAX_STATE_BYTES:
         return None, "git diff too large to hash (state unprovable)"
     payload = json.dumps({"head": h, "status": "\0".join(rows),

@@ -47,6 +47,8 @@ journal hashes content, not mtime. Fixtures are built from scratch per invocatio
 The adversarial receipts are synthetic files written by this bench, not real runs.
 
   python tools/bench_orchestration.py [-Rounds 3] [-Commands 40] [-Keep]
+                                     [-Json out.json] [-Strict]
+                                     [-SloRatio 1.30] [-SloP95Ms 50] [-SloTail 2.0]
 """
 
 import json
@@ -68,7 +70,8 @@ POLICY = os.path.join(TOOLS, "policy.py")
 
 
 def parse_args(argv):
-    out = {"rounds": 3, "commands": 40, "keep": False}
+    out = {"rounds": 3, "commands": 40, "keep": False, "json": "", "strict": False,
+           "slo_p95_ms": 50.0, "slo_ratio": 1.30, "slo_tail": 2.0}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -81,8 +84,20 @@ def parse_args(argv):
             out["keep"] = True
             i += 1
             continue
-        if name in ("rounds", "commands"):
+        if name == "strict":
+            out["strict"] = True
+            i += 1
+            continue
+        if name == "json":
+            out["json"] = val
+        elif name in ("rounds", "commands"):
             out[name] = max(1, int(val))
+        elif name in ("slop95ms", "slo-p95ms", "slop95_ms", "slo-p95-ms"):
+            out["slo_p95_ms"] = float(val)
+        elif name in ("sloratio", "slo-ratio"):
+            out["slo_ratio"] = float(val)
+        elif name in ("slotail", "slo-tail"):
+            out["slo_tail"] = float(val)
         i += 2
     return out
 
@@ -168,6 +183,18 @@ def non_gate_seconds(receipt_path):
 def median(values):
     s = sorted(values)
     return s[len(s) // 2] if s else 0.0
+
+
+def percentile(values, q):
+    """Linear-interpolated percentile; q in [0, 1]. Empty -> 0."""
+    s = sorted(values)
+    if not s:
+        return 0.0
+    if len(s) == 1:
+        return s[0]
+    k = (len(s) - 1) * q
+    lo, hi = int(k), min(int(k) + 1, len(s) - 1)
+    return s[lo] + (s[hi] - s[lo]) * (k - lo)
 
 
 def lcp_bytes(b1, b2):
@@ -372,6 +399,28 @@ def main(argv):
     p_med = median([w for w, _ in parallel_pairs])
     overhead_ratio = s_med / d_med if d_med else 0.0
 
+    # Tail latency, not just the median: a chain that is fine on average but stalls
+    # one run in twenty is still a visible pause. Samples are the same fresh rounds
+    # as the median, so this costs no extra wall.
+    chain_p50 = percentile([w for w, _ in serial_pairs], 0.50)
+    chain_p95 = percentile([w for w, _ in serial_pairs], 0.95)
+    chain_p99 = percentile([w for w, _ in serial_pairs], 0.99)
+    direct_p50 = percentile(direct, 0.50)
+    direct_p95 = percentile(direct, 0.95)
+    direct_p99 = percentile(direct, 0.99)
+    chain_tail_ratio = chain_p99 / chain_p50 if chain_p50 else 0.0
+    per_command_ms = ((s_med - d_med) / a["commands"] * 1000.0
+                      if a["commands"] and d_med else 0.0)
+    # The chain/direct RATIO is diagnostic, not a portable gate: on Linux `true` is a
+    # shell builtin (~1 ms), so a fixed Python startup makes the ratio look huge even
+    # when the absolute pause is small. Per-command milliseconds and tail ratio are
+    # the cross-OS SLO; the ratio stays printed for Windows-style comparisons.
+    slo = {
+        "per_command_ms": per_command_ms <= a["slo_p95_ms"],
+        "tail_ratio": chain_tail_ratio <= a["slo_tail"],
+    }
+    slo_ok = all(slo.values())
+
     _, _ = chain_wall(fixture, plan_path, store, rc_full)
     _, _ = chain_wall(fixture, plan_path, store, rc_compact, extra=("--compact",))
     fb = os.path.getsize(rc_full)
@@ -446,6 +495,17 @@ def main(argv):
     print(f"{'guard_overhead_ratio':<30}{overhead_ratio:>9.2f}x   "
           f"chain {fmt(s_med)}s vs direct {fmt(d_med)}s (same plan, wall; policy "
           f"batched since L123)")
+    print(f"{'chain_wall_p50':<30}{fmt(chain_p50):>9}s   "
+          f"p95 {fmt(chain_p95)}s / p99 {fmt(chain_p99)}s; "
+          f"direct p50 {fmt(direct_p50)}s / p95 {fmt(direct_p95)}s / "
+          f"p99 {fmt(direct_p99)}s")
+    print(f"{'per_command_overhead_ms':<30}{per_command_ms:>9.1f}ms   "
+          f"(chain p50 - direct p50) / commands")
+    print(f"{'chain_tail_ratio':<30}{chain_tail_ratio:>9.2f}x   "
+          f"p99/p50 (needs -Rounds >= 10 to be meaningful)")
+    print(f"{'kernel_slo':<30}{'PASS' if slo_ok else 'FAIL':>10}   "
+          f"per-command<={a['slo_p95_ms']:.0f}ms, tail<={a['slo_tail']:.1f}x "
+          f"(ratio {overhead_ratio:.2f}x is diagnostic; strict exit only with -Strict)")
     print(f"{'receipt_full_bytes':<30}{fb:>10}   proxy tokens {fb // 4} "
           f"(bytes/4 -- proxy, NOT a model-side count)")
     print(f"{'receipt_compact_bytes':<30}{cb:>10}   proxy tokens {cb // 4}")
@@ -495,11 +555,36 @@ def main(argv):
           "measured or claimed here (industry figures: Prompt Cache MLSys'24 "
           "arXiv:2311.04934, CacheBlend EuroSys'25; 50-90% cached-input discounts, "
           "41-80% agentic API-cost savings)")
+    if a["json"]:
+        out = {
+            "tool": "bench-orchestration",
+            "commands": a["commands"],
+            "rounds": a["rounds"],
+            "guard_overhead_ratio": overhead_ratio,
+            "chain_wall_s": {"p50": chain_p50, "p95": chain_p95, "p99": chain_p99,
+                             "samples": [w for w, _ in serial_pairs]},
+            "direct_wall_s": {"p50": direct_p50, "p95": direct_p95, "p99": direct_p99,
+                              "samples": direct},
+            "per_command_overhead_ms": per_command_ms,
+            "chain_tail_ratio": chain_tail_ratio,
+            "slo": slo,
+            "slo_thresholds": {"ratio": a["slo_ratio"],
+                               "per_command_ms": a["slo_p95_ms"],
+                               "tail_ratio": a["slo_tail"]},
+            "receipt_bytes": {"full": fb, "compact": cb},
+            "policy_wall_s": {"serial": pol_serial, "batch": pol_batch},
+            "gates_wall_s": {"serial": gates_serial, "parallel": gates_parallel},
+            "crash_wall_s": {"detect": det, "restore": res},
+        }
+        with open(a["json"], "w", encoding="utf-8") as fh:
+            json.dump(out, fh, ensure_ascii=True, indent=2, sort_keys=True)
+            fh.write("\n")
+        print(f"json: {os.path.abspath(a['json'])}")
     if not a["keep"]:
         shutil.rmtree(work, ignore_errors=True)
     else:
         print(f"fixture kept: {work}")
-    return 0
+    return 1 if (a["strict"] and not slo_ok) else 0
 
 
 if __name__ == "__main__":

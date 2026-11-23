@@ -68,6 +68,9 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
 - `state_hash` = HEAD + `git status --porcelain -z --no-renames`（过滤本机账本后的行）+
   `git diff HEAD --binary` 的哈希 + 未跟踪文件内容哈希。它证明“交接时与接收时是同一棵树”，
   **不证明树是对的**；后者是测试/回执的活。超过 256 MB 或 20000 个未跟踪文件判“状态不可证”。
+  2026-11-23 起：`git status` 没有任何 tracked 变更时，diff 必为空，不再起 `git diff` 进程；
+  有 tracked 变更时只对 status 点名的路径做 diff。哈希载荷与全量 diff 逐字节相同（AF24b
+  仍钉“树动了→Unknown”），不是缓存，也没有放宽语义。
 - 不计入的路径：`.journal/`、`.agent/handoff/`、`.agent/resume/`、`.agent/memory/`、
   `.agent/signals.jsonl`、`.agent/last-selftest.json`、`.agent/last-simchain.json`、
   `.agent/doctor-cache.json`——宿主账本不是下一棒继承的源码状态。
@@ -88,13 +91,32 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
   他人占同路径拒绝（`false`）；`--claim-who` 缺失时参数校验拒绝。
 - `AF24a/AF24/AF24b/AF24c`：同树放行（`handoff.verdict=True`）；改文件后 `Unknown` 拒绝；
   坏包 `False` 拒绝；过期包/`base_commit` 改坏 `Unknown` 拒绝。
-- 本机开销（真实仓库 9 个脏文件，各 5 次）：
+- 历史开销（真实仓库 9 个脏文件，各 5 次）：
   `handoff.py gate` 均值 **271.0 ms**（286.7/275.4/268.5/262.9/261.5）；
   `agent_claims.py gate` 均值 **53.3 ms**（53.1/52.5/51.7/56.2/52.9）。
   两者都含 Python 启动 ~24 ms；handoff 的大头是 `git diff HEAD --binary`。
-  脏树越大越慢，**没有**为它做缓存——状态指纹本身就是“每次重算”。
+- 2026-11-23 复测（Windows，同一台机，各 10 次；`handoff.py state`）：
+  干净 linked worktree（2209 文件）**219.2 → 175.5 ms**（p95 222.4 → 179.9，-20%）；
+  脏 D: 仓 **244.4 → 237.4 ms**（p95 255.7 → 249.0，-3%）。
+  干净树省掉一次 `git diff`；脏树的 `git diff` 仍在，pathspec 只裁输出范围、不减 index 扫描，
+  所以脏树不要指望这项优化。没有缓存，状态指纹仍然每次重算。
+- 编排链（Windows 本机，40 条 `true`，10 轮）：优化前 p50 **3.42 s** / direct 1.40 s、
+  **2.44x**、每条多 **50.5 ms**（p95 4.04 s / p99 4.06 s / tail 1.19）；优化后 p50
+  **1.62 s** / direct 1.32 s、**1.22x**、每条多 **7.3 ms**（p95 1.64 s / p99 1.65 s /
+  tail 1.02）。
+  Linux 云主机（同一补丁、10 轮）：**2.16 → 0.34 s**，每条多 **52.7 → 7.5 ms**
+  （p95 2.20 → 0.36 s，p99 2.20 → 0.36 s，tail 1.02 → 1.06）；
+  Linux 的 `true` 是 shell 内建，chain/direct 比值没有可比性，跨端只看绝对 ms 与尾比。
+- 多端：Windows 本机与 Linux 云主机已跑同一补丁。Linux 云主机的 `handoff.py state` 受云盘
+  元数据扫描影响（`git status --untracked-files=all` 单次约 3.5 s），不能当代码回归；编排链
+  基准不碰未跟踪扫描，读数有效。macOS 只能走 CI，本机没有 macOS 读数，不做声称。
+- 单条命令的链仍有约 **0.32 s** 固定门启动（preflight/affected/policy/journal；Windows
+  10 轮 1 命令，p50 0.32 s / direct 0.03 s）。这是固定成本，不是每命令增量；
+  `per_command_overhead_ms` 的 SLO 以 40 条链为准，不能把它摊成 0。
 - 全量验收：`pwsh tools/selftest.ps1`（AF23/AF24 在内）与
   `python tools/terminology.py check` 双绿才算跑通；本文只记录已跑过的夹具，不代替全量。
+  复算：`python tools/bench_orchestration.py -Rounds 10 -Commands 40 -Json <out>.json`
+  （`kernel_slo` 以 per-command ≤50 ms、p99÷p50 ≤2.0 判，chain/direct 比值只作诊断）。
 
 ## 5. 边界（诚实）
 

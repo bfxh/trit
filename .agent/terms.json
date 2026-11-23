@@ -50,8 +50,8 @@
       ],
       "mix": "co",
       "anchors": [
-        "tools/agent_verify.py:1466:\"changed\" if je[\"code\"] == 1 else \"failed\"))",
-        "AGENT-GUARDRAILS.md:788:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
+        "AGENT-GUARDRAILS.md:788:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
+        "tools/agent_verify.py:1474:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -85,8 +85,8 @@
       ],
       "mix": "exclusive",
       "anchors": [
-        "tools/agent_verify.py:129:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:192:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:130:declaration-based gate: the tool layer cannot measure model-side token",
+        "tools/agent_verify.py:193:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -105,7 +105,7 @@
       ],
       "anchors": [
         "tools/ledger.py:2:keep token cost and wall-clock cost in separate columns, on purpose",
-        "tools/agent_verify.py:138:wall is tool-measured per command; tokens are caller-declared"
+        "tools/agent_verify.py:139:wall is tool-measured per command; tokens are caller-declared"
       ],
       "status": "active"
     },
@@ -202,8 +202,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "tools/agent_verify.py:1505:verdict = (\"command failed\" if not ran_ok else",
-        "AGENT-GUARDRAILS.md:769:1. **`verdict`**——只有这几种，各是什么一眼定论："
+        "AGENT-GUARDRAILS.md:769:1. **`verdict`**——只有这几种，各是什么一眼定论：",
+        "tools/agent_verify.py:1513:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -639,6 +639,41 @@
       "action": "update",
       "term": "failed",
       "reason": "AGENT-GUARDRAILS 命令块新增行，failed 权威行 784->788，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T08:40:29+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "perf: _run in-process, anchors moved by import + run loop",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T08:40:29+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "perf: import line added above BUDGET_NOTE",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T08:40:29+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "perf: import line added above COST_NOTE",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T08:40:29+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "perf: run loop replaced wrapper with direct call",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T08:40:39+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "perf: duplicate stale anchor removed",
       "loosened": "drop-anchor"
     }
   ]
