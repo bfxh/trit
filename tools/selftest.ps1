@@ -33,6 +33,21 @@ function Assert-True([bool]$cond, [string]$name, [string]$detail) {
     else { "  FAIL  $name  ($detail)"; $script:failed++ }
 }
 
+# `python`/`python3` can be PowerShell aliases on Windows. Get-Command().Source is
+# empty for an alias, which used to fall through to the `py` launcher (a different
+# interpreter that may not have openpyxl). Resolve the alias definition to the real
+# executable so every block uses the same interpreter.
+function Resolve-Python([string]$name) {
+    $cmd = Get-Command $name -ErrorAction SilentlyContinue
+    if (-not $cmd) { return $null }
+    if ($cmd.CommandType -eq 'Alias' -and $cmd.Definition) {
+        $def = $cmd.Definition
+        if ($def -match '^\s*"([^"]+)"') { return $matches[1] }
+        return $def
+    }
+    return $cmd.Source
+}
+
 function New-File([string]$path, [string]$content) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
     [IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding($false)))
@@ -1389,7 +1404,7 @@ if (-not $bashExe) {
     $zPy = $null
     foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
         if (-not $c) { continue }
-        $src = (Get-Command $c -ErrorAction SilentlyContinue).Source
+        $src = Resolve-Python $c
         if (-not $src) { continue }
         if ((& $src -c 'print(1)' 2>$null) -eq '1') { $zPy = $src; break }
     }
@@ -2249,7 +2264,7 @@ if (-not $bashExe) {
 $aePy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $aeSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $aeSrc = Resolve-Python $c
     if (-not $aeSrc) { continue }
     if ((& $aeSrc -c 'print(1)' 2>$null) -eq '1') { $aePy = $aeSrc; break }
 }
@@ -2410,7 +2425,7 @@ if (-not $aePy) {
 $afPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $afSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $afSrc = Resolve-Python $c
     if (-not $afSrc) { continue }
     if ((& $afSrc -c 'print(1)' 2>$null) -eq '1') { $afPy = $afSrc; break }
 }
@@ -2875,7 +2890,7 @@ if (-not $afPy) {
 $agPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $agSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $agSrc = Resolve-Python $c
     if (-not $agSrc) { continue }
     if ((& $agSrc -c 'print(1)' 2>$null) -eq '1') { $agPy = $agSrc; break }
 }
@@ -3137,7 +3152,7 @@ if (-not $agPy) {
 $ahPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $ahSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $ahSrc = Resolve-Python $c
     if (-not $ahSrc) { continue }
     if ((& $ahSrc -c 'print(1)' 2>$null) -eq '1') { $ahPy = $ahSrc; break }
 }
@@ -3327,7 +3342,7 @@ if (-not $ahPy) {
 $aiPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $aiSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $aiSrc = Resolve-Python $c
     if (-not $aiSrc) { continue }
     if ((& $aiSrc -c 'print(1)' 2>$null) -eq '1') { $aiPy = $aiSrc; break }
 }
@@ -3679,7 +3694,7 @@ if (-not $aiPy) {
 $ajPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $ajSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $ajSrc = Resolve-Python $c
     if (-not $ajSrc) { continue }
     if ((& $ajSrc -c 'print(1)' 2>$null) -eq '1') { $ajPy = $ajSrc; break }
 }
@@ -3948,7 +3963,7 @@ if (-not $ajPy) {
 $akPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $akSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $akSrc = Resolve-Python $c
     if (-not $akSrc) { continue }
     if ((& $akSrc -c 'print(1)' 2>$null) -eq '1') { $akPy = $akSrc; break }
 }
@@ -4367,7 +4382,7 @@ print("ak-gen ok")
 $alPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $alSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $alSrc = Resolve-Python $c
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
@@ -4815,7 +4830,7 @@ print("ALDRV done")
 $amPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $amSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $amSrc = Resolve-Python $c
     if (-not $amSrc) { continue }
     if ((& $amSrc -c 'print(1)' 2>$null) -eq '1') { $amPy = $amSrc; break }
 }
@@ -5113,7 +5128,7 @@ $anTotal = 3
 $anPy = $null
 foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $c) { continue }
-    $anSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    $anSrc = Resolve-Python $c
     if (-not $anSrc) { continue }
     if ((& $anSrc -c 'print(1)' 2>$null) -eq '1') { $anPy = $anSrc; break }
 }

@@ -29,6 +29,10 @@
   重试 3 次。`--self-test` **43/43**（新增“git dir mtime alone is not
   host-mutated”“file write under .git is host-mutated”两条断言）；
   `sandbox_matrix --cases 40 --parallel 8` 连续 **4 次 40/40**。
+- `tools/selftest.ps1`：Python 解释器解析器改为解析 PowerShell alias 的
+  `Definition`。此前 `python` 是 alias 时 `Get-Command().Source` 为空，循环
+  落到 `py`（另一个解释器，没有 `openpyxl`），导致 AT1/AT2/AU2 假失败；现在
+  11 个选择点统一走 `Resolve-Python`。
 
 ### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
 
