@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（第九轮：run 后对齐复核）
+
+- `tools/agent_verify.py`：新增 post-run `alignment-post`。`journal-end` 拿到
+  `journal: added/deleted/modified` 的实际仓库相对路径后，用同一份清单和同一
+  套 gate 重新检查产物/证据哈希与 locator、未挂变更、non-goal、需求链；不再是
+  “开工前声明自洽就算通过”。漂移时 verdict `unaligned after run`、exit 1，
+  journal/成本/记忆仍记录，不提前丢弃已发生的写入。
+- `journal-end` 本身失败（退出码非 0/1）时，post 记为 `unknown` 并 fail-closed；
+  显式放在 root 内的 `-Store` 会被过滤出“产品变更”，避免 journal 自己的快照
+  被误判为漂移。
+- 回执 `alignment.post` 记录 `manifest/status/score/must_score/counts/failures/warnings`，
+  保持嵌套在既有 `alignment` 稳定字段内。
+- `tools/selftest.ps1` 新增 AL33–AL35：run 写未挂文件拒绝、只改声明路径仍 aligned、
+  改带 `sha256` 产物后哈希漂移拒绝；`$alTotal` 32→35。
+- 文档/台账：`docs/engineering/AGENT-ALIGNMENT.md` 补 run 后复核与诚实边界；
+  `docs/ERRORS.md` L167、`.agent/checks/registry.json` C077、`docs/README.md`
+  同步；全仓 `tools/selftest.ps1` **705 passed / 0 failed / 0 skipped**（含 AL27–AL35）。
+
 ### Added（第八轮：对齐清单目标层级与骨架生成）
 
 - `tools/alignment_gate.py` 新增 `alignment/2`：`goals` 单根目标树，goal 可带

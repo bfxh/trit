@@ -1413,7 +1413,7 @@
     },
     {
       "id": "C077",
-      "title": "目标/需求/产物/证据/变更对齐门：单根目标树（v2）、父链、悬空引用、哈希/locator、未挂变更、non-goal、矛盾、scaffold 空骨架",
+      "title": "目标/需求/产物/证据/变更对齐门：单根目标树（v2）、父链、悬空引用、哈希/locator、未挂变更、non-goal、矛盾、scaffold 空骨架、run 后漂移复核",
       "kind": "cmd",
       "covers": [
         "L167"
