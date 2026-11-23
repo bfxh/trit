@@ -133,18 +133,33 @@ fn collect_variables(tokens: &[Token]) -> Vec<Token> {
 /// 把解析错误（1 起的行/列）换成整篇文档里的字节区间。
 fn error_span(err: &trit_core::parser::ParseError, src: &str, base: usize) -> (usize, usize) {
     use trit_core::parser::ParseError as E;
-    let (line, column, width) = match err {
+    let (line, column) = match err {
         E::UnexpectedEof { line, column }
         | E::UnexpectedChar { line, column, .. }
-        | E::UnclosedParen { line, column } => (*line, *column, 1),
-        E::InvalidIdentifier { line, column, name } => (*line, *column, name.len().max(1)),
+        | E::UnclosedParen { line, column } => (*line, *column),
+        E::InvalidIdentifier { line, column, name } => {
+            let offset = offset_at(src, *line, *column);
+            let start = base + offset;
+            let end = (base + offset + name.len().max(1)).min(base + src.len());
+            return (start, end.max(start));
+        }
         // 无位置信息的预算类错误：标在整条表达式上。
         _ => return (base, base + src.len()),
     };
     let offset = offset_at(src, line, column);
+    // `offset_at` 经 `char_indices` 取边界，`start` 随之落在字符边界上。
     let start = base + offset;
-    let end = (start + width).min(base + src.len()).max(start);
-    (start, end)
+    // 宽度 = 该偏移处字符的 UTF-8 字节长度（不再硬编码 1 字节）；偏移已到
+    // 文末（无字符）时宽度为 0，退化为 `(start, start)` 空 span。
+    let width = src[offset..].chars().next().map_or(0, char::len_utf8);
+    let mut end = start + width;
+    end = end.min(base + src.len());
+    // 兜底：`end` 必须是字符边界（宽度取 `len_utf8` 时天然是下一边界；这里
+    // 防止任何偏移计算把 `end` 留在字符内部），并保持 `start <= end <= src.len()`。
+    while end < base + src.len() && !src.is_char_boundary(end - base) {
+        end += 1;
+    }
+    (start, end.max(start))
 }
 
 /// 1 起行列 → 字节偏移（行内列按字符计，与 `trit-core` 解析器一致）。
@@ -345,109 +360,5 @@ pub(crate) fn is_variable(token: &Token) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn clean_expression_has_no_diagnostics() {
-        let a = analyze("# demo\n(a & b) | !c\n");
-        assert!(a.diagnostics.is_empty(), "{:?}", a.diagnostics);
-        assert!(a.expr.is_some());
-        let names: Vec<&str> = a.variables.iter().map(|v| v.text.as_str()).collect();
-        assert_eq!(names, vec!["a", "b", "c"]);
-    }
-
-    #[test]
-    fn empty_file_reports() {
-        let a = analyze("# only comment\n\n");
-        assert_eq!(a.diagnostics.len(), 1);
-        assert!(a.diagnostics[0].message.contains("没有表达式"));
-    }
-
-    #[test]
-    fn two_expressions_report_on_second_line() {
-        let text = "a & b\nc | d\n";
-        let a = analyze(text);
-        assert_eq!(a.diagnostics.len(), 1);
-        assert!(a.diagnostics[0].message.contains("只能有一条表达式"));
-        assert_eq!(a.diagnostics[0].start, 6);
-    }
-
-    #[test]
-    fn parse_error_has_range() {
-        let text = "# x\na & )\n";
-        let a = analyze(text);
-        assert_eq!(a.diagnostics.len(), 1);
-        assert!(a.diagnostics[0].message.contains("无法识别"));
-        let idx = LineIndex::new(text);
-        let range = idx.range(text, a.diagnostics[0].start, a.diagnostics[0].end);
-        assert_eq!(range.start.line, 1);
-        assert_eq!(range.start.character, 4);
-    }
-
-    #[test]
-    fn hover_operator_renders_truth_table() {
-        let text = "a & b";
-        let a = analyze(text);
-        let (markdown, range) =
-            hover(text, Position::new(0, 2), Algebra::Kleene, &a).expect("有悬停");
-        assert!(markdown.contains("与（合取）"));
-        assert!(markdown.contains("| a \\ b |"));
-        assert!(markdown.contains("| 0 | 0 | 0 | 0 |"));
-        assert_eq!(range.start, Position::new(0, 2));
-        assert_eq!(range.end, Position::new(0, 3));
-    }
-
-    #[test]
-    fn hover_variable() {
-        let text = "a & b";
-        let a = analyze(text);
-        let (markdown, _) = hover(text, Position::new(0, 0), Algebra::Kleene, &a).expect("有悬停");
-        assert!(markdown.contains("变量"));
-    }
-
-    #[test]
-    fn hover_differs_by_algebra() {
-        let kleene = render_operator(lex::operator("&").expect("有"), Algebra::Kleene);
-        let bochvar = render_operator(lex::operator("&").expect("有"), Algebra::Bochvar);
-        assert!(kleene.contains("X"));
-        assert_ne!(kleene, bochvar);
-    }
-
-    #[test]
-    fn completion_lists_ops_constants_and_variables() {
-        let a = analyze("a & b");
-        let items = completion(&a);
-        let labels: Vec<&str> = items
-            .iter()
-            .filter_map(|i| i.get("label").and_then(Value::as_str))
-            .collect();
-        assert!(labels.contains(&"&"));
-        assert!(labels.contains(&"X"));
-        assert!(labels.contains(&"a"));
-        assert!(labels.contains(&"b"));
-    }
-
-    #[test]
-    fn symbols_are_variables() {
-        let text = "a & b";
-        let a = analyze(text);
-        let symbols = symbols(text, &a);
-        let names: Vec<&str> = symbols
-            .iter()
-            .filter_map(|s| s.get("name").and_then(Value::as_str))
-            .collect();
-        assert_eq!(names, vec!["a", "b"]);
-    }
-
-    #[test]
-    fn diagnostics_json_has_source_and_range() {
-        let text = "a & )";
-        let a = analyze(text);
-        let values = diagnostics_json(text, &a);
-        assert_eq!(values.len(), 1);
-        assert_eq!(values[0]["severity"], 1);
-        assert_eq!(values[0]["source"], "trit-lsp");
-        assert!(values[0]["range"]["start"]["line"].is_number());
-    }
-}
+#[path = "analysis_tests.rs"]
+mod tests;

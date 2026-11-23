@@ -26,32 +26,10 @@ impl Parser {
             Some(Tok::Str(s)) => Value::Text(s),
             Some(Tok::Regex(b)) => Value::Regex(b),
             Some(Tok::Sym('{')) => {
-                // hex 块：吃到 '}'，token 拼回空格分隔的 hex spec
-                let mut spec = String::new();
-                loop {
-                    match self.next() {
-                        Some(Tok::Sym('}')) => break,
-                        Some(Tok::Word(w)) => {
-                            if !spec.is_empty() {
-                                spec.push(' ');
-                            }
-                            spec.push_str(&w);
-                        }
-                        Some(Tok::Sym(c)) => {
-                            if !spec.is_empty() {
-                                spec.push(' ');
-                            }
-                            spec.push(c);
-                        }
-                        other => {
-                            return Err(format!("规则 {rule_name} 的 hex 串未闭合：{other:?}"));
-                        }
-                    }
-                }
-                match Pattern::hex(&spec) {
-                    Ok(p) => Value::Hex(p),
-                    Err(e) => return Err(format!("规则 {rule_name} hex 串不合法：{e}")),
-                }
+                let Some(p) = self.parse_hex_block(unsupported, rule_name)? else {
+                    return Ok(None);
+                };
+                Value::Hex(p)
             }
             other => {
                 return Err(format!("规则 {rule_name}：字符串值不合法 {other:?}"));
@@ -179,3 +157,6 @@ impl Parser {
         Ok(Some((pattern, private)))
     }
 }
+
+#[path = "hex_value.rs"]
+mod hex_value;

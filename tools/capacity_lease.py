@@ -218,7 +218,16 @@ def probe_io_units():
     return DEFAULT_IO_UNITS, "default-advisory"
 
 
-def probe_load1(cores):
+def probe_load1(cores, load_override=None):
+    """Load average used for CPU capacity.
+
+    ``load_override`` exists for deterministic self-tests: a shared CI runner
+    can have an arbitrary load1, and a capacity assertion that depends on it
+    turns red for reasons unrelated to the code under test.  Production
+    callers leave it unset and use the real probe/env override.
+    """
+    if load_override is not None:
+        return max(0.0, float(load_override)), "override"
     override = _env_float("TRIT_CAPACITY_ASSUME_LOAD1")
     if override is not None:
         return max(0.0, override), "override"
@@ -235,7 +244,7 @@ def probe_load1(cores):
 
 
 def probe(cpu_override=None, memory_override_mb=None, gpu_override=None,
-          disk_override_mb=None, io_override=None, state_dir=""):
+          disk_override_mb=None, io_override=None, state_dir="", load_override=None):
     cores = max(1, int(os.cpu_count() or 1))
     assume_cpu = cpu_override if cpu_override is not None else _env_int("TRIT_CAPACITY_ASSUME_CPU")
     assume_mem = memory_override_mb if memory_override_mb is not None else _env_int(
@@ -246,7 +255,7 @@ def probe(cpu_override=None, memory_override_mb=None, gpu_override=None,
     if assume_mem is not None:
         total_mb = max(1, int(assume_mem))
         available_mb = max(1, int(assume_mem))
-    load1, load_source = probe_load1(cores)
+    load1, load_source = probe_load1(cores, load_override)
     cpu_workers = max(0, cores - 1 - int(math.floor(load1 or 0.0))) if load1 is not None else max(0, cores - 1)
     memory_reserve = min(MEMORY_RESERVE_MB, max(256, available_mb // 8))
     memory_capacity = max(0, available_mb - memory_reserve)
@@ -837,9 +846,13 @@ def self_test():
     state = os.path.join(tmp, "state")
     try:
         p = probe(cpu_override=8, memory_override_mb=8192, gpu_override=2,
-                  disk_override_mb=4096, io_override=8)
+                  disk_override_mb=4096, io_override=8, load_override=0.0)
         _check(checks, "probe has capacity", p["capacity"]["cpu_workers"] == 7
                and p["capacity"]["memory_mb"] > 0, str(p["capacity"]))
+        overloaded = probe(cpu_override=8, memory_override_mb=8192, gpu_override=2,
+                           disk_override_mb=4096, io_override=8, load_override=3.0)
+        _check(checks, "probe subtracts load1 deterministically",
+               overloaded["capacity"]["cpu_workers"] == 4, str(overloaded["capacity"]))
         _check(checks, "probe has gpu/disk/io dimensions",
                p["capacity"]["gpu"] == 2 and p["capacity"]["disk_mb"] == 4096
                and p["capacity"]["io_units"] == 8, str(p["capacity"]))
