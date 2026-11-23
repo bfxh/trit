@@ -18,6 +18,7 @@ snapshot (self-test)
 deps plan (self-test)
 vendor (self-test)
 secret scan (repo-wide)
+security gate (quick, fail-closed)
 mutation (changed crates)
 t3 fmt + clippy + test
 test surface (ratchet)

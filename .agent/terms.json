@@ -17,7 +17,7 @@
       "anchors": [
         "tools/affected.py:118:fail-safe: a full run is always sound, an unproven subset is not",
         "tools/affected.py:125:\"proven\": len(unproven) == 0, \"unproven\": unproven,",
-        "AGENT-GUARDRAILS.md:33:出测试计划；没有证明就回退全量（不拒绝，如实标注 unproven）"
+        "AGENT-GUARDRAILS.md:34:出测试计划；没有证明就回退全量（不拒绝，如实标注 unproven）"
       ],
       "status": "active"
     },
@@ -50,8 +50,8 @@
       ],
       "mix": "co",
       "anchors": [
-        "AGENT-GUARDRAILS.md:791:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
-        "tools/agent_verify.py:1528:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
+        "AGENT-GUARDRAILS.md:843:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
+        "tools/agent_verify.py:1608:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -85,8 +85,8 @@
       ],
       "mix": "exclusive",
       "anchors": [
-        "tools/agent_verify.py:141:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:208:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:143:declaration-based gate: the tool layer cannot measure model-side token",
+        "tools/agent_verify.py:215:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -105,7 +105,7 @@
       ],
       "anchors": [
         "tools/ledger.py:2:keep token cost and wall-clock cost in separate columns, on purpose",
-        "tools/agent_verify.py:150:wall is tool-measured per command; tokens are caller-declared"
+        "tools/agent_verify.py:152:wall is tool-measured per command; tokens are caller-declared"
       ],
       "status": "active"
     },
@@ -150,7 +150,7 @@
       ],
       "anchors": [
         "tools/run_caps.py:32:Honest strength statement -- this is a resource cap, NOT a security boundary:",
-        "AGENT-GUARDRAILS.md:300:## 协议四：资源帽协议（何时开 --caps）"
+        "AGENT-GUARDRAILS.md:352:## 协议四：资源帽协议（何时开 --caps）"
       ],
       "status": "active"
     },
@@ -187,7 +187,7 @@
       "mix": "none",
       "anchors": [
         "tools/journal.py:214:journal: end -- ",
-        "AGENT-GUARDRAILS.md:794:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
+        "AGENT-GUARDRAILS.md:846:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
       ],
       "status": "active"
     },
@@ -202,8 +202,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "AGENT-GUARDRAILS.md:772:1. **`verdict`**——只有这几种，各是什么一眼定论：",
-        "tools/agent_verify.py:1567:verdict = (\"command failed\" if not ran_ok else"
+        "AGENT-GUARDRAILS.md:824:1. **`verdict`**——只有这几种，各是什么一眼定论：",
+        "tools/agent_verify.py:1647:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -264,7 +264,7 @@
       ],
       "anchors": [
         "AGENT-GUARDRAILS.md:15:护栏链上任何一道闸拒绝，整体拒绝——这是本手册最重要的性质",
-        "AGENT-GUARDRAILS.md:50:闸门步骤任一拒绝 ⇒ 整体拒绝"
+        "AGENT-GUARDRAILS.md:51:闸门步骤任一拒绝 ⇒ 整体拒绝"
       ],
       "status": "active"
     },
@@ -285,7 +285,7 @@
       ],
       "anchors": [
         "tools/signal.py:14:Honest boundary: classify is rule triage, not a model judgment",
-        "AGENT-GUARDRAILS.md:377:classify 是规则匹配，不是模型判断"
+        "AGENT-GUARDRAILS.md:429:classify 是规则匹配，不是模型判断"
       ],
       "status": "active"
     },
@@ -300,8 +300,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "AGENT-GUARDRAILS.md:499:**主检出判定只有一个机器无关判据：`.git` 是目录。**",
-        "tools/policy.py:260:def checkout_kind(root_path):"
+        "tools/policy.py:260:def checkout_kind(root_path):",
+        "AGENT-GUARDRAILS.md:551:**主检出判定只有一个机器无关判据：`.git` 是目录。**"
       ],
       "status": "active"
     },
@@ -709,6 +709,97 @@
       "action": "update",
       "term": "verdict",
       "reason": "policy empty output key omitted; quotes unchanged, lines moved down",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "proven",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "caps",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "gate",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "triage",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "worktree",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
       "loosened": "drop-anchor"
     }
   ]

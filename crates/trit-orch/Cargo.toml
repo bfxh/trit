@@ -35,7 +35,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
 serde_json = "1.0.154"
 # 物化表用 SQLite：多进程读写，不占轨迹 WAL 的排他锁。
-rusqlite = { version = "=0.39.0", features = ["bundled"], optional = true }
+rusqlite = { version = "=0.41.0", features = ["bundled"], optional = true }
 # vendor 副本（third_party/trit-db）：离线构建不再拉 git；来源 rev 见其 README。
 tritdb-txn = { path = "../../third_party/trit-db/crates/tritdb-txn", optional = true }
 tritdb-sql = { path = "../../third_party/trit-db/crates/tritdb-sql", optional = true }

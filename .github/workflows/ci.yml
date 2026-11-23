@@ -478,6 +478,31 @@ jobs:
       - name: Scan tracked tree for private material
         run: python3 scripts/privacy_scan.py
 
+  security-gate:
+    name: security gate (quick, fail-closed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-audit
+      - name: Self-test (normalizers / severity / timeout / argv-only)
+        run: python3 tools/security_gate.py --self-test
+      # Quick = secrets + privacy + dependency audit.  Static clippy/unsafe,
+      # cargo-fuzz and runtime/MCP audits stay in their dedicated jobs; the
+      # unified gate reports missing optional scanners as visible gaps, and a
+      # required gap refuses.
+      - name: Static + dependency security gate
+        run: python3 tools/security_gate.py --root . --mode quick --out artifacts/security-gate.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: security-gate
+          path: artifacts/security-gate.json
+          if-no-files-found: warn
+          retention-days: 7
+
   ci-integrity:
     name: ci integrity (protection ↔ workflows)
     runs-on: ubuntu-latest

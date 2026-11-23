@@ -5277,6 +5277,103 @@ if (-not $anPy) {
 }
 
 
+# ==============================================================================
+# AV. 用户设置 / 一次性审计 / 安全门 / 100+ LSP 注册表
+$avTotal = 8
+if (-not $anPy) {
+    "  SKIP  AV1-AV8 找不到可用的 Python，跳过设置/审计/安全/LSP 门"
+    $skipped += $avTotal
+} else {
+    $avSettings = @(& $anPy (Join-Path $tools 'agent_settings.py') --self-test 2>&1)
+    $avSettingsMatch = [regex]::Match(($avSettings -join ' '), 'agent-settings self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avSettingsMatch.Success -and `
+        ([int]$avSettingsMatch.Groups[1].Value -eq [int]$avSettingsMatch.Groups[2].Value) -and `
+        ([int]$avSettingsMatch.Groups[1].Value -ge 16)) `
+        'AV1 用户级/项目级/显式设置优先级、null 删除、未知键拒绝、回执不含绝对路径 16/16' "e=$LASTEXITCODE"
+
+    $avAudit = @(& $anPy (Join-Path $tools 'agent_audit.py') --self-test 2>&1)
+    $avAuditMatch = [regex]::Match(($avAudit -join ' '), 'agent-audit self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avAuditMatch.Success -and `
+        ([int]$avAuditMatch.Groups[1].Value -eq [int]$avAuditMatch.Groups[2].Value) -and `
+        ([int]$avAuditMatch.Groups[1].Value -ge 13)) `
+        'AV2 一次性审计：完整回执/compact 拒绝/篡改/root 失配/delta 拒绝/高危扫描 14/14' "e=$LASTEXITCODE"
+
+    $avSec = @(& $anPy (Join-Path $tools 'security_gate.py') --self-test 2>&1)
+    $avSecMatch = [regex]::Match(($avSec -join ' '), 'security-gate self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avSecMatch.Success -and `
+        ([int]$avSecMatch.Groups[1].Value -eq [int]$avSecMatch.Groups[2].Value) -and `
+        ([int]$avSecMatch.Groups[1].Value -ge 19)) `
+        'AV3 安全门：findings 归一/高危拦截/中危放行/必需缺口 fail-closed/超时/argv 不进 shell 19/19' "e=$LASTEXITCODE"
+
+    $avLsp = @(& $anPy (Join-Path $tools 'lsp_registry.py') --self-test 2>&1)
+    $avLspMatch = [regex]::Match(($avLsp -join ' '), 'lsp-registry self-test: (\d+)/(\d+)')
+    Assert-True (($LASTEXITCODE -eq 0) -and $avLspMatch.Success -and `
+        ([int]$avLspMatch.Groups[1].Value -eq [int]$avLspMatch.Groups[2].Value) -and `
+        ([int]$avLspMatch.Groups[1].Value -ge 13)) `
+        'AV4 LSP 注册表 100+ 条目/唯一 id/https 源/安装 allowlist/真实 initialize 握手 13/13' "e=$LASTEXITCODE"
+
+    # AV5: a high finding refuses before run and leaves no write.
+    $avRoot = Join-Path $Work 'av-security-refuse'
+    New-AvFixture $avRoot
+    New-Item -ItemType Directory -Force -Path (Join-Path $avRoot '.agent') | Out-Null
+    New-File (Join-Path $avRoot '.agent\settings.json') @'
+{"version":1,"security":{"enabled":true,"mode":"quick","commands":[{"id":"fake-high","category":"static","severity":"high","required":true,"command":["python","-c","print(\"bad\"); raise SystemExit(1)"]}]}}
+'@
+    New-File (Join-Path $avRoot 'plan.json') '{"proven":true,"commands":["echo never > should-not-exist.txt"],"unproven":[]}'
+    $avReceipt = Join-Path $Work 'av-security-refuse.json'
+    & $anPy (Join-Path $tools 'agent_verify.py') -Root $avRoot -Changed (Join-Path $avRoot 'pkg\core.py') `
+        -Lang python -Plan (Join-Path $avRoot 'plan.json') -Store (Join-Path $Work 'av-security-store') `
+        -Receipt $avReceipt --security 2>&1 | Out-Null
+    $avRc = $LASTEXITCODE
+    $avDoc = if (Test-Path $avReceipt) { Get-Content $avReceipt -Raw | ConvertFrom-Json } else { $null }
+    $avSteps = @($avDoc.steps | ForEach-Object { $_.step })
+    Assert-True ($avRc -eq 1 -and $avDoc -and $avDoc.verdict -eq 'refused by security gate' `
+        -and ($avSteps -notcontains 'run') -and -not (Test-Path (Join-Path $avRoot 'should-not-exist.txt'))) `
+        'AV5 高危发现拒绝在 run 之前，命令没有落盘；回执带 security 报告路径与哈希' "e=$avRc"
+
+    # AV6: full receipt + clean scan is PASS in one audit pass.
+    $avGood = Join-Path $Work 'av-security-good'
+    New-AvFixture $avGood
+    New-File (Join-Path $avGood 'plan.json') '{"proven":true,"commands":["echo good > out.txt"],"unproven":[]}'
+    $avGoodReceipt = Join-Path $Work 'av-security-good.json'
+    & $anPy (Join-Path $tools 'agent_verify.py') -Root $avGood -Changed (Join-Path $avGood 'pkg\core.py') `
+        -Lang python -Plan (Join-Path $avGood 'plan.json') -Store (Join-Path $Work 'av-security-good-store') `
+        -Receipt $avGoodReceipt --security 2>&1 | Out-Null
+    $avGoodRc = $LASTEXITCODE
+    $avReport = Join-Path $avGood 'target\agent-security\security-gate.json'
+    $avAuditOut = @(& $anPy (Join-Path $tools 'agent_audit.py') --root $avGood `
+        --receipt $avGoodReceipt --out (Join-Path $Work 'av-audit-once.json') --json 2>&1)
+    $avAuditRc = $LASTEXITCODE
+    $avAuditDoc = if (Test-Path (Join-Path $Work 'av-audit-once.json')) { Get-Content (Join-Path $Work 'av-audit-once.json') -Raw | ConvertFrom-Json } else { $null }
+    Assert-True ($avGoodRc -eq 0 -and $avAuditRc -eq 0 -and $avAuditDoc -and $avAuditDoc.verdict -eq 'pass' `
+        -and [int]$avAuditDoc.summary.failed -eq 0 -and (Test-Path $avReport)) `
+        'AV6 完整回执 + 干净扫描报告一次审计 PASS（不是只看模型视图）' "e=$avGoodRc/$avAuditRc"
+
+    # AV7: plan is data-driven, and the registry has a mainstream Python server.
+    $avPlanOut = @(& $anPy (Join-Path $tools 'lsp_registry.py') plan --lang python --json 2>&1)
+    $avPlanRc = $LASTEXITCODE
+    $avPlanDoc = if ($avPlanOut.Count -gt 0) { ($avPlanOut -join "`n") | ConvertFrom-Json } else { $null }
+    Assert-True ($avPlanRc -eq 0 -and $avPlanDoc -and $avPlanDoc.verdict -eq 'available' `
+        -and @($avPlanDoc.available).Count -ge 1) `
+        'AV7 LSP plan 按语言返回可用的已安装服务器（python/pylsp 或 ruff）' "e=$avPlanRc"
+
+    # AV8: external project without scripts/ still gets trit's audited engines.
+    $avExt = Join-Path $Work 'av-external-project'
+    New-Item -ItemType Directory -Force -Path (Join-Path $avExt 'src') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $avExt 'src\app.py'), "print('ok')`n", [Text.UTF8Encoding]::new($false))
+    & git -C $avExt init -q 2>&1 | Out-Null
+    & git -C $avExt add src\app.py 2>&1 | Out-Null
+    $avExtReport = Join-Path $Work 'av-external-gate.json'
+    $avExtOut = @(& $anPy (Join-Path $tools 'security_gate.py') --root $avExt --mode quick --out $avExtReport --json 2>&1)
+    $avExtRc = $LASTEXITCODE
+    $avExtDoc = if (Test-Path $avExtReport) { Get-Content $avExtReport -Raw | ConvertFrom-Json } else { $null }
+    $avExtIds = @($avExtDoc.scanners | ForEach-Object { $_.id })
+    Assert-True ($avExtRc -eq 0 -and $avExtDoc -and $avExtDoc.verdict -eq 'pass' `
+        -and ($avExtIds -contains 'secrets') -and ($avExtIds -contains 'privacy')) `
+        'AV8 外部项目没有 scripts/ 时仍用 trit 的审计引擎跑 secrets/privacy（不是空扫描）' "e=$avExtRc"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }

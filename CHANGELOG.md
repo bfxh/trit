@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
+
+- `tools/agent_settings.py`：用户级 `%APPDATA%\trit\agent\settings.json`（POSIX
+  `$XDG_CONFIG_HOME/trit/agent/settings.json`）、项目 `.agent/settings.json`、
+  `--settings` 文件与 CLI 参数四级覆盖；默认档 `deepseek-strict`（完整审计回执
+  保留、模型读 compact 视图）。设置回执不含本机绝对路径。自测 16/16。
+- `tools/agent_audit.py`：把多个 full receipt 和多个 `security-gate` 报告折叠成
+  一个 `agent-audit/1` PASS/FAIL；compact/delta/篡改/root 失配/高危扫描均判红；
+  `--receipt` 可直接从回执 `security.report` 自动拉扫描报告并校验 sha256。
+  自测 14/14。
+- `tools/security_gate.py`：统一静态/依赖/lint/unsafe/SAST/动态 fuzz/运行时 MCP
+  adapter，输出 `security-gate/1`；必需扫描器缺口 fail-closed，可选缺口只可见；
+  用户 `security.commands` 只走 argv，不经过 shell。自测 19/19。真实 `quick` 扫描
+  本仓发现并修复 `libsqlite3-sys 0.37.0`（RUSTSEC-2026-0459）与
+  `rustix 1.1.5`（RUSTSEC-2026-0486）两个 high；`rusqlite` 升到 `=0.41.0`、
+  `rustix` 升到 `1.1.6` 后 `cargo audit` 为 0 vulnerabilities，剩 2 条 medium
+  unmaintained（`fxhash`、`rustls-pemfile`）。
+- `tools/lsp_registry.json` + `tools/lsp_registry.py`：138 条 LSP 注册表，覆盖
+  Rust/C/C++/Go/Python/TS/JS/Java/C#/Ruby/PHP/Kotlin/Scala/Clojure/Elixir/Haskell/
+  OCaml/F#/Terraform/Ansible/Docker/GraphQL/Prisma/Zig/Nim/R/Julia 等；命令
+  `list|detect|plan|install|probe`，`probe` 发真实 LSP `initialize` 帧；
+  `install --apply` 只允许 allowlist 包管理器与已审核配方。自测 13/13。
+- `agent_verify`：新增 `--settings`、`--security`、`--security-mode`；安全门在
+  preflight 之后、handoff 之前执行，高危拒绝时 `run` 永不开始；回执写报告相对路径
+  与 sha256。默认 `security.enabled=false`，显式 `--security` 或项目设置才跑，
+  避免旧链每条命令都付扫描成本。
+- `.github/workflows/ci.yml`：新增 `security gate (quick, fail-closed)` job，
+  self-test + secrets/privacy/deps，artifact 保留 7 天；`.github/required-checks.txt`
+  同步加入该检查。
+- `docs/security/SECURITY-SCAN.md`、`AGENT-GUARDRAILS.md`：安全 adapter 矩阵、
+  fail-closed/gap 语义、一次性审计和 LSP 注册表边界；明确"注册表覆盖 100+"不等于
+  "自动安装 100+"。
+- `tools/selftest.ps1`：新增 AV1–AV8，覆盖四个新模块自测、设置/审计/安全门真实
+  夹具、`refused by security gate` 不落盘、full receipt + clean scan 一次审计 PASS、
+  LSP plan、外部项目扫描；全仓 **693 passed / 0 failed / 0 skipped**。真实
+  `security_gate --mode static` 本仓 PASS（clippy/unsafe 0 findings，2 条 medium
+  依赖 unmaintained）；`agent_verify` 夹具 full 8,285 B / compact 1,151 B。
+
 ### Added（第四轮：work-bench + PTC + CI/CD）
 
 - `work-bench`：20 个真实工作任务、15 类、81 条确定性检查、20 个负例；参考
