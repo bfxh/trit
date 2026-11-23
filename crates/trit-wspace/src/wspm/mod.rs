@@ -114,7 +114,7 @@ pub fn pack(items: &[ModelItem<'_>], format: &str) -> Result<PackOutput> {
             .iter()
             .any(|entry: &ModelEntry| entry.name == item.name)
         {
-            return Err(Error::Wire(format!("重复张量名 `{}", item.name)));
+            return Err(Error::Wire(format!("重复张量名 `{}`", item.name)));
         }
         let layer = item.net.layers().first().ok_or(Error::EmptySizes)?;
         let (method, blob) = encode_blob(item.net, format)?;
@@ -232,7 +232,7 @@ pub fn unpack(bytes: &[u8]) -> Result<ModelPack> {
             .iter()
             .any(|other| other.name == entry.name)
         {
-            return Err(Error::Wire(format!("重复张量名 `{}", entry.name)));
+            return Err(Error::Wire(format!("重复张量名 `{}`", entry.name)));
         }
     }
     intervals::check(&entries, payload_end as u64)?;
