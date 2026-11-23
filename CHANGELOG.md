@@ -2,27 +2,34 @@
 
 ## [Unreleased]
 
-### Added（WSP-BUDGET：同字节预算分配，L12 STS Spearman +0.0048）
+### Added（WSP-BUDGET：同字节预算分配 + 块交换，L12 STS I10 +0.0032/+0.0055）
 
 - 新增离线预算规划器 `scripts/wsp_budget.py`：从 safetensors 读 12 层 6 类线性矩阵，
   按含 per-group f32 scale/per-row bias 的真实字节，用权重重建代理 + 拉格朗日/贪心
   选 int2–int5；输出 `budget.json`。新增 `scripts/wsp_budget_variant.py` 做严格同字节
   消融（默认把非 up/down 块重置为 int3，`--require-exact` 校验总字节）。
+- 新增 `scripts/wsp_budget_swap.py`：把已有预算里的 int2/int4 位宽平移到另一个同形状块，
+  源块回 int3，重算每块字节；默认 `--require-exact`，用于回答“同一个降级/升级放在哪层”。
 - `bert6` 接 `TRIT_BUDGET=<json>`：新增 `model/config/budget.rs`，按
   `blocks[].layer/kind/bits` 给每张矩阵选 2/3/4/5 位；2 走现有三值 `QuantLinear`，
   >=3 走 `uniform::build(..., bits)`；只影响 `run/modes` 的量化模型，f32 基线/侧车不变。
-- **严格同字节结果**：`v6e` 总字节 `10,782,720 B`（与纯 int3 完全相同；含 metadata，
+- **严格同字节 v6e**：总字节 `10,782,720 B`（与纯 int3 完全相同；含 metadata，
   weight-only 是 `7,962,624 B`）。L12/STS 1,379 对 Pearson `0.820686`、Spearman
   `0.818137`，纯 int3 为 `0.818440 / 0.813362`；Δ `+0.002246 / +0.004775`。
   10k 配对 bootstrap Spearman 95% CI `[+0.002017, +0.007754]`（候选更好 99.98%），
-  Pearson CI `[-0.000307, +0.004941]` 跨 0，**只算 Spearman-only 同字节小胜**。
-  距纯 int4 Spearman 仍差 `0.013910`，不是“3-bit 追平 int4”。
+  Pearson CI `[-0.000307, +0.004941]` 跨 0，只算 Spearman-only 小胜。
+- **严格同字节 I10**：把 v6e 的层 11 `intermediate.dense` int2 平移到层 10，总字节仍
+  `10,782,720 B`。全量 Pearson `0.821621`、Spearman `0.818898`，相对纯 int3
+  `+0.003180 / +0.005536`；10k CI `[+0.000157, +0.006370]` /
+  `[+0.002192, +0.009004]`，两个下界都过 0。I10 对 v6e `+0.000934 / +0.000761`，
+  CI 跨 0，只能算点估计更好；距纯 int4 Spearman 仍差 `0.013149`，不是“3-bit 追平 int4”。
 - 失败记录：规划器第一版按权重 MSE 选块，128 对低于 int3（0.885716 vs 0.897582），
   全量却为正（0.819473 vs 0.818440）；`v6e` 与 v1 的 `proxy_err_ratio` 同为
   `0.91552`，只把层 11 o 的 int2 降级换到层 9 o，全量 Spearman 就差 `+0.001882`。
-  权重代理看不见块在残差流中的位置；128 子集能测反。
+  权重代理看不见块在残差流中的位置；128 子集能测反。块交换的 128 排名也会高估：
+  F3 在 128 双指标为正，全量 Spearman 转负。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（完整字节账/读数/边界/复算），
-  `docs/research/WSP-ALT.md` §5.5，`docs/results/LESSONS.md` 第 13 条。
+  `docs/research/WSP-ALT.md` §5.5，`docs/results/LESSONS.md` 第 13–14 条。
   新增 `scripts/wsp_budget_bootstrap.py` 做配对 bootstrap。
 
 ### Added（WSP 均匀位宽与 12 层容量：int4 在 1/4 字节稳定越过 f32）
