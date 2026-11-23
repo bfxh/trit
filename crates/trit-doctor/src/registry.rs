@@ -1,6 +1,6 @@
 //! `.agent/checks/registry.json` 面：只做存在性探测，不执行任何检查。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -33,14 +33,12 @@ pub fn load(root: &Path) -> Option<RegistryDoc> {
         .collect();
     Some(RegistryDoc { checks, ids })
 }
-
 fn expand_tilde(text: &str) -> String {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
     text.replace('~', &home)
 }
-
 fn is_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
@@ -54,7 +52,6 @@ fn is_executable(path: &Path) -> bool {
         path.is_file()
     }
 }
-
 fn which(command: &str) -> bool {
     let Ok(paths) = std::env::var("PATH") else {
         return false;
@@ -80,7 +77,6 @@ fn which(command: &str) -> bool {
     }
     false
 }
-
 fn wildcard_match(name: &str, pattern: &str) -> bool {
     let name: Vec<char> = name.chars().collect();
     let pattern: Vec<char> = pattern.chars().collect();
@@ -107,11 +103,9 @@ fn wildcard_match(name: &str, pattern: &str) -> bool {
     }
     pi == pattern.len()
 }
-
 fn has_wildcard(segment: &str) -> bool {
     segment.chars().any(|ch| matches!(ch, '*' | '?' | '['))
 }
-
 fn expand(base: &Path, segments: &[&str], found: &mut bool) {
     if *found {
         return;
@@ -178,8 +172,11 @@ fn path_exists(root: &Path, pattern: &str) -> bool {
         root.join(path).exists()
     }
 }
-
-fn probe_check(root: &Path, check: &Value) -> (bool, &'static str) {
+fn probe_check(
+    root: &Path,
+    check: &Value,
+    command_cache: &mut HashMap<String, bool>,
+) -> (bool, &'static str) {
     if check.get("kind").and_then(Value::as_str) == Some("cmd") {
         let run = check.get("run").and_then(Value::as_str).unwrap_or("");
         let Some(token) = run.split_whitespace().next() else {
@@ -194,7 +191,10 @@ fn probe_check(root: &Path, check: &Value) -> (bool, &'static str) {
             };
             return (path.exists(), "file missing");
         }
-        return (which(token), "command missing");
+        let found = *command_cache
+            .entry(token.to_string())
+            .or_insert_with(|| which(token));
+        return (found, "command missing");
     }
     let Some(scopes) = check.get("scope").and_then(Value::as_array) else {
         return (false, "no scope");
@@ -217,7 +217,6 @@ fn probe_check(root: &Path, check: &Value) -> (bool, &'static str) {
     }
     (false, "scope files missing")
 }
-
 #[must_use]
 pub fn face_registry(root: &Path, doc: Option<&RegistryDoc>) -> Face {
     let Some(doc) = doc else {
@@ -229,8 +228,9 @@ pub fn face_registry(root: &Path, doc: Option<&RegistryDoc>) -> Face {
         );
     };
     let mut not_run = Vec::new();
+    let mut command_cache = HashMap::new();
     for check in &doc.checks {
-        let (ok, why) = probe_check(root, check);
+        let (ok, why) = probe_check(root, check, &mut command_cache);
         if !ok {
             let id = check.get("id").and_then(Value::as_str).unwrap_or("?");
             not_run.push(format!("{id}:{why}"));

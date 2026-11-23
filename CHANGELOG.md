@@ -202,8 +202,11 @@
   “树指纹 + HEAD + index + refs 树 + packed-refs”缓存到 `.agent/trit-doctor-git-cache.json`，
   该文件进 `.gitignore`，不污染 `git status`。
 - `tools/doctor_ab.ps1`：可重跑的 Python/Rust 同机 A/B（暖态中位 < 0.15 s + 除顶层 `at` 外 JSON
-  逐字节一致）。结果：Python 0.673 s / Rust 0.110 s（6.1×，n=7）；`--refresh` 1.393 s / 1.109 s
+  逐字节一致）。切换当天旧树：Python 0.673 s / Rust 0.110 s（6.1×，n=7）；`--refresh` 1.393 s / 1.109 s
   （1.26×，n=3）；真仓暖/暖与冷/冷 JSON 均一致，`--fingerprint` 同为 `aa2a0409faea0812`。
+  换基到 `main`（`6fc80401`）后 n=7 复测 Python 0.820 s / Rust 0.078 s（**10.56×**），冷态 n=3
+  1.720 s / 1.251 s（1.38×）；registry 命令探测按 token 去重、树指纹改用 `DirEntry::metadata()`，
+  暖态仍 PASS。
 - `cargo test -p trit-doctor` 16/16，clippy `-D warnings` 干净；release 二进制 4,598,936 字节。
   边界：无 cargo 机器的预置二进制交付与校验和签名仍未定；坏 JSON 的错误文案因 serde 与 Python
   解析器不同而不逐字一致，状态仍为 UNAVAILABLE。

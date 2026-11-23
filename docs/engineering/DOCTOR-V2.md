@@ -95,6 +95,12 @@ git 面冷跑 `git` 子进程，暖跑按"树指纹 + HEAD + index + refs 树 + 
 只在本表内算比值，不与 §1 合并。同一工作树复跑（系统负载较高）另一次 n=7 为 Python 0.735 s /
 Rust 0.125 s，验收仍 PASS；不同时段的绝对秒数不合并，只看量级与同一轮内的比值。
 
+换基到最新 `main`（`6fc80401`，2026-11-23）后复测：暖态 n=7 为 Python **0.820 s** / Rust
+**0.078 s**（**10.56×**），冷态 n=3 为 **1.720 s** / **1.251 s**（1.38×）。这轮把 registry
+的命令探测按 token 去重（`grep`/`cargo` 原先每条检查都重扫 PATH），树指纹改用
+`DirEntry::metadata()` 取 `(mtime_ns,size)`，避免每条文件再按路径 stat；暖态仍 PASS，JSON
+仍除顶层 `at` 外逐字节一致。上表保留切换当天的读数，不与换基后的绝对值合并。
+
 正确性：真仓暖/暖与冷/冷两种顺序下，除顶层 volatile 的 `at` 外 JSON **逐字节一致**（单行 1432 字节，
 七个面逐字段相同，含 gates 的 `[cached fp=...]` 后缀）；文本表视图同样一致；`--fingerprint` 与
 Python `tree_fingerprint` 同为 `aa2a0409faea0812`；`--help` / 坏 `--root` 的退出码分别为 0 / 2，与

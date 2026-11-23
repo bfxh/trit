@@ -44,8 +44,8 @@ struct GateCache {
     faces: BTreeMap<String, CachedFace>,
 }
 
-fn mtime_ns(path: &Path) -> Option<(i64, u64)> {
-    let meta = fs::metadata(path).ok()?;
+fn mtime_ns(entry: &fs::DirEntry) -> Option<(i64, u64)> {
+    let meta = entry.metadata().ok()?;
     let modified = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
     Some((modified.as_nanos() as i64, meta.len()))
 }
@@ -79,7 +79,7 @@ fn walk(root: &Path, dir: &Path, buffer: &mut String) {
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");
-        match mtime_ns(&path) {
+        match mtime_ns(&entry) {
             Some((mtime, size)) => {
                 buffer.push_str(&format!("{relative}|{mtime}|{size}\n"));
             }
