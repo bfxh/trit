@@ -711,8 +711,8 @@
   全量却为正（0.819473 vs 0.818440）；`v6e` 与 v1 的 `proxy_err_ratio` 同为
   `0.91552`，只把层 11 o 的 int2 降级换到层 9 o，全量 Spearman 就差 `+0.001882`。
   权重代理看不见块在残差流中的位置；128 子集能测反。
-- 文档：`docs/results/WSP-BUDGET-RESULTS.md`（完整字节账/读数/边界/复算），
-  `docs/plans/WSP-ALT.md` §5.5，`docs/results/LESSONS.md` 第 13 条。
+- 文档：`docs/research/WSP-BUDGET-RESULTS.md`（完整字节账/读数/边界/复算），
+  `docs/research/WSP-ALT.md` §5.5，`docs/results/LESSONS.md` 第 13 条。
   新增 `scripts/wsp_budget_bootstrap.py` 做配对 bootstrap。
 
 ### Added（WSP 均匀位宽与 12 层容量：int4 在 1/4 字节稳定越过 f32）
