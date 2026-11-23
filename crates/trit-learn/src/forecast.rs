@@ -95,7 +95,7 @@ impl Holt {
                 x
             }
             Some(level) => {
-                if self.trend == 0.0 && self.beta < 1.0 {
+                if self.trend == 0.0 && self.beta < 1.0 && self.level.is_some() {
                     // 第二个观测：以一次差分初始化趋势（仅一次）。
                     self.trend = x - level;
                     self.level = Some(x);
