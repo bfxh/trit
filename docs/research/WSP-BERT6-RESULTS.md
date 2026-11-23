@@ -730,8 +730,10 @@ Q/K 的 bias 主要改 attention logits 的常数/低秩项，softmax 对一部�
 出现过一次。
 
 结论：M1 负结果，代码存为 `wsp-bias-scale.patch`，不进 PR；4-bit 不再做权重修正。
-要继续压字节，应转 `WSP-ALT.md` §5 的 BUDGET（目标 int3 字节），或 3-bit
-GPTQ/旋转，而不是继续修 4-bit 的偏差。
+要继续压字节，BUDGET M1 已在严格同字节 `10,782,720 B` 上跑完：Spearman
+`0.813362→0.818137`（10k CI 下界 `+0.002017`），Pearson 仍跨 0；详见
+`docs/results/WSP-BUDGET-RESULTS.md`。它不是“3-bit 追平 int4”，下一步应补位置
+敏感度，而不是继续修 4-bit 的偏差。
 
 ## 4. 未证栏
 
