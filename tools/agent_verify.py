@@ -424,10 +424,14 @@ def json_tail(result):
     return None
 
 
-def alignment_probe(root, manifest, changed, lenient, executed=None):
+def alignment_probe(root, manifest, changed, lenient, executed=None, changed_known=False):
     """Run alignment_gate.py and return (step result, parsed report)."""
     args = [ALIGNMENT, "--root", root, "--manifest", manifest, "--json"]
-    if changed:
+    if changed_known:
+        args.append("--changed-set")
+        if changed:
+            args += ["--changed", ",".join(changed)]
+    elif changed:
         args += ["--changed", ",".join(changed)]
     for command in executed or []:
         if str(command).strip():
@@ -455,7 +459,8 @@ def alignment_summary(adoc, root, manifest_path):
         "must_score": adoc.get("must_score"),
         "counts": {k: acounts.get(k) for k in
                    ("goals", "requirements", "must", "artifacts", "evidence",
-                    "provenance", "provenance_verified", "changed", "linked_changes")},
+                    "provenance", "provenance_verified", "changed", "changed_known",
+                    "linked_changes")},
         "failures": len(adoc.get("failures", []) or []),
         "warnings": len(adoc.get("warnings", []) or []),
     }
@@ -1747,7 +1752,7 @@ def main(argv):
                         if isinstance(r, dict) and r.get("exit") == 0
                         and isinstance(r.get("command"), str) and r.get("command").strip()]
             par, padoc = alignment_probe(root, alignment_manifest, actual_changes, post_lenient,
-                                        executed=executed)
+                                        executed=executed, changed_known=True)
             post_status = str(padoc.get("status", "")).lower()
             doc["alignment"]["post"] = alignment_summary(padoc, root, alignment_manifest)
             post_ok = par["code"] == 0 and post_status == "aligned"

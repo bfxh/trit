@@ -51,7 +51,7 @@
       "mix": "co",
       "anchors": [
         "AGENT-GUARDRAILS.md:846:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
-        "tools/agent_verify.py:1722:\"clean\" if je[\"code\"] == 0 else (\"changed\" if je[\"code\"] == 1 else \"failed\"))"
+        "tools/agent_verify.py:1727:\"clean\" if je[\"code\"] == 0 else (\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -203,7 +203,7 @@
       "mix": "none",
       "anchors": [
         "AGENT-GUARDRAILS.md:827:1. **`verdict`**——只有这几种，各是什么一眼定论：",
-        "tools/agent_verify.py:1807:verdict = (\"command failed\" if not ran_ok else"
+        "tools/agent_verify.py:1812:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -989,6 +989,20 @@
       "action": "update",
       "term": "verdict",
       "reason": "v3 run-command provenance fields shifted agent_verify; re-anchor to current lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T06:43:15+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "declared-change stage added lines in alignment_probe and post-run call; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T06:43:19+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "declared-change stage added lines in alignment_probe and post-run call; quote unchanged",
       "loosened": "drop-anchor"
     }
   ]
