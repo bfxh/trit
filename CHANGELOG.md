@@ -33,6 +33,10 @@
   `Definition`。此前 `python` 是 alias 时 `Get-Command().Source` 为空，循环
   落到 `py`（另一个解释器，没有 `openpyxl`），导致 AT1/AT2/AU2 假失败；现在
   11 个选择点统一走 `Resolve-Python`。
+- `tools/cmd_driver.py`：新增 `${PYTHON}` 变量（= 正在运行 driver 的
+  `sys.executable`）；`testdata/work-bench/ptc-plan.json` 用它代替 PATH
+  `python`，避免宿主 PATH 指向另一个缺失 `openpyxl` 的解释器。PTC 计划
+  4 步全过、quality-gates 13/13、retries 0。
 
 ### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
 

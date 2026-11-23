@@ -294,6 +294,9 @@ def execute_plan(plan: dict[str, Any], root: Path, out_path: Path,
         "ROOT": str(root),
         "OUTDIR": str(out_path.parent),
         "PLAN_DIR": str(out_path.parent),
+        # Use the interpreter that is already running the driver; PATH `python`
+        # can be a different install without the plan's dependencies.
+        "PYTHON": sys.executable,
     }
     try:
         expanded = _expand(plan, variables)

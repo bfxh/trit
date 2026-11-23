@@ -7,7 +7,7 @@
     {
       "id": "preflight",
       "argv": [
-        "python",
+        "${PYTHON}",
         "-c",
         "import sys, openpyxl; print('python', sys.version.split()[0], 'openpyxl', openpyxl.__version__)"
       ],
@@ -18,7 +18,7 @@
     {
       "id": "selftest",
       "argv": [
-        "python", "${ROOT}/tools/work_bench.py",
+        "${PYTHON}", "${ROOT}/tools/work_bench.py",
         "-Tasks", "${ROOT}/testdata/work-bench/tasks.json",
         "-SelfTest"
       ],
@@ -30,7 +30,7 @@
     {
       "id": "reference",
       "argv": [
-        "python", "${ROOT}/tools/work_bench.py",
+        "${PYTHON}", "${ROOT}/tools/work_bench.py",
         "-Tasks", "${ROOT}/testdata/work-bench/tasks.json",
         "-Run", "-Quiet",
         "-Out", "${OUTDIR}/work-bench-report.json"
@@ -48,7 +48,7 @@
     {
       "id": "repeat",
       "argv": [
-        "python", "${ROOT}/tools/work_bench.py",
+        "${PYTHON}", "${ROOT}/tools/work_bench.py",
         "-Tasks", "${ROOT}/testdata/work-bench/tasks.json",
         "-Run", "-Repeat", "2", "-Quiet",
         "-Out", "${OUTDIR}/work-bench-repeat2.json"
