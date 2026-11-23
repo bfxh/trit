@@ -128,6 +128,7 @@
 | [WSP-SPAM-QAT.md](security/WSP-SPAM-QAT.md) | 三值 QAT + 工件红队：SMS Spam 全链闭环 |
 | [GUARD.md](security/GUARD.md) | 训练看门狗（parts-guard）：跑完知道、卡死不漏 GPU、崩了能续 |
 | [HAZARD-POLICY.md](security/HAZARD-POLICY.md) | 并发 / 内存高危用法的放行判据（`scripts/hazard_gate.py` 依据） |
+| [SECURITY-SCAN.md](security/SECURITY-SCAN.md) | 静态 / 动态 / 运行时统一安全门：adapter 矩阵、fail-closed gap、一次性审计与 MCP/插件审核边界 |
 
 ## engineering/ — 构建与运维
 
