@@ -1,9 +1,5 @@
-//! `BertConfig` 的定义（从 `config.rs` 移出守住行数预算）。
-//!
-//! 实验用的权重格式开关走环境变量，避免为一个临时扫描改 CLI：
-//! `TRIT_WEIGHT_BITS`（默认 2 = 三值，3..8 = 均匀位宽）、`TRIT_UNIFORM_GPTQ`（1 = 均匀位宽走 GPTQ）、
-//! `TRIT_LAYERS`（层数，默认 6）、`TRIT_F32_LAYERS`（逗号分隔层号）。
-
+//! `BertConfig` 定义（守住行数预算）。
+pub(crate) use super::budget::Budget;
 use crate::activation::ActivationMode;
 mod env;
 use env::{env_layers, env_u32, env_usize};
@@ -22,6 +18,7 @@ pub(crate) struct BertConfig {
     pub(crate) weight_bits: u32,
     pub(crate) uniform_gptq: bool,
     pub(crate) f32_layers: Vec<usize>,
+    pub(crate) budget: Option<Budget>,
 }
 
 impl BertConfig {
@@ -45,6 +42,7 @@ impl BertConfig {
                 .ok()
                 .is_some_and(|value| value.trim() == "1"),
             f32_layers: env_layers("TRIT_F32_LAYERS"),
+            budget: None,
         }
     }
 }

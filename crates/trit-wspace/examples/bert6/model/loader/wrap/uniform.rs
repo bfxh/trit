@@ -4,7 +4,7 @@ use super::super::h;
 use crate::linear::{F32Linear, Linear, uniform};
 use crate::model::BertConfig;
 
-pub(super) fn build(linear: F32Linear, short: &str, config: &BertConfig) -> Linear {
+pub(super) fn build(linear: F32Linear, short: &str, config: &BertConfig, bits: u32) -> Linear {
     assert!(
         config.sidecar_svd == 0,
         "均匀位宽暂不叠加 SVD 侧车（侧车只在三值残差上定义）"
@@ -18,9 +18,8 @@ pub(super) fn build(linear: F32Linear, short: &str, config: &BertConfig) -> Line
         && let Some(h) = h::load(config.gptq_dir.as_deref(), short)
     {
         return Linear::F32(
-            uniform::dequantize_gptq(&linear, config.weight_bits, group, &h)
-                .expect("GPTQ 均匀位宽量化失败"),
+            uniform::dequantize_gptq(&linear, bits, group, &h).expect("GPTQ 均匀位宽量化失败"),
         );
     }
-    Linear::F32(uniform::dequantize(&linear, config.weight_bits, group))
+    Linear::F32(uniform::dequantize(&linear, bits, group))
 }

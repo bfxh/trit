@@ -1,6 +1,5 @@
-//! 各激活模式的前向与 STS 汇总（从 `run.rs` 拆出守住行数预算）。
 use crate::activation::{ActivationMode, LayerScales};
-use crate::model::{Bert, BertConfig};
+use crate::model::{Bert, BertConfig, Budget};
 use crate::report::compare;
 use crate::sts::{Pair, metrics, sentence_vectors};
 use serde_json::{Map, Value, json};
@@ -45,7 +44,8 @@ pub(crate) fn evaluate(request: &Request) -> (Map<String, Value>, Option<Stages>
         let mut quant = Bert::load(
             request.file,
             BertConfig::new(request.hidden, request.eps, true, mode)
-                .with_gptq(request.gptq_dir.clone(), request.gptq_group),
+                .with_gptq(request.gptq_dir.clone(), request.gptq_group)
+                .with_budget(Budget::from_env()),
         );
         if mode == ActivationMode::TernaryAllChannel {
             quant.set_scales(request.scales.to_vec());
