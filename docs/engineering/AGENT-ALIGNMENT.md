@@ -123,6 +123,33 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
 `true # tests/test_a.py` 这种命令仍可能钻空子。语义充分性仍要靠人/测试设计，
 这是本门明确的诚实边界。
 
+### non-goal 的对象级排除
+
+`non_goals[].paths` 只拦“实际变更路径”，一个 requirement 仍可以先声明
+`changes: ["vendor/x.py"]`，再在别的路径上跑，预检看不出来。v1/v2/v3 的
+non_goal 因此还接受两个显式排除列表：
+
+```json
+"non_goals": [
+  {"id": "N1", "text": "不碰 core", "paths": ["pkg/core.py"],
+   "artifacts": ["A2"], "evidence": ["E9"]}
+]
+```
+
+- `artifacts`/`evidence` 引用必须存在；requirement 引用被 non_goal 排除的对象
+  直接 `non-goal-artifact` / `non-goal-evidence` 拒绝；
+- 未被任何 requirement 引用的排除对象不因“引用”本身报错；产物路径仍受
+  `non_goals.paths` 约束；
+- 产物路径命中 `non_goals.paths` 时 `non-goal-artifact-path` 拒绝；
+- requirement 的 `changes`、`allow_unlinked` 若与 non_goal 的字面路径有交集
+  （字面路径或 glob 覆盖字面路径），或与 non_goal 的 glob 完全相同，预检即拒绝
+  （`non-goal-scope`）；
+- 两个不同 glob 是否相交（如 `vendor/*/x` 与 `vendor/**`）在 fnmatch 下不可判定，
+  预检不猜；实际 run 后的 `alignment-post` 仍用真实路径兜底。
+
+这不是 LLM 语义理解，而是把“明确排除”的对象也写进同一张图；non_goal 文本的
+语义真假仍由人负责。
+
 ### 生成骨架：`scaffold`
 
 `scaffold` 从目标与需求文本生成一份**故意不完整**的 `alignment/2` 清单：
@@ -151,7 +178,8 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 | `artifacts/evidence.path` | 仓库相对路径；不能绝对、`..` 逃逸或经符号链接逃出 root |
 | `sha256` | 可选；64 位十六进制，必须与磁盘内容一致 |
 | `locator` | 可选；`Lx`、`Lx-Ly` 或 `text:<片段>`，必须命中 |
-| `non_goals.paths` | 仓库相对 glob；命中本次变更即拒绝 |
+| `non_goals.paths` | 仓库相对 glob；命中实际变更即拒绝 |
+| `non_goals.artifacts/evidence` | 可选；引用的 id 必须存在；被 requirement 引用即拒绝；产物路径/字面 declared change 与 non_goal 重叠也拒绝 |
 | `allow_unlinked` | 允许不挂需求的变更 glob（锁文件等），仍需仓库相对 |
 | `manifest` 自身 | 必须留在项目 root 内；`..`、盘符绝对路径、经符号链接逃出 root 的清单按 unknown 拒绝 |
 | `contradicts` | 引用的需求 id 必须存在；出现即成对拒绝 |
@@ -166,7 +194,8 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 4. artifact/evidence 的 id 是否存在、文件是否存在、sha256、locator 是否命中；
 5. v3 的 run 证据 command 是否点名证据路径；post-run 是否在本次成功 run 命令里精确出现；
 6. 每条变更是否被某条需求的 `changes` 或某个 artifact 路径覆盖；
-7. 变更是否落进 `non_goals`；
+7. 变更是否落进 `non_goals`，以及 requirement 是否引用了 non_goal 明确排除的
+   artifact/evidence、声明了重叠的字面路径或相同的 glob；
 8. 需求之间是否声明了矛盾；
 9. 所有路径是否在 root 内（含 realpath 检查）。
 
@@ -209,11 +238,11 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 
 ## 测试读数
 
-- `python tools/alignment_gate.py self-test`：**79/79**
+- `python tools/alignment_gate.py self-test`：**90/90**
 - `python tools/alignment_gate.py stress --cases 100`：**200 用例，valid 100 aligned，mutated 100 rejected，0 errors**
 - `python tools/agent_settings.py --self-test`：**30/30**
-- `tools/selftest.ps1` 的 AL27–AL37：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝
-- 全仓 `tools/selftest.ps1`：**707 passed / 0 failed / 0 skipped**
+- `tools/selftest.ps1` 的 AL27–AL38：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝、non_goal 对象级排除在 preflight 拒绝且 run 不启动
+- 全仓 `tools/selftest.ps1`：**708 passed / 0 failed / 0 skipped**
 
 ## 诚实边界
 

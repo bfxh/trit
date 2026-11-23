@@ -59,7 +59,7 @@ REQ_FIELDS = {"id", "text", "priority", "parent", "artifacts", "evidence",
 ART_FIELDS = {"id", "path", "locator", "sha256", "kind", "notes", "tags"}
 EV_FIELDS = {"id", "path", "locator", "sha256", "notes", "tags"}
 EV_FIELDS_V3 = EV_FIELDS | {"kind", "command"}
-NG_FIELDS = {"id", "text", "paths", "notes"}
+NG_FIELDS = {"id", "text", "paths", "artifacts", "evidence", "notes"}
 PRIORITIES = ("must", "should", "may")
 EVIDENCE_KINDS = ("file", "run")
 LOCATOR_RX = re.compile(r"^L(\d+)(?:-L?(\d+))?$")
@@ -194,6 +194,21 @@ def _glob_match(path, patterns):
         if fnmatch.fnmatchcase(path, p):
             return True
     return False
+
+
+def _has_glob(pattern):
+    """True when a path pattern has fnmatch magic; literal paths can be intersected."""
+    return any(ch in str(pattern) for ch in "*?[")
+
+
+def _scope_overlap(pattern, ng_paths):
+    """Conservative declared-scope overlap: literals exact, globs only vs literals."""
+    pattern = str(pattern).replace("\\", "/")
+    if _has_glob(pattern):
+        return any(pattern == str(p).replace("\\", "/") or
+                   (not _has_glob(p) and _glob_match(str(p).replace("\\", "/"), [pattern]))
+                   for p in ng_paths)
+    return any(_glob_match(pattern, [str(p)]) for p in ng_paths)
 
 
 def _fail(report, code, message, node=None):
@@ -449,6 +464,21 @@ def validate(root, doc, changed=None, strict=True, executed=None):
     non_goal_map = {n.get("_id"): n for n in non_goals
                     if isinstance(n, dict) and n.get("_id")}
 
+    # Explicit non-goal object references: a requirement may not cite an
+    # artifact/evidence that the manifest already excluded by name.
+    ng_art_refs = set()
+    ng_ev_refs = set()
+    for nid, ng in non_goal_map.items():
+        for field, target, sink in (("artifacts", artifact_map, ng_art_refs),
+                                    ("evidence", evidence_map, ng_ev_refs)):
+            refs = _as_list(ng.get(field), nid, field, report)
+            for ref in refs:
+                if not isinstance(ref, str) or ref not in target:
+                    _fail(report, f"non-goal-{field}-ref",
+                          f"{nid} 引用了不存在的 {field}：{ref!r}", nid)
+                    continue
+                sink.add(ref)
+
     # --- requirement shape/parent chain ------------------------------------------
     valid_parents = set(req_map) | set(goal_map)
     parent_of = {}
@@ -582,6 +612,26 @@ def validate(root, doc, changed=None, strict=True, executed=None):
             clean.append(raw)
         ng["_paths"] = clean
 
+    # Declared scope must not overlap a non-goal before the run even starts.
+    # Glob-vs-glob intersection is not decidable with fnmatch, so exact duplicate
+    # globs and literal paths are rejected; actual changes stay the post-run net.
+    for aid, art in artifact_map.items():
+        apath = art.get("_path")
+        if not apath:
+            continue
+        for nid, ng in non_goal_map.items():
+            if _glob_match(apath, ng.get("_paths", [])):
+                _fail(report, "non-goal-artifact-path",
+                      f"{aid} 的产物路径落进 non_goal {nid}：{apath}", aid)
+    for raw in allow_unlinked:
+        if not isinstance(raw, str):
+            continue
+        for nid, ng in non_goal_map.items():
+            paths = ng.get("_paths", [])
+            if _scope_overlap(raw, paths):
+                _fail(report, "non-goal-scope",
+                      f"allow_unlinked {raw!r} 与 non_goal {nid} 重叠", "allow_unlinked")
+
     # --- requirement references + coverage --------------------------------------
     total_full = 0
     must_total = must_full = 0
@@ -594,9 +644,25 @@ def validate(root, doc, changed=None, strict=True, executed=None):
         for aid in arts:
             if not isinstance(aid, str) or aid not in artifact_map:
                 _fail(report, "missing-artifact-ref", f"{rid} 引用了不存在的 artifact：{aid!r}", rid)
+            elif aid in ng_art_refs:
+                _fail(report, "non-goal-artifact",
+                      f"{rid} 引用了 non_goal 明确排除的 artifact：{aid}", rid)
         for eid in evs:
             if not isinstance(eid, str) or eid not in evidence_map:
                 _fail(report, "missing-evidence-ref", f"{rid} 引用了不存在的 evidence：{eid!r}", rid)
+            elif eid in ng_ev_refs:
+                _fail(report, "non-goal-evidence",
+                      f"{rid} 引用了 non_goal 明确排除的 evidence：{eid}", rid)
+        changes = req.get("changes")
+        if isinstance(changes, list):
+            for p in changes:
+                if not isinstance(p, str):
+                    continue
+                for nid, ng in non_goal_map.items():
+                    paths = ng.get("_paths", [])
+                    if _scope_overlap(p, paths):
+                        _fail(report, "non-goal-scope",
+                              f"{rid} 的 declared change 与 non_goal {nid} 重叠：{p}", rid)
         has_art = any(aid in artifact_ok for aid in arts if isinstance(aid, str))
         has_ev = any(eid in evidence_ok for eid in evs if isinstance(eid, str))
         has_prov = schema == SCHEMA_V3 and any(
@@ -1108,6 +1174,34 @@ def _selftest():
         expect(status(root, d), "changes-invalid", "changes 非数组")
         d = _base_doc(); d["non_goals"][0]["paths"] = []
         expect(status(root, d), "non-goal-paths", "non_goal 无路径")
+        d = _base_doc(); d["non_goals"][0]["artifacts"] = ["A1"]
+        expect(status(root, d), "non-goal-artifact", "requirement 引用 non_goal artifact")
+        d = _base_doc(); d["non_goals"][0]["evidence"] = ["E1"]
+        expect(status(root, d), "non-goal-evidence", "requirement 引用 non_goal evidence")
+        d = _base_doc(); d["non_goals"][0]["artifacts"] = ["A9"]
+        expect(status(root, d), "non-goal-artifacts-ref", "non_goal 引用未知 artifact")
+        d = _base_doc(); d["non_goals"][0]["evidence"] = ["E9"]
+        expect(status(root, d), "non-goal-evidence-ref", "non_goal 引用未知 evidence")
+        d = _base_doc()
+        d["artifacts"].append({"id": "A2", "path": "src/extra.py"})
+        _write(root, "src/extra.py", "x = 1\n")
+        d["non_goals"][0]["artifacts"] = ["A2"]
+        r = status(root, d)
+        ok(r["status"] == "aligned", "未被 requirement 引用的 non_goal artifact 不误报")
+        _write(root, "vendor/a.py", "x = 1\n")
+        d = _base_doc(); d["artifacts"][0]["path"] = "vendor/a.py"
+        expect(status(root, d), "non-goal-artifact-path", "产物路径落进 non_goal")
+        d = _base_doc(); d["requirements"][0]["changes"] = ["vendor/x.py"]
+        expect(status(root, d), "non-goal-scope", "declared literal change 落进 non_goal")
+        d = _base_doc(); d["requirements"][0]["changes"] = ["vendor/**"]
+        expect(status(root, d), "non-goal-scope", "declared glob 与 non_goal 完全相同")
+        d = _base_doc(); d["non_goals"][0]["paths"] = ["vendor/a.py"]
+        d["requirements"][0]["changes"] = ["vendor/**"]
+        expect(status(root, d), "non-goal-scope", "declared glob 覆盖 non_goal 字面路径")
+        d = _base_doc(); d["allow_unlinked"] = ["vendor/**"]
+        expect(status(root, d), "non-goal-scope", "allow_unlinked glob 与 non_goal 重叠")
+        d = _base_doc(); d["allow_unlinked"] = ["vendor/x.py"]
+        expect(status(root, d), "non-goal-scope", "allow_unlinked literal 落进 non_goal")
 
         scaffold = os.path.join(root, "scaffold.json")
         args = argparse.Namespace(root=root, manifest="scaffold.json", goal="对齐骨架",

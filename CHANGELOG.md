@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（第十一轮：non-goal 对象级排除与声明范围）
+
+- `tools/alignment_gate.py` 的 `non_goals` 新增 `artifacts`/`evidence` 显式排除列表：
+  引用必须存在；requirement 引用被排除的 artifact/evidence 直接拒绝，未被引用的
+  排除对象不误报。
+- 预检新增声明范围重叠：产物路径命中 `non_goals.paths`、requirement 的 `changes`
+  或 `allow_unlinked` 与 non_goal 字面路径有交集（字面/glob）或 glob 完全相同，
+  都在 run 前拒绝（`non-goal-artifact-path` / `non-goal-scope`）。不同 glob 的
+  相交不猜，实际 run 后的 `alignment-post` 仍用真实路径兜底。
+- `tools/selftest.ps1` 新增 AL38：non_goal 对象级排除被 requirement 引用时
+  preflight 拒绝、run 不启动；`$alTotal` 37→38。
+- `alignment_gate.py self-test` 79→**90/90**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **708 passed / 0 failed / 0 skipped**（含 AL27–AL38）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补 non-goal 对象级排除与 glob 相交边界；
+  `docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
 ### Added（第十轮：证据绑定实际 run 命令）
 
 - `tools/alignment_gate.py` 新增 `alignment/3`：沿用 `alignment/2` 的单根目标树，
