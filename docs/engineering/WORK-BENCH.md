@@ -105,10 +105,10 @@ python tools/work_bench.py -SelfTest
 work-bench self-test: 182/182
 
 python tools/work_bench.py -Run -Out E:\tmp\work-bench-report-20.json
-work-bench: 20 tasks / 81 checks / reference 81/81 / negative 20/20 / wall 0.332s
+work-bench: 20 tasks / 81 checks / reference 81/81 / negative 20/20 / wall 0.428s
 
 python tools/work_bench.py -Run -Repeat 2 -Out E:\tmp\work-bench-repeat2-20.json
-两次运行：reference 81/81、negative 20/20、repeat_all_ok=true，wall 0.544s
+两次运行：reference 81/81、negative 20/20、repeat_all_ok=true，wall 0.552s
 ```
 
 `-SelfTest` 的 182 项由三部分组成：1 项 suite 结构校验、81 项参考产物检查、
