@@ -167,6 +167,8 @@
 | [PRIVACY-PLAN.md](plans/PRIVACY-PLAN.md) | 隐私存储：威胁模型、容器与挂载器路线、硬边界 |
 | [DATA-CLEANING-PLAN.md](plans/DATA-CLEANING-PLAN.md) | 数据清洗 × 三进制：九条方向与底层缺口 |
 | [MULTI-CHIP.md](plans/MULTI-CHIP.md) | 多芯片后端（x86 / ARM / 移动 SoC）设计 |
+| [WSP-ALT.md](plans/WSP-ALT.md) | MXQ 之外的替代路线：BIAS/SCALE 负结果、BUDGET、ROTATE 与排序 |
+| [WSP-MXQ-PLAN.md](plans/WSP-MXQ-PLAN.md) | 字节预算内的层内混合位宽：group 3/4/5 分配器设计 |
 
 ## specs/ — 写作与治理规范
 
