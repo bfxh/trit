@@ -1,6 +1,5 @@
-//! `TRIT_BUDGET` 预算图：把预算编译器产出的 per-matrix bits 读进加载器。
-//!
-//! 只认 `blocks[].layer/kind/bits`；`actual_bytes` 留给规划器和报告核对。
+//! `TRIT_BUDGET` 预算图：读 per-matrix bits；`weight_format` 另按 `rows/cols/bits`
+//! 与 `group` 复算实际总字节。
 
 use serde_json::Value;
 use std::collections::HashMap;

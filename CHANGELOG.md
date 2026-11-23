@@ -721,6 +721,11 @@
   `[+0.003737, +0.010819]`，两个下界都过 0。对 I10 `+0.001858 / +0.001651`，
   50k CI `[+0.000591, +0.003120]` / `[+0.000048, +0.003272]`，Spearman 是薄优势；
   对 v6e Spearman CI 跨 0；距纯 int4 Pearson `−0.014026`、Spearman `−0.011498`。
+- **运行时字节账**：`weight_format` 在 `TRIT_BUDGET` 下按每块 `rows/cols/bits` 与
+  `group` 复算实际总字节，输出 `accounting="actual_bytes_with_metadata"`、
+  `budget_actual_bytes`、`budget_weight_bytes`、`budget_metadata_bytes`、
+  `mixed_bits`、`budget_group`；`weight_bytes` 改为实际总字节，不再按全局
+  `TRIT_WEIGHT_BITS` 报账。L12/K10K11 smoke：`10,782,720 / 7,962,624 / 2,820,096`。
 - 失败记录：规划器第一版按权重 MSE 选块，128 对低于 int3（0.885716 vs 0.897582），
   全量却为正（0.819473 vs 0.818440）；`v6e` 与 v1 的 `proxy_err_ratio` 同为
   `0.91552`，只把层 11 o 的 int2 降级换到层 9 o，全量 Spearman 就差 `+0.001882`。
