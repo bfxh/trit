@@ -29,6 +29,10 @@
   实测（20 命令、2 轮中位、`true`）：full receipt **5,738 B**（原 8,558 B，降 33.0%），
   compact **1,541 B**（full 的 26.9%，省 73.1%），policy 字段 **561 B**（原约 2,860 B
   compact JSON）；bytes/4 仅为上下文代理，不是模型侧 token 实测。
+- `cmd_driver.py`：Linux 下 `tools/signal.py` 会遮蔽 stdlib `signal`，使
+  `subprocess` 超时后的 `SIGKILL` 路径崩溃；脚本入口在导入 `subprocess` 前移除
+  自身目录，`-SelfTest` 在 Linux/WSL 与 Windows 均 **34/34**。这是 CI 的 Ubuntu
+  `agent-quality` 门从 0/0 失败恢复为可用的必要修复。
 
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 

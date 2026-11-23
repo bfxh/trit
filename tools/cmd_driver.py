@@ -17,8 +17,18 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
+
+# tools/signal.py shadows the stdlib `signal` module when this script is run as
+# `python tools/cmd_driver.py` (sys.path[0] is tools/). On POSIX, subprocess's
+# timeout path uses signal.SIGKILL, so the shadow makes `-SelfTest` crash after
+# the timeout case. cmd_driver imports no local tool modules; drop the script
+# dir before importing subprocess so the stdlib module wins.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if sys.path and os.path.abspath(sys.path[0]) == _SCRIPT_DIR:
+    del sys.path[0]
+
+import subprocess
 import tempfile
 import time
 from pathlib import Path
