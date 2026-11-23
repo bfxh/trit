@@ -74,6 +74,14 @@
    不变。代价是 `f32_vs_reference` / `real_vs_f32` / `random_vs_f32` 变 null；
    `activation=all` 或带 sidecar 时必须禁用缓存。JSON 缓存必须开
    `serde_json` 的 `float_roundtrip`，否则重解析 preds 会差 1 ULP。见 §3.16.7。
+12. **层内重建的胜利不一定穿过 attention/LN 变成 STS**。第 0 层 Q/K/V 做
+   bias 修正 + Hessian scale 重拟合，层输出误差范数降 37–40%，但 1379 对 STS
+   只动 +0.000041（int3）/ +0.000070（int4）Pearson，连噪声下界都不到。
+   原因：V 的常数偏移被下一层 LayerNorm/残差消掉，Q/K 只改 logits 的常数/低秩项；
+   且只修 12 层里的第 1 层。更关键的是 L12 int4 全量 `0.837505` 已经和 f32
+   `0.837595` 统计平手，4-bit 没有可买的 Pearson。复算：
+   `TRIT_CALIB_BIAS=1 TRIT_CALIB_SCALE=1 TRIT_WEIGHT_BITS=4` 跑
+   `miniLM-l12-sts-full`；结果在 `WSP-ALT.md` §3.5。
 
 ## 4. 工程经验
 
