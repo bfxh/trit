@@ -22,6 +22,14 @@
   文档 `docs/engineering/AGENT-CONTEXT-SEARCH.md` 与 `docs/ERRORS.md`
   L163/L164/L165 记录机制、阈值和诚实边界。
 
+### Fixed（第六轮补：AN3 并发沙盒宿主指纹）
+
+- `tools/sandbox_run.py`：宿主指纹不再把 `.git` 目录 mtime 和瞬时
+  `.git/index.lock` 当作写入；`handoff.state` 在 `git status` 被并发锁挡住时
+  重试 3 次。`--self-test` **43/43**（新增“git dir mtime alone is not
+  host-mutated”“file write under .git is host-mutated”两条断言）；
+  `sandbox_matrix --cases 40 --parallel 8` 连续 **4 次 40/40**。
+
 ### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
 
 - `tools/agent_settings.py`：用户级 `%APPDATA%\trit\agent\settings.json`（POSIX
@@ -270,7 +278,7 @@
   回执 `capacity` 段记录租约与契约。
 - `C047` 钉住 `capacity_lease.py --self-test`：20/20（含 8 进程抢 4 个租约、过期/坏租约、
   GPU/磁盘/IO 预留与拒绝、heartbeat 不移动硬 deadline、dispatch 契约注入、占满时
-  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 41/41 未回退，全量
+  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 43/43 未回退，全量
   `selftest` 仍 675/675。
 - 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
   `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。

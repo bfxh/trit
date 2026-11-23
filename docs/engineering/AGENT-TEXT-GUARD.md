@@ -236,7 +236,7 @@ python tools/subagent_dispatch.py --self-test
 - `python tools/guard_redteam.py --strict`：81 例，0 攻击漏检、0 overblock。
 - `python tools/context_guard.py --stress`：90/90、benign high=0。
 - `python tools/subagent_dispatch.py --self-test`：25/25（输入 + 输出两侧 + 二进制抽取）。
-- `python tools/sandbox_run.py --self-test`：41/41（路径/硬链接/忽略文件写/reparse 路径/内容哈希/index.lock/容量租约附着）。
+- `python tools/sandbox_run.py --self-test`：43/43（路径/硬链接/忽略文件写/reparse 路径/内容哈希/index.lock/容量租约附着）。
 - `pwsh tools/selftest.ps1`：675/675（全量入口；AP 组为文字门，AO 组含输出隔离）。
 - 文档门禁：`docs_hygiene.py` / `privacy_scan.py` / `ai_vendor_scan.py` /
   `terminology.py check` / `git diff --check`。

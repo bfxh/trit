@@ -796,7 +796,7 @@ AP1–AP3） 36 组：
 A–Z 26 组 + AA/AB/AC/AD/AE/AF/AH/AN/AO/AP 十组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
 AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条、
-AF 组编排链稳定性 46 条、AH 组术语契约 26 条、AN 组 3 条（模型路由 16/16、沙盒 41/41、
+AF 组编排链稳定性 46 条、AH 组术语契约 26 条、AN 组 3 条（模型路由 16/16、沙盒 43/43、
 40 沙盒矩阵 40/40）、AO 组 1 条（派发器 25/25）、AP 组 4 条（文字门 59/59、
 90 例 stress 90/90、malicious CLI 隔离/良性不误杀、81 例红队 0 攻击漏检），是新增的十个观测、审批、稳定性、
 概念契约与入口污染面）。护栏的断言全部
