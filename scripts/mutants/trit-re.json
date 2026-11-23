@@ -209,7 +209,7 @@
   },
   {
     "name": "trit-re: 已定义符号当导入",
-    "file": "crates/trit-re/src/xref/mod.rs",
+    "file": "crates/trit-re/src/xref/report.rs",
     "old": "        if symbol_info.defined || !matches!(symbol_info.kind, 0 | 2 | 10) {",
     "new": "        if false {",
     "pkg": "trit-re",
