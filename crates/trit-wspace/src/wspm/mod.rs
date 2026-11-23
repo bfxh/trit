@@ -17,6 +17,7 @@
 //! `bias_ref` 指向同容器里的另一个 entry（清单 `bias` 字段的语义），`u32::MAX` 表示无。
 
 mod entry;
+mod intervals;
 
 use crate::error::{Error, Result};
 use crate::net::Net;
@@ -113,7 +114,7 @@ pub fn pack(items: &[ModelItem<'_>], format: &str) -> Result<PackOutput> {
             .iter()
             .any(|entry: &ModelEntry| entry.name == item.name)
         {
-            return Err(Error::Wire(format!("重复张量名 `{}`", item.name)));
+            return Err(Error::Wire(format!("重复张量名 `{}", item.name)));
         }
         let layer = item.net.layers().first().ok_or(Error::EmptySizes)?;
         let (method, blob) = encode_blob(item.net, format)?;
@@ -231,9 +232,10 @@ pub fn unpack(bytes: &[u8]) -> Result<ModelPack> {
             .iter()
             .any(|other| other.name == entry.name)
         {
-            return Err(Error::Wire(format!("重复张量名 `{}`", entry.name)));
+            return Err(Error::Wire(format!("重复张量名 `{}", entry.name)));
         }
     }
+    intervals::check(&entries, payload_end as u64)?;
     let mut nets = Vec::with_capacity(entries.len());
     for entry in &entries {
         let end = match entry.offset.checked_add(entry.len) {
