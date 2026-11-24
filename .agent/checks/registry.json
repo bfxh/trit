@@ -1432,13 +1432,15 @@
     },
     {
       "id": "C078",
-      "title": "稳定性/抖动探针：重复执行项目命令，按退出码混判、输出指纹和耗时比分出 flaky、nondeterministic、jittery、稳定失败与 unknown；warmup 预热排除冷启动但保留预热失败；报告可离线复算，unknown 不放行",
+      "title": "稳定性/抖动探针：重复执行项目命令，按退出码混判、输出指纹和耗时比分出 flaky、nondeterministic、jittery、稳定失败与 unknown；warmup 预热排除冷启动但保留预热失败；接进 agent_verify 时清单命令先过 policy，unknown 不放行",
       "kind": "cmd",
       "covers": [
         "L168"
       ],
       "scope": [
         "tools/stability_probe.py",
+        "tools/agent_verify.py",
+        "tools/agent_settings.py",
         "docs/engineering/AGENT-STABILITY.md"
       ],
       "since": "2026-11-24",

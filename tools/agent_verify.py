@@ -153,6 +153,7 @@ CLAIMS = os.path.join(os.path.dirname(TOOLS), "scripts", "agent_claims.py")
 RUN_CAPS = os.path.join(TOOLS, "run_caps.py")
 SECURITY = os.path.join(TOOLS, "security_gate.py")
 ALIGNMENT = os.path.join(TOOLS, "alignment_gate.py")
+STABILITY = os.path.join(TOOLS, "stability_probe.py")
 
 BUDGET_NOTE = ("declaration-based gate: the tool layer cannot measure model-side token "
                "usage; --budget-token is the caller's declared remaining budget "
@@ -182,7 +183,7 @@ ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attes
                "the budget gate consumes the chain balance when it exists, stays "
                "declaration-based (labeled declared-only) when it does not")
 
-HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -> run -> journal -> alignment-post, one audited receipt.
+HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -> stability -> run -> journal -> alignment-post, one audited receipt.
 
   agent-verify.sh -Root <dir> -Changed <files> -Lang rust|python|node|go
                     [-Profile read-only|workspace-write|full] [-DryRun]
@@ -225,6 +226,17 @@ HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -
                 are matched against the actual successful run[] entries. A run
                 that writes outside the declared graph, or whose evidence command
                 never ran, ends as "unaligned after run", not a pass.)
+  stability:    [--stability <manifest>] [--no-stability]
+                (repeat a declared command list and classify stable-pass / stable-fail /
+                flaky / nondeterministic / jittery / unstable-fail / unknown; a gate
+                passes only when the probe exits 0 and status is stable, so unknown,
+                flaky, jittery and deterministic failure all refuse before journal-begin.
+                Auto-runs when .agent/stability.json exists and settings.stability.enabled
+                is true; --stability forces a path, --no-stability disables auto-detection.
+                The manifest's commands are policy-classified before the probe executes
+                them (a manifest cannot bypass the command policy). Probe commands must
+                use temp/ignored paths: they run before journal-begin, so their writes are
+                outside the task journal.)
   delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
                 (subagent chains: only changed fields + hash refs for unchanged ones;
                 --rebuild <delta> --against <prev> [--out <full.json>] reconstructs
@@ -310,6 +322,7 @@ def parse_args(argv):
            "compact": False, "brief": False, "model_receipt": "",
            "security": False, "security_mode": "",
            "alignment": "", "alignment_lenient": False,
+           "stability": "", "no_stability": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
            "claim_gate": False, "claim_who": "", "claims_ledger": "", "handoff": "",
            "second_opinion": False, "no_derivations": False, "delta": False,
@@ -357,6 +370,11 @@ def parse_args(argv):
             out["_given"].add("alignment_lenient")
             i += 1
             continue
+        if name in ("no-stability", "nostability"):
+            out["no_stability"] = True
+            out["_given"].add("no_stability")
+            i += 1
+            continue
         val = argv[i + 1] if i + 1 < len(argv) else ""
         if name == "changed":
             out["changed"].extend([x for x in val.split(",") if x.strip()])
@@ -376,7 +394,7 @@ def parse_args(argv):
                    "model-receipt": "model_receipt", "modelreceipt": "model_receipt",
                    "settings": "settings", "settings-file": "settings", "settingsfile": "settings",
                    "security-mode": "security_mode", "securitymode": "security_mode",
-                   "alignment": "alignment",
+                   "alignment": "alignment", "stability": "stability",
                    "gate-deadline-affected": "gate_deadline_affected",
                    "gate-deadline-policy": "gate_deadline_policy",
                    "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)
@@ -472,6 +490,76 @@ def alignment_summary(adoc, root, manifest_path):
     }
 
 
+def stability_commands(manifest_path):
+    """Extract literal command strings from a stability/1 manifest.
+
+    Returns None when the manifest cannot be read or has no command list, so the
+    caller can fail closed before executing anything.  The probe re-validates the
+    full schema; this is only the policy preflight's view.
+    """
+    try:
+        with open(manifest_path, "r", encoding="utf-8-sig") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    commands = doc.get("commands") if isinstance(doc, dict) else None
+    if not isinstance(commands, list) or not commands:
+        return None
+    out = []
+    for cmd in commands:
+        if not isinstance(cmd, dict):
+            return None
+        text = str(cmd.get("command", "")).strip()
+        if not text:
+            return None
+        out.append(text)
+    return out
+
+
+def stability_summary(sdoc, root, manifest_path):
+    """The receipt-facing view of one stability probe report."""
+    status = str(sdoc.get("status", "")).lower()
+    counts = sdoc.get("counts", {}) if isinstance(sdoc.get("counts"), dict) else {}
+    try:
+        rel_manifest = os.path.relpath(manifest_path, root).replace("\\", "/")
+        if rel_manifest.startswith("../"):
+            rel_manifest = os.path.basename(manifest_path)
+    except ValueError:
+        rel_manifest = os.path.basename(manifest_path)
+    failed = []
+    for cmd in sdoc.get("commands", []) or []:
+        if not isinstance(cmd, dict):
+            continue
+        classification = str(cmd.get("classification", "")).lower()
+        if classification and classification != "stable-pass":
+            failed.append({
+                "id": cmd.get("id"),
+                "classification": classification,
+                "passes": cmd.get("passes"),
+                "repeat": cmd.get("repeat"),
+                "warmup_failures": cmd.get("warmup_failures"),
+                "distinct_outputs": cmd.get("distinct_outputs"),
+                "duration_ratio": cmd.get("duration_ratio"),
+            })
+    return {
+        "manifest": rel_manifest,
+        "status": status or "unknown",
+        "exit": sdoc.get("exit"),
+        "commands": counts.get("commands"),
+        "runs": counts.get("runs"),
+        "warmup_runs": counts.get("warmup_runs"),
+        "stable": counts.get("stable_pass"),
+        "stable_fail": counts.get("stable_fail"),
+        "flaky": counts.get("flaky"),
+        "nondeterministic": counts.get("nondeterministic"),
+        "jittery": counts.get("jittery"),
+        "unstable_fail": counts.get("unstable_fail"),
+        "unknown": counts.get("unknown"),
+        "failures": len(sdoc.get("failures", []) or []),
+        "failed_commands": failed[:10],
+    }
+
+
 def journal_changes(out):
     """Extract the repo-relative paths journal.py end reported as changed."""
     changed = []
@@ -523,7 +611,7 @@ def session_file(root, task_id):
 
 
 STABLE_HEAD = ("root", "lang", "profile", "changed", "settings", "security", "agent_id", "handoff", "claim",
-               "alignment", "caps", "plan",
+               "alignment", "stability", "caps", "plan",
                "policy", "steps", "run", "changes", "claims", "watchdog",
                "verdict", "exit")
 VOLATILE_ORDER = ("budget", "cost", "wall_s", "steps_seconds", "run_seconds",
@@ -635,6 +723,11 @@ def compact_view(doc, steps):
         # routing only: id/verdict/hashes are small; reason is free text and stays in full
         c["handoff"] = {k: v for k, v in doc["handoff"].items()
                         if k in ("id", "verdict", "base_commit", "state_hash")}
+    if "stability" in doc:
+        c["stability"] = {k: doc["stability"].get(k) for k in
+                          ("status", "exit", "commands", "runs", "warmup_runs",
+                           "flaky", "nondeterministic", "jittery", "unknown",
+                           "report", "sha256")}
     if "claim" in doc:
         # paths can be long; count + owner + verdict are the routing information
         c["claim"] = {"who": doc["claim"].get("who"),
@@ -1063,6 +1156,9 @@ def main(argv):
         if not os.path.isfile(packet):
             print(f"agent-verify: --handoff 包不存在或读不到：{packet}")
             return 2
+    if a.get("no_stability") and str(a.get("stability", "")).strip():
+        print("agent-verify: --no-stability 与 --stability 不能同时给（一个禁用自动发现，一个强制清单）")
+        return 2
 
     root = os.path.abspath(root_in)
     lang = a["lang"].lower()
@@ -1404,16 +1500,25 @@ def main(argv):
                   timeout=deadlines["affected"])
         return ap, p_path
 
-    def policy_gate():
+    def policy_batch(cmds, timeout):
         b_path = os.path.join(os.environ.get("TEMP", "/tmp"),
                               f"av-policy-{uuid.uuid4().hex[:8]}.json")
         with open(b_path, "w", encoding="ascii", newline="\n") as fh:
-            json.dump({"commands": commands}, fh, ensure_ascii=True)
+            json.dump({"commands": cmds}, fh, ensure_ascii=True)
         pa = [os.path.join(TOOLS, "policy.py"), "-Profile", profile,
               "-Root", root, "-CommandsFile", b_path]
         if a["allow_network"]:
             pa.append("-AllowNetwork")
-        return step(pa, timeout=deadlines["policy"])
+        try:
+            return step(pa, timeout=timeout)
+        finally:
+            try:
+                os.unlink(b_path)
+            except OSError:
+                pass
+
+    def policy_gate():
+        return policy_batch(commands, deadlines["policy"])
 
     def constraints_gate():
         c_init = os.path.exists(os.path.join(root, ".agent", "constraints.json"))
@@ -1559,6 +1664,67 @@ def main(argv):
             print("agent-verify: 拒绝 -- alignment gate 未通过（目标/需求/产物/证据/变更没有对齐；"
                   "unknown 不是通行证，先补清单或修引用）")
             return finish("refused by alignment", 1)
+
+    # --- 5.3 stability: one pass is not proof that a command is stable ----------------
+    # A project opts in with .agent/stability.json; --stability forces a path and
+    # --no-stability disables auto-detection.  The probe itself decides per command;
+    # this gate accepts exactly exit 0 + status stable, so flaky / jittery /
+    # nondeterministic / stable-fail / unknown all refuse before journal-begin.
+    # Probe commands must use temp/ignored paths: they run before the journal starts.
+    stability_manifest = str(a.get("stability", "")).strip()
+    stab_cfg = effective.get("stability", {}) if isinstance(effective, dict) else {}
+    if not isinstance(stab_cfg, dict):
+        stab_cfg = {}
+    if a.get("no_stability"):
+        stability_manifest = ""
+    elif not stability_manifest and stab_cfg.get("enabled", True):
+        candidate = os.path.join(root, str(stab_cfg.get("manifest", ".agent/stability.json")))
+        if os.path.isfile(candidate):
+            stability_manifest = candidate
+    if stability_manifest:
+        if not os.path.isabs(stability_manifest):
+            stability_manifest = os.path.join(root, stability_manifest)
+        try:
+            stability_timeout = float(stab_cfg.get("timeout_s", 1800))
+        except (TypeError, ValueError):
+            print("agent-verify: settings.stability.timeout_s 不是数字")
+            return 2
+        report_rel = os.path.join("target", "agent-stability", "stability-gate.json")
+        report_abs = os.path.join(root, report_rel)
+        stab_commands = stability_commands(stability_manifest)
+        if stab_commands is None:
+            pr = {"out": ["stability-policy: 清单不可读或没有 commands，拒绝在执行前放行"],
+                  "code": 1, "seconds": 0}
+        else:
+            pr = policy_batch(stab_commands, deadlines["policy"])
+        add("stability-policy", pr, "ok" if pr["code"] == 0 else "refused")
+        if pr["code"] != 0:
+            for ln in pr["out"][-8:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- stability 清单里的命令没有通过 policy（"
+                  "探针执行前先按同一 profile 分类，避免清单绕过命令策略）")
+            return finish("refused by stability policy", 1)
+        sr = step([STABILITY, "--root", root, "--manifest", stability_manifest,
+                   "--out", report_abs], timeout=stability_timeout)
+        try:
+            with open(report_abs, "r", encoding="utf-8-sig") as fh:
+                sdoc = json.load(fh)
+        except (OSError, ValueError, UnicodeDecodeError):
+            sdoc = {}
+        sstatus = str(sdoc.get("status", "")).lower()
+        doc["stability"] = stability_summary(sdoc, root, stability_manifest)
+        doc["stability"]["report"] = report_rel.replace("\\", "/")
+        if os.path.isfile(report_abs):
+            doc["stability"]["sha256"] = file_hash(report_abs)
+        add("stability", sr, "ok" if sr["code"] == 0 and sstatus == "stable" else "refused")
+        if sr["code"] != 0 or sstatus != "stable":
+            for ln in sr["out"][-10:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- stability gate 未通过（一次通过不等于稳定；"
+                  "flaky/nondeterministic/jittery/stable-fail/unknown 都不放行）")
+            return finish("refused by stability", 1)
+    else:
+        add("stability", skipped("stability: 未发现清单或已禁用，跳过"), "skipped")
 
     # --- 5.5 claim audit: model statements are checked against reality -----------------
     # After constraints, before journal-begin: a run does not get to start on top of
