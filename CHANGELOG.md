@@ -990,6 +990,27 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.15、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.17、`LESSONS.md` 第 27 条。
 
+- **SST-2 子样本稳定性（M1.16）**：新增
+  `scripts/wsp_classify_subsample.py`，固定官方 test，只在 train 上做分层
+  5 折 × 5 个种子（25 次重训），每次用 80% train、C 固定为全量 train 的
+  选择，检验 probe 训练样本变化对 `int4−f32` 的影响。该脚本带
+  `--self-test` 和 1 条 mutation 锚点。
+  - L12 logreg `int4−f32`：全量 test `+0.040088`，子样本均值 `+0.042987`
+    （sd `0.005372`，min `+0.028556`，max `+0.050522`），25/25 为正。
+  - L12 SVC `int4−f32`：全量 `+0.043932`，子样本均值 `+0.044437`
+    （sd `0.004632`，min `+0.034596`，max `+0.052718`），25/25 为正。
+  - L12 `int3−f32`/`R12−f32`：两套 probe 也都 25/25 为正，均值约
+    `+0.019–0.025`，幅度小于 int4。
+  - L6 logreg `int4−f32 = +0.006304`（min `−0.002746`，22/25 正），SVC
+    `+0.003580`（min `−0.010983`，19/25 正）；`rescan-k2` 接近 0。
+  - **SST-2 的 L12 int4 正向在训练子样本上稳定，不是单次划分偶然；
+    但 L6 只有小幅且不稳定的正向，CoLA/hate 仍不复现。** 所以结论分两层：
+    数据集内稳定，不等于跨任务/跨数据集泛化；也不是 `R12` 的块级增益。
+  - 表：`wsp-classify-sst2-subsample.tsv`（24 行）、
+    `wsp-classify-sst2-subsample-runs.tsv`（16 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.16、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.18、`LESSONS.md` 第 28 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
