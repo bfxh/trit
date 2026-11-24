@@ -223,8 +223,20 @@
       "lines": 174
     },
     {
+      "file": "crates/trit-build/src/artifacts.rs",
+      "lines": 192
+    },
+    {
       "file": "crates/trit-build/src/bitplan.rs",
       "lines": 435
+    },
+    {
+      "file": "crates/trit-build/src/direct.rs",
+      "lines": 376
+    },
+    {
+      "file": "crates/trit-build/src/direct/tests.rs",
+      "lines": 158
     },
     {
       "file": "crates/trit-build/src/egraph.rs",
@@ -256,7 +268,7 @@
     },
     {
       "file": "crates/trit-build/src/main.rs",
-      "lines": 783
+      "lines": 733
     },
     {
       "file": "crates/trit-build/src/parallel.rs",
@@ -281,6 +293,10 @@
     {
       "file": "crates/trit-build/tests/build.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c.rs",
+      "lines": 176
     },
     {
       "file": "crates/trit-build/tests/egraph_equiv.rs",
