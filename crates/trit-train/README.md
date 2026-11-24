@@ -124,3 +124,4 @@ cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --
 - 没有 bias/激活/多层/优化器状态；`TernaryLinear` 是探针，不是框架。
 - 后续候选：KV cache 的三值压缩、AI-to-AI 三态消息格式（TriCom 类）——都还没做，
   需要先有格式规范与可复算的压缩/延迟读数。
+- 前端交接（浏览器面，不是 YARA 解析前端）：`docs/HANDOFF-BITPLANE-BACKWARD-FRONTEND.md`。
