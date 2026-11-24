@@ -695,6 +695,7 @@
 ### Added（WSP-BUDGET：同字节预算分配，L12 STS Spearman +0.0048）
 ### Added（WSP-BUDGET：同字节预算分配 + 块交换，L12 STS I10 +0.0032/+0.0055）
 ### Added（WSP-BUDGET：同字节预算分配 + 块交换，L12 STS K10K11 +0.0050/+0.0072）
+### Added（WSP-BUDGET：同字节预算分配 + 逐块敏感度，L12 STS F5F7V7 +0.0119/+0.0153）
 
 - 新增离线预算规划器 `scripts/wsp_budget.py`：从 safetensors 读 12 层 6 类线性矩阵，
   按含 per-group f32 scale/per-row bias 的真实字节，用权重重建代理 + 拉格朗日/贪心
@@ -726,11 +727,29 @@
   `budget_actual_bytes`、`budget_weight_bytes`、`budget_metadata_bytes`、
   `mixed_bits`、`budget_group`；`weight_bytes` 改为实际总字节，不再按全局
   `TRIT_WEIGHT_BITS` 报账。L12/K10K11 smoke：`10,782,720 / 7,962,624 / 2,820,096`。
+- **逐块 `3→2` 全量敏感度表（M1.3）**：新增 `scripts/wsp_budget_perturb.py`，
+  以纯 int3 为 base，对每个线性矩阵单独降 int2，各跑 1,379 对；72 行中 29 块双升、
+  38 块双降、5 块混合。最耐降级是层 5–9 的 f/v/i/o（`7f +0.005461`、
+  `7v +0.004741`、`8v +0.004321`、`5f +0.004127` ΔSpearman），最不能碰是
+  late key（`11k −0.009777`、`11v −0.008801`、`10k −0.004831`）。单块 Δ 不能相加。
+- **严格同字节 `F5F7V7`**：用表把供体换成 F5/F7 两张 384×1536 f 与 V7 一张
+  384×384 v 降 int2；int4 仍是 Q0–Q2、K0–K3、K10/K11，总字节仍 `10,782,720 B`。
+  全量 Pearson `0.830384`、Spearman `0.828678`，相对 K10K11
+  `+0.006905 / +0.008129`（10k CI `[+0.002167, +0.011700]` /
+  `[+0.002507, +0.013961]`，双指标过 0）；相对纯 int3 `+0.011944 / +0.015317`。
+  但 128 上只有 `0.898538 / 0.928299`，比 K10K11 低 `−0.006245 / −0.008888`，
+  **128 与全量符号相反**；两者 `proxy_err_ratio` 仍同为 `0.91552`。
+  距纯 int4 `−0.007121 / −0.003369`，50k CI 仍跨 0，不能写“追平 int4”。
+- 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
+  字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
+  `docs/results/LESSONS.md` 第 16 条。
 - 失败记录：规划器第一版按权重 MSE 选块，128 对低于 int3（0.885716 vs 0.897582），
   全量却为正（0.819473 vs 0.818440）；`v6e` 与 v1 的 `proxy_err_ratio` 同为
   `0.91552`，只把层 11 o 的 int2 降级换到层 9 o，全量 Spearman 就差 `+0.001882`。
   权重代理看不见块在残差流中的位置；128 子集能测反。块交换的 128 排名也会高估：
-  F3 在 128 双指标为正，全量 Spearman 转负；K10K11 在 128 反而低估全量。
+  F3 在 128 双指标为正，全量 Spearman 转负；K10K11 在 128 反而低估全量；
+  `F5F7V7` 更直接：128 比 K10K11 低 `−0.006245 / −0.008888`，全量却高
+  `+0.006905 / +0.008129`，同一对预算符号相反。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（完整字节账/读数/边界/复算），
   `docs/research/WSP-ALT.md` §5.5，`docs/results/LESSONS.md` 第 13–15 条。
   新增 `scripts/wsp_budget_bootstrap.py` 做配对 bootstrap。
