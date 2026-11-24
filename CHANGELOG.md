@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed（第三十一轮：`train_step` 前向/MSE/`dW`/scale 逐行融合）
+
+- `TernaryLinear::train_step` 不再走 `forward_dot` → `dense::sgd_update` 两遍；新增
+  `plane/fused/forward_step.rs`，逐行先算 `qdot`，立即得到 `y`/`diff`/loss，再用同一行
+  做 STE `dW` 与 scale 更新。每步不再分配 `qdot`/`y`/`dy` 三个临时向量，行数据留在
+  缓存里。
+- 逐位口径不变：6 形状 × 3 STE × 3 步的 latent、scale、loss 与旧两遍逐位相等；
+  `cargo test -p trit-train --lib` **38/38**（新增 `forward_step` 对拍）。
+- 4096×576 同轮交替 A/B 7 组（3 步/轮，9 轮取最快，进程高优先级）：
+  `train_step` **0.83→0.67 ms/step（约 1.24×）**；拆分 `dense/row.rs`、`fused/row.rs`
+  后再测 5 组 **0.88→0.69（约 1.27×）**。`shape_bench` 4096×576
+  **0.7925→0.7007 ms（约 1.13×）**。
+- 为守 module budget，`dense` 的单行 `dW` 更新移到 `dense/row.rs`，`forward_dot_row`
+  移到 `plane/fused/row.rs`；`dense::sgd_update` 只在测试对拍编译。模块台账
+  **1548 files，debt=0**；hazard allow 96；新增 C093。
+
 ### Changed（第三十轮：Soft STE 门控去掉 `ordered` 掩码）
 
 - `dense::sgd_update`、`fused::backward_step`、`fused::adam_step` 的 Soft 门控从
