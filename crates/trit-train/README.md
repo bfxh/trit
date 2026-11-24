@@ -64,8 +64,8 @@ planes，并把 latent 的 STE 门、一阶/二阶矩和参数更新交给 `laye
 `PlaneMatrix::input_grad_scalar` 保留，测试逐尺寸对拍。
 
 边界：这里只做「双导轨选符号 + f32 累加」，**不是三进制算术加法**；非 x86_64
-或列数小于 8 时自动回退标量。`forward()` 仍走打包后的 `row_dot`；SGD
-`train_step` 走 `fused::forward_dot`，不再构造双导轨。
+或列数小于 8 时自动回退标量。`forward()` 与 SGD `train_step` 都走
+`fused::forward_dot`，不再为前向构造双导轨。
 
 ## 训练步：SGD 量化点积融合
 
@@ -78,8 +78,8 @@ planes，并把 latent 的 STE 门、一阶/二阶矩和参数更新交给 `laye
 2. `dense::sgd_update`：整层 `dW` 融合外积更新，按 8 lane 计算 STE 门控；
 3. scale 梯度直接用 `qdot`，不再重算点积。
 
-`pack()` 现在只服务 `forward()`、`train_step_with_grad` 的 `dX` 和 Adam `dX`；
-`row_dot` 的 4 个固定累加器也仍用于这些路径。`forward_scalar` /
+`pack()` 现在只服务 `train_step_with_grad` 的 `dX` 和 Adam `dX`；`row_dot` 的
+4 个固定累加器也仍用于 with_grad/Adam 的 scale 梯度。`forward_scalar` /
 `train_step_scalar` 保留为标量对拍与基准路径。
 
 **Adam 训练步**：`train_step_with_grad_adam` 仍需一次 `pack()` 和 `dX`；
@@ -128,12 +128,13 @@ Adam 路径，既做对拍也做基准。
 把 `pack()+row_dot` 的 **0.62–0.68 ms**
 压到 **0.35–0.37 ms（1.7–1.9×）**；整步同轮 A/B 的安静样本从 **1.16–1.27 ms**
 降到 **0.81–0.92 ms**，负载高时会到 1.1–1.5 ms。上表 0.81–1.14 是安静样本，
-不把高载单次当稳定值。
+不把高载单次当稳定值。`forward()` 的复算见 `forward_probe`：**0.62 ms → 0.36 ms
+（1.7×）**，4096/4096 位相等。
 
 `row_dot` 的 4 个累加器已从 `acc[j & 3]` 动态索引改成固定累加器 + 内联单块闭包：
 主循环一次推进 4 个 8-lane 块，余块单路收尾；累加分组仍是 `j mod 4`。独立探针
-（4096 行）**0.2444→0.1428 ms（1.71×）**；它现在用于 `forward()`、
-`train_step_with_grad` 和 Adam 的 scale 梯度，不参与 SGD 融合步。
+（4096 行）**0.2444→0.1428 ms（1.71×）**；它现在用于
+`train_step_with_grad` 和 Adam 的 scale 梯度，不参与 `forward()`/SGD 融合步。
 
 Adam 训练步（4096×576，单线程，3 步/轮，25 轮取最快，含 `pack`）：
 
@@ -209,10 +210,12 @@ cargo run -p trit-train --release --bin shape_bench
 
 ## 边界与下一步
 
-- 前向点积已走**位平面 `row_dot`**（每 8 个 trit 取一个字节的 `pos`/`neg` 掩码）。
+- 前向点积：`forward()` 与 SGD `train_step` 走 **`fused::forward_dot`**；with_grad/Adam
+  的 `dX`、scale 梯度仍走位平面 `row_dot`（每 8 个 trit 取一个字节的 `pos`/`neg` 掩码）。
   更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到
   可发布 crate 再复用；本轮的位平面前向/反向没有跨 crate 依赖。
-- 反向 `dX`、前向、SGD `dW` 与 Adam `dW` 都已融合；`pack()` 仍是每步一次全量量化，
+- 反向 `dX`、前向、SGD `dW` 与 Adam `dW` 都已融合；`forward()`/SGD `train_step`
+  不再 `pack()`，`pack()` 只剩 with_grad/Adam 的 `dX` 每步一次全量量化，
   但只写双导轨，`q` 缓存改为首次 `q()` 时惰性解码。训练步不读 `q`，因此不付这笔写回。
 - 没有 bias/激活/多层/优化器状态（除单层 Adam 探针）；`TernaryLinear` 是探针，不是框架。
 - 后续候选：KV cache 的三值压缩、AI-to-AI 三态消息格式（TriCom 类）——都还没做，

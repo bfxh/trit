@@ -162,17 +162,12 @@ impl TernaryLinear {
         PlaneMatrix::from_latent(&self.latent, &self.scale, self.rows, self.cols)
     }
 
-    /// 前向：`y[r] = scale[r] * Σ q[r,c]·x[c]`，走双导轨位平面。
+    /// 前向：`y[r] = scale[r] * Σ q[r,c]·x[c]`，量化与点积走 `fused::forward_dot`。
     pub fn forward(&self, x: &[f32]) -> Vec<f32> {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
-        let planes = self.pack();
-        self.forward_with_planes(&planes, x)
-    }
-
-    fn forward_with_planes(&self, planes: &PlaneMatrix, x: &[f32]) -> Vec<f32> {
-        (0..self.rows)
-            .map(|r| self.scale[r] * planes.row_dot(r, x))
-            .collect()
+        let qdot =
+            crate::plane::fused::forward_dot(&self.latent, &self.scale, self.rows, self.cols, x);
+        qdot.iter().zip(&self.scale).map(|(&d, &s)| s * d).collect()
     }
 
     /// 单样本 SGD 一步，返回更新前的 MSE。

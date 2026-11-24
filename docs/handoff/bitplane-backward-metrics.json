@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T02:10:00+08:00",
+  "generated_at": "2026-11-25T02:28:00+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -64,7 +64,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); row_dot + fused forward + adam_dw + lazy q + qdot PR #668 (open, CI 32 pass / 2 skip; mergeState CLEAN)",
+    "status": "training_step merged at 9d1f0cc6 (#666); row_dot + fused forward (train_step + forward) + adam_dw + lazy q + qdot PR #668 (open)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "fused": "crates/trit-train/src/plane/fused.rs",
@@ -73,7 +73,7 @@
       "adam": "crates/trit-train/src/layer/adam.rs",
       "layer": "crates/trit-train/src/layer.rs"
     },
-    "operation": "train_step: fused::forward_dot quantizes and dots in one pass -> dense::sgd_update(dW) -> scale update from qdot; adam: pack() once -> dX -> layer::adam_update(dW) -> row_dot scale update",
+    "operation": "train_step: fused::forward_dot quantizes and dots in one pass -> dense::sgd_update(dW) -> scale update from qdot; forward(): fused::forward_dot -> scale; adam: pack() once -> dX -> layer::adam_update(dW) -> row_dot scale update",
     "benchmark": {
       "shape": {
         "rows": 4096,
@@ -103,6 +103,13 @@
         "kernel": "plane::fused::forward_dot (AVX2)",
         "implementation": "clamp(round(w/scale),-1,1) + sign-mask dot in one pass; same j mod 4 grouping and hsum as row_dot",
         "reproduce": "cargo run -p trit-train --release --example fused_probe",
+        "forward_probe": {
+          "reproduce": "cargo run -p trit-train --release --example forward_probe",
+          "pack_row_dot_ms": 0.62,
+          "fused_ms": 0.36,
+          "speedup": 1.71,
+          "bit_exact": true
+        },
         "probe_ms_per_4096_rows": {
           "pack_plus_row_dot": [0.62, 0.68],
           "fused": [0.35, 0.37]
@@ -200,12 +207,12 @@
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",
     "dX 读数只覆盖 4096×576、单线程；不含 pack() 的量化成本。",
     "训练步是单层单样本的端到端口径（SGD 不含 pack、Adam 含 pack，不含 q() 惰性解码），不含层构造/输入生成。",
-    "train_step 的 SGD 前向走 plane::fused::forward_dot（量化+点积一遍，不构造双导轨）、SGD dW 走 dense::sgd_update；Adam 与 train_step_with_grad 仍 pack() 后走 dX；Adam 路径没有前向、不复用 qdot；Adam dW 走 layer::adam_update（行级融合，非位平面）。",
+    "train_step 的 SGD 前向走 plane::fused::forward_dot（量化+点积一遍，不构造双导轨）、SGD dW 走 dense::sgd_update；forward() 也走 fused；Adam 与 train_step_with_grad 仍 pack() 后走 dX；Adam 路径没有前向、不复用 qdot；Adam dW 走 layer::adam_update（行级融合，非位平面）。",
     "multi_shape 是单层、单样本的 SGD/Adam 矩阵；9x65 的绝对耗时只有 0.2–0.4 µs，倍数会抖，1x1 不计入证据。",
     "row_dot 独立探针只测 4096 行、单线程；整步 A/B 是负载噪声下的同轮交替安静样本，不是 25 轮统计。",
     "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
     "q() 首次调用才从双导轨解码并缓存；SGD train_step 不读 q，因此 q 内存只在消费者访问后出现。",
-    "没有多形状曲线、GPU/WASM 读数或实验录像；SGD train_step 不再 pack，Adam/with_grad 仍每步一次全量量化，但只写双导轨。",
+    "没有多形状曲线、GPU/WASM 读数或实验录像；SGD train_step 与 forward() 不再 pack，Adam/with_grad 仍每步一次全量量化，但只写双导轨。",
     "浏览器 playground/WASM 不能执行该内核；前端只消费静态快照。"
   ],
   "provenance": {

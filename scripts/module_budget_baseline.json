@@ -4871,6 +4871,10 @@
       "lines": 34
     },
     {
+      "file": "crates/trit-train/examples/forward_probe.rs",
+      "lines": 63
+    },
+    {
       "file": "crates/trit-train/examples/fused_probe.rs",
       "lines": 70
     },
@@ -4904,7 +4908,7 @@
     },
     {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 576
+      "lines": 571
     },
     {
       "file": "crates/trit-train/src/layer/adam.rs",
