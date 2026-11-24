@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-24T22:49:29+08:00",
+  "generated_at": "2026-11-24T23:08:16+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -64,7 +64,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw + lazy q PR #668 (open, CI 31 pass / 2 skip / 1 stale in-progress; mergeState CLEAN)",
+    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw + lazy q PR #668 (open, CI 32 pass / 2 skip; mergeState CLEAN)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "dense": "crates/trit-train/src/dense.rs",
@@ -136,11 +136,10 @@
   },
   "ci": {
     "pr": 668,
-    "pr_checks_pass": 31,
+    "pr_checks_pass": 32,
     "pr_checks_skipping": 2,
-    "pr_checks_pending": 1,
+    "pr_checks_pending": 0,
     "pr_checks_fail": 0,
-    "pending_note": "secret wiring (self-test) 的 check 仍显示 in_progress，但 job conclusion=success；mergeStateStatus=CLEAN",
     "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"]
   },
   "limits": [

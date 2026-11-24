@@ -69,9 +69,9 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 | 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（#666；本轮加 Adam 输出） | 读 §8 的复现口径 |
 | 人类说明 | `crates/trit-train/README.md` | 已合并（#666；本轮更新） | 可直接摘写 |
 | 缺陷台账 | `docs/ERRORS.md` L171 / L172 / L173 / L174 | L171/#664、L172/#666 已合并；L173/L174 本轮 | 只读结论与读数 |
-| 回归门 | `.agent/checks/registry.json` C081/C082/C083 | C081/#664、C082/#666 已合并；C083 本轮 | 只读命令 |
+| 回归门 | `.agent/checks/registry.json` C081/C082/C083/C084 | C081/#664、C082/#666 已合并；C083/C084 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
-| PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`8c4886f0` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
+| PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`797ad121`、`d55bbbd3` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
 
 **验证读数（dX 同一提交 / 第二十一轮训练步）**
 
@@ -349,7 +349,7 @@ q (i8)  +  pos/neg (u64 双导轨)
 ```text
 后端：dX available（main 6b910bc9，PR #664 已合并）
       训练步 available（main 9d1f0cc6，PR #666 已合并；区间 #667）
-      Adam dW 融合 available（PR #668，8c4886f0；open）
+      Adam dW 融合 + 惰性 q available（PR #668，d55bbbd3；open）
 前端：planned（本页）
 录像：unrecorded
 ```
