@@ -21,7 +21,7 @@
 - `train-bench` 新增 `--train-steps`，输出标量参考 vs 位平面步与单独 `pack()` 成本。
   读数（4096×576，单线程，3 步/轮，7 轮取最快）：标量 **27.2–27.6 ms/step**，
   位平面步 **1.9–2.1 ms/step（13.4–14.1×；偶发 2.4 ms）**，其中 `pack()` **0.85–0.89 ms/step**。
-  同轮 `dX` 8.0–9.5 GMAC/s（33–40×）。
+  同轮 `dX` 8.0–9.5 GMAC/s（33–41×）。
 - `cargo test -p trit-train` **21→27**（新增 `from_latent` 2、`dense` 2、`layer` 对拍 2）。
   模块预算新增 `plane/pack.rs`、`dense.rs`、`layer/scalar.rs`、`layer/packed_tests.rs`、
   `bin/bench/{args,train_step}.rs`，当前 1519 个 `.rs` 全部 capped；hazard gate 登记
