@@ -834,6 +834,31 @@ par-L6 没有 36 块原生表，只能否定“布局可迁移”，不能说“
 两套新模型都只跑 STS-B 1,379 对，pair-level bootstrap。详见
 `WSP-BUDGET-RESULTS.md` §11.10。
 
+### 3.16.13 检索任务头：STS 最优布局不转 SciFact
+
+M1.11 按 §3.16.12 的方向先做检索头，不做分类头。数据集是 `mteb/scifact`
+（corpus 5,183、queries 1,109、去重后 300 个 qrels query、共 6,292 条文本，
+seq 64、mean pooling + L2），八档 embedding 由 `WSPEMB1` 落盘后做 query×corpus
+余弦排序；指标是 MRR@10、Recall@10/100、nDCG@10/100，query-level 10k bootstrap。
+
+- L12 `R12`（6/54/12，10,782,720 B）的 STS 对 int3 是
+  `+0.015231 / +0.022050`，Spearman 对 int4 也高 `+0.003364`；但检索 MRR
+  `0.482` 低于 int3 `0.497`、int4 `0.529`，nDCG@10 `0.526` 低于 `0.532`/
+  `0.568`。对 int3 的 MRR/nDCG CI 都跨 0；对 int4/f32 的 MRR/nDCG CI 基本
+  整段为负。Recall@100 `0.866` 比 int3 `0.843` 高，但低于 int4 `0.893`，
+  CI 也跨 0。
+- L6 `rescan-k2`（6/24/6，5,391,360 B）的 STS 对 int3 是
+  `+0.016710 / +0.014032`，对 int4 是 `+0.005243 / +0.005103`；但检索 MRR
+  `0.474` 显著低于 int3 `0.510`（10k CI `[−0.065, −0.008]`），nDCG@10
+  `0.515` 显著低于 int3 `0.541`（CI `[−0.052, −0.001]`）。Recall@100
+  `0.892` 点估计略高，但 CI 跨 0。
+
+结论：**STS 相关性的块级增益没有转成检索增益；`R12`/`rescan-k2` 只能留在
+STS in-domain，不能进检索任务头默认。** 机制上，STS 只看同一对句子的相对
+分数，检索依赖 corpus 全体的绝对几何；本轮没有做几何诊断，所以这只是解释
+假设，不是因果结论。边界是单检索集、300 query、seq 64、两个 MiniLM、无检索
+微调、分类头未开始。详见 `WSP-BUDGET-RESULTS.md` §11.11。
+
 ## 4. 未证栏
 
 - 基础对齐与逐层快照只有 8 句、`8×64` token；STS 读数另有 128 对与 1379 对两档，但都不是
@@ -845,7 +870,8 @@ par-L6 没有 36 块原生表，只能否定“布局可迁移”，不能说“
 - absmean / GPTQ / per-group / 均匀 int3–8 / SVD 残差侧车都测过；侧车和均匀位宽都只在
   `examples/bert6` 的前向里验证，
   **没有进 WSP/TTX 容器，也没有导出/加载路径**，因此上面的字节数是估算不是落地格式。
-- 没有任务头（检索/分类），`cosine` 与 Pearson 不能直接换算成任务掉点。
+- 检索任务头已做（§3.16.13）：SciFact 上 `R12`/L6 `rescan-k2` 的 STS 增益没有
+  转到检索；分类头仍未做。`cosine` 与 Pearson 仍不能直接换算成分类/生成任务掉点。
 - BUDGET 的 `R12` 只在同一批 STS 1,379 对上选块并评测，没有 held-out、
   sentence-disjoint 或第二模型；外部三套里 R12/R10/F5F7V7 在 SICK-R 负、
   STS12/13 正，K10K11 在 STS13 轻微负，只有 v6e/I10 三套外部点估计全正

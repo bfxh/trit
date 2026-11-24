@@ -5247,6 +5247,10 @@
       "lines": 51
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/run/embed_dump.rs",
+      "lines": 99
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/run/f32_base.rs",
       "lines": 98
     },

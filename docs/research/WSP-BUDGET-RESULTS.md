@@ -1,7 +1,8 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.4/M1.5 完成。逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2`
-> 供体表和 `3→4` 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
+> 状态：M1.4/M1.5 完成，M1.11 完成（STS 全量 + SciFact 检索任务头；分类头未开始）。
+> 逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2` 供体表和 `3→4`
+> 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
 > 总字节仍 `10,782,720 B`，全量 Pearson `0.833671`、Spearman `0.835411`。
 > 相对 `F5F7V7` `+0.003287 / +0.006733`；Spearman 50k CI
 > `[+0.002300, +0.011308]` 过 0，Pearson CI `[−0.000560, +0.007191]` 跨 0。
@@ -148,6 +149,13 @@ M1.9 的相对深度规则在 L12→L6 上看起来可用（`0.828707 / 0.824484
 `6/24/6` 布局投到 par-L6 也是 `−0.011203 / −0.008646`。**同一布局在两个 6 层
 模型上相对各自 int3 的 Δ 从 `+0.014/+0.014` 翻成 `−0.016/−0.007`；L12→L6
 的正向不能写成跨模型规则，只能当这对模型的候选生成器（§11.10）。**
+
+M1.11 按这个方向转到检索任务头：`R12` 在 STS 上相对 int3 是
+`+0.015231 / +0.022050`，L6 `rescan-k2` 是 `+0.016710 / +0.014032`，都是各自
+STS 的强候选；但换到 SciFact 检索后，`R12` 的 MRR/nDCG@10 点估计低于 int3，
+对 int4/f32 的 MRR/nDCG CI 基本整段为负；`rescan-k2` 对 int3 的 MRR/nDCG@10
+CI 也整段为负。**STS 相关性的块级增益没有转到检索；任务头和 STS 不是同一个
+判据（§11.11）。** 分类头尚未开始。
 
 ## 2. 字节账
 
@@ -1817,6 +1825,170 @@ L3 的表：`data/wsp-budget-l3-perturb.tsv`（36 行）、
 `data/wsp-budget-parl6-bootstrap.tsv`（8 行）；四个新方向的规则候选追加在
 `data/wsp-budget-rule-candidates.tsv`（6 行）。
 
+### 11.11 检索任务头：STS 最优布局在 SciFact 上不成立（M1.11）
+
+§11.10.5 的下一步写的是“停止跨模型规则和 `per_shape`，转检索/分类任务头”。
+本轮先做检索头，不做分类头：检索不需要训练新头，直接检验量化后的句向量余弦
+排序是否还成立，和 MiniLM 的部署用法一致；分类头尚未开始。
+
+#### 11.11.1 口径
+
+- 数据集 `mteb/scifact`：corpus 5,183 篇、queries 1,109 条、test qrels 339 行；
+  去重后 300 个带 qrels 的 query。corpus 取 `title + text`，query 取 `text`，
+  `seq=64`（截断），hidden 384；共 6,292 行、`402,688×384 = 154.6M` 个 f32。
+- 八个 embedding 都由同一 `sentence_vectors` 生成：mask mean pooling + L2
+  normalize，与 STS 的 `sentence_vectors` 完全同一份。corpus/query 共享一个
+  矩阵，检索只做 query×corpus 余弦排序。
+- 指标：MRR@10、Recall@10/100、nDCG@10/100；qrels 按二值相关算。300 个 query
+  做 10k query-level bootstrap（seed 7）；没有 corpus bootstrap。
+- 配置：L12 `f32/int3/int4/R12`，L6 `f32/int3/int4/rescan-k2`。`R12` 从
+  `budget-l12-pure-int3.json` 复算，分布 `6/54/12`、`10,782,720 B`；L6
+  `rescan-k2` 是 `6/24/6`、`5,391,360 B`。两者都与各自纯 int3 严格同字节。
+- 为任务头新增 `WSPEMB1` 落盘：`TRIT_EMBED_DUMP=<dir>` +
+  `TRIT_EMBED_TAG=<name>`，文件头 `WSPEMB1\0` + rows:u32 + cols:u32 +
+  row-major f32；纯 f32 由 `f32_base` 落为 `pure-f32.f32`，量化档由 `modes`
+  按 tag 落盘。`data.rs` 的矩阵元素上限从 `1<<27` 提到 `1<<29`，否则
+  `402,688×384` 在 `bert6` 加载时直接 panic。
+
+#### 11.11.2 L12：R12 的 STS 增益没有转成检索
+
+| 配置 | 分布 | 字节 | STS P | STS S | MRR@10 | R@10 | R@100 | nDCG@10 | nDCG@100 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| L12 纯 f32 | — | 84,934,656 | 0.837595 | 0.830894 | 0.553757 | 0.733167 | 0.896667 | 0.589919 | 0.626971 |
+| L12 纯 int3 | 0/72/0 | 10,782,720 | 0.818440 | 0.813363 | 0.496705 | 0.676278 | 0.842667 | 0.531968 | 0.568245 |
+| L12 纯 int4 | 0/0/72 | 13,436,928 | 0.837505 | 0.832047 | 0.529372 | 0.716389 | 0.893333 | 0.568436 | 0.608503 |
+| **L12 R12** | **6/54/12** | **10,782,720** | **0.833671** | **0.835411** | **0.482403** | **0.683389** | **0.866000** | **0.525849** | **0.565486** |
+
+`R12` 在 STS 上相对 int3 是 `+0.015231 / +0.022050`，Spearman 还比 int4 高
+`+0.003364`；但检索 MRR `0.482` 低于 int3 `0.497`、更低于 int4 `0.529`，
+nDCG@10 `0.526` 低于 int3 `0.532`、int4 `0.568`。Recall@100 `0.866` 比 int3
+`0.843` 高 `0.023`（点估计），但仍低于 int4 `0.893`；说明相关文档在更深处能
+被捞到一些，top-10 排序本身更差。
+
+`R12` 对 int3 的 10k query bootstrap：
+
+- MRR `−0.014474`，CI `[−0.035253, +0.005781]`，候选更好 `8.29%`；
+- Recall@10 `+0.007016`，CI `[−0.016778, +0.030444]`，候选更好 `71.43%`；
+- Recall@100 `+0.023097`，CI `[−0.001667, +0.048333]`，候选更好 `95.87%`；
+- nDCG@10 `−0.006279`，CI `[−0.024015, +0.011341]`，候选更好 `24.40%`；
+- nDCG@100 `−0.002941`，CI `[−0.018624, +0.012491]`，候选更好 `36.13%`。
+
+五个 CI 都跨 0：**top-10 排序（MRR/nDCG@10）点估计为负，Recall@10/100 点估计为
+正但都不显著；不能写“R12 的 STS 增益转到检索”。** 对 int4 更差：MRR `−0.047132`
+`[−0.076319, −0.018868]`、Recall@100 `−0.027297`
+`[−0.049000, −0.007333]`、nDCG@10 `−0.042747`
+`[−0.068165, −0.017325]`、nDCG@100 `−0.043115`
+`[−0.064823, −0.021745]`；Recall@10 `−0.033184`
+`[−0.068556, +0.001111]` 是唯一 CI 跨 0 的。对 f32 五个指标 CI 全部为负：
+MRR `−0.071590` `[−0.100799, −0.043157]`、Recall@10 `−0.049757`
+`[−0.085000, −0.016994]`、Recall@100 `−0.030599`
+`[−0.055000, −0.007992]`、nDCG@10 `−0.064242`
+`[−0.090263, −0.039157]`、nDCG@100 `−0.061650`
+`[−0.084376, −0.039637]`。
+
+#### 11.11.3 L6：STS 最优 rescan-k2 在检索上显著更差
+
+| 配置 | 分布 | 字节 | STS P | STS S | MRR@10 | R@10 | R@100 | nDCG@10 | nDCG@100 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| L6 纯 f32 | — | 42,467,328 | 0.827406 | 0.820325 | 0.534049 | 0.708944 | 0.896000 | 0.571812 | 0.613864 |
+| L6 纯 int3 | 0/36/0 | 5,391,360 | 0.814594 | 0.810425 | 0.510308 | 0.671278 | 0.873333 | 0.541137 | 0.584826 |
+| L6 纯 int4 | 0/0/36 | 6,718,464 | 0.826061 | 0.819355 | 0.534526 | 0.719611 | 0.889333 | 0.573827 | 0.611194 |
+| **L6 rescan-k2** | **6/24/6** | **5,391,360** | **0.831304** | **0.824457** | **0.474242** | **0.661611** | **0.891556** | **0.514939** | **0.564027** |
+
+`rescan-k2` 在 STS 上相对 int3 是 `+0.016710 / +0.014032`，相对 int4 是
+`+0.005243 / +0.005103`，确实是 L6 的 STS 最优点；但检索 MRR `0.474` 低于
+int3 `0.510`、更低于 int4 `0.535`，nDCG@10 `0.515` 低于 int3 `0.541`、int4
+`0.574`，Recall@10 `0.662` 也低于 int3 `0.671`、int4 `0.720`。唯一更高的是
+Recall@100 `0.892`（高于 int3 `0.873`、int4 `0.889`），但 top-10 排序明显更差。
+
+`rescan-k2` 对 int3 的 10k query bootstrap：
+
+- MRR `−0.036272`，CI `[−0.065249, −0.007896]`，候选更好 `0.59%`；
+- Recall@10 `−0.009852`，CI `[−0.042667, +0.022556]`，候选更好 `27.24%`；
+- Recall@100 `+0.018233`，CI `[−0.004000, +0.041667]`，候选更好 `94.48%`；
+- nDCG@10 `−0.026406`，CI `[−0.052461, −0.000934]`，候选更好 `2.10%`；
+- nDCG@100 `−0.020964`，CI `[−0.044046, +0.001554]`，候选更好 `3.38%`。
+
+**MRR 和 nDCG@10 的 CI 整段为负；Recall@10 中性；Recall@100 点估计正但 CI
+跨 0。** 对 int4：MRR `−0.060348` `[−0.092095, −0.030075]`、Recall@10
+`−0.058298` `[−0.094778, −0.023778]`、nDCG@10 `−0.059010`
+`[−0.086957, −0.032024]`、nDCG@100 `−0.047225`
+`[−0.072066, −0.023567]`；Recall@100 `+0.002203`
+`[−0.021111, +0.026667]` 跨 0。对 f32：MRR `−0.059883`
+`[−0.091419, −0.029664]`、Recall@10 `−0.047492`
+`[−0.083889, −0.011442]`、nDCG@10 `−0.056978`
+`[−0.085822, −0.029147]`、nDCG@100 `−0.049905`
+`[−0.074571, −0.026053]`；Recall@100 `−0.004384`
+`[−0.027778, +0.020000]` 跨 0。
+
+#### 11.11.4 结论、机制解释与边界
+
+- **STS 增益没有转到检索。** `R12` 的 STS 对 int3 双正、Spearman 对 int4 也正，
+  L6 `rescan-k2` 的 STS 对 int3/int4 都正；但检索侧 `R12` 对 int3 的 MRR/
+  nDCG 点估计为负、CI 跨 0，对 int4/f32 基本整段为负；`rescan-k2` 对 int3 的
+  MRR、nDCG@10 CI 整段为负。**不能写“块级 STS 最优布局在检索上也更好”。**
+- **`R12` 和 L6 `rescan-k2` 只能保留为 STS in-domain 候选，不能进检索任务头
+  默认；运行时默认仍是 `I10` 外部保守、`K10K11`/`R12` STS in-domain。**
+  任务头在这里起的是“否决门”作用，不是新的调参维度。
+- **一个与读数一致、但本轮没有直接证明的解释**：STS 只看同一对句子的相对分数，
+  块级重排可以在不改变全局近邻结构的情况下改善 pair ordering；检索排序直接依赖
+  corpus 全体的绝对几何，top-10 邻居对局部扰动更敏感。本轮没有做几何诊断
+  （邻域保持率、各向异性、距离秩相关），所以这只是机制假设，不是因果结论。
+- **边界**：只做 SciFact 一个检索集、300 个 qrels query、seq 64 截断、mean
+  pooling、两个 6/12 层 MiniLM；没有检索微调；bootstrap 是 query-level，不是
+  corpus-level；分类头尚未开始。不能外推到所有检索/分类任务，也不能写“量化
+  embedding 普遍不适合检索”。本轮负向结论的具体范围是：“在这套 SciFact
+  口径下，`R12` 和 L6 `rescan-k2` 的 STS 增益没有转成检索增益”。
+- **下一步**：如果继续任务头，分类头要先定数据集和是否允许训练小的线性头
+  （冻结编码器）；在这两个决定之前，不能假设分类头一定会正。否则接受
+  “BUDGET 只在 STS 相关性上有效”，把 `R12` 留在 STS in-domain，不进运行时默认。
+
+#### 11.11.5 复算
+
+```bash
+# 1) SciFact 导出（L12/L6 各一次；低内存，不加载 transformer）
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/wsp_export_scifact.py \
+  --dataset mteb/scifact --out scifact/data-l12 \
+  --model all-MiniLM-L12-v2 --seq 64 --local-only
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/wsp_export_scifact.py \
+  --dataset mteb/scifact --out scifact/data-l6 \
+  --model all-MiniLM-L6-v2 --seq 64 --local-only
+
+# 2) R12：6 张降 int2、12 张升 int4，字节严格等于纯 int3
+python scripts/wsp_budget_variant.py \
+  --base budget-l12-pure-int3.json \
+  --up 1:k,10:v,8:o,6:o,11:v,9:o,7:o,0:o,5:k,4:v,6:q,0:v \
+  --down 5:f,7:f,7:v,8:v,9:v,6:v \
+  --require-exact --out scifact/r12/swap-r12.json
+
+# 3) 编码：以 L12 int3 为例；纯 f32 由 f32_base 先落为 pure-f32.f32
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=24 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=scifact/emb TRIT_EMBED_TAG=l12-int3 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir scifact/data-l12 --activation-mode f32 \
+  --out scifact/runs/l12-int3.json
+# 纯 int4：TRIT_WEIGHT_BITS=4，不传 TRIT_BUDGET
+# R12：TRIT_WEIGHT_BITS=3 TRIT_BUDGET=scifact/r12/swap-r12.json
+# L6 rescan-k2：TRIT_LAYERS=6 TRIT_BUDGET=l6/l6-rescan-k2.json
+
+# 4) 评测：读 WSPEMB1，10k query bootstrap
+python scripts/wsp_retrieval_eval.py \
+  --texts scifact/data-l12/texts.json --qrels scifact/data-l12/qrels.json \
+  --run f32=scifact/emb/l12-pure-f32.f32 \
+  --run int3=scifact/emb/l12-int3.f32 \
+  --run int4=scifact/emb/l12-int4.f32 \
+  --run R12=scifact/emb/l12-r12.f32 \
+  --baseline f32 --baseline int3 --baseline int4 --bootstrap 10000 \
+  --out scifact/eval-l12-all.json
+```
+
+每次运行都会先落 `pure-f32.f32`；跑下一档前先复制为 `l12-pure-f32.f32` /
+`l6-pure-f32.f32`，避免被覆盖。表见
+`data/wsp-retrieval-scifact-l12.tsv`（4 行）、
+`data/wsp-retrieval-scifact-l6.tsv`（4 行）、
+`data/wsp-retrieval-scifact-bootstrap.tsv`（30 行）。
+
 ## 12. 下一步
 
 - **逐块 `3→2`/`3→4` 与第二模型 L6 都已完成（§8/§9/§11）**：不要再重复跑
@@ -1824,6 +1996,13 @@ L3 的表：`data/wsp-budget-l3-perturb.tsv`（36 行）、
   双向检验（L12→L6 正、L6→L12 对 int4 负）；第三模型与同深度对照也已在
   §11.10 做完（L3/par-L6 双负），下一步不是再找模型，而是任务头或接受
   每模型重扫。
+- **检索任务头已做（§11.11），结论是负向**：`R12` 和 L6 `rescan-k2` 的 STS
+  增益没有转到 SciFact 检索；`R12` 对 int3 的 MRR/nDCG@10 点估计为负、CI 跨 0，
+  对 int4/f32 的 MRR/nDCG CI 基本整段为负；L6 `rescan-k2` 对 int3 的 MRR/
+  nDCG@10 CI 整段为负。任务头不是新的调参维度，而是现有 STS 候选的否决门。
+- **分类头尚未开始**：如果要做，先定数据集和“冻结编码器 + 线性头”是否允许；
+  在这两个决定之前，不能假设分类头会正。否则接受“BUDGET 只在 STS 相关性上
+  有效”，把 `R12` 留在 STS in-domain，不进运行时默认。
 - **重扫选择器已落库，且 5 折交叉拟合已把“选择”留出（§11.6/§11.7）**：
   `wsp_budget_rescan.py` 能从两张表生成严格同字节候选；L6 全量 `6/24/6` 是
   `0.831304 / 0.824457`（高于 int4 点估计），但这是 in-sample。5 折 × 2 种子

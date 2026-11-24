@@ -858,6 +858,29 @@
     `wsp-budget-parl6-bootstrap.tsv`（8 行）；`wsp-budget-rule-candidates.tsv`
     扩到 6 行。运行时默认不变（`I10` 外部保守、`K10K11`/`R12` STS in-domain）。
 
+- **检索任务头（M1.11）**：`bert6` 新增 `WSPEMB1` 句向量落盘
+  （`TRIT_EMBED_DUMP=<dir>` + `TRIT_EMBED_TAG=<name>`；header
+  `WSPEMB1\0` + rows:u32 + cols:u32 + row-major f32），纯 f32 由 `f32_base`
+  落盘、量化档由 `modes` 落盘；`data.rs` 的矩阵元素上限 `1<<27` 提到 `1<<29`，
+  以支持 SciFact 的 `402,688×384 = 154.6M` 元素。新增
+  `scripts/wsp_export_scifact.py`（低内存 tokenizers+safetensors 只读 BERT
+  embedding 块，流式导出 `WSPACT1/WSPMSK1`）和 `scripts/wsp_retrieval_eval.py`
+  （WSPEMB1 读取、MRR/Recall/nDCG、query bootstrap）。
+  - SciFact：corpus 5,183、queries 1,109、去重后 300 个 qrels query、6,292 条
+    文本，seq 64、mean pooling + L2。
+  - L12 `R12`（6/54/12，10,782,720 B）STS 对 int3 `+0.015231 / +0.022050`，
+    但检索 MRR `0.482` 低于 int3 `0.497`/int4 `0.529`，nDCG@10 `0.526` 低于
+    `0.532`/`0.568`；对 int3 的 MRR/nDCG CI 都跨 0，对 int4/f32 基本整段为负。
+  - L6 `rescan-k2`（6/24/6，5,391,360 B）STS 对 int3 `+0.016710 / +0.014032`，
+    但检索 MRR `0.474` 显著低于 int3 `0.510`（CI `[−0.065,−0.008]`），
+    nDCG@10 `0.515` 显著低于 `0.541`。**STS 增益没有转到检索；R12/rescan-k2
+    只能留在 STS in-domain，不能进检索任务头默认；分类头未开始。**
+  - 表：`wsp-retrieval-scifact-l12.tsv`（4 行）、
+    `wsp-retrieval-scifact-l6.tsv`（4 行）、
+    `wsp-retrieval-scifact-bootstrap.tsv`（30 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.11、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.13、`LESSONS.md` 第 23 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

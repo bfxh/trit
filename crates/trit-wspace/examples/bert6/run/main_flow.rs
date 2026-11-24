@@ -10,13 +10,13 @@ mod args;
 #[path = "data.rs"]
 mod data;
 mod diag;
+mod embed_dump;
 mod f32_base;
 #[path = "modes.rs"]
 mod modes;
 #[path = "sidecar_svd.rs"]
 mod sidecar_svd;
 mod weight_format;
-
 pub(crate) fn run() {
     let Args {
         file,

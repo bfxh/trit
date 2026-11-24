@@ -213,6 +213,18 @@
    表见 `data/wsp-budget-l3-candidates.tsv`、`data/wsp-budget-parl6-candidates.tsv`，
    正文见 `WSP-BUDGET-RESULTS.md` §11.10。
 
+23. **STS 相关性增益不等于检索增益**。M1.11 把 STS 最优布局
+   `R12`（L12，6/54/12）和 L6 `rescan-k2`（6/24/6）送 SciFact 检索：
+   `R12` 的 STS 对 int3 是 `+0.015231 / +0.022050`，但检索 MRR `0.482`
+   低于 int3 `0.497`/int4 `0.529`，nDCG@10 `0.526` 低于 `0.532`/`0.568`；
+   对 int3 的 MRR/nDCG CI 都跨 0，对 int4/f32 基本整段为负。L6 `rescan-k2`
+   的 STS 对 int3 是 `+0.016710 / +0.014032`，检索 MRR `0.474` 却显著低于
+   int3 `0.510`（CI `[−0.065,−0.008]`），nDCG@10 `0.515` 显著低于 `0.541`。
+   **块级重排能改善同一对句子的相对分数，不等于改善 corpus 全体的近邻几何；
+   STS 候选进任务头前必须单独过检索/分类门。** 这轮只做 SciFact 检索、300 个
+   qrels query、seq 64；分类头尚未开始。表见
+   `data/wsp-retrieval-scifact-*.tsv`，正文见 `WSP-BUDGET-RESULTS.md` §11.11。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter
