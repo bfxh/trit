@@ -261,14 +261,14 @@ fn main() {
 
     let (scalar_step, plane_step, step_speedup, pack_step) =
         bench_train_step(rows, cols, train_steps, rounds);
-    println!("\n训练步：{rows}×{cols}（{train_steps} 步/轮，{rounds} 轮取最快，含 pack）");
+    println!("\n训练步：{rows}×{cols}（{train_steps} 步/轮；SGD fused，pack 另计）");
     println!("{:<14} {:>10} {:>10}", "路径", "ms/step", "相对");
     println!("{:<14} {scalar_step:>10.2} {:>10}", "标量参考", "1.00×");
     println!(
         "{:<14} {plane_step:>10.2} {:>9.2}×",
         "位平面步", step_speedup
     );
-    println!("{:<14} {pack_step:>10.2}", "其中 pack()");
+    println!("{:<14} {pack_step:>10.2}", "pack() 参考");
     adam_step::bench_adam_step(rows, cols, train_steps, rounds, adam_scalar);
     println!("\nSTE 收敛（2×3 线性层，{ste_steps} 步，MSE）：");
     for (name, ste) in [

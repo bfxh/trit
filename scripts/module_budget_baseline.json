@@ -4871,6 +4871,10 @@
       "lines": 34
     },
     {
+      "file": "crates/trit-train/examples/fused_probe.rs",
+      "lines": 70
+    },
+    {
       "file": "crates/trit-train/src/bin/bench.rs",
       "lines": 283
     },
@@ -4892,7 +4896,7 @@
     },
     {
       "file": "crates/trit-train/src/bin/shape_bench.rs",
-      "lines": 92
+      "lines": 88
     },
     {
       "file": "crates/trit-train/src/dense.rs",
@@ -4932,7 +4936,15 @@
     },
     {
       "file": "crates/trit-train/src/plane/backward.rs",
-      "lines": 429
+      "lines": 428
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused.rs",
+      "lines": 133
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/tests.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-train/src/plane/pack.rs",

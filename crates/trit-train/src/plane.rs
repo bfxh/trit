@@ -6,11 +6,11 @@
 //! 只做能按字并行的运算。**算术加法不做**：三进制进位在打包表示上只能逐 lane
 //! 串行展开，此前 `trit-balanced` 的实测是比 i64 慢 2–3 个数量级，属于已证负结果。
 //!
-//! [`PlaneMatrix`] 把整行权重打成两条导轨，反向 `dX = Wᵀdy` 只按掩码加减 f32，
-//! 不做三进制进位；这是训练侧的反向内核，不改变上面的加法边界。
+//! [`PlaneMatrix`] 把整行权重打成两条导轨，反向 `dX = Wᵀdy` 只按掩码加减 f32、不做三进制进位；这是训练侧的反向内核，不改变上面的加法边界。
 mod alu;
 #[allow(dead_code)] // 非 x86_64 上 has_avx2 只是回退路径的编译占位
 mod backward;
+pub mod fused;
 mod pack;
 mod q;
 pub use backward::PlaneMatrix;

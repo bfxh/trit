@@ -1640,6 +1640,27 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C088",
+      "title": "trit-train SGD 前向量化点积融合",
+      "kind": "cmd",
+      "covers": [
+        "L178"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused.rs",
+        "crates/trit-train/src/plane/fused/tests.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/bin/bench/train_step.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T02:05:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

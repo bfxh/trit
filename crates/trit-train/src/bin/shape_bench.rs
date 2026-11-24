@@ -55,7 +55,7 @@ where
 
 fn main() {
     let k = 9;
-    println!("多形状训练步矩阵（{k} 轮取最快，含 pack）");
+    println!("多形状训练步矩阵（{k} 轮取最快；SGD 融合前向，Adam 含 pack）");
     println!(
         "{:<12} {:>10} {:>10} {:>8} {:>10} {:>10} {:>8} {:>7}",
         "shape", "SGD ms", "SGD 标量", "SGD×", "Adam ms", "Adam 标量", "Adam×", "步/轮"

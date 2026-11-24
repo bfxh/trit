@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed（第二十六轮：SGD 前向量化点积融合）
+
+- `train_step` 不再为前向构造 `PlaneMatrix`：新增 `plane/fused.rs`，每 8 列直接做
+  `clamp(round(w / scale), -1, 1)`，用符号掩码乘 `x` 并累加。它省掉 589 KB 的
+  `pos`/`neg` 分配与写回，以及 `row_dot` 对同一份 bit 的第二遍读；累加分组和
+  `hsum` 与 `row_dot` 相同，1×1/4×7/5×9/6×63/8×130/3×9/4×576 均逐位对拍
+  （3×9 覆盖零/负 scale）。
+- 读数（4096×576）：复算 example `pack()+row_dot` **0.62–0.68 ms** → `fused` **0.35–0.37
+  ms（1.7–1.9×）**；`train_step` **0.81–1.14 ms/step（27–35×；旧 1.16–1.22 /
+  23.9–25.0×）**。`shape_bench` 4096×576 **0.90–1.00 ms（25.9–27.1×）**，17×576
+  **27–30×**，11×130 **19–20×**，9×65 **14.5–15.3×**。
+- `pack()` 仍服务 `forward()`、`train_step_with_grad` 的 `dX` 和 Adam `dX`；
+  `train-bench` 的 `pack()` 行改为不参与融合步的参考读数。测试 **31→32**；
+  缺陷台账新增 L178/C088。
+
 ### Changed（第二十五轮：`row_dot` 固定累加器展开）
 
 - `simd::row_dot` 的 4 个累加器从 `acc[j & 3]` 动态索引改成 4 个固定累加器 +
