@@ -905,6 +905,29 @@ SVM transfer `0.650–0.690`），说明线性边界方向变了；没有几何�
 因果化。边界同 §3.16.14，且没有 MLP（用户口径明确排除）、没有第二分类集。
 详见 `WSP-BUDGET-RESULTS.md` §11.13。
 
+### 3.16.16 第二分类集 CoLA：int4 正向没有跨数据集泛化
+
+M1.14 用 GLUE CoLA 做第二个二分类集：8,551 train / 1,043 dev，`test.tsv`
+无标签，dev 作 held-out test；seq 64、mean pooling + L2、编码器冻结。
+CoLA dev 为 69/31，按 SST-2 的 accuracy 口径会塌到多数类（`0.691275`，
+全判 acceptable 的 macro-F1 `0.408730`），因此主口径改成
+`class_weight="balanced"` + train 内 5 折 macro-F1 选 C，同时跑 logistic
+与 `LinearSVC`，10k paired bootstrap 同时报 accuracy/macro-F1。
+
+- L12 logreg：`int4−f32 = +0.013341`（CI `[−0.006711,+0.033557]`），
+  `int3−f32 = −0.016517`（CI 跨 0），`R12−f32 = −0.007833`（CI 跨 0）。
+- L12 SVC：`int4−f32 = +0.008467`（CI `[−0.011505,+0.028763]`），
+  `R12−f32 = −0.013690`（CI 跨 0）。
+- L6：logreg `int4−f32 = −0.009679`、SVC `−0.000126`，两套 CI 都跨 0；
+  `rescan-k2` 也没有高于 f32。
+
+**SST-2 的 +0.040/+0.044 同量级增益已落在 CoLA 的 95% CI 之外，故不能把
+SST-2 的 int4 正向写成量化普遍提升线性分类；它更像单数据集/单 probe 家族的
+观察。** CoLA 的 balanced accuracy 只有 0.57–0.59、AUC 0.60，probe 很弱，
+只能排除约 4 个百分点的效应，不能排除更小的正向。边界：单第二数据集、
+dev 作 test、单 split、两个 MiniLM、只训练线性头、无 MLP/encoder 微调。
+详见 `WSP-BUDGET-RESULTS.md` §11.14。
+
 ## 4. 未证栏
 
 - 基础对齐与逐层快照只有 8 句、`8×64` token；STS 读数另有 128 对与 1379 对两档，但都不是
@@ -917,10 +940,12 @@ SVM transfer `0.650–0.690`），说明线性边界方向变了；没有几何�
   `examples/bert6` 的前向里验证，
   **没有进 WSP/TTX 容器，也没有导出/加载路径**，因此上面的字节数是估算不是落地格式。
 - 检索任务头已做（§3.16.13）：SciFact 上 `R12`/L6 `rescan-k2` 的 STS 增益没有
-  转到检索。分类任务头也已做（§3.16.14）：SST-2 线性 probe 上同样没有转成
-  分类增益；第二种线性头 `LinearSVC` 复验（§3.16.15）复现了同一排序，L12
-  均匀 int4 对 f32 的正向不是 logistic 特有，但仍不能归因给 `R12`。`cosine`
-  与 Pearson 仍不能直接换算成分类/生成任务掉点。
+  转到检索。分类任务头也已做：SST-2 线性 probe（§3.16.14）没有转成分类增益，
+  第二种线性头 `LinearSVC`（§3.16.15）复现了同一排序但同样不是 `R12` 的增益；
+  第二分类集 CoLA（§3.16.16）没有复现 L12 均匀 int4 对 f32 的正向
+  （logreg `+0.013341`、SVC `+0.008467`，CI 都跨 0），因此该正向只能算
+  单数据集观察，不能写成量化普遍提升分类。`cosine` 与 Pearson 仍不能直接
+  换算成分类/生成任务掉点。
 - BUDGET 的 `R12` 只在同一批 STS 1,379 对上选块并评测，没有 held-out、
   sentence-disjoint 或第二模型；外部三套里 R12/R10/F5F7V7 在 SICK-R 负、
   STS12/13 正，K10K11 在 STS13 轻微负，只有 v6e/I10 三套外部点估计全正

@@ -1,9 +1,13 @@
-"""Export SetFit SST-2 JSONL as bert6 WSPACT1/WSPMSK1 inputs.
+"""Export classification JSONL or GLUE CoLA TSV as bert6 WSPACT1/WSPMSK1 inputs.
 
 The output mirrors ``wsp_export_scifact.py``: ``input.f32`` (texts*seq, hidden),
 ``reference.f32`` (zeros), ``mask.u8``, plus ``texts.json`` and
 ``manifest.json``.  Train and test rows share one matrix so one ``bert6``
 invocation per mode produces all sentence vectors.
+
+``--format cola`` accepts the GLUE CoLA ``train.tsv`` / ``dev.tsv`` layout
+(source, label, asterisk, sentence; dev is used as the held-out test split).
+The default ``jsonl`` accepts ``{"text": ..., "label": 0|1}`` per line.
 
 Only the BERT embedding block is needed; the exporter reads it directly from
 safetensors and never loads the transformer.
@@ -57,12 +61,56 @@ def open_mask(path, batch, seq):
 def append_mask(handle, mask):
     import numpy as np
 
-    handle.write(np.ascontiguousarray(mask, dtype=np.uint8).reshape(-1).tobytes(order="C"))
+    handle.write(
+        np.ascontiguousarray(mask, dtype=np.uint8).reshape(-1).tobytes(order="C")
+    )
 
 
-def _load_rows(path, split):
+def _load_cola_rows(path, split):
+    rows = []
+    with open(path, encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) != 4:
+                raise ValueError(
+                    f"{path}:{line_no}: expected 4 CoLA columns, got {len(fields)}"
+                )
+            _, label_text, _, text = fields
+            try:
+                label = int(label_text)
+            except ValueError as error:
+                raise ValueError(
+                    f"{path}:{line_no}: label must be 0 or 1, got {label_text!r}"
+                ) from error
+            if label not in (0, 1):
+                raise ValueError(
+                    f"{path}:{line_no}: label must be 0 or 1, got {label!r}"
+                )
+            text = text.strip()
+            if not text:
+                raise ValueError(f"{path}:{line_no}: empty text")
+            rows.append(
+                {
+                    "id": f"{split}-{len(rows)}",
+                    "split": split,
+                    "text": text,
+                    "label": label,
+                }
+            )
+    if not rows:
+        raise ValueError(f"{path}: no rows for split {split}")
+    return rows
+
+
+def _load_rows(path, split, fmt="jsonl"):
     if split not in SPLITS:
         raise ValueError(f"unknown split: {split}")
+    if fmt == "cola":
+        return _load_cola_rows(path, split)
+    if fmt != "jsonl":
+        raise ValueError(f"unknown format: {fmt}")
     rows = []
     with open(path, encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, 1):
@@ -72,7 +120,9 @@ def _load_rows(path, split):
             text = str(obj.get("text") or "").strip()
             label = obj.get("label")
             if label not in (0, 1):
-                raise ValueError(f"{path}:{line_no}: label must be 0 or 1, got {label!r}")
+                raise ValueError(
+                    f"{path}:{line_no}: label must be 0 or 1, got {label!r}"
+                )
             if not text:
                 raise ValueError(f"{path}:{line_no}: empty text")
             rows.append(
@@ -93,6 +143,7 @@ def parse_args():
     parser.add_argument("--train", default="")
     parser.add_argument("--test", default="")
     parser.add_argument("--out", default="")
+    parser.add_argument("--format", choices=("jsonl", "cola"), default="jsonl")
     parser.add_argument("--model", default=MODEL_ID)
     parser.add_argument("--seq", type=int, default=SEQ)
     parser.add_argument("--batch", type=int, default=BATCH)
@@ -118,8 +169,8 @@ def main():
     from safetensors import safe_open
     from tokenizers import Tokenizer
 
-    train = _load_rows(args.train, "train")
-    test = _load_rows(args.test, "test")
+    train = _load_rows(args.train, "train", args.format)
+    test = _load_rows(args.test, "test", args.format)
     if args.limit_train > 0:
         train = train[: args.limit_train]
     if args.limit_test > 0:
@@ -138,14 +189,20 @@ def main():
 
     with safe_open(str(model_dir / "model.safetensors"), framework="numpy") as handle:
         word = handle.get_tensor("embeddings.word_embeddings.weight")
-        position = handle.get_tensor("embeddings.position_embeddings.weight")[: args.seq]
+        position = handle.get_tensor("embeddings.position_embeddings.weight")[
+            : args.seq
+        ]
         token_type = handle.get_tensor("embeddings.token_type_embeddings.weight")[0]
         norm_weight = handle.get_tensor("embeddings.LayerNorm.weight")
         norm_bias = handle.get_tensor("embeddings.LayerNorm.bias")
 
     os.makedirs(args.out, exist_ok=True)
-    input_handle = open_matrix(os.path.join(args.out, "input.f32"), len(texts) * args.seq, hidden)
-    ref_handle = open_matrix(os.path.join(args.out, "reference.f32"), len(texts) * args.seq, hidden)
+    input_handle = open_matrix(
+        os.path.join(args.out, "input.f32"), len(texts) * args.seq, hidden
+    )
+    ref_handle = open_matrix(
+        os.path.join(args.out, "reference.f32"), len(texts) * args.seq, hidden
+    )
     mask_handle = open_mask(os.path.join(args.out, "mask.u8"), len(texts), args.seq)
     try:
         for start in range(0, len(texts), args.batch):
@@ -153,14 +210,18 @@ def main():
             batch = texts[start:end]
             encodings = tokenizer.encode_batch([row["text"] for row in batch])
             ids = np.asarray([encoding.ids for encoding in encodings], dtype=np.int64)
-            mask = np.asarray([encoding.attention_mask for encoding in encodings], dtype=np.uint8)
+            mask = np.asarray(
+                [encoding.attention_mask for encoding in encodings], dtype=np.uint8
+            )
             embedded = word[ids] + position[None, :, :] + token_type[None, None, :]
             mean = embedded.mean(axis=-1, keepdims=True)
             variance = ((embedded - mean) ** 2).mean(axis=-1, keepdims=True)
             normalized = (embedded - mean) / np.sqrt(variance + eps)
             input_rows = normalized * norm_weight + norm_bias
             append_matrix(input_handle, input_rows.reshape(-1, hidden))
-            append_matrix(ref_handle, np.zeros((len(batch) * args.seq, hidden), dtype=np.float32))
+            append_matrix(
+                ref_handle, np.zeros((len(batch) * args.seq, hidden), dtype=np.float32)
+            )
             append_mask(mask_handle, mask.reshape(-1))
             print(f"chunk {start}-{end}/{len(texts)} ok", flush=True)
     finally:
@@ -183,7 +244,11 @@ def main():
     with open(os.path.join(args.out, "manifest.json"), "w", encoding="utf-8") as handle:
         json.dump(
             {
-                "dataset": "SetFit/sst2",
+                "dataset": (
+                    "GLUE/CoLA (dev as test)"
+                    if args.format == "cola"
+                    else "SetFit/sst2"
+                ),
                 "model": args.model,
                 "seq": args.seq,
                 "hidden": hidden,
@@ -191,7 +256,11 @@ def main():
                 "texts": len(texts),
                 "train": len(train),
                 "test": len(test),
-                "labels": {"negative": 0, "positive": 1},
+                "labels": (
+                    {"unacceptable": 0, "acceptable": 1}
+                    if args.format == "cola"
+                    else {"negative": 0, "positive": 1}
+                ),
             },
             handle,
             indent=2,
@@ -236,6 +305,36 @@ def self_test():
         pass
     else:
         raise AssertionError("empty text must be rejected")
+
+    cola = Path(tmp) / "cola.tsv"
+    cola.write_text(
+        "gj04\t1\t\tThe sailors rode the breeze clear of the rocks.\n"
+        "cj99\t0\t*\tAs you eat the most, you want the least.\n",
+        encoding="utf-8",
+    )
+    cola_rows = _load_rows(cola, "test", "cola")
+    assert cola_rows == [
+        {
+            "id": "test-0",
+            "split": "test",
+            "text": "The sailors rode the breeze clear of the rocks.",
+            "label": 1,
+        },
+        {
+            "id": "test-1",
+            "split": "test",
+            "text": "As you eat the most, you want the least.",
+            "label": 0,
+        },
+    ]
+    bad_cola = Path(tmp) / "bad-cola.tsv"
+    bad_cola.write_text("gj04\t2\t\tx\n", encoding="utf-8")
+    try:
+        _load_rows(bad_cola, "test", "cola")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("CoLA label 2 must be rejected")
     print("self-test ok")
 
 

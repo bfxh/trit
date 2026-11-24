@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.4/M1.5 完成，M1.11 完成（STS 全量 + SciFact 检索任务头），M1.12/M1.13 完成（SST-2 线性 probe / 线性 SVM 复验）。
+> 状态：M1.14 完成（STS 全量 + SciFact 检索 + SST-2/CoLA 线性 probe / 线性 SVM 复验）。
 > 逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2` 供体表和 `3→4`
 > 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
 > 总字节仍 `10,782,720 B`，全量 Pearson `0.833671`、Spearman `0.835411`。
@@ -27,6 +27,13 @@
 > `R12−int3 = −0.004502`（CI 跨 0），`R12−int4 = −0.027516`（CI 整段为负）；
 > L6 各档仍无显著差异。**L12 均匀 int4 高于 f32 不是 logistic 特有，但仍是
 > 量化正则化/表示变化，不是 `R12` 的块级重排增益**（§11.13）。
+> **M1.14 换第二个分类集（GLUE CoLA，dev 作 test）没有复现 int4 的正向**：
+> CoLA dev 为 69/31，主口径改成 balanced class weight + macro-F1 选 C；
+> L12 logreg `int4−f32 = +0.013341`（CI `[−0.006711,+0.033557]`），SVC
+> `+0.008467`（CI `[−0.011505,+0.028763]`），L6 int4 与 f32 打平或略低。
+> SST-2 的 +0.040/+0.044 同量级效应已落在 CoLA 的 95% CI 之外；`R12`/
+> `rescan-k2` 仍无分类增益。**SST-2 的 int4 正向是单数据集/单 probe 家族的
+> 观察，不能写成量化普遍提升线性分类**（§11.14）。
 
 ## 1. 结论先行
 
@@ -2233,6 +2240,196 @@ L6 为 `0.650192 / 0.683690 / 0.690280`（f32 自评 `0.802306`）。这说明
 `data/wsp-classify-sst2-probe-compare.tsv`（8 行）。复算时把 §11.12.6 的
 `wsp_classify_eval.py` 命令加上 `--probe linear_svc` 即可。
 
+## 11.14 第二个分类数据集（M1.14，GLUE CoLA / 线性 probe）
+
+### 11.14.1 口径
+
+- 数据集 `GLUE/CoLA`，官方 zip
+  `https://dl.fbaipublicfiles.com/glue/data/CoLA.zip`：8,551 train / 1,043 dev；
+  `test.tsv` 只有 `index/sentence`、没有标签，因此用 `dev.tsv` 作 held-out
+  test，下文所有 “test” 都指 dev。标签 `0 = unacceptable`、`1 = acceptable`；
+  train 为 6,023/2,528，dev 为 721/322。
+- 9,594 条文本（train+dev），seq 64、mask mean pooling + L2 normalize，编码器
+  冻结；L12/L6 各四档，与 §11.12/§11.13 的量化预算相同（L12 `f32/int3/int4/R12`，
+  L6 `f32/int3/int4/rescan-k2`）。
+- CoLA dev 不是平衡集：多数类（acceptable）基线 accuracy `0.691275`，全判
+  acceptable 的 macro-F1 `0.408730`。按 SST-2 的“accuracy 选 C + 无类别权重”
+  口径，四个配置全部塌到多数类（§11.14.4），因此**主口径改为
+  `class_weight="balanced"` + train 内 5 折按 macro-F1 选 C**；仍只训练线性头，
+  不做 MLP、不做 encoder 微调。
+- 两种线性头都跑：logistic regression 与平方 hinge `LinearSVC`；`C` 网格
+  `{0.01,0.1,1,10}`，test 只评一次。10k test-level paired bootstrap 同时对
+  accuracy 与 macro-F1 报差值、95% CI 和 `better_fraction`。另做
+  `{0.01,...,100}` 扩网格与无类别权重敏感性（§11.14.4）。
+- 编码同样按 1,500 条分块（9,594 → 7 块，前 6 块 1,500、尾块 594）；L12/L6
+  每个档位拼回 `WSPEMB1` 后均为 9,594 行。
+
+### 11.14.2 主结果（balanced + macro-F1 选 C）
+
+L12：
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.574305 | 0.549444 | 0.602362 | 10 | 0.569175 |
+| logreg | int3 | 0.558006 | 0.532857 | 0.595448 | 10 | 0.558885 |
+| logreg | int4 | 0.587728 | 0.561518 | 0.603783 | 10 | 0.570000 |
+| logreg | R12 | 0.566635 | 0.543040 | 0.585619 | 10 | 0.563494 |
+| linear_svc | f32 | 0.577181 | 0.550525 | 0.606660 | 10 | 0.572624 |
+| linear_svc | int3 | 0.566635 | 0.539541 | 0.595181 | 10 | 0.559755 |
+| linear_svc | int4 | 0.585810 | 0.559916 | 0.606268 | 10 | 0.569985 |
+| linear_svc | R12 | 0.563758 | 0.538937 | 0.590344 | 10 | 0.563314 |
+
+L6：
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.582934 | 0.558366 | 0.603137 | 1 | 0.548995 |
+| logreg | int3 | 0.574305 | 0.551128 | 0.584844 | 10 | 0.548159 |
+| logreg | int4 | 0.573346 | 0.547339 | 0.595659 | 10 | 0.547077 |
+| logreg | rescan-k2 | 0.570470 | 0.544950 | 0.583474 | 1 | 0.535794 |
+| linear_svc | f32 | 0.573346 | 0.549910 | 0.601565 | 0.1 | 0.550060 |
+| linear_svc | int3 | 0.571429 | 0.548302 | 0.584525 | 1 | 0.549473 |
+| linear_svc | int4 | 0.573346 | 0.548644 | 0.595474 | 1 | 0.546789 |
+| linear_svc | rescan-k2 | 0.574305 | 0.549872 | 0.592735 | 10 | 0.540597 |
+
+CoLA 上线性 probe 本身很弱：balanced accuracy 只有 `0.57–0.59`（随机为 0.50），
+AUC 约 `0.60`。因此这组读数检验的是“在弱线性可分的第二分类集上，int4 的
+SST-2 正向是否还在”，不是“CoLA 状态-of-the-art”。
+
+### 11.14.3 bootstrap：int4 的正向没有复现
+
+L12，probe 重新训练、balanced logistic：
+
+- `int4 − f32 = +0.013341`，95% CI `[−0.006711,+0.033557]`，
+  better `0.9077`；点估计为正，但 CI 跨 0。
+- `int3 − f32 = −0.016517`，CI `[−0.046021,+0.013423]`；点估计转负。
+- `R12 − f32 = −0.007833`，CI `[−0.036433,+0.022052]`；没有分类增益。
+- `int4 − int3 = +0.029858`，accuracy CI `[0.000000,+0.059444]`，
+  better `0.9789`；int4 对 int3 只在 accuracy 上擦边，macro-F1 的
+  `int4 − int3 = +0.028788`，CI `[−0.000054,+0.058031]`，下界擦边为负。
+
+L12，balanced `LinearSVC`：
+
+- `int4 − f32 = +0.008467`，CI `[−0.011505,+0.028763]`，better `0.8091`。
+- `int3 − f32 = −0.010809`，CI `[−0.040268,+0.018217]`。
+- `R12 − f32 = −0.013690`，CI `[−0.042186,+0.015340]`。
+- `int4 − int3 = +0.019276`，CI `[−0.010547,+0.048897]`，不显著。
+
+macro-F1 的读数和 accuracy 同向：L12 logreg `int4 − f32 = +0.012021`
+（CI `[−0.007247,+0.031408]`），SVC `+0.009261`（CI `[−0.009135,+0.027831]`），
+两个 CI 都跨 0。
+
+L6：
+
+- logreg：`int4 − f32 = −0.009679`（CI `[−0.031640,+0.012464]`），
+  `rescan-k2 − f32 = −0.012451`（CI `[−0.040268,+0.016299]`）；量化档点估计
+  反而略低。
+- SVC：`int4 − f32 = −0.000126`（CI `[−0.022052,+0.022052]`），
+  `rescan-k2 − f32 = −0.000950`（CI `[−0.028763,+0.029722]`）；四档基本打平。
+
+**关键判据**：SST-2 上 L12 `int4−f32` 的点估计是 logistic `+0.040088`、
+SVC `+0.043783`；CoLA 的 95% CI 上界分别只有 `+0.033557` / `+0.028763`。
+也就是说，CoLA 这组数据在 95% 置信水平下已经把“SST-2 同量级的 +0.040~+0.044
+增益”排除在区间外。它可以容许一个小的、约 1 个百分点的正向，但不能支持
+“int4 的正向跨数据集稳定存在”。
+
+### 11.14.4 不平衡与 C 边界敏感性
+
+无类别权重的 logistic（accuracy 选 C）在 CoLA 上塌到多数类：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C |
+|---|---:|---:|---:|---:|
+| f32 | 0.687440 | 0.462187 | 0.604240 | 1 |
+| int3 | 0.689358 | 0.443825 | 0.592998 | 1 |
+| int4 | 0.686481 | 0.457052 | 0.603292 | 1 |
+| R12 | 0.691275 | 0.408730 | 0.550015 | 0.01 |
+
+`R12` 这一行正好等于“全判 acceptable”的基线（accuracy `0.691275`、
+macro-F1 `0.408730`），说明无权重 accuracy 口径在 69/31 的 dev 上不可用；
+它不是量化档之间的真实差异。在这个口径下 int4 也没有高于 f32
+（`0.686481 < 0.687440`）。改成 balanced + macro-F1 选 C 后才有
+§11.14.2 的读数。
+
+C 网格也有边界效应：主口径四个 L12 logreg 配置都选到上界 `C=10`。把网格
+扩到 `100` 后，f32/int4 都选 `100`，`int4−f32` 从 `+0.013423` 缩到
+`+0.003836`（0.580058−0.576222）；int3 从 `0.558006` 升到 `0.571429`。
+SVC 的 f32/int4 仍选 `C=10`，差值维持 `+0.008629`；R12 在扩网格后略降。
+因此主表用 `0.01–10` 的协议读数，但 int4 的点估计优势并不稳：换一格 C 就
+从 1.3 个百分点缩到 0.4 个百分点。
+
+### 11.14.5 结论与边界
+
+- **SST-2 的 L12 int4 正向没有跨数据集泛化。** 在 CoLA 上，logreg 点估计
+  `+0.013341`、SVC `+0.008467`，两个 95% CI 都跨 0；L6 的 int4 与 f32
+  打平或略低。把 SST-2 的 `+0.040/+0.044` 当成“量化普遍提升线性分类”的
+  证据是不成立的。
+- **`R12`/`rescan-k2` 在第二个分类集上仍没有任务头增益。** L12 `R12` 对 f32
+  为 `−0.007833`（logreg）/ `−0.013690`（SVC），L6 `rescan-k2` 对 f32 为
+  `−0.012451` / `−0.000950`，全部不显著；STS 的块级重排仍只能留在
+  STS in-domain。
+- **CoLA 的 probe 太弱，不能把“不显著”写成“已证不存在”。** balanced
+  accuracy 只有 0.57–0.59、AUC 0.60，1,043 条 test 对 1–2 个百分点的效应
+  没有足够功效；它能排除 SST-2 同量级（约 4 个百分点）的效应，但不能排除
+  一个更小的、数据集/正则化特定的正向。要判“完全没有”需要更强 probe 或
+  第三数据集，当前不做。
+- 边界：第二个数据集只有一个（GLUE CoLA）、dev 作 test、单 split、单 seq 64、
+  两个 MiniLM、只训练线性头、无 MLP、无 encoder 微调；CoLA 的标签分布
+  69/31，主口径必须带类别权重。不能外推到平衡/多分类/NLI/生成任务。
+- 结论只改“泛化”判断，不改 SST-2 的原始读数：SST-2 上 int4 对 f32 的正向
+  仍是该数据集/该 probe 家族的观察，但不再是跨数据集的普遍结论。
+
+### 11.14.6 复算
+
+```bash
+# 1) 下载并解压 GLUE CoLA
+curl -L -o cola-raw/CoLA.zip https://dl.fbaipublicfiles.com/glue/data/CoLA.zip
+unzip -q cola-raw/CoLA.zip -d cola-raw
+
+# 2) 导出：train.tsv -> train，dev.tsv -> test（test.tsv 无标签）
+python scripts/wsp_export_sst2.py \
+  --train cola-raw/CoLA/train.tsv --test cola-raw/CoLA/dev.tsv \
+  --format cola --out cola/data-l12 --model all-MiniLM-L12-v2 --seq 64
+python scripts/wsp_export_sst2.py \
+  --train cola-raw/CoLA/train.tsv --test cola-raw/CoLA/dev.tsv \
+  --format cola --out cola/data-l6 --model all-MiniLM-L6-v2 --seq 64
+
+# 3) 1,500 条分块；编码前先把全量 texts.json 另存为 texts-l12.json/texts-l6.json
+python scripts/wsp_chunk_embed_input.py \
+  --src cola/data-l12 --dst cola/chunks-l12-1500 --chunk-size 1500
+python scripts/wsp_chunk_embed_input.py \
+  --src cola/data-l6 --dst cola/chunks-l6-1500 --chunk-size 1500
+
+# 4) 编码：以 L12 int3 chunk-000 为例；f32 由每次运行的 pure-f32.f32 另存
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=24 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=cola/emb12 TRIT_EMBED_TAG=l12-int3-000 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir cola/chunks-l12-1500/chunk-000 --activation-mode f32 \
+  --out cola/runs12/l12-int3-000.json
+
+# 5) 主评测：balanced + macro-F1 选 C + accuracy/macro-F1 双 bootstrap
+python scripts/wsp_classify_eval.py \
+  --texts cola/texts-l12.json \
+  --run l12-f32='cola/emb12/l12-pure-f32-*.f32' \
+  --run l12-int3='cola/emb12/l12-int3-*.f32' \
+  --run l12-int4='cola/emb12/l12-int4-*.f32' \
+  --run l12-r12='cola/emb12/l12-r12-*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --cv-metric macro_f1 --class-weight balanced \
+  --bootstrap 10000 --bootstrap-metric both \
+  --probe logreg --out cola/eval-l12-balanced-cv.json
+```
+
+L6 把前缀换成 `l6`、budget 换成 `budget-l6-pure-int3.json`/`l6-rescan-k2.json`，
+`--probe` 换成 `linear_svc` 即得另一套。表见
+`data/wsp-classify-cola-l12.tsv`（8 行）、`data/wsp-classify-cola-l6.tsv`
+（8 行）、`data/wsp-classify-cola-l12-bootstrap.tsv`（48 行）、
+`data/wsp-classify-cola-l6-bootstrap.tsv`（48 行）、
+`data/wsp-classify-cola-l12-probe-compare.tsv`（4 行）、
+`data/wsp-classify-cola-l6-probe-compare.tsv`（4 行）、
+`data/wsp-classify-cola-l12-unweighted.tsv`（4 行）、
+`data/wsp-classify-cola-l12-cgrid.tsv`（16 行）。
+
 ## 12. 下一步
 
 - **逐块 `3→2`/`3→4` 与第二模型 L6 都已完成（§8/§9/§11）**：不要再重复跑
@@ -2244,15 +2441,16 @@ L6 为 `0.650192 / 0.683690 / 0.690280`（f32 自评 `0.802306`）。这说明
   增益没有转到 SciFact 检索；`R12` 对 int3 的 MRR/nDCG@10 点估计为负、CI 跨 0，
   对 int4/f32 的 MRR/nDCG CI 基本整段为负；L6 `rescan-k2` 对 int3 的 MRR/
   nDCG@10 CI 整段为负。任务头不是新的调参维度，而是现有 STS 候选的否决门。
-- **分类任务头已做（§11.12），结论同样负向**：SST-2（6,920/1,821，冻结编码器
-  + 线性 probe，train 内 5 折选 C）上，L12 `R12` 对 int3 点估计低
+- **分类任务头已做（§11.12–§11.14），结论是负向/不外推**：SST-2（6,920/1,821，
+  冻结编码器 + 线性 probe，train 内 5 折选 C）上，L12 `R12` 对 int3 点估计低
   `−0.008842`、CI 跨 0，对 int4 整段为负；L6 `rescan-k2` 对 int3/int4 的
-  CI 都跨 0。分类头也没有接住 STS 的块级增益。另有一条独立观察：L12 均匀
-  int4 比 f32 高 `+0.040088`（CI 整段为正）；M1.13 换 `LinearSVC` 后仍为
-  `+0.043783`（CI 全正），所以这不是 logistic 损失特有。但它是量化正则化/
-  表示变化，不是 `R12` 的布局增益。第二 probe 形式已做完，若还要继续验证，
-  只剩第二分类集；不要再调 `R12`。否则接受“BUDGET 只在 STS 相关性上有效”，
-  把 `R12` 留在 STS in-domain，不进运行时默认。
+  CI 都跨 0。分类头没有接住 STS 的块级增益。L12 均匀 int4 在 SST-2 上比 f32
+  高 `+0.040088`，换 `LinearSVC` 后仍为 `+0.043783`；但第二分类集 GLUE CoLA
+  （balanced + macro-F1 选 C）只得到 `+0.013341` / `+0.008467`，两个 CI 都跨 0，
+  L6 更是打平或略低。**int4 的 SST-2 正向没有跨数据集泛化；不要再把
+  “量化普遍提升线性分类”当结论。** 若还要继续，应该换更强 probe 或第三数据集，
+  而不是继续调 `R12`；否则接受“BUDGET 只在 STS 相关性上有效”，把 `R12` 留在
+  STS in-domain，不进运行时默认。
 - **重扫选择器已落库，且 5 折交叉拟合已把“选择”留出（§11.6/§11.7）**：
   `wsp_budget_rescan.py` 能从两张表生成严格同字节候选；L6 全量 `6/24/6` 是
   `0.831304 / 0.824457`（高于 int4 点估计），但这是 in-sample。5 折 × 2 种子

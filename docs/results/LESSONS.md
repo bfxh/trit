@@ -247,6 +247,20 @@
    不能写成量化普遍提升分类。表见 `data/wsp-classify-sst2-svc*.tsv`，正文见
    `WSP-BUDGET-RESULTS.md` §11.13。
 
+26. **换分类集前先查标签分布；accuracy 口径会在不平衡集上塌到多数类**。
+   M1.14 用 GLUE CoLA（8,551/1,043，dev 作 test）复验 int4 的正向。
+   CoLA dev 是 69/31；按 SST-2 的“无类别权重 + accuracy 选 C”口径，
+   四档全部塌到多数类：R12 正好是 `0.691275 / 0.408730`（全判 acceptable），
+   看起来“所有量化档一样”其实是没有学到少数类。改成
+   `class_weight="balanced"` + train 内 macro-F1 选 C 后，才有可比的读数。
+   **不平衡二分类必须先固定类别权重和选 C 的指标，再比较表示。**
+   在这个口径下，SST-2 的 int4 正向没有复现：L12 logreg `int4−f32 =
+   +0.013341`（CI `[−0.006711,+0.033557]`），SVC `+0.008467`（CI
+   `[−0.011505,+0.028763]`），L6 打平或略低；SST-2 的 +0.040/+0.044
+   同量级效应已落在 CoLA 的 95% CI 之外。**单数据集的正向不能直接写成
+   跨数据集结论；弱 probe 只能排除同量级效应，不能证明“完全不存在”。**
+   表见 `data/wsp-classify-cola-*.tsv`，正文见 `WSP-BUDGET-RESULTS.md` §11.14。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter

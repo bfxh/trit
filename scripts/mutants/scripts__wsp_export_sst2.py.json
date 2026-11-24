@@ -11,8 +11,8 @@
  {
   "name": "sst2-export: 非 0/1 标签放行",
   "file": "scripts/wsp_export_sst2.py",
-  "old": "            if label not in (0, 1):",
-  "new": "            if False:",
+  "old": "            label = obj.get(\"label\")\n            if label not in (0, 1):",
+  "new": "            label = obj.get(\"label\")\n            if False:",
   "pkg": "scripts/wsp_export_sst2.py",
   "filter": "",
   "runner": "python"
@@ -20,8 +20,17 @@
  {
   "name": "sst2-export: 空文本放行",
   "file": "scripts/wsp_export_sst2.py",
-  "old": "            if not text:",
-  "new": "            if False:",
+  "old": "            if label not in (0, 1):\n                raise ValueError(\n                    f\"{path}:{line_no}: label must be 0 or 1, got {label!r}\"\n                )\n            if not text:",
+  "new": "            if label not in (0, 1):\n                raise ValueError(\n                    f\"{path}:{line_no}: label must be 0 or 1, got {label!r}\"\n                )\n            if False:",
+  "pkg": "scripts/wsp_export_sst2.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "sst2-export: CoLA 标签 2 放行",
+  "file": "scripts/wsp_export_sst2.py",
+  "old": "            _, label_text, _, text = fields\n            try:\n                label = int(label_text)\n            except ValueError as error:\n                raise ValueError(\n                    f\"{path}:{line_no}: label must be 0 or 1, got {label_text!r}\"\n                ) from error\n            if label not in (0, 1):\n                raise ValueError(\n                    f\"{path}:{line_no}: label must be 0 or 1, got {label!r}\"\n                )",
+  "new": "            _, label_text, _, text = fields\n            try:\n                label = int(label_text)\n            except ValueError as error:\n                raise ValueError(\n                    f\"{path}:{line_no}: label must be 0 or 1, got {label_text!r}\"\n                ) from error\n            if False:\n                raise ValueError(\n                    f\"{path}:{line_no}: label must be 0 or 1, got {label!r}\"\n                )",
   "pkg": "scripts/wsp_export_sst2.py",
   "filter": "",
   "runner": "python"

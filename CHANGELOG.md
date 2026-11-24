@@ -922,6 +922,37 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.13、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.15、`LESSONS.md` 第 25 条。
 
+- **第二分类集 CoLA（M1.14）**：`scripts/wsp_export_sst2.py` 新增
+  `--format cola`（GLUE CoLA 四列 TSV；`dev.tsv` 作 test，`test.tsv` 无标签），
+  `scripts/wsp_classify_eval.py` 新增 `--class-weight {none,balanced}`、
+  `--cv-metric {accuracy,macro_f1}`、`--bootstrap-metric {accuracy,macro_f1,both}`，
+  用于不平衡二分类；默认仍保持 SST-2 的旧口径。
+  - 数据：GLUE/CoLA 官方 zip，8,551 train / 1,043 dev（dev 作 test）；
+    标签 `0=unacceptable`、`1=acceptable`，dev 为 721/322。seq 64、
+    mean pooling + L2、编码器冻结；L12/L6 各四档，1,500 条分块编码。
+  - 口径：CoLA dev 多数类 accuracy `0.691275`、全判 acceptable 的
+    macro-F1 `0.408730`；无类别权重 + accuracy 选 C 会四档全塌到多数类
+    （R12 正好 `0.691275 / 0.408730`），故主口径改为
+    `class_weight=balanced` + train 内 5 折 macro-F1 选 C，10k paired
+    bootstrap 同时报 accuracy/macro-F1。
+  - L12 logreg：`int4−f32 = +0.013341`（CI `[−0.006711,+0.033557]`），
+    `int3−f32 = −0.016517`，`R12−f32 = −0.007833`。L12 SVC：
+    `int4−f32 = +0.008467`（CI `[−0.011505,+0.028763]`），
+    `R12−f32 = −0.013690`。L6：logreg `int4−f32 = −0.009679`、SVC
+    `−0.000126`，CI 都跨 0；`rescan-k2` 也不高于 f32。
+  - **SST-2 的 L12 int4 正向没有跨数据集泛化**：CoLA 上点估计只约
+    +0.8~+1.3 个百分点且 CI 跨 0，SST-2 的 +0.040/+0.044 同量级效应
+    已落在 CoLA 的 95% CI 之外；`R12`/`rescan-k2` 仍无分类增益。
+  - 表：`wsp-classify-cola-l12.tsv`（8 行）、`wsp-classify-cola-l6.tsv`
+    （8 行）、`wsp-classify-cola-l12-bootstrap.tsv`（48 行）、
+    `wsp-classify-cola-l6-bootstrap.tsv`（48 行）、
+    `wsp-classify-cola-l12-probe-compare.tsv`（4 行）、
+    `wsp-classify-cola-l6-probe-compare.tsv`（4 行）、
+    `wsp-classify-cola-l12-unweighted.tsv`（4 行）、
+    `wsp-classify-cola-l12-cgrid.tsv`（16 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.14、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.16、`LESSONS.md` 第 26 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

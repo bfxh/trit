@@ -388,6 +388,17 @@ L12 `int4−f32 = +0.043783`（CI `[+0.025261,+0.062603]`），`int3−f32 =
 L12 int4 的正向不是 logistic 特有；但 `R12` 仍不是块级增益，L6 仍无量化优势。**
 详见 `WSP-BUDGET-RESULTS.md` §11.13。
 
+M1.14 换第二个分类集 GLUE CoLA（8,551 train / 1,043 dev，dev 作 test）。
+CoLA dev 是 69/31 不平衡集，按 SST-2 的 accuracy 口径会塌到多数类
+（`0.691275`，全判 acceptable 的 macro-F1 `0.408730`），所以主口径改成
+balanced class weight + train 内 macro-F1 选 C。结果：L12 logreg
+`int4−f32 = +0.013341`（CI `[−0.006711,+0.033557]`），`LinearSVC`
+`+0.008467`（CI `[−0.011505,+0.028763]`）；L6 int4 与 f32 打平或略低
+（logreg `−0.009679`、SVC `−0.000126`，CI 都跨 0）。**SST-2 的 int4 正向没有
+跨数据集泛化；CoLA 连 SST-2 同量级的 +0.040/+0.044 都排除在 95% CI 之外。
+`R12`/`rescan-k2` 在第二个分类集上也仍无任务头增益。** 详见
+`WSP-BUDGET-RESULTS.md` §11.14。
+
 ## 6. WSP-MXQ 在新排序里的位置
 
 MXQ 仍然成立，但不再是第一枪：
