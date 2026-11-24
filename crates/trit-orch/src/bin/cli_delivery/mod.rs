@@ -1,37 +1,29 @@
 //! `trit-orch delivery` 的 JSON 桥：纯 Rust 账本的 CLI 面。
 //!
 //! 输入沿用宿主桥的 stdin JSON：
-//! `{"action":"sent|attach|deliver|read|act|advance|verify|show|gate",
+//! `{"action":"sent|attach|deliver|read|act|advance|verify|check|show|gate",
 //!  "root":".","packet":"...","packet_id":"...","actor":"...","evidence":"...",
 //!  "note":"...","at":0,"receiver_state_hash":"..."}`
 //!
-//! `gate` 是唯一会同时跑 handoff gate 的动作：gate 为 True 才 attach
-//! sent+delivered；Unknown/False 不落账。
+//! `gate` 是唯一会同时跑 handoff gate 并落账的动作：gate 为 True 才 attach
+//! sent+delivered；Unknown/False 不落账。`check` 跑同一组判断，但只读不写。
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use trit_orch::delivery::{self, DeliveryJournal};
 use trit_orch::{Error, ReceiptState};
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
+#[serde(default)]
 struct DeliveryInput {
-    #[serde(default)]
     root: String,
-    #[serde(default)]
     packet: String,
     action: String,
-    #[serde(default)]
     packet_id: String,
-    #[serde(default)]
     actor: String,
-    #[serde(default)]
     evidence: String,
-    #[serde(default)]
     note: String,
-    #[serde(default)]
     state: String,
-    #[serde(default)]
     at: u64,
-    #[serde(default)]
     receiver_state_hash: String,
 }
 
@@ -92,6 +84,10 @@ pub(crate) fn run(input: &str) -> Result<Value, Error> {
             let report = delivery::verify(&root, request.packet_id.trim(), packet_path)?;
             Ok(json!({"ok": true, "action": "verify", "verify": report}))
         }
+        "check" => {
+            let report = delivery::check(&root, packet, request.receiver_state_hash.trim(), at)?;
+            Ok(json!({"ok": true, "action": "check", "check": report}))
+        }
         "show" => {
             let journal = DeliveryJournal::load(&root, request.packet_id.trim())?;
             Ok(journal_value("show", &journal, &root))
@@ -109,7 +105,7 @@ pub(crate) fn run(input: &str) -> Result<Value, Error> {
         }
         other => Err(Error::InputParse {
             message: format!(
-                "unknown delivery action {other:?} (sent/attach/deliver/read/act/advance/verify/show/gate)"
+                "unknown delivery action {other:?} (sent/attach/deliver/read/act/advance/verify/check/show/gate)"
             ),
         }),
     }

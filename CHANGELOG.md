@@ -9,15 +9,16 @@
   from/to`；每条记录带 `at/actor/evidence/note`；顺序不可跳，`sent` 只能由 `from`
   登记，后三态只能由 `to` 登记，`acted` 必须带仓库相对证据，时间倒退与包字节改写
   一律拒绝。
-- 新增 `trit-orch delivery` CLI（`sent/attach/deliver/read/act/advance/verify/show/gate`）：
+- 新增 `trit-orch delivery` CLI（`sent/attach/deliver/read/act/advance/verify/check/show/gate`）：
   stdin 一份 JSON，账本默认写 `<root>/.agent/delivery/<packet-id>.json`；`gate` 只在
   交接门为 `True` 时补 `sent+delivered`，**绝不自动写 read/acted**；`verify` 输出
-  `complete/incomplete/missing/invalid` 并可用包文件复核 SHA-256。
+  `complete/incomplete/missing/invalid` 并可用包文件复核 SHA-256；`check` 是只读预检，
+  一次返回 `gate/ready/receipt`，不落账。
 - 删除 `tools/delivery_receipt.py` 与 `tools/selftest.ps1` 的 AW1–AW3：不再维护
   Python DeliveryReceipt 或 Python attach 路径；相关宿主集成与文档统一指向 Rust
   `trit-orch delivery`。Python 全仓自测由 **719→716**（去掉 AW 3 项），Rust 侧
-  `cargo test -p trit-orch --test delivery --test delivery_cli` **6/6**。
-- 台账：C079 改为 `cargo test -p trit-orch --test delivery --test delivery_cli`；
+  `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` **9/9**。
+- 台账：C079 改为 `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check`；
   `docs/engineering/AGENT-DELIVERY.md` 重写为 Rust 用法/边界；`docs/ERRORS.md` L169、
   `AGENT-COORDINATION.md`、`docs/README.md` 索引同步。
 

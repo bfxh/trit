@@ -5,7 +5,7 @@
 > 本地账本上走到了哪一步”。实现、CLI 与测试全部在 `trit-orch` 的 Rust 侧，
 > 不再维护 Python 版本的 DeliveryReceipt。
 >
-> 状态：**已跑通**（`cargo test -p trit-orch --test delivery --test delivery_cli` 6/6）。
+> 状态：**已跑通**（`cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` 9/9）。
 > `cargo test -p trit-orch` 全包通过。边界：这是宿主自报账本，不是密码学签名，
 > 也不是 ACL。
 
@@ -44,7 +44,9 @@ let report = delivery::verify(&root, "h-001", Some(&packet_path))?;
 ```
 
 `attach` 只补 `sent + delivered`，**绝不自动写 `read/acted`**。`gate` 把交接门和
-落账合成一个动作：`True` 才 attach；`Unknown/False` 不落账。
+落账合成一个动作：`True` 才 attach；`Unknown/False` 不落账。`check` 是同一组判断的
+**只读版**：跑交接门 + 账本校验，一个字节都不写，`ready=true` 只表示“门通过且账本没有坏”，
+不表示四态已经走完。
 
 CLI 仍是 stdin 一份 JSON、stdout 一份 JSON：
 
@@ -71,11 +73,15 @@ CLI 仍是 stdin 一份 JSON、stdout 一份 JSON：
 # 交接门 + 自动 sent/delivered：gate 不是 True 就不写账本
 '{"action":"gate","root":".","packet":".agent/handoff/h-001.json","receiver_state_hash":"<hash>","at":0}' |
   trit-orch delivery
+
+# 只读预检：交接门 + 账本状态，不写账本；ready 不是“四态已走完”
+'{"action":"check","root":".","packet":".agent/handoff/h-001.json","receiver_state_hash":"<hash>","at":0}' |
+  trit-orch delivery
 ```
 
 `at=0` 由 Rust 侧取当前 Unix 秒，不把 0 当真实时间。CLI 输出字段：
 `ok/action/packet_id/ledger/states/journal`；`gate` 额外输出 `gate/attached/states`；
-`verify` 输出 `verify.status/complete/reason`。
+`verify` 输出 `verify.status/complete/reason`；`check` 输出 `check.gate/ready/receipt`。
 
 ## 3. 落盘与 state_hash
 
@@ -88,7 +94,7 @@ CLI 仍是 stdin 一份 JSON、stdout 一份 JSON：
 
 ## 4. 测试
 
-- `cargo test -p trit-orch --test delivery --test delivery_cli`：**6/6**
+- `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check`：**9/9**
   - `sent_then_attach_is_idempotent_and_stays_at_delivered`：sent 幂等、attach 只到
     delivered、重复 attach 不再推进；
   - `four_states_require_order_actor_and_acted_evidence`：跳态拒绝、actor 必须匹配、
@@ -96,6 +102,12 @@ CLI 仍是 stdin 一份 JSON、stdout 一份 JSON：
   - `skip_and_packet_tampering_are_refused`：`act` 跳态被拒；包字节改写后 `sent`
     拒绝续账、`verify=invalid`；
   - `gate_attaches_only_when_true`：门 `Unknown` 不落账、`True` 才补齐 sent+delivered；
+  - `check_is_read_only_and_reports_gate_plus_missing_ledger`：check 不写账本，门
+    `Unknown` 时 `ready=false`，门 `True` 且无账本时 `ready=true`；
+  - `check_marks_tampered_packet_and_bad_ledger_as_not_ready`：包字节改写或账本损坏
+    都判 `receipt.status=invalid`、`ready=false`；
+  - `cli_check_returns_gate_and_receipt_without_writing`：CLI 的 `check` 返回
+    `gate/ready/receipt`，且不落账；
   - `cli_round_trip_writes_ledger_under_root`：CLI 真的在 `<root>/.agent/delivery/`
     写账本，gate/verify 回读一致；
   - `cli_advance_uses_state_field_and_stops_without_acted_evidence`：`advance` 读
@@ -112,8 +124,9 @@ CLI 仍是 stdin 一份 JSON、stdout 一份 JSON：
   `base_commit + state_hash` 回答。
 - **不自动推进 read/acted**：`attach`/`gate` 最多写 delivered；read/acted 必须由接收方
   显式调用 `advance`，避免把“gate 通过”误写成“已读/已做”。
-- **宿主集成是调用方责任**：Rust CLI 已提供 `gate` 一键动作，但 `agent_verify --handoff`
-  仍只做交接门；是否在宿主里接 `gate` 由调用方决定，本文不声称单入口链已闭环。
+- **宿主集成是调用方责任**：Rust CLI 已提供 `gate` 一键落账和 `check` 只读预检，但
+  `agent_verify --handoff` 仍只做交接门；是否在宿主里接 `check`/`gate` 由调用方决定，
+  本文不声称单入口链已闭环。
 - **跨机不适用**：账本默认在本机 `.agent/delivery/`；跨机交接仍需把包放到共享位置，
   账本各自维护。
 - **Python 版本已退场**：`tools/delivery_receipt.py` 与 `selftest.ps1` 的 AW1–AW3 不再

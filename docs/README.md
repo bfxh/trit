@@ -137,7 +137,7 @@
 | [BUILD-PERF.md](engineering/BUILD-PERF.md) | 构建性能：本机 / CI 实测、缓存边界、采纳与未采纳项 |
 | [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×）、simchain 第七面接入（AI30–AI35）、ledger/registry 成本实测与不扩缓存的理由、Rust / 三进制 / 四进制评估与剩余待办 |
 | [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
-| [AGENT-DELIVERY.md](engineering/AGENT-DELIVERY.md) | 交接包的 DeliveryReceipt 四态账本（Rust）：sent/delivered/read/acted 顺序、actor、acted 证据、包哈希绑定、`.agent/delivery` 与 state_hash 跳过；`cargo test -p trit-orch --test delivery --test delivery_cli` 6/6 |
+| [AGENT-DELIVERY.md](engineering/AGENT-DELIVERY.md) | 交接包的 DeliveryReceipt 四态账本（Rust）：sent/delivered/read/acted 顺序、actor、acted 证据、包哈希绑定、`.agent/delivery` 与 state_hash 跳过；`check` 只读预检一次给出交接门 + 账本状态；`cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` 9/9 |
 | [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；21/21 自测与诚实边界 |
 | [AGENT-CONTEXT-SEARCH.md](engineering/AGENT-CONTEXT-SEARCH.md) | 1M 窗口 / 850K 触发 / 700K 目标：锚点保留 + 抽取式摘要 + fail-closed；搜索结果相关性/安全/权威/新鲜度/去重/token 预算评分与自动推理强度；23/23 + 22/22 自测、100/100 随机不变量、14/14 交叉接缝 |
 | [AGENT-ALIGNMENT.md](engineering/AGENT-ALIGNMENT.md) | 目标→需求→产物/证据/变更的显式对齐门：v1 单目标、v2 单根目标树、v3 证据绑定实际成功 run 命令、每个 goal 必须被需求父链覆盖、non-goal 路径/对象级排除/声明范围、声明变更必须实际发生（空变更集不再免检）、父链、悬空引用、sha256/locator、未挂变更、需求矛盾、scaffold 空骨架、journal-end 后 run 后漂移复核；101/101 自测、100/100 随机不变量、AL27–AL40 链集成、全仓 710 通过 |

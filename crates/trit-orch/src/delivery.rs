@@ -5,7 +5,6 @@
 //! `<Root>/.agent/delivery/<packet-id>.json`，与 handoff 包的 state_hash 无关。
 //!
 //! 诚实边界：这是本地自报账本，不是密码学签名；能写这个目录的人也能伪造状态。
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,7 +13,8 @@ use crate::digest;
 use crate::receipt::{HandoffPacket, ReceiptState};
 use crate::{Error, Ternary, handoff_gate};
 use serde::{Deserialize, Serialize};
-
+mod check;
+pub use check::{DeliveryCheck, check};
 /// 账本格式标识。
 pub const TOOL: &str = "trit-delivery/1";
 const MAX_TEXT: usize = 2000;

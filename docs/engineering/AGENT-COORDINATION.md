@@ -6,7 +6,7 @@
 > `tools/handoff.py`；不覆盖跨机信封、分布式锁；四态确认账本见
 > [AGENT-DELIVERY.md](AGENT-DELIVERY.md)。
 > 状态：**已跑通**（claim/handoff 门在 AF23/AF24 共 8 条断言；四态账本
-> Rust `trit-orch delivery` 6/6；Python 全仓 716/0/0）。
+> Rust `trit-orch delivery` 9/9；Python 全仓 716/0/0）。
 > 容量/并发协调另见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)：硬件探针 + 跨项目租约 +
 > `subagent_dispatch --capacity auto|enforce` 的 provider 前准入。本文只覆盖认领与交接。
 
@@ -115,8 +115,8 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
 ## 6. 还没落地（下一棒清单）
 
 1. ~~DeliveryReceipt 四态 + 账本：谁在什么时候读到了包、有没有真的动手。~~
-   **已落地** Rust `trit-orch delivery`（`cargo test -p trit-orch --test delivery --test delivery_cli`
-   6/6）；自动接进 `agent_verify --handoff` 仍是下一棒。
+   **已落地** Rust `trit-orch delivery`（`cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check`
+   9/9）；只读 `check` 可一次给出交接门 + 账本状态，自动接进 `agent_verify --handoff` 仍是下一棒。
 2. 认领生命周期自动化：dispatch 前自动 claim、收工自动 release；现在是调用者手动两步。
 3. 调度环 `plan/select/dispatch` 的宿主侧驱动：Rust CLI 有原语，Python 还没有通用循环；
    `tools/subagent_dispatch.py` 只是“按 role 分模型并行调用”的模型派发环，不消费

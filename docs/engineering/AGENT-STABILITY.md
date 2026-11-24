@@ -196,7 +196,7 @@ python tools/stability_probe.py \
   `ST2-ST6`：稳定通过进入 run、确定性失败拒绝、flaky 拒绝、`--no-stability`
   跳过、清单命令被 policy 拒绝时不执行探针。全仓当前 **716 passed / 0 failed /
   0 skipped**（Python 全仓；DeliveryReceipt 的 6 项在
-  `cargo test -p trit-orch --test delivery --test delivery_cli` 里单独跑）。
+  `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` 里单独跑）。
 
 ## 不做什么
 
