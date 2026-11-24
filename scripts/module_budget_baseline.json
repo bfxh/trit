@@ -4899,6 +4899,10 @@
       "lines": 21
     },
     {
+      "file": "crates/trit-train/src/bin/bench/grad_step.rs",
+      "lines": 50
+    },
+    {
       "file": "crates/trit-train/src/bin/bench/train_step.rs",
       "lines": 80
     },
@@ -4924,7 +4928,7 @@
     },
     {
       "file": "crates/trit-train/src/layer/grad.rs",
-      "lines": 64
+      "lines": 59
     },
     {
       "file": "crates/trit-train/src/layer/packed_tests.rs",
@@ -4961,6 +4965,14 @@
     {
       "file": "crates/trit-train/src/plane/fused/backward/tests.rs",
       "lines": 50
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward_step.rs",
+      "lines": 207
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward_step/tests.rs",
+      "lines": 72
     },
     {
       "file": "crates/trit-train/src/plane/fused/tests.rs",

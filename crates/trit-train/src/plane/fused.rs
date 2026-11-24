@@ -2,8 +2,8 @@
 //! `clamp(round(w/scale),-1,1)`，掩码同时驱动点积与 `dX`，累加分组同 `row_dot`。
 #[cfg(target_arch = "x86_64")]
 use super::backward::has_avx2;
-
 pub mod backward;
+pub mod backward_step;
 
 /// 逐行返回 `Σ_c q[r,c] * x[c]`，其中 `q = clamp(round(w / scale), -1, 1)`。
 #[inline]

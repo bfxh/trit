@@ -1,7 +1,7 @@
-//! `TernaryLinear` 的带梯度 SGD 训练步：量化 + `dX`/`qdot` 单遍。
+//! `TernaryLinear` 的带梯度 SGD 训练步：量化、`dX`/`qdot`、`dW` 更新单遍。
 //!
-//! 从 `layer.rs` 拆出，保持 `layer.rs` 的模块预算；量化内核在
-//! [`crate::plane::fused::backward`]，标量参考在
+//! 从 `layer.rs` 拆出，保持 `layer.rs` 的模块预算；量化/更新内核在
+//! [`crate::plane::fused::backward_step`]，标量参考在
 //! [`crate::plane::PlaneMatrix::input_grad_scalar`]。
 
 use super::{Adam, TernaryLinear};
@@ -14,22 +14,17 @@ impl TernaryLinear {
     pub fn train_step_with_grad(&mut self, input: &[f32], output_grad: &[f32]) -> Vec<f32> {
         assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
         assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
-        let (input_grad, qdot) = self.fused_backward(input, output_grad);
-        let (lr, ste, cols) = (self.lr, self.ste, self.cols);
-        crate::dense::sgd_update(
+        let (lr, ste, rows, cols) = (self.lr, self.ste, self.rows, self.cols);
+        crate::plane::fused::backward_step::backward_step(
             &mut self.latent,
-            input,
-            self.rows,
+            &mut self.scale,
+            rows,
             cols,
+            input,
             output_grad,
-            &self.scale,
             lr,
             ste,
-        );
-        for (r, &dy_r) in output_grad.iter().enumerate() {
-            self.scale[r] = (self.scale[r] - lr * dy_r * qdot[r]).max(1e-4);
-        }
-        input_grad
+        )
     }
 
     /// Adam 的逐元素参考路径：用于对拍与基准；融合路径见

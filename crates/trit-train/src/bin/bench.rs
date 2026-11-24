@@ -15,18 +15,18 @@ use trit_train::quant::Ste;
 mod adam_step;
 #[path = "bench/args.rs"]
 mod args;
+#[path = "bench/grad_step.rs"]
+mod grad_step;
 #[path = "bench/train_step.rs"]
 mod train_step;
 use args::{arg, thread_list};
 use train_step::bench_train_step;
-
 #[derive(Clone, Copy, Debug)]
 enum Op {
     And,
     Or,
     Xor,
 }
-
 /// Kleene 语义的按字运算（与 `plane` 的公式一致；bench 只测这一套）。
 fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
     match op {
@@ -38,7 +38,6 @@ fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
         }
     }
 }
-
 fn sample_trits(len: usize, seed: u64) -> Vec<i8> {
     let mut state = seed | 1;
     (0..len)
@@ -267,6 +266,7 @@ fn main() {
     println!("{:<14} {plane_step:>10.2} {:>9.2}×", "融合步", step_speedup);
     println!("{:<14} {pack_step:>10.2}", "pack() 参考");
     adam_step::bench_adam_step(rows, cols, train_steps, rounds, adam_scalar);
+    grad_step::bench_grad_step(rows, cols, train_steps, rounds);
     println!("\nSTE 收敛（2×3 线性层，{ste_steps} 步，MSE）：");
     for (name, ste) in [
         ("Identity", Ste::Identity),
