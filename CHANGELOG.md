@@ -22,14 +22,19 @@
   （全失败且输出一致，确定性失败不是 flaky）、`flaky`（退出码混判）、
   `nondeterministic`（全过但输出指纹不同）、`jittery`（全过但 max/min 耗时超阈值）、
   `unstable-fail`（全失败但退出码/输出还在变）、`unknown`（超时/启动失败）。
-- `stability/1` 支持顶层与逐命令覆盖 `repeat`（2..50）、`timeout_s`、`max_duration_ratio`、
-  `require_identical_output`；CLI 支持 `--repeat` / `--timeout-s` /
-  `--max-duration-ratio` / `--lenient-output` / `--json` / `--out`。
+- `stability/1` 支持顶层与逐命令覆盖 `repeat`（2..50）、`warmup`（0..5）、`timeout_s`、
+  `max_duration_ratio`、`require_identical_output`；CLI 支持 `--repeat` / `--warmup` /
+  `--timeout-s` / `--max-duration-ratio` / `--lenient-output` / `--json` / `--out`。
+- 实跑 `cargo test -p trit-orch --test ledger_cross_process` 5 次暴露冷启动问题：
+  首跑 35.9s、后续 2.2–9.4s，不预热会把编译时间误判成 `jittery`。`warmup` 预热
+  运行只把耗时/输出指纹排除在测量外，退出码仍参与 flaky 判定，首次失败不能被
+  “洗掉”；预热超时/启动失败仍按 `unknown` fail-closed。
 - 退出码：`0` stable、`1` failed/unstable、`2` 坏调用、`3` unknown；清单缺失/坏 JSON/
   schema 不对/逃逸 root/命令超时/启动失败都 fail-closed，`unknown` 不当通过。
 - 超时杀进程树（Windows `taskkill /T /F`，POSIX 新 session + `killpg`），避免 shell
   退出后子进程继续跑、占住临时目录。
-- `tools/stability_probe.py self-test` **31/31**；`tools/selftest.ps1` 新增 ST1，
+- `tools/stability_probe.py self-test` **40/40**（新增 warmup 去冷启动、warmup
+  失败不洗白、warmup 越界分支）；`tools/selftest.ps1` 新增 ST1，
   全仓 **710→711 passed / 0 failed / 0 skipped**。
 - 文档/台账：新增 `docs/engineering/AGENT-STABILITY.md`；`docs/ERRORS.md` L168；
   C078；`docs/README.md` 索引同步。

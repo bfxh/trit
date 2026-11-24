@@ -11,12 +11,16 @@
   - jittery:       都 exit 0、输出一致，但 max/min 耗时超过阈值；
   - unknown:       超时、启动失败或无法判定；unknown 不是稳定，按 fail-closed。
 
+预热：`warmup` 先跑 N 次，这几次的退出码参与 flaky 判定（预热就挂不能算稳定），
+但耗时和输出指纹只统计后面的 `repeat` 次，避免把首次编译/冷启动误判成 jitter。
+
 清单 `stability/1` 示例：
 
 ```json
 {
   "schema": "stability/1",
   "repeat": 3,
+  "warmup": 1,
   "timeout_s": 120,
   "max_duration_ratio": 3.0,
   "require_identical_output": true,
@@ -51,11 +55,12 @@ import time
 from datetime import datetime, timezone
 
 SCHEMA = "stability/1"
-TOP_FIELDS = {"schema", "repeat", "timeout_s", "max_duration_ratio",
+TOP_FIELDS = {"schema", "repeat", "warmup", "timeout_s", "max_duration_ratio",
               "require_identical_output", "commands", "notes"}
-CMD_FIELDS = {"id", "command", "repeat", "timeout_s", "max_duration_ratio",
+CMD_FIELDS = {"id", "command", "repeat", "warmup", "timeout_s", "max_duration_ratio",
               "require_identical_output", "notes"}
 REPEAT_LOW, REPEAT_HIGH = 2, 50
+WARMUP_LOW, WARMUP_HIGH = 0, 5
 TIMEOUT_LOW, TIMEOUT_HIGH = 0.1, 3600.0
 RATIO_LOW, RATIO_HIGH = 1.0, 100.0
 UNSTABLE = {"flaky", "nondeterministic", "jittery", "unstable-fail"}
@@ -85,9 +90,10 @@ def _build_report(root, manifest):
         "exit": 3,
         "manifest": _display(root, manifest),
         "generated_at": _now(),
-        "config": {"repeat": 3, "timeout_s": 120.0,
+        "config": {"repeat": 3, "warmup": 0, "timeout_s": 120.0,
                    "max_duration_ratio": 3.0, "require_identical_output": True},
-        "counts": {"commands": 0, "runs": 0, "stable_pass": 0, "stable_fail": 0,
+        "counts": {"commands": 0, "runs": 0, "warmup_runs": 0,
+                   "stable_pass": 0, "stable_fail": 0,
                    "flaky": 0, "nondeterministic": 0, "jittery": 0,
                    "unstable_fail": 0, "unknown": 0},
         "commands": [],
@@ -165,6 +171,7 @@ def load_manifest(root, manifest_path):
     _unknown_fields(doc, TOP_FIELDS, "manifest", report)
 
     repeat = _get_int(doc, "repeat", 3, REPEAT_LOW, REPEAT_HIGH, "manifest", report)
+    warmup = _get_int(doc, "warmup", 0, WARMUP_LOW, WARMUP_HIGH, "manifest", report)
     timeout_s = _get_float(doc, "timeout_s", 120.0, TIMEOUT_LOW, TIMEOUT_HIGH,
                            "manifest", report)
     ratio = _get_float(doc, "max_duration_ratio", 3.0, RATIO_LOW, RATIO_HIGH,
@@ -199,6 +206,8 @@ def load_manifest(root, manifest_path):
             "id": cid,
             "command": command,
             "repeat": _get_int(cmd, "repeat", repeat, REPEAT_LOW, REPEAT_HIGH, cid, report),
+            "warmup": _get_int(cmd, "warmup", warmup, WARMUP_LOW, WARMUP_HIGH,
+                               cid, report),
             "timeout_s": _get_float(cmd, "timeout_s", timeout_s, TIMEOUT_LOW,
                                     TIMEOUT_HIGH, cid, report),
             "max_duration_ratio": _get_float(cmd, "max_duration_ratio", ratio,
@@ -206,7 +215,7 @@ def load_manifest(root, manifest_path):
             "require_identical_output": _get_bool(
                 cmd, "require_identical_output", identical, cid, report),
         })
-    report["config"] = {"repeat": repeat, "timeout_s": timeout_s,
+    report["config"] = {"repeat": repeat, "warmup": warmup, "timeout_s": timeout_s,
                         "max_duration_ratio": ratio,
                         "require_identical_output": identical}
     report["counts"]["commands"] = len(normalized)
@@ -302,10 +311,12 @@ def run_once(root, command, timeout_s):
             "output_bytes": output_bytes}
 
 
-def _classify(runs, repeat, identical, max_ratio):
-    if any(r["timeout"] or r["error"] for r in runs):
+def _classify(warmup_runs, runs, identical, max_ratio):
+    """Warmup exits count as flakiness; their durations/outputs do not measure."""
+    all_runs = warmup_runs + runs
+    if any(r["timeout"] or r["error"] for r in all_runs):
         return "unknown"
-    exits = [r["exit"] for r in runs]
+    exits = [r["exit"] for r in all_runs]
     passed = sum(1 for x in exits if x == 0)
     distinct_exits = len(set(exits))
     distinct_outputs = len({r["output_sha"] for r in runs})
@@ -313,7 +324,7 @@ def _classify(runs, repeat, identical, max_ratio):
     dmin = durations[0]
     dmax = durations[-1]
     duration_ratio = (dmax / dmin) if dmin > 0 else None
-    if 0 < passed < repeat:
+    if 0 < passed < len(exits):
         return "flaky"
     if passed == 0:
         if distinct_exits > 1 or (identical and distinct_outputs > 1):
@@ -327,10 +338,14 @@ def _classify(runs, repeat, identical, max_ratio):
 
 
 def _probe_command(root, spec):
+    warmup_runs = [
+        run_once(root, spec["command"], spec["timeout_s"])
+        for _ in range(spec["warmup"])
+    ]
     runs = []
     for _ in range(spec["repeat"]):
         runs.append(run_once(root, spec["command"], spec["timeout_s"]))
-    classification = _classify(runs, spec["repeat"],
+    classification = _classify(warmup_runs, runs,
                               spec["require_identical_output"],
                               spec["max_duration_ratio"])
     exits = [r["exit"] for r in runs]
@@ -338,28 +353,33 @@ def _probe_command(root, spec):
     dmin = min(float(r["seconds"]) for r in runs)
     dmax = max(float(r["seconds"]) for r in runs)
     duration_ratio = round(dmax / dmin, 3) if dmin > 0 else None
+    warmup_exits = [r["exit"] for r in warmup_runs]
     return {
         "id": spec["id"],
         "command": spec["command"],
         "repeat": spec["repeat"],
+        "warmup": spec["warmup"],
         "timeout_s": spec["timeout_s"],
         "max_duration_ratio": spec["max_duration_ratio"],
         "require_identical_output": spec["require_identical_output"],
         "classification": classification,
         "exit_codes": exits,
+        "warmup_exit_codes": warmup_exits,
         "passes": sum(1 for x in exits if x == 0),
         "failures": sum(1 for x in exits if x != 0),
+        "warmup_failures": sum(1 for x in warmup_exits if x != 0),
         "distinct_outputs": len({r["output_sha"] for r in runs}),
         "duration_ms": durations,
         "duration_min_ms": round(dmin * 1000, 3),
         "duration_max_ms": round(dmax * 1000, 3),
         "duration_ratio": duration_ratio,
+        "warmup_runs": warmup_runs,
         "runs": runs,
     }
 
 
 def probe(root, manifest, repeat=None, timeout_s=None, ratio=None,
-          allow_output_drift=False):
+          allow_output_drift=False, warmup=None):
     """Run the manifest and return an auditable report."""
     root = os.path.abspath(root)
     commands, report = load_manifest(root, manifest)
@@ -379,16 +399,21 @@ def probe(root, manifest, repeat=None, timeout_s=None, ratio=None,
     if allow_output_drift:
         for spec in commands:
             spec["require_identical_output"] = False
+    if warmup is not None:
+        for spec in commands:
+            spec["warmup"] = warmup
     for spec in commands:
         result = _probe_command(root, spec)
         report["commands"].append(result)
-        report["counts"]["runs"] += spec["repeat"]
+        report["counts"]["runs"] += spec["repeat"] + spec["warmup"]
+        report["counts"]["warmup_runs"] += spec["warmup"]
         report["counts"][result["classification"].replace("-", "_")] = (
             report["counts"].get(result["classification"].replace("-", "_"), 0) + 1)
         if result["classification"] in UNSTABLE or result["classification"] in FAILED:
             _fail(report, result["classification"],
                   f"{spec['id']} 分类为 {result['classification']}："
                   f"passes={result['passes']}/{spec['repeat']}，"
+                  f"warmup_failures={result['warmup_failures']}/{spec['warmup']}，"
                   f"outputs={result['distinct_outputs']}，"
                   f"duration_ratio={result['duration_ratio']}", spec["id"])
         elif result["classification"] == "unknown":
@@ -419,12 +444,14 @@ def _emit(report, as_json, out_path):
     c = report["counts"]
     print(f"stability: {report['status']} (exit={report['exit']}) "
           f"commands={c['commands']} runs={c['runs']} "
-          f"stable={c['stable_pass']} flaky={c['flaky']} "
+          f"warmup_runs={c.get('warmup_runs', 0)} stable={c['stable_pass']} "
+          f"flaky={c['flaky']} "
           f"nondet={c['nondeterministic']} jittery={c['jittery']} "
           f"stable_fail={c['stable_fail']} unknown={c['unknown']}")
     for cmd in report["commands"]:
         print(f"  {cmd['id']}: {cmd['classification']}  "
               f"passes={cmd['passes']}/{cmd['repeat']} "
+              f"warmup={cmd['warmup']} "
               f"outputs={cmd['distinct_outputs']} "
               f"duration_ratio={cmd['duration_ratio']}")
     for failure in report["failures"]:
@@ -472,8 +499,24 @@ def _selftest():
                                         "n=int(p.read_text()) if p.exists() else 0\n"
                                         "p.write_text(str(n+1))\n"
                                         "sys.exit(2 if n % 2 == 0 else 3)\n")
+        write(root, "warmup_delay.py", "import time\nfrom pathlib import Path\n"
+                                        "p=Path('warmup-delay-state.txt')\n"
+                                        "n=int(p.read_text()) if p.exists() else 0\n"
+                                        "p.write_text(str(n+1))\n"
+                                        "time.sleep(0.8 if n == 0 else 0.005)\n")
+        write(root, "warmup_fail.py", "import sys\nfrom pathlib import Path\n"
+                                       "p=Path('warmup-fail-state.txt')\n"
+                                       "n=int(p.read_text()) if p.exists() else 0\n"
+                                       "p.write_text(str(n+1))\n"
+                                       "sys.exit(1 if n == 0 else 0)\n")
         write(root, "slow.py", "import time\ntime.sleep(5)\n")
         py = f'"{sys.executable}"'
+
+        def reset(name):
+            try:
+                os.unlink(os.path.join(root, name))
+            except OSError:
+                pass
 
         stable = run(root, {
             "schema": SCHEMA, "repeat": 2,
@@ -538,6 +581,42 @@ def _selftest():
         ok(jitter["commands"][0]["classification"] == "jittery", "jittery 分类")
         ok((jitter["commands"][0]["duration_ratio"] or 0) > 2.0, "抖动比超阈值")
 
+        reset("warmup-delay-state.txt")
+        cold = run(root, {
+            "schema": SCHEMA, "repeat": 2, "max_duration_ratio": 2.0,
+            "commands": [{"id": "W1", "command": f"{py} warmup_delay.py"}],
+        })
+        ok(cold["commands"][0]["classification"] == "jittery",
+           "不预热时首次慢启动算抖动")
+
+        reset("warmup-delay-state.txt")
+        warm = run(root, {
+            "schema": SCHEMA, "repeat": 2, "warmup": 1, "max_duration_ratio": 2.0,
+            "commands": [{"id": "W2", "command": f"{py} warmup_delay.py"}],
+        })
+        ok(warm["status"] == "stable" and warm["exit"] == 0,
+           f"预热后冷启动不计入耗时: {warm['commands'][0]}")
+        ok(warm["commands"][0]["warmup_runs"][0]["seconds"] > 0.5,
+           "预热运行本身被记录")
+        ok(warm["counts"]["runs"] == 3 and warm["counts"]["warmup_runs"] == 1,
+           "预热运行计入总运行数")
+        ok(warm["commands"][0]["warmup_failures"] == 0, "预热通过计数")
+
+        reset("warmup-fail-state.txt")
+        warm_fail = run(root, {
+            "schema": SCHEMA, "repeat": 2, "warmup": 1,
+            "commands": [{"id": "W3", "command": f"{py} warmup_fail.py"}],
+        })
+        ok(warm_fail["status"] == "unstable", "预热失败不能当稳定")
+        ok(warm_fail["commands"][0]["classification"] == "flaky",
+           "预热失败 + 后续通过判 flaky")
+        ok(warm_fail["commands"][0]["warmup_failures"] == 1,
+           "预热失败被单独记录")
+
+        bad = run(root, {"schema": SCHEMA, "warmup": 99,
+                         "commands": [{"id": "W4", "command": "true"}]})
+        ok(bad["status"] == "unknown", "warmup 越界是 unknown")
+
         timeout = run(root, {
             "schema": SCHEMA, "repeat": 2, "timeout_s": 0.5,
             "commands": [{"id": "T1", "command": f"{py} slow.py"}],
@@ -591,6 +670,7 @@ def _parse_args(argv=None):
     p.add_argument("--root", default=".")
     p.add_argument("--manifest", default=".agent/stability.json")
     p.add_argument("--repeat", type=int, default=None)
+    p.add_argument("--warmup", type=int, default=None)
     p.add_argument("--timeout-s", type=float, default=None)
     p.add_argument("--max-duration-ratio", type=float, default=None)
     p.add_argument("--lenient-output", action="store_true")
@@ -606,6 +686,9 @@ def main(argv=None):
     if args.repeat is not None and not (REPEAT_LOW <= args.repeat <= REPEAT_HIGH):
         print(f"stability_probe: --repeat 必须是 {REPEAT_LOW}..{REPEAT_HIGH}")
         return 2
+    if args.warmup is not None and not (WARMUP_LOW <= args.warmup <= WARMUP_HIGH):
+        print(f"stability_probe: --warmup 必须是 {WARMUP_LOW}..{WARMUP_HIGH}")
+        return 2
     if args.timeout_s is not None and not (TIMEOUT_LOW <= args.timeout_s <= TIMEOUT_HIGH):
         print(f"stability_probe: --timeout-s 必须是 {TIMEOUT_LOW}..{TIMEOUT_HIGH}")
         return 2
@@ -619,7 +702,8 @@ def main(argv=None):
         manifest = os.path.join(root, manifest)
     report = probe(root, manifest, repeat=args.repeat, timeout_s=args.timeout_s,
                    ratio=args.max_duration_ratio,
-                   allow_output_drift=args.lenient_output)
+                   allow_output_drift=args.lenient_output,
+                   warmup=args.warmup)
     _emit(report, args.json, args.out)
     return report["exit"]
 
