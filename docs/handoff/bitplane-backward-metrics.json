@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-24T21:15:46+08:00",
+  "generated_at": "2026-11-24T22:49:29+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "8c4886f0a6a2659fab7e45096144eb95b1831f6d",
-    "commit_short": "8c4886f0",
+    "commit": "d55bbbd34dbbfca1385ddbf0c97db06c1ef400a2",
+    "commit_short": "d55bbbd3",
     "status": "open"
   },
   "platform": {
@@ -56,15 +56,15 @@
     },
     "bitplane": {
       "kernel": "input_grad (AVX2 mask path)",
-      "latest_gmac_s": 9.31,
-      "observed_range_gmac_s": [8.8, 9.8],
-      "speedup_latest": 39.85,
-      "speedup_observed_range": [37, 41],
+      "latest_gmac_s": 9.63,
+      "observed_range_gmac_s": [8.0, 9.8],
+      "speedup_latest": 39.14,
+      "speedup_observed_range": [33, 41],
       "speedup_peak_observed": 40.96
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw PR #668 8c4886f0 (open, CI 32 pass / 2 skip)",
+    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw + lazy q PR #668 (open, CI 31 pass / 2 skip / 1 stale in-progress; mergeState CLEAN)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "dense": "crates/trit-train/src/dense.rs",
@@ -83,25 +83,25 @@
       "rounds": 9,
       "steps_per_round": 3,
       "selection": "fastest",
-      "timing_scope": "end-to-end train_step: pack() + forward + dW + scale update; layer construction and input generation excluded; release binary run directly",
+      "timing_scope": "end-to-end train_step: pack() + forward + dW + scale update; q() lazy decode excluded; layer construction and input generation excluded; release binary run directly",
       "scalar": {
         "kernel": "train_step_scalar",
-        "observed_ms_per_step": [25.8, 30],
+        "observed_ms_per_step": [28.8, 29.1],
         "relative": 1.0
       },
       "bitplane": {
         "kernel": "train_step",
-        "observed_ms_per_step": [1.8, 1.9],
+        "observed_ms_per_step": [1.5, 1.6],
         "outlier_ms_per_step": 2.0,
-        "speedup_observed_range": [13.8, 17.1]
+        "speedup_observed_range": [18, 19.5]
       },
-      "pack_ms_per_step": [0.73, 0.76],
+      "pack_ms_per_step": [0.47, 0.49],
       "adam": {
         "scalar_kernel": "train_step_with_grad_adam_scalar",
-        "scalar_ms_per_step": [8.2, 9.2],
+        "scalar_ms_per_step": [8.0, 8.2],
         "fused_kernel": "train_step_with_grad_adam",
-        "fused_ms_per_step": [3.1, 3.7],
-        "speedup_observed_range": [2.3, 2.8]
+        "fused_ms_per_step": [2.7, 2.9],
+        "speedup_observed_range": [2.8, 3.0]
       }
     },
     "not": [
@@ -113,13 +113,13 @@
   },
   "tests": {
     "suite": "cargo test -p trit-train",
-    "passed": 30,
-    "training_step_passed": 30,
+    "passed": 31,
+    "training_step_passed": 31,
     "failed": 0,
     "before": 21,
-    "added": 9,
+    "added": 10,
     "training_step_before": 27,
-    "training_step_added": 3,
+    "training_step_added": 4,
     "coverage_shapes": [
       "1x1",
       "3x7",
@@ -136,18 +136,21 @@
   },
   "ci": {
     "pr": 668,
-    "pr_checks_pass": 32,
+    "pr_checks_pass": 31,
     "pr_checks_skipping": 2,
+    "pr_checks_pending": 1,
     "pr_checks_fail": 0,
+    "pending_note": "secret wiring (self-test) 的 check 仍显示 in_progress，但 job conclusion=success；mergeStateStatus=CLEAN",
     "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"]
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",
     "dX 读数只覆盖 4096×576、单线程；不含 pack() 的量化成本。",
-    "训练步是单层单样本的端到端口径（含 pack），不含层构造/输入生成。",
+    "训练步是单层单样本的端到端口径（含 pack，不含 q() 惰性解码），不含层构造/输入生成。",
     "train_step 的 forward 已走 plane row_dot、SGD dW 走 dense::sgd_update；Adam dW 走 layer::adam_update（行级融合，非位平面）。",
     "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
-    "没有多形状曲线、GPU/WASM 读数或实验录像；pack() 仍是每步一次全量量化。",
+    "q() 首次调用才从双导轨解码并缓存；训练步不读 q，因此 q 内存只在消费者访问后出现。",
+    "没有多形状曲线、GPU/WASM 读数或实验录像；pack() 仍是每步一次全量量化，但只写双导轨。",
     "浏览器 playground/WASM 不能执行该内核；前端只消费静态快照。"
   ],
   "provenance": {
