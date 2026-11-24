@@ -864,7 +864,7 @@
         "L152",
         "L155",
         "L156",
-      "L166"
+        "L166"
       ],
       "scope": [
         "tools/sandbox_run.py"
@@ -1702,6 +1702,33 @@
       "since": "2026-11-25",
       "tier": "fast",
       "added": "2026-11-25T04:15:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C091",
+      "title": "trit-train Adam 训练步量化/dX/qdot/dW 单遍",
+      "kind": "cmd",
+      "covers": [
+        "L181"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/adam_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/tests.rs",
+        "crates/trit-train/src/layer/adam.rs",
+        "crates/trit-train/src/layer/adam/support.rs",
+        "crates/trit-train/src/layer/adam/tests.rs",
+        "crates/trit-train/src/layer/adam/tests/fused.rs",
+        "crates/trit-train/src/layer/adam/tests/closed_form.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/bin/bench/adam_step.rs",
+        "crates/trit-train/src/bin/shape_bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T05:23:51+08:00",
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0

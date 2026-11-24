@@ -85,9 +85,10 @@ latent，量化 `q` 后同时算 `dX`、`qdot`、STE `dW` 与行末 scale 更新
 8-lane 路径相同（正数 `w/s`、短行/尾部用 `Ste::backward`），`dX`/`qdot` 的累加
 顺序也与 `fused::backward` 相同。
 
-**Adam 训练步**：`train_step_with_grad_adam` 仍走 `fused::backward`（量化 + `dX`
-+ `qdot` 一遍）+ `layer::adam_update`（每 8 lane 一次算 STE 门、一阶/二阶矩、
-偏置校正和参数更新；短行、尾部或非 AVX2 走标量）两遍。
+**Adam 训练步**：`train_step_with_grad_adam` 走 `fused::adam_step`，每行只量化一次
+`q`，同一遍算 `dX`、`qdot` 并把 latent/m/v 直接更新；`scale` 仍在 `layer/adam.rs`
+行外更新。旧 `fused::backward` + `layer::adam_update` 两遍只保留在
+`layer/adam/support.rs` 作为 `#[cfg(test)]` 对拍参考。
 `train_step_with_grad_adam_scalar` 保留旧的 `pack()` + 逐元素 Adam 路径，既做对拍
 也做基准。
 
@@ -147,9 +148,9 @@ latent，量化 `q` 后同时算 `dX`、`qdot`、STE `dW` 与行末 scale 更新
 `dX`、latent、scale 与旧两遍逐位相等；标量回退单独对拍 `input_grad_scalar` /
 `row_dot_scalar` / `update_row_scalar`，避免非 AVX2 平台走错累加顺序。
 
-反向也已去掉 `pack()`：Adam 走 `fused::backward::backward`，一次量化同时产出 `dX`
-和 `qdot`，不再 `pack()` → `input_grad` → `row_dot`；带梯度 SGD 走
-`fused::backward_step::backward_step`，在同一遍里再加上 `dW`。复算 example
+反向也已去掉 `pack()`：Adam 走 `fused::adam_step`，一次量化同时产出 `dX`/`qdot`
+并更新 latent/m/v，不再 `pack()` → `input_grad` → `row_dot` / `adam_update`；带梯度
+SGD 走 `fused::backward_step::backward_step`，在同一遍里再加上 `dW`。复算 example
 （`cargo run -p trit-train --release --example fused_backward_probe`，4096×576）
 旧路径 **0.747–0.759 ms** → 新 **0.430–0.441 ms（1.72–1.74×）**，
 `dX` 576/576、`qdot` 4096/4096 逐位相等。
@@ -159,16 +160,23 @@ latent，量化 `q` 后同时算 `dX`、`qdot`、STE `dW` 与行末 scale 更新
 （4096 行）**0.2444→0.1428 ms（1.71×）**；它现在只服务 `pack()` 的消费方与
 标量对拍，不参与训练热路径。
 
-Adam 训练步（4096×576，单线程，3 步/轮，25 轮取最快；量化单遍，不含 `pack`）：
+Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快；量化单遍，不含 `pack`）：
 
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
-| 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.0–8.2 | 1.00× |
-| 行级融合 + `fused::backward` | 2.4–2.8 | **2.9–3.4×** |
+| 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.0–8.2 | — |
+| 旧两遍（`fused::backward` + `layer::adam_update`） | 2.12–2.48 | 1.00× |
+| 单遍（`fused::adam_step`） | 1.70–1.85 | **1.28–1.33×（中位 1.32×）** |
 
-同轮 A/B：旧 `pack()+input_grad+row_dot` **3.32–3.55 ms/step** → 新 **2.4–2.8
-ms/step（约 1.3×）**；`shape_bench` 4096×576 **2.9966→2.4907 ms**。两条路径用同一条
-基准复算：融合是默认输出，参考路径加 `--adam-scalar`。
+`train-bench` 的 Adam 段直接复算这一行；对拍覆盖 `1×1/2×7/5×9/9×65/11×130/4×576`
+× `Identity/Clipped/Soft` × 3 步，`dX`、latent、scale、m、v 与旧两遍逐位相等；
+另加 `adam_step_scalar` 对 `input_grad_scalar` / `row_dot_scalar` / 逐元素 Adam 的
+纯标量对拍。新单遍 4096×576 单次矩阵 **1.9953 ms**，逐元素 8.1575 ms（**4.09×**）。
+
+精确旧基线 `8b846d4a` 的 `shape_bench` 交替 3 组：旧 2.7310 / 2.2572 / 2.2746，
+新 1.7219 / 1.8348 / 1.8633；中位 **2.2746→1.8348 ms（约 1.24×）**。
+第二十一轮行级 Adam 的 **2.4–2.8 ms/step（2.9–3.4×）** 是历史口径；本轮 A/B 的
+旧基线是同一提交的 2.12–2.48。
 
 多形状矩阵（`shape_bench`，按形状放大步数，9 轮取最快；SGD/Adam 都不含 `pack`）：
 
@@ -183,21 +191,22 @@ SGD `train_step`（融合前向）：
 | 17×576 | 0.0023–0.0024 | 0.059–0.071 | 27–30× |
 | 4096×576 | 0.90–1.00 | 23.2–27.1 | 25.9–27.1× |
 
-Adam `train_step_with_grad_adam`：
+Adam `train_step_with_grad_adam`（单遍 `fused::adam_step`）：
 
 | shape | 融合 ms/step | 逐元素 ms/step | 倍数 |
 |---|---:|---:|---:|
-| 2×7 | 0.0003 | 0.0003 | 1.00× |
-| 5×9 | 0.0004 | 0.0005 | 1.25× |
-| 9×65 | 0.0008 | 0.0021 | 2.6× |
-| 11×130 | 0.0011 | 0.0044 | 4.0× |
-| 17×576 | 0.0050 | 0.0281 | 5.6× |
-| 4096×576 | 2.49 | 7.8–8.2 | 3.1–3.3× |
+| 1×1 | 0.0002 | — | 1.13× |
+| 2×7 | 0.0002 | — | 1.20× |
+| 5×9 | 0.0003 | — | 1.43× |
+| 9×65 | 0.0007 | — | 2.93× |
+| 11×130 | 0.0010 | — | 4.48× |
+| 17×576 | 0.0046 | 0.0278 | 6.05× |
+| 4096×576 | 1.9953 | 8.1575 | 4.09× |
 
 SGD 的 `2×7` 只有 2.0×，仍是计时噪声；`5×9` 放大到 3.0–4.9×；`9×65` 到
-`17×576` 逐级升高，4096×576 在 25.9–27.1×。Adam 的 `2×7` 没进 SIMD，和逐元素持平；
-`5×9` 只有 1.25×，`17×576` 到 5.6×，4096×576 回落到 3.1–3.3×。`1×1` 太短，计时分辨率不足，
-不作为倍数证据；`9×65` 的绝对时间也只有 0.2–0.4 µs，倍数会抖。
+`17×576` 逐级升高，4096×576 在 25.9–27.1×。Adam 的 `1×1`/`2×7` 只有 1.1–1.2×，
+`5×9` 到 1.43×，`17×576` 到 6.05×，4096×576 回落到 4.09×。`1×1` 太短，计时分辨率不足，
+不作为倍数证据；`9×65` 的绝对时间也只有 0.7 µs，倍数会抖。
 **不能拿 4096×576 的倍数覆盖所有形状**。`shape_bench` 的 9 轮与 `train-bench`
 的 25 轮是两次独立复跑，机器负载不同；绝对 ms 不跨表比较，倍数按各自标量参考算。
 
@@ -226,7 +235,7 @@ SGD 的 `2×7` 只有 2.0×，仍是计时噪声；`5×9` 放大到 3.0–4.9×�
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 35 个（位平面/打包/惰性 q/dW/Adam/单遍更新与标量回退对拍；量化/STE 的 6 个测试在 trit-learn）
+cargo test -p trit-train                       # 37 个（位平面/打包/惰性 q/dW/Adam 单遍/带梯度单遍与标量回退对拍；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3 --adam-scalar
@@ -235,11 +244,11 @@ cargo run -p trit-train --release --bin shape_bench
 
 ## 边界与下一步
 
-- 前向点积：`forward()` 与 SGD `train_step` 走 **`fused::forward_dot`**；Adam 的
-  `dX` 与 scale 梯度走 **`fused::backward`**；带梯度 SGD 走
-  **`fused::backward_step`**（`dX`/`qdot`+STE `dW`/scale 同一遍），都不再构造双导轨。
-  更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到
-  可发布 crate 再复用；本轮没有跨 crate 依赖。
+- 前向点积：`forward()` 与 SGD `train_step` 走 **`fused::forward_dot`**；Adam 走
+  **`fused::adam_step`**（量化 + `dX`/`qdot` + latent/m/v 同一遍，scale 在 `layer/adam.rs`
+  行外更新）；带梯度 SGD 走 **`fused::backward_step`**（`dX`/`qdot`+STE `dW`/scale
+  同一遍），都不再构造双导轨。更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate
+  互相依赖 → M1 要把内核下沉到可发布 crate 再复用；本轮没有跨 crate 依赖。
 - 反向 `dX`/`qdot`、前向、SGD `dW` 与 Adam `dW` 都已融合；`forward()`、SGD `train_step`、
   `train_step_with_grad`、Adam 四条路径都不再 `pack()`。`pack()` 只剩公开检查/对拍用途，
   `q` 缓存改为首次 `q()` 时惰性解码；训练步不读 `q`，因此不付这笔写回。

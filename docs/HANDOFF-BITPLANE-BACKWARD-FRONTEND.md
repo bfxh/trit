@@ -3,7 +3,8 @@
 > 状态：dX 后端 **已合并**（main `6b910bc9`，PR #664）；前端 **待实现**；实验录像 **unrecorded**。
 > 第二十轮训练步已并入 main（`9d1f0cc6`，#666；读数区间修正 `365a39d5`，#667）：`forward`
 > 改位平面 `row_dot`、SGD `dW` 走 `dense::sgd_update`、`pack()` 改 `from_latent`。第二十一轮
-> 把 Adam 的 latent 更新也做成行级融合（`layer::adam_update`）；第二十二轮把 `q` 改为
+> 把 Adam 的 latent 更新也做成行级融合（`layer::adam_update`，现已移入
+> `layer/adam/support.rs` 作测试参考）；第二十二轮把 `q` 改为
 > 惰性缓存，训练步不再写 2.36 M 个 `i8`；第二十三轮让 SGD `train_step` 复用前向的
 > `qdot`，不再重扫第二遍双导轨；第二十四轮把 `pack()` 的 8-lane 读改写合并成
 > 64 列 word 一次写，并给 `shape_bench` 补了 SGD 多形状表；第二十五轮把 `row_dot`
@@ -16,10 +17,14 @@
 > 与 scale 更新也并进同一遍（`fused::backward_step`），旧两遍 **0.92–1.32** →
 > 新单遍 **0.68–0.76 ms/step（中位 0.98→0.71，约 1.38×）**。macOS aarch64 的标量
 > 回退曾因 `dX` 四累加器与旧 `input_grad_scalar` 顺序累加差 1 ULP，已改成单个
-> `dx[c]` 顺序累加并补纯标量对拍（`a62dd419`）。
+> `dx[c]` 顺序累加并补纯标量对拍（`a62dd419`）。第二十九轮把 Adam 的量化、
+> `dX`/`qdot` 与 latent/m/v 更新并进 **`fused::adam_step` 单遍**，旧两遍
+> **2.12–2.48** → 新单遍 **1.70–1.85 ms/step（中位 2.33→1.76，约 1.32×）**；
+> `shape_bench` 4096×576 精确旧基线中位 **2.2746→1.8348 ms（约 1.24×）**，
+> `dX`/latent/scale/m/v 在 6 形状 × 3 STE × 3 步下逐位相等，测试 **37**。
 > 当前训练步读数 **0.81–1.14 ms/step（27–35×；第二十四
 > 轮旧口径 1.16–1.22 / 23.9–25.0×）**，`pack()` **0.46 ms**（不参与任何训练步，仅参考），
-> Adam **2.4–2.8 ms/step（2.9–3.4×，逐元素参考 8.0–8.2 ms）**，测试 **35**。
+> Adam **1.70–1.85 ms/step（约 1.32×，逐元素参考 8.0–8.2 ms）**。
 > **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
 >
 > 本文的“前端”按 [`reference/ATLAS.md`](reference/ATLAS.md) 的定义：**浏览器 playground / WASM 面**，
@@ -35,7 +40,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b/a62dd419、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、35/35、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b/a62dd419/cd5e9a00/ba217795、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、L181/C091、37/37、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -69,9 +74,10 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
    第二十四轮把 `pack()` 改成按 64 列 word 写合并；第二十五轮把 `row_dot` 改成
    4 个固定累加器；第二十六轮把 SGD 前向改成 `fused::forward_dot`，不再构造双导轨；
    第二十七轮把反向也改成 `fused::backward` 单遍，`train_step_with_grad` 与 Adam 不再 `pack()`；
-   第二十八轮把带梯度 SGD 的 STE `dW` 并进同一遍（`fused::backward_step`）。
-   训练步 27–35×、带梯度 SGD 0.68–0.76 ms/step（旧两遍 0.92–1.32）、Adam 2.9–3.4×，
-   与 dX 的倍数不能互相替代。
+   第二十八轮把带梯度 SGD 的 STE `dW` 并进同一遍（`fused::backward_step`）；
+   第二十九轮把 Adam 的量化、`dX`/`qdot` 与 latent/m/v 更新并进 `fused::adam_step` 单遍。
+   训练步 27–35×、带梯度 SGD 0.68–0.76 ms/step（旧两遍 0.92–1.32）、
+   Adam 1.70–1.85 ms/step（旧两遍 2.12–2.48），与 dX 的倍数不能互相替代。
 3. **读数只代表内核本身。**
    4096×576、单线程、7 轮取最快：标量 `0.24` → 双导轨 `9.44` GMAC/s，
    **39.25×**。这个数**不含** `pack()` 的量化成本，也不等于训练步加速。
@@ -84,25 +90,26 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 | 位平面打包 | `crates/trit-train/src/plane/pack.rs` | 本轮分支（只写双导轨） | 只在成本参考里出现；训练不调用 |
 | 惰性 `q` 缓存 | `crates/trit-train/src/plane/q.rs` | 本轮分支 | `q()` 首次访问才解码 |
 | SGD `dW` 融合更新 | `crates/trit-train/src/dense.rs` | 已合并（#666） | 只在训练步区块引用，不是 dX 页内容 |
-| Adam `dW` 融合 | `crates/trit-train/src/layer/adam.rs` | 本轮分支 | 只在 Adam 训练步区块引用 |
+| Adam `dW` 融合 + 单遍 | `crates/trit-train/src/layer/adam.rs`、`plane/fused/adam_step.rs` | 本轮分支 | 只在 Adam 训练步区块引用 |
 | 反向 `dX`+`qdot` 单遍 | `crates/trit-train/src/plane/fused/backward.rs` | 本轮分支（`c64fe0c7`） | 读 §3.4b 的复算口径 |
+| 带梯度 SGD 单遍 | `crates/trit-train/src/plane/fused/backward_step.rs` | 本轮分支（`a62dd419`） | 只在带梯度 SGD 区块引用 |
 | 模块导出与文档 | `crates/trit-train/src/plane.rs` | 已合并（#666） | 读 §4 |
 | 层接入 | `crates/trit-train/src/layer/grad.rs`、`layer/adam.rs` | 本轮分支 | 读 §4 的反向语义 |
 | 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（#666；本轮加 Adam 输出） | 读 §8 的复现口径 |
 | 人类说明 | `crates/trit-train/README.md` | 已合并（#666；本轮更新） | 可直接摘写 |
-| 缺陷台账 | `docs/ERRORS.md` L171–L180 | L171/#664、L172/#666 已合并；L173–L180 本轮 | 只读结论与读数 |
-| 回归门 | `.agent/checks/registry.json` C081–C090 | C081/#664、C082/#666 已合并；C083–C090 本轮 | 只读命令 |
+| 缺陷台账 | `docs/ERRORS.md` L171–L181 | L171/#664、L172/#666 已合并；L173–L181 本轮 | 只读结论与读数 |
+| 回归门 | `.agent/checks/registry.json` C081–C091 | C081/#664、C082/#666 已合并；C083–C091 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
-| PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`797ad121`、`d55bbbd3`、`c64fe0c7` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
+| PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`797ad121`、`d55bbbd3`、`c64fe0c7`、`cd5e9a00`、`ba217795` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
 
-**验证读数（dX 同一提交 / 第二十八轮训练步）**
+**验证读数（dX 同一提交 / 第二十八、二十九轮训练步）**
 
-- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步、Adam、反向单遍、带梯度单遍与整步对拍 **35 passed / 0 failed**。
+- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步、Adam 单遍、反向单遍、带梯度单遍与整步对拍 **37 passed / 0 failed**。
 - `cargo clippy -p trit-train --all-targets -- -D warnings`：通过。
 - `python scripts/hazard_gate.py`：0 findings。
-- `python scripts/module_budget.py`：dX 交付时 1513 files；第二十八轮分支 **1539 files，debt=0**。
-- `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090`：C081 已合并；C082–C090 随分支跑。
-- PR CI：代码+测试 head `c50a3e12` 上 **32 pass / 2 skipping / 0 fail，mergeState CLEAN**（代码 `a62dd419`、文档 `c50a3e12`；三端测试与结构门禁全过，含 macOS aarch64 标量对拍）；本台账提交仅同步 CI 读数，不再改代码。
+- `python scripts/module_budget.py`：dX 交付时 1513 files；第二十九轮分支 **1544 files，debt=0**。
+- `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090,C091`：C081 已合并；C082–C091 随分支跑。
+- PR CI：代码+测试 head `ba217795` 上 **32 pass / 2 skipping / 0 fail，mergeState CLEAN**（Adam 单遍 `cd5e9a00` + mutation/hazard 修复 `ba217795`；三端测试全过，含 macOS aarch64 标量对拍与 mutation changed-crates **9/9 caught**）；后来 docs-only 提交只记录该结果。
 
 ## 3. 页面结构（按人类面板顺序）
 
@@ -179,21 +186,26 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
   `dW`）；带梯度 SGD 用 `train_step_with_grad`（`fused::backward_step` 一次量化
   同时出 `dX`/`qdot`、STE `dW` 与 scale）；Adam 区块用
   `train_step_with_grad_adam_scalar` 对 `train_step_with_grad_adam`
-  （`fused::backward` 一次量化同时出 `dX`/`qdot` + `layer::adam_update` 融合 `dW`，
+  （`fused::adam_step` 一次量化同时出 `dX`/`qdot` 并更新 latent/m/v，`scale` 仍在
+  `layer/adam.rs` 行外更新；旧 `fused::backward + layer::adam_update` 只留测试对拍，
   不再 `pack()`）。
 - 读数（4096×576，单线程，3 步/轮，25 轮取最快；SGD/Adam 都不含 `pack`）：SGD 标量
   **28.8–29.1 ms/step**，融合前向 **0.81–1.14 ms/step（27–35×）**；`pack()` 参考
   **0.46 ms/step**（训练不再调用，只出双导轨）。Adam 逐元素参考 **8.0–8.2 ms/step**，
-  融合 **2.4–2.8 ms/step（2.9–3.4×）**；同轮 A/B 旧 `pack()+input_grad+row_dot`
-  **3.32–3.55 ms/step → 2.4–2.8（约 1.3×）**。
+  融合 **1.70–1.85 ms/step（约 1.32×）**；同轮 A/B 旧两遍
+  **2.12–2.48 ms/step → 1.70–1.85（中位 2.33→1.76，约 1.32×）**。
+- Adam 单遍（第二十九轮，同轮交替 A/B 5 组，9 轮取最快）：旧两遍
+  `fused::backward` + `layer::adam_update` **2.12–2.48 ms/step** → 单遍
+  `fused::adam_step` **1.70–1.85 ms/step（中位 2.33→1.76，约 1.32×）**；
+  `dX`/latent/scale/m/v 在 6 形状 × 3 STE × 3 步下逐位相等。
 - 带梯度 SGD（第二十八轮，同轮交替 A/B 5 组，9 轮取最快）：旧两遍
   `fused::backward` + `dense::sgd_update` **0.92–1.32 ms/step** → 单遍
   `fused::backward_step` **0.68–0.76 ms/step（中位 0.98→0.71，约 1.38×）**；
   `dX`/latent/scale 在 7 形状 × 3 STE 下逐位相等。
 - 多形状（`shape_bench`，9 轮取最快，3 步/轮，SGD/Adam 都不含 `pack`）：SGD 4096×576
   **0.90–1.00 ms / 25.9–27.1×**，17×576 **27–30×**，11×130 **19–20×**，9×65
-  **14.5–15.3×**，5×9 **3.0–4.9×**；Adam 4096×576 **3.1–3.3×**，17×576 **5.6×**，
-  11×130 **4.0×**。`1×1` 不计入证据；`9×65` 的绝对耗时只有 0.2–0.4 µs，倍数会抖。
+  **14.5–15.3×**，5×9 **3.0–4.9×**；Adam 4096×576 **4.09×**，17×576 **6.05×**，
+  11×130 **4.48×**，9×65 **2.93×**。`1×1` 不计入证据；`9×65` 的绝对耗时只有 0.2–0.4 µs，倍数会抖。
 - 反向融合（第二十七轮）：`fused::backward` 复算 example 旧 `pack()+input_grad+row_dot`
   **0.747–0.759 ms** → 新 **0.430–0.441 ms（1.72–1.74×）**，`dX` 576/576、`qdot`
   4096/4096 逐位相等。
@@ -204,8 +216,8 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
   `train_step`、`train_step_with_grad`、Adam 四条路径都不再调用 `pack()`，`pack()`
   只保留为公开检查/对拍入口；`train_step_with_grad_adam_scalar` 仍走 `pack()` 作为
   逐元素参考。页面若显示 `q` 内存，必须按“首次访问后才分配”解释。
-- 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176/L177/L178/L179/L180、`.agent/checks/registry.json`
-  C082/C083/C084/C085/C086/C087/C088/C089/C090、`cargo test -p trit-train` **35/35**。
+- 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176/L177/L178/L179/L180/L181、`.agent/checks/registry.json`
+  C082/C083/C084/C085/C086/C087/C088/C089/C090/C091、`cargo test -p trit-train` **37/37**。
 
 ### 3.5 第五屏：录像
 
@@ -384,7 +396,7 @@ backward_step 分支：同一遍再写 STE dW 与 scale[r]
 
 ```text
 本页已加速：dX = Wᵀdy
-训练步（第二十八轮，单独区块）：SGD forward 走 fused::forward_dot（量化+点积一遍）、Adam 反向走 fused::backward（量化+dX+qdot 一遍）、带梯度 SGD 走 fused::backward_step（dX+qdot+STE dW+scale 一遍）、SGD/Adam dW 走 dense::sgd_update / layer::adam_update、pack() 只保留公开对拍（训练不调用）、q 惰性解码
+训练步（第二十九轮，单独区块）：SGD forward 走 fused::forward_dot（量化+点积一遍）、Adam 反向走 fused::adam_step（量化+dX+qdot+latent/m/v 一遍，scale 行外更新）、带梯度 SGD 走 fused::backward_step（dX+qdot+STE dW+scale 一遍）、SGD dW 走 dense::sgd_update、pack() 只保留公开对拍（训练不调用）、q 惰性解码
 平台：原生 x86_64 AVX2；非 x86_64 或 cols < 8 自动回退标量
 未证明：端到端多层吞吐、GPU/WASM 读数、多形状 Adam 曲线；SGD/forward/with_grad/Adam 都不再 pack，pack() 仅参考
 ```
@@ -394,7 +406,7 @@ backward_step 分支：同一遍再写 STE dW 与 scale[r]
 ```text
 后端：dX available（main 6b910bc9，PR #664 已合并）
       训练步 available（main 9d1f0cc6，PR #666 已合并；区间 #667）
-      Adam dW 融合 + fused backward + 带梯度单遍 available（PR #668，c64fe0c7/aa92dd1b/a62dd419；open）
+      Adam dW 融合 + fused backward + 带梯度单遍 + Adam 单遍 available（PR #668，c64fe0c7/aa92dd1b/a62dd419/cd5e9a00/ba217795；open）
 前端：planned（本页）
 录像：unrecorded
 ```
@@ -467,7 +479,7 @@ python tools/checks.py -Only C088
 
 | 缺口 | 状态 | 对前端的影响 |
 |---|---|---|
-| `dW` 位平面化 | 未做；SGD 走 `dense::sgd_update`、Adam 走 `layer::adam_update`，都是融合外积，不是位平面 | 不能写“dW 是位平面” |
+| `dW` 位平面化 | 未做；SGD 走 `dense::sgd_update`、Adam 走 `fused::adam_step` 的融合外积/单遍，不是位平面 | 不能写“dW 是位平面” |
 | `forward` 快速内核 | 已改 `fused::forward_dot`（第二十六轮），不再构造双导轨 | 可写“前向走量化点积单遍”，不能写“所有形状都快” |
 | `pack()` 成本 | 已单独计 0.46 ms/step（只写双导轨，按 64 列 word 写合并）；训练/前向已不调用 | 不能把 dX 的 39.25×当训练步加速 |
 | 反向 `dX`+`qdot` | 已改 `fused::backward` 单遍（第二十七轮）；旧 `pack()+input_grad+row_dot` 保留对拍 | 可写“反向 1.72–1.74×”，不能写“端到端训练 1.7×” |
@@ -547,6 +559,6 @@ NOTES:          只复核数字与边界，不改前端版式
 | `crates/trit-train/src/layer/grad.rs` | `train_step_with_grad` 与 Adam 标量参考 |
 | `crates/trit-train/src/bin/bench.rs` | `bench_backward`；读数输出 |
 | `crates/trit-train/README.md` | 人类说明、读数表、边界 |
-| `docs/ERRORS.md` L171–L180 | 缺陷台账与读数结论 |
-| `.agent/checks/registry.json` C081–C090 | 回归门 |
+| `docs/ERRORS.md` L171–L181 | 缺陷台账与读数结论 |
+| `.agent/checks/registry.json` C081–C091 | 回归门 |
 | `docs/handoff/bitplane-backward-metrics.json` | 前端数据快照 |

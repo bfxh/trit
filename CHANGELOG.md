@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Changed（第二十九轮：Adam 训练步量化/`dX`/`qdot`/`dW` 单遍）
+
+- `train_step_with_grad_adam` 不再走 `fused::backward` → `layer::adam_update` 两遍：
+  新增 `plane/fused/adam_step.rs`，每行量化一次 `q`，同一遍同时算 `dX`、`qdot`、
+  latent/m/v 的 Adam 更新；`scale` 仍在 `layer/adam.rs` 的行外更新。
+- SIMD 路径逐位复刻旧两遍：量化用 `w / s`（同 `fused::backward`），STE 门控用
+  `w * (1/s)`（同旧 `adam_update`），`dX` 按 `r & 3`、`qdot` 按 `j mod 4` 分组；
+  m/v、bias 校正、sqrt/eps 与参数更新公式逐行对齐旧 `simd::update_row`。
+- 标量路径用 `Ste::backward` + 逐元素 m/v/w 算术，匹配旧标量顺序；旧
+  `adam_update`/SIMD 参考内核移到 `layer/adam/support.rs`，只在 `#[cfg(test)]`
+  编译；`TernaryLinear::fused_backward` 删除，`plane::fused::backward` 留给探针与
+  旧路径测试。
+- 对拍：`full_adam_step_matches_old_two_pass_bitwise` 覆盖 6 形状 × 3 STE × 3 步，
+  `dX`、latent、scale、m、v 全部 `assert_eq!`；另加
+  `scalar_adam_step_matches_old_path` 纯标量对拍。测试 **35→37**。
+- 4096×576 同轮交替 A/B 5 组（3 步/轮，9 轮取最快）：旧两遍
+  **2.12–2.48 ms/step** → 新单遍 **1.70–1.85 ms/step（中位 2.33→1.76，约
+  1.32×）**。精确旧 shape 基线交替 3 组：中位 **2.2746→1.8348 ms（约 1.24×）**；
+  新 `shape_bench` 单次矩阵 4096×576 **1.9953 ms**，逐元素 8.1575 ms（**4.09×**）。
+- 模块预算：新增 5 个文件后 **1539→1544 files，debt=0**；`layer/adam.rs` 拆出
+  `adam/support.rs`、测试拆出 `adam/tests/fused.rs` 与 `adam/tests/closed_form.rs`，
+  避免抬 cap。
+- CI `mutation (changed crates)` 在 `cd5e9a00` 上抓到旧 `Adam::apply` 的偏置校正
+  变异存活：latent 改走单遍后，该变异只影响 `lr=0` 的 scale。把闭合形式断言移到
+  `layer/adam/tests/closed_form.rs` 并直接钉 `Adam::apply`，本地 9/9 变异全
+  caught；`hazard gate` 登记 `adam_step.rs` / `adam/support.rs` 的 AVX2 探测理由。
+- Adam 旧行级融合的第二十一轮口径 **2.4–2.8 ms/step** 仍保留为历史读数；本轮
+  A/B 的旧基线是同一提交 `8b846d4a` 的 **2.12–2.48**。缺陷台账新增 L181/C091。
+
 ### Changed（第二十八轮：带梯度 SGD 的 `dX`/`qdot`/`dW` 单遍）
 
 - `train_step_with_grad` 不再走 `fused::backward` → `dense::sgd_update` 两遍：
