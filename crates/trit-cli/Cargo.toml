@@ -12,6 +12,7 @@ name = "trit"
 path = "src/main.rs"
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 trit-capacity.workspace = true
 trit-eval.workspace = true

@@ -137,7 +137,7 @@ fn print_pair(med: &[Measurement], history: &[Vec<Measurement>], a: &str, b: &st
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(message) = trit_ops::shape::check_bench_args(&args) {
-        eprintln!("{message}");
+        trit_log::error!("{message}");
         std::process::exit(2);
     }
     let threads = arg_usize(&args, "--threads").unwrap_or(8);

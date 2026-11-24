@@ -199,7 +199,7 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("error: {error:#}");
+            trit_log::error!("error: {error:#}");
             std::process::ExitCode::FAILURE
         }
     }

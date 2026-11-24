@@ -146,7 +146,7 @@ pub(crate) fn cnn_train(argv: &[String]) {
     net.pyr = pyr;
     net.ppyr = ppyr;
     net.set_dilation(dil);
-    println!(
+    trit_log::info!(
         "卷积深度头：{} 权重，dil {dil}（感受野 {}）",
         if ternary { "三值" } else { "f32" },
         6 * dil + 1
@@ -182,8 +182,8 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let (mut train, held): (Vec<_>, Vec<_>) =
         samples.iter().cloned().partition(|s| !is_held(&s.scene));
     if std::env::var("DEPTH_DEBUG").is_ok() {
-        println!("holdout 清单 {holdout:?}");
-        println!(
+        trit_log::debug!("holdout 清单 {holdout:?}");
+        trit_log::debug!(
             "首个样本目录名 {:?}",
             samples.first().map(|s| s.scene.file_name())
         );
@@ -299,7 +299,7 @@ pub(crate) fn cnn_train(argv: &[String]) {
     }
     if let Some(p) = &eval_only {
         net = trit_parts::depthnet::DepthNet::load(p).unwrap_or_else(|e| panic!("{e}"));
-        println!("仅评估 {}（跳过训练）", p.display());
+        trit_log::info!("仅评估 {}（跳过训练）", p.display());
     }
     for ep in 0..if eval_only.is_some() { 0 } else { epochs } {
         let t_ep = std::time::Instant::now();
@@ -394,7 +394,7 @@ pub(crate) fn cnn_train(argv: &[String]) {
     if eval_only.is_none() {
         let out = out.unwrap_or_else(|| usage());
         net.save(&out).unwrap_or_else(|e| panic!("{e}"));
-        println!("已存 {}", out.display());
+        trit_log::info!("已存 {}", out.display());
     }
     if !held.is_empty() {
         let es: Vec<trit_parts::depthdata::EvalSample> = held

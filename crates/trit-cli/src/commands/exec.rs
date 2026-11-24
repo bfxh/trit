@@ -27,19 +27,19 @@ pub(crate) fn cmd_exec(
     let probe = probe_gpu();
     // 读数一律自带出处（§10.3）；测试桩必须显形，否则假的读数会被当成真机读数。
     match probe {
-        Probe::Known(m) => eprintln!(
+        Probe::Known(m) => trit_log::error!(
             "trit exec: 显存来源 {}，可用 {:.0} MiB / 总量 {:.0} MiB，已用 {:.0} MiB",
             m.source.as_str(),
             m.free as f64 / MIB as f64,
             m.total as f64 / MIB as f64,
             m.used as f64 / MIB as f64
         ),
-        Probe::Unknown(why) => eprintln!("trit exec: 显存来源 不可用（{why}）"),
+        Probe::Unknown(why) => trit_log::warn!("trit exec: 显存来源 不可用（{why}）"),
     }
 
     match need_mb {
         None => {
-            eprintln!("trit exec: 未给 --need-mb ⇒ 未做准入判决，直接执行");
+            trit_log::error!("trit exec: 未给 --need-mb ⇒ 未做准入判决，直接执行");
         }
         Some(mb) => {
             let need = mb.saturating_mul(MIB);
@@ -47,14 +47,14 @@ pub(crate) fn cmd_exec(
                 Probe::Known(m) => judge(need, &m, headroom),
                 Probe::Unknown(why) => judge_unknown(need, why, headroom),
             };
-            eprintln!(
+            trit_log::error!(
                 "trit exec: 判决 {}（trit {:+}）｜{}",
                 j.verdict.as_str(),
                 j.verdict.trit(),
                 j.reason
             );
             if let Decision::Refuse(j) = decide(j, force, strict) {
-                eprintln!(
+                trit_log::error!(
                     "trit exec: 拒绝启动（退出码 {EXIT_REFUSED}），子进程未运行。\
                      必要时用 --force 越过。理由：{}",
                     j.reason
@@ -62,7 +62,7 @@ pub(crate) fn cmd_exec(
                 std::process::exit(EXIT_REFUSED);
             }
             if force {
-                eprintln!("trit exec: --force 已越过判决（读数仍如上，供事后复盘）");
+                trit_log::error!("trit exec: --force 已越过判决（读数仍如上，供事后复盘）");
             }
         }
     }

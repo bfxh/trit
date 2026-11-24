@@ -107,19 +107,19 @@ fn main() {
     // 训练集：与 parts-train 同一条展开规则 + 同一个 limit。
     let frames = expand_frames(&data, limit);
     if frames.is_empty() {
-        eprintln!("训练集为空：检查 --data / --limit");
+        trit_log::error!("训练集为空：检查 --data / --limit");
         std::process::exit(2);
     }
     let train_fp = fingerprint_train(&frames, &seg_sub).unwrap_or_else(|e| {
-        eprintln!("训练集指纹失败: {e}");
+        trit_log::error!("训练集指纹失败: {e}");
         std::process::exit(2);
     });
     let eval_fp = fingerprint_eval(&renders, &scenes, eval_limit).unwrap_or_else(|e| {
-        eprintln!("评测语料指纹失败: {e}");
+        trit_log::error!("评测语料指纹失败: {e}");
         std::process::exit(2);
     });
     let model_sha = trit_parts::fingerprint::file_sha256(&model).unwrap_or_else(|e| {
-        eprintln!("模型哈希失败: {e}");
+        trit_log::error!("模型哈希失败: {e}");
         std::process::exit(2);
     });
 
@@ -134,7 +134,7 @@ fn main() {
         .arg(&scenes)
         .args(&eval_args);
     let out = cmd.output().unwrap_or_else(|e| {
-        eprintln!("跑不了 {}: {e}", inst_bin.display());
+        trit_log::error!("跑不了 {}: {e}", inst_bin.display());
         std::process::exit(2);
     });
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -218,12 +218,12 @@ fn main() {
         "reject"
     };
     if !out.status.success() {
-        eprintln!("parts-inst eval 退出码 {:?}", out.status.code());
+        trit_log::error!("parts-inst eval 退出码 {:?}", out.status.code());
     }
     if verdict == "pass" {
         println!("{note}");
     } else {
-        eprintln!("{note}（模型={ok_model} 训练集={ok_data} 协议={ok_cfg}）");
+        trit_log::error!("{note}（模型={ok_model} 训练集={ok_data} 协议={ok_cfg}）");
     }
 
     let manifest_sha = if mpath.exists() {
@@ -263,7 +263,7 @@ fn main() {
         }
     };
     std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录失败 {}: {e}", vp.display());
+        trit_log::error!("写复核记录失败 {}: {e}", vp.display());
         std::process::exit(2);
     });
     println!("复核记录 {}（{verdict}）", vp.display());

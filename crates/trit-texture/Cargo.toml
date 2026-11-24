@@ -15,6 +15,7 @@ default = []
 png = ["dep:png"]
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 thiserror = "2.0.21"
 png = { version = "0.17", optional = true }

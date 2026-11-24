@@ -99,7 +99,7 @@ fn train(argv: &[String]) {
     if all.is_empty() {
         panic!("没有可用帧");
     }
-    println!("帧 {}，lr {lr}，calib {calib}", all.len());
+    trit_log::info!("帧 {}，lr {lr}，calib {calib}", all.len());
 
     let mut head = DepthHead::zeros(CH);
     let mut acc = vec![0f64; CH];
@@ -132,7 +132,7 @@ fn train(argv: &[String]) {
         head.sd[c] = (var.sqrt() as f32).max(1e-3);
     }
     head.b = (gt_sum / gt_n.max(1) as f64) as f32;
-    println!("bias 初值（视差均值）{:.4}", head.b);
+    trit_log::info!("bias 初值（视差均值）{:.4}", head.b);
 
     let fit_frames: usize = arg(argv, "--fit-frames")
         .and_then(|v| v.parse().ok())
@@ -185,7 +185,7 @@ fn train(argv: &[String]) {
     );
     let _ = (steps, lr, seed);
     head.save(&save).unwrap_or_else(|e| panic!("{e}"));
-    println!("已存 {}", save.display());
+    trit_log::info!("已存 {}", save.display());
 }
 
 /// `mesh-single --model <tpm> --head <tpdh> --scene <dir> --frame N --cell 0.02 [--gt] --out <ply>`：

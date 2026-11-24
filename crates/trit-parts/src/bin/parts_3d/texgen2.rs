@@ -125,7 +125,7 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
         .map(|g| g.iter().sum::<f32>() / g.len() as f32)
         .sum::<f32>()
         / images.len() as f32;
-    println!("训练图 {} 张，均值 {data_mean:.3}", images.len());
+    trit_log::info!("训练图 {} 张，均值 {data_mean:.3}", images.len());
     // S6.3：材质类别（--labels <tsv: assetId\tclass>）→ 每张图的类索引
     let mut film_k: usize = arg(argv, "--film")
         .and_then(|v| v.parse().ok())
@@ -260,7 +260,7 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
             let g = images[ki].clone();
             loss += d.train_shard(&g, &abar, None, n, n, lr, 64, &mut rng) as f64;
             if (step + 1) % 2000 == 0 {
-                println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
+                trit_log::info!("  step {} loss {:.4}", step + 1, loss / 2000.0);
                 loss = 0.0;
             }
         }
@@ -405,7 +405,7 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
             }
             loss += net.train_batch_xc(&items, n, n, lr, use_adam) as f64;
             if (step + 1) % 2000 == 0 {
-                println!(
+                trit_log::info!(
                     "  step {} loss {:.4} | aux CE {:.3} acc {:.2}",
                     step + 1,
                     loss / 2000.0,
@@ -419,7 +419,7 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
                 && (step + 1) % 1000 == 0
             {
                 net.save(p).unwrap_or_else(|e| fail(&e));
-                println!("  ckpt {} @ step {}", p.display(), step + 1);
+                trit_log::info!("  ckpt {} @ step {}", p.display(), step + 1);
             }
         }
         // --diag：线性输出（ε/v）时，判预测器对输入 x_t 的依赖强度。
@@ -488,7 +488,7 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
         }
         if let Some(p) = &save_path {
             net.save(p).unwrap_or_else(|e| fail(&e));
-            println!("权重已存 {}", p.display());
+            trit_log::info!("权重已存 {}", p.display());
         }
         if v_mode {
             let extra = if cond_stats {

@@ -24,6 +24,7 @@ required-features = ["full"]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
 
 [dependencies]
+trit-log.workspace = true
 # trit-core 互操作（compat 模块：Trit ↔ Ternary 双向映射 + 3×3 同构穷举测试）
 trit-core.workspace = true
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }

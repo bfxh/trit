@@ -352,7 +352,7 @@ mod tests {
         let started = std::time::Instant::now();
         let fast = table(&expr, &vars, Algebra::Kleene, 0).unwrap();
         let multi_thread = started.elapsed();
-        eprintln!(
+        trit_log::error!(
             "12 vars / 531441 rows: scalar {scalar:?} → bit-parallel 1 thread {single_thread:?} → {} threads {multi_thread:?}（{:.1}×）",
             std::thread::available_parallelism()
                 .map(std::num::NonZeroUsize::get)
@@ -381,7 +381,7 @@ mod tests {
         .unwrap();
         let check = started.elapsed();
         assert!(equivalent.equivalent);
-        eprintln!(
+        trit_log::error!(
             "12 vars: simplify {simplify:?} + rewrite {rewrite:?}（规则 {} 条）+ equivalence {check:?}",
             rules.len()
         );
@@ -393,7 +393,7 @@ mod tests {
         let started = std::time::Instant::now();
         let _lookup = crate::artifacts::lookup_c(&vars, &fast, Algebra::Kleene);
         let lookup_time = started.elapsed();
-        eprintln!(
+        trit_log::error!(
             "12 vars: truth_csv {csv_time:?}（{} B）+ lookup.c {lookup_time:?}",
             csv.len()
         );

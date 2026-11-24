@@ -49,7 +49,7 @@ fn sha(p: &Path) -> String {
 
 fn read(p: &Path) -> Json {
     trit_learn::json::read_json(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {e}");
+        trit_log::error!("读不了 {e}");
         std::process::exit(2);
     })
 }

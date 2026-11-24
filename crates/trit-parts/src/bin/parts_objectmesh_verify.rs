@@ -189,7 +189,7 @@ fn hash(p: &Path) -> String {
 
 fn read(p: &Path) -> Json {
     trit_learn::json::read_json(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {e}");
+        trit_log::error!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -273,7 +273,7 @@ fn main() {
         .collect();
 
     let fp = fingerprint_scene_frames_rgb(&scene, &frames).unwrap_or_else(|e| {
-        eprintln!("语料指纹失败: {e}");
+        trit_log::error!("语料指纹失败: {e}");
         std::process::exit(2);
     });
     let want_hash = format!("sha256:{}", fp.hash);

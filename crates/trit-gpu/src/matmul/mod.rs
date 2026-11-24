@@ -115,7 +115,7 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         o2_matches, o3_matches,
         "2-popc 与 3-popc 的正确性必须一致（m={m} n={n} k={k}）"
     );
-    eprintln!(
+    trit_log::error!(
         "2-popc vs 3-popc: {:.4} vs {:.4} ps/MAC ({:+.1}%)",
         ternary_o2_ns_per_mac * 1000.0,
         ternary_o3_ns_per_mac * 1000.0,

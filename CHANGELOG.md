@@ -321,6 +321,20 @@
 - 台账：C079 改为 `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check`；
   `docs/engineering/AGENT-DELIVERY.md` 重写为 Rust 用法/边界；`docs/ERRORS.md` L169、
   `AGENT-COORDINATION.md`、`docs/README.md` 索引同步。
+### Added（统一运行时日志）
+
+- 新 crate `trit-log`（零依赖）：`error!/warn!/info!/debug!/trace!` 宏、`TRIT_LOG`
+  级别与前缀过滤（`target=level` 逗号表，最长前缀胜出）、`TRIT_LOG_FILE` 追加写、
+  `TRIT_LOG_FORMAT=text|jsonl`（JSONL 一行一条，`ts/level/target/msg`）、UTC 毫秒
+  时间戳。默认 `info`，迁移前打得出来的诊断默认仍可见；`cargo test -p trit-log` 8/8
+  + doctest。边界：单锁串行、无轮转/压缩/指标/trace 关联 ID。
+- 全仓诊断迁移：`crates/*/src` 192 处 `eprintln!` 按语义改 `error!/warn!`（48 处
+  保留——41 处用法/帮助文本、7 处 `FAIL ` 前缀的 stderr 契约行，那是对外 UI，不是日志）；
+  `trit-parts` 训练、深度、纹理长任务 41 处进度叙述改 `info!/debug!`（续跑、
+  step/loss、ckpt、适配器、跳过原因）。`println!` 里的结果输出（表格、JSON、清单、
+  裁决）保持 stdout 不变。
+- `docs/engineering/LOGGING.md`：口径（stdout 结果 / stderr 诊断）、级别选择表、
+  环境变量、迁移现状与诚实边界；`docs/README.md` 建索引。
 
 ### Changed（第十七轮：直算 IR 的交换律规范化与死代码消除）
 

@@ -53,10 +53,8 @@ pub fn probe_cmd(args: &[String]) -> Result<(), String> {
             serde_json::to_string(finding).map_err(|error| error.to_string())?
         );
     }
-    eprintln!(
-        "计划 {} / 执行 {} / 截断 {}",
-        report.planned, report.probed, report.truncated
-    );
+    let (planned, probed, truncated) = (report.planned, report.probed, report.truncated);
+    trit_log::error!("计划 {planned} / 执行 {probed} / 截断 {truncated}");
     Ok(())
 }
 
@@ -97,9 +95,9 @@ pub fn bridge_cmd(args: &[String]) -> Result<(), String> {
     let summary =
         attach_probe(&mut graph, &findings, &station).map_err(|error| error.to_string())?;
     print!("{}", graph.to_jsonl());
-    eprintln!(
-        "登记完成：主机 {}、服务 {}、边 {}（同 label/同端点 LWW 覆盖，重跑幂等）",
-        summary.hosts, summary.services, summary.edges
+    let (hosts, services, edges) = (summary.hosts, summary.services, summary.edges);
+    trit_log::error!(
+        "登记完成：主机 {hosts}、服务 {services}、边 {edges}（同 label/同端点 LWW 覆盖，重跑幂等）"
     );
     Ok(())
 }

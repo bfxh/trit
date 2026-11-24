@@ -29,7 +29,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("{message}");
+            trit_log::error!("{message}");
             ExitCode::FAILURE
         }
     }
@@ -358,7 +358,7 @@ fn flow_cmd(args: &[String]) -> Result<(), String> {
             summary.push_str(&format!(" {reason}={count}"));
         }
     }
-    eprintln!("{summary}");
+    trit_log::error!("{summary}");
     Ok(())
 }
 
@@ -436,7 +436,7 @@ fn print_json(model: &Model, inputs: &[Ternary], analysis: &Analysis) {
     });
     match serde_json::to_string_pretty(&obj) {
         Ok(text) => println!("{text}"),
-        Err(error) => eprintln!("JSON 序列化失败：{error}"),
+        Err(error) => trit_log::error!("JSON 序列化失败：{error}"),
     }
 }
 

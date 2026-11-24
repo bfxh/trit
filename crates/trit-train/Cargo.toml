@@ -13,5 +13,6 @@ name = "train-bench"
 path = "src/bin/bench.rs"
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 trit-learn.workspace = true

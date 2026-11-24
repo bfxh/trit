@@ -43,7 +43,7 @@ pub fn run(cases: usize, max_n: usize) -> ExitCode {
                                 overflowed += 1;
                             } else if count != dpll {
                                 failures += 1;
-                                eprintln!(
+                                trit_log::error!(
                                     "MISMATCH n={n} alg={} target={target:?} dpll={dpll} bdd={count} expr={expr:?}",
                                     alg.as_str(),
                                 );

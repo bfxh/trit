@@ -137,7 +137,7 @@ fn main() {
             println!("复核 PASS：模型与数据指纹与清单一致");
             "pass"
         } else {
-            eprintln!("复核 FAIL：模型={ok_model} 数据={ok_data}（与清单不一致）");
+            trit_log::error!("复核 FAIL：模型={ok_model} 数据={ok_data}（与清单不一致）");
             "reject"
         }
     } else {

@@ -29,14 +29,14 @@ fn usage() -> ! {
 // 枚举规则只有一份（partsrun）：评测与指纹必须看到同一批文件。
 fn scene_dirs(root: &Path) -> Vec<PathBuf> {
     trit_parts::partsrun::scene_dirs(root).unwrap_or_else(|e| {
-        eprintln!("{e}");
+        trit_log::error!("{e}");
         std::process::exit(2)
     })
 }
 
 fn seg_files(rd: &Path) -> Vec<PathBuf> {
     trit_parts::partsrun::seg_files(rd).unwrap_or_else(|e| {
-        eprintln!("{e}");
+        trit_log::error!("{e}");
         std::process::exit(2)
     })
 }
@@ -89,7 +89,7 @@ fn prep(argv: &[String]) {
     for sd in scene_dirs(&scenes) {
         let name = sd.file_name().unwrap().to_string_lossy().to_string();
         let ranges = instance_ranges(&sd).unwrap_or_else(|e| {
-            eprintln!("{e}");
+            trit_log::error!("{e}");
             std::process::exit(2)
         });
         let rd = renders.join(&name);
@@ -97,7 +97,7 @@ fn prep(argv: &[String]) {
         let out_bnd = rd.join("bnd");
         for d in [&out, &out_bnd] {
             std::fs::create_dir_all(d).unwrap_or_else(|e| {
-                eprintln!("建不了 {}: {e}", d.display());
+                trit_log::error!("建不了 {}: {e}", d.display());
                 std::process::exit(2)
             });
         }
@@ -106,11 +106,11 @@ fn prep(argv: &[String]) {
                 break;
             }
             let (ids, shape) = read_npy_i32(f).unwrap_or_else(|e| {
-                eprintln!("{e}");
+                trit_log::error!("{e}");
                 std::process::exit(2)
             });
             if shape.len() != 2 {
-                eprintln!("{}: seg 不是二维", f.display());
+                trit_log::error!("{}: seg 不是二维", f.display());
                 std::process::exit(2);
             }
             let inst = order_by_x(&ids, &ranges, shape[1]);
@@ -127,7 +127,7 @@ fn prep(argv: &[String]) {
                 shape[0],
             )
             .unwrap_or_else(|e| {
-                eprintln!("{e}");
+                trit_log::error!("{e}");
                 std::process::exit(2)
             });
             if part_bnd {
@@ -143,7 +143,7 @@ fn prep(argv: &[String]) {
                 let pv: Vec<i32> = pbnd.iter().map(|&v| v as i32).collect();
                 write_npy_i32(&d.join(f.file_name().unwrap()), &pv, shape[1], shape[0])
                     .unwrap_or_else(|e| {
-                        eprintln!("{e}");
+                        trit_log::error!("{e}");
                         std::process::exit(2)
                     });
             }
@@ -156,7 +156,7 @@ fn prep(argv: &[String]) {
                 shape[0],
             )
             .unwrap_or_else(|e| {
-                eprintln!("{e}");
+                trit_log::error!("{e}");
                 std::process::exit(2)
             });
             nframes += 1;
@@ -227,11 +227,11 @@ fn eval(argv: &[String]) {
         .unwrap_or(20);
 
     let m = TpmModel::load(&model).unwrap_or_else(|e| {
-        eprintln!("{e}");
+        trit_log::error!("{e}");
         std::process::exit(2)
     });
     let mut be = wgpu_from_tpm(&m).unwrap_or_else(|e| {
-        eprintln!("{e}");
+        trit_log::error!("{e}");
         std::process::exit(2)
     });
 
@@ -250,7 +250,7 @@ fn eval(argv: &[String]) {
     for sd in scene_dirs(&scenes) {
         let name = sd.file_name().unwrap().to_string_lossy().to_string();
         let ranges = instance_ranges(&sd).unwrap_or_else(|e| {
-            eprintln!("{e}");
+            trit_log::error!("{e}");
             std::process::exit(2)
         });
         let pl = PartList {
@@ -275,11 +275,11 @@ fn eval(argv: &[String]) {
             let stem = f.file_stem().unwrap().to_str().unwrap().to_string();
             let rgbp = rd.join("rgb").join(format!("{stem}.png"));
             let (w, h, pix) = read_rgb(&rgbp).unwrap_or_else(|e| {
-                eprintln!("{e}");
+                trit_log::error!("{e}");
                 std::process::exit(2)
             });
             if w as u32 != res || h as u32 != res {
-                eprintln!("{}: {w}×{h} != res {res}", rgbp.display());
+                trit_log::error!("{}: {w}×{h} != res {res}", rgbp.display());
                 std::process::exit(2);
             }
             let x = pix;
@@ -298,13 +298,13 @@ fn eval(argv: &[String]) {
                 gt.iter().max().copied().unwrap_or(0) as usize
             };
             let logits = be.forward(&x, res).unwrap_or_else(|e| {
-                eprintln!("{e}");
+                trit_log::error!("{e}");
                 std::process::exit(2)
             });
             let hw = trit_parts::dims::pixels(res as usize, res as usize);
             let ch = logits.len() / hw;
             if k * 3 >= ch {
-                eprintln!("模型输出 {ch} 通道，不够 k={k}（需 {}）", k * 3 + 1);
+                trit_log::error!("模型输出 {ch} 通道，不够 k={k}（需 {}）", k * 3 + 1);
                 std::process::exit(2);
             }
             let pred: Vec<u32> = if oracle {
@@ -353,7 +353,7 @@ fn eval(argv: &[String]) {
                     && let Ok((gb, _)) = read_npy_i32(&bp)
                 {
                     if frames == 0 && i == 0 {
-                        eprintln!("边界参考：{}", bp.display());
+                        trit_log::error!("边界参考：{}", bp.display());
                     }
                     for (i, &g) in gb.iter().enumerate() {
                         let g = (g == 2) as usize;
@@ -363,7 +363,7 @@ fn eval(argv: &[String]) {
                         b_inter += (g == 1 && q == 1) as usize;
                     }
                     if frames == 0 && i == 0 {
-                        eprintln!("边界计数：gt {b_gt} pred {b_pred} inter {b_inter}（g==2 参考）");
+                        trit_log::error!("边界 gt {b_gt} pred {b_pred} inter {b_inter}（g==2）");
                     }
                 }
                 {
@@ -486,7 +486,7 @@ fn eval(argv: &[String]) {
 
 #[cfg(not(feature = "gpu"))]
 fn eval(_argv: &[String]) {
-    eprintln!("本构建未启用 gpu feature");
+    trit_log::warn!("本构建未启用 gpu feature");
     std::process::exit(2);
 }
 

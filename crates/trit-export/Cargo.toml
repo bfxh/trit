@@ -8,6 +8,7 @@ repository.workspace = true
 description = "三值权重 GGUF 容器：GGUF v3 最小子集 + trit-codec 5 trits/byte"
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 thiserror = "2.0.21"
 

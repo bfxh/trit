@@ -17,7 +17,7 @@ fn main() -> ExitCode {
     match bench(trits) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("{message}");
+            trit_log::error!("{message}");
             ExitCode::FAILURE
         }
     }

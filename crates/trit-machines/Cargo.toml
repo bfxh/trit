@@ -9,5 +9,6 @@ description = "三值小部件实验层：解释器、元胞自动机、脉冲�
 publish = false
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 serde_json = "1.0.154"

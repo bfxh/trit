@@ -9,6 +9,7 @@ description = "三值权重空间编程：可 diff 的权重 IR、事务式编�
 publish = false
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 trit-export.workspace = true
 trit-learn.workspace = true

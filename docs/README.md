@@ -156,6 +156,7 @@
 | [WORK-BENCH.md](engineering/WORK-BENCH.md) | 工作任务产物基准：20 个文档/数据/表格/邮件/日历/文件整理/合规任务、15 类、81 条确定性检查、参考 81/81 与负例 20/20；原生 XLSX 公式、`-Candidates` 与 182/182 自测 |
 | [CMD-DRIVER.md](engineering/CMD-DRIVER.md) | PTC 命令行降错：plan 预检、argv 无 shell、逐步 verify、无盲重试、错误分类与摘要/本地回执分离；34/34 自测，work-bench 4 步 13/13、81/81 质量不变 |
 | [CI-CD.md](engineering/CI-CD.md) | CI/CD 与发布：开发侧 work-bench/PTC 质量门、agent-quality workflow、Release 质量前置与用户侧资产过滤、CI 预算规则 |
+| [LOGGING.md](engineering/LOGGING.md) | 统一运行时日志：`TRIT_LOG` 级别/前缀过滤、文本与 JSONL、文件输出；诊断走 `trit_log`、结果留 stdout 的口径与迁移现状 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |

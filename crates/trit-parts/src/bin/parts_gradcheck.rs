@@ -47,7 +47,7 @@ fn main() {
     let gpu = match Gpu::new() {
         Some(g) => g,
         None => {
-            eprintln!("没有可用的 GPU 适配器");
+            trit_log::warn!("没有可用的 GPU 适配器");
             std::process::exit(2);
         }
     };

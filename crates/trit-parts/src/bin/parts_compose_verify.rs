@@ -153,7 +153,7 @@ fn hash(p: &Path) -> String {
 
 fn read(p: &Path) -> Json {
     trit_learn::json::read_json(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {e}");
+        trit_log::error!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -208,7 +208,7 @@ fn main() {
     let mut map: HashMap<u32, Vec<Splat>> = HashMap::new();
     for o in &objs {
         let v = read_ply_3dgs(&objdir.join(&o.path)).unwrap_or_else(|e| {
-            eprintln!("读对象 PLY 失败: {e}");
+            trit_log::error!("读对象 PLY 失败: {e}");
             std::process::exit(2);
         });
         map.insert(o.id, v);
@@ -231,7 +231,7 @@ fn main() {
             .zip(&placements)
             .all(|(r, p)| placements_match(r, p));
     let comp = read_ply_3dgs(&base.join("composed.ply")).unwrap_or_else(|e| {
-        eprintln!("读 composed.ply 失败: {e}");
+        trit_log::error!("读 composed.ply 失败: {e}");
         std::process::exit(2);
     });
     let comp_block = manifest.get("composed").unwrap_or_else(|| usage());
@@ -282,7 +282,7 @@ fn main() {
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
     let vp = publish(&base, "compose", pass, custom.as_deref(), &body).unwrap_or_else(|e| {
-        eprintln!("{e}");
+        trit_log::error!("{e}");
         std::process::exit(2);
     });
     println!(
