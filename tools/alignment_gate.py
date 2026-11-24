@@ -413,7 +413,7 @@ def validate(root, doc, changed=None, strict=True, executed=None, changed_known=
     _unknown_fields(doc, TOP_FIELDS, "manifest", "manifest", report)
     evidence_fields = EV_FIELDS_V3 if schema == SCHEMA_V3 else EV_FIELDS
 
-    goal_map, goal_id = _read_goals(doc, report)
+    goal_map, _root_id = _read_goals(doc, report)
 
     requirements = _as_list(doc.get("requirements"), None, "requirements", report)
     artifacts = _as_list(doc.get("artifacts"), None, "artifacts", report)
@@ -524,6 +524,31 @@ def validate(root, doc, changed=None, strict=True, executed=None, changed_known=
             if cur not in goal_map:
                 _fail(report, "goal-not-reached",
                       f"{rid} 的 parent 链没有终止在任何 goal（实际 {cur or '<empty>'}）", rid)
+
+    # A goal is covered only when at least one requirement's parent chain passes
+    # through it.  Merely having some requirement somewhere in the tree is not
+    # coverage: a child goal with no descendant requirement is a decorative
+    # branch, and the old `goals_covered = 1 if req_map else 0` hid that.
+    covered_goals = set()
+    for rid in req_map:
+        cur = rid
+        seen = set()
+        while cur in req_map and cur not in seen:
+            seen.add(cur)
+            cur = parent_of.get(cur, "")
+        goal_cur = cur
+        goal_seen = set()
+        while goal_cur in goal_map and goal_cur not in goal_seen:
+            goal_seen.add(goal_cur)
+            covered_goals.add(goal_cur)
+            parent = goal_map[goal_cur].get("parent")
+            if not isinstance(parent, str) or not parent.strip():
+                break
+            goal_cur = parent.strip()
+    for gid in goal_map:
+        if gid not in covered_goals:
+            _fail(report, "goal-uncovered",
+                  f"{gid} 没有任何 requirement 的父链覆盖它", gid)
 
     # --- artifacts/evidence: path, hash, locator --------------------------------
     artifact_ok = set()
@@ -805,7 +830,7 @@ def validate(root, doc, changed=None, strict=True, executed=None, changed_known=
                              "provenance_verified": len(evidence_verified)})
     report["counts"]["must"] = must_total
     report["coverage"].update({"requirements_full": total_full, "must_full": must_full,
-                               "goals_covered": 1 if goal_id and req_map else 0})
+                               "goals_covered": len(covered_goals)})
     total_req = len(req_map)
     report["score"] = round(total_full / total_req, 3) if total_req else 0.0
     report["must_score"] = round(must_full / must_total, 3) if must_total else 0.0
@@ -870,7 +895,8 @@ def _emit(report, as_json, out_path):
          f"must={report['must_score']:.3f}) goal={report.get('goal', '-')} "
          f"goals={c['goals']} req={c['requirements']} must={c['must']} artifacts={c['artifacts']} "
          f"evidence={c['evidence']} changed={c['changed']} linked={c['linked_changes']}")
-    _say(f"  coverage: artifact={cov['requirements_with_artifact']}/{c['requirements']} "
+    _say(f"  coverage: goals={cov['goals_covered']}/{c['goals']} "
+         f"artifact={cov['requirements_with_artifact']}/{c['requirements']} "
          f"evidence={cov['requirements_with_evidence']}/{c['requirements']} "
          f"full={cov['requirements_full']}/{c['requirements']} "
          f"must_full={cov['must_full']}/{c['must']}")
@@ -1043,8 +1069,18 @@ def _selftest():
         d = _base_v2_doc()
         d["goals"].append({"id": "G2", "text": "子目标", "parent": "G1"})
         d["requirements"][0]["parent"] = "G2"
+        d["requirements"][1]["parent"] = "R1"
         r = status(root, d)
-        ok(r["status"] == "aligned" and r["counts"]["goals"] == 2, "v2 子目标链 aligned")
+        ok(r["status"] == "aligned" and r["counts"]["goals"] == 2
+           and r["coverage"]["goals_covered"] == 2,
+           "v2 子目标链 aligned，且需求父链覆盖两层 goal")
+        d = _base_v2_doc()
+        d["goals"].append({"id": "G2", "text": "空挂的子目标", "parent": "G1"})
+        r = status(root, d)
+        expect(r, "goal-uncovered", "v2 子目标没有需求覆盖")
+        ok(r["coverage"]["goals_covered"] == 1, "空挂子目标不计入 goals_covered")
+        r = status(root, d, strict=False)
+        expect(r, "goal-uncovered", "lenient 不降级 goal 覆盖")
         d = _base_v2_doc()
         d["goals"].append({"id": "G2", "text": "子目标", "parent": "G1"})
         d["goals"][0]["parent"] = "G2"

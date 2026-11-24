@@ -4386,7 +4386,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $alSrc) { continue }
     if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
 }
-$alTotal = 39
+$alTotal = 40
 if (-not $alPy) {
     "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
     $skipped += $alTotal
@@ -5044,6 +5044,35 @@ print("ALDRV done")
         -and ($al39steps -contains 'alignment-post')) `
         "AL39 空实际变更集不再免检：声明了 core 但 run 没写→post 拒绝（changed_known=1, changed=0）" `
         "e=$al39 v=$($al39doc.verdict) known=$($al39doc.alignment.post.counts.changed_known) changed=$($al39doc.alignment.post.counts.changed)"
+
+    # AL40: 目标树不能有空挂子目标；goals_covered 必须是真实计数，不是“有需求=1”。
+    $alGoalDoc = @'
+{
+  "schema": "alignment/2",
+  "goals": [
+    {"id": "G1", "text": "core.f 返回 1"},
+    {"id": "G2", "text": "未被任何需求实现的目标", "parent": "G1"}
+  ],
+  "requirements": [
+    {"id": "R1", "text": "core.f 的实现", "priority": "must", "parent": "G1",
+     "artifacts": ["A1"], "evidence": ["E1"], "changes": ["pkg/core.py"]}
+  ],
+  "artifacts": [{"id": "A1", "path": "pkg/core.py"}],
+  "evidence": [{"id": "E1", "path": "tests/test_core.py", "locator": "text:test_f"}]
+}
+'@
+    New-File $alManifest $alGoalDoc
+    $al40rc = Join-Path $Work "al-wd40.json"
+    $al40 = Invoke-AlAv $al40rc @('--alignment', $alManifest) -NoPlan
+    $al40doc = Read-AlReceipt $al40rc
+    $al40steps = @($al40doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al40 -eq 1 -and $al40doc.verdict -eq 'refused by alignment' `
+        -and $al40doc.alignment.status -eq 'unaligned' `
+        -and $al40doc.alignment.counts.goals -eq 2 `
+        -and $al40doc.alignment.coverage.goals_covered -eq 1 `
+        -and ($al40steps -notcontains 'run')) `
+        "AL40 空挂子目标→preflight 拒绝，goals_covered=1/2，run 不启动" `
+        "e=$al40 v=$($al40doc.verdict) goals=$($al40doc.alignment.counts.goals) covered=$($al40doc.alignment.coverage.goals_covered)"
 }
 
 
