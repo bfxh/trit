@@ -84,14 +84,6 @@ def write_mask(path, mask, batch, seq):
         handle.write(mask.tobytes(order="C"))
 
 
-def self_test():
-    matrix = _matrix_header(127, 384)
-    assert matrix[:8] == b"WSPACT1\0"
-    assert struct.unpack("<II", matrix[8:]) == (127, 384)
-    assert _mask_header(2000, SEQ)[:8] == b"WSPMSK1\0"
-    print("self-test ok")
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="mteb/scifact")
@@ -235,6 +227,24 @@ def main():
         f"done texts={len(texts)} corpus={len(corpus)} queries={len(queries)} "
         f"qrels_queries={len(qrels_map)}"
     )
+
+
+def self_test():
+    matrix = _matrix_header(127, 384)
+    assert matrix[:8] == b"WSPACT1\0"
+    assert struct.unpack("<II", matrix[8:]) == (127, 384)
+    assert _mask_header(2000, SEQ)[:8] == b"WSPMSK1\0"
+    texts = _texts(
+        [{"_id": "c1", "title": "T", "text": "B"}],
+        [{"_id": "q1", "text": "Q"}],
+    )
+    assert texts == [
+        {"id": "c1", "kind": "corpus", "text": "T B"},
+        {"id": "q1", "kind": "query", "text": "Q"},
+    ]
+    assert _qrels([{"query-id": "q1", "corpus-id": "c1"}], {"c1"}) == {"q1": ["c1"]}
+    assert _qrels([{"query-id": "q1", "corpus-id": "missing"}], {"c1"}) == {}
+    print("self-test ok")
 
 
 if __name__ == "__main__":
