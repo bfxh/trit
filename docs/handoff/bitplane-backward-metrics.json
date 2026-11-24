@@ -221,7 +221,7 @@
     "pr_checks_pending": 0,
     "pr_checks_fail": 0,
     "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"],
-    "note": "32 pass / 2 skip / 0 fail measured at 2d79b0e4; c64fe0c7 CI pending push"
+    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at 08d81853 (code c64fe0c7)"
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",

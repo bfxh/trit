@@ -19,7 +19,8 @@
 - 为守 module budget，把带梯度 SGD 与 Adam 标量参考从 `layer.rs` 拆到
   `layer/grad.rs`；`layer.rs` **571→525**，`layer/adam.rs` **218→216**，
   `plane/fused.rs` 保持 **133**。测试 **32→33**；缺陷台账新增 L179/C089；
-  `fused/backward.rs` 加入 hazard allowlist。
+  `fused/backward.rs` 加入 hazard allowlist。PR #668 在 `08d81853` 上 **32 pass /
+  2 skip / 0 fail，CLEAN**。
 
 ### Changed（第二十六轮：SGD 前向量化点积融合）
 
