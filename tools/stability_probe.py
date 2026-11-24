@@ -44,7 +44,6 @@ import argparse
 import hashlib
 import json
 import os
-import signal
 import subprocess
 import sys
 import tempfile
@@ -246,7 +245,9 @@ def _kill_tree(proc):
             proc.wait()
         return
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        # SIGKILL is 9 on POSIX. Do not `import signal`: tools/signal.py in this
+        # repo shadows the stdlib module when this script is launched from tools/.
+        os.killpg(os.getpgid(proc.pid), 9)
     except (ProcessLookupError, PermissionError, OSError):
         proc.kill()
     try:
