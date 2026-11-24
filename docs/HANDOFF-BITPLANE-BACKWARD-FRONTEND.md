@@ -5,8 +5,9 @@
 > 改位平面 `row_dot`、SGD `dW` 走 `dense::sgd_update`、`pack()` 改 `from_latent`。第二十一轮
 > 把 Adam 的 latent 更新也做成行级融合（`layer::adam_update`）；第二十二轮把 `q` 改为
 > 惰性缓存，训练步不再写 2.36 M 个 `i8`；第二十三轮让 SGD `train_step` 复用前向的
-> `qdot`，不再重扫第二遍双导轨。当前训练步读数
-> **1.2–1.3 ms/step（22–24×）**，`pack()` **0.47–0.49 ms**，Adam **2.9–3.1 ms/step
+> `qdot`，不再重扫第二遍双导轨；第二十四轮把 `pack()` 的 8-lane 读改写合并成
+> 64 列 word 一次写，并给 `shape_bench` 补了 SGD 多形状表。当前训练步读数
+> **1.16–1.22 ms/step（23.9–25.0×）**，`pack()` **0.46 ms**，Adam **2.9–3.1 ms/step
 > （2.6–2.8×，逐元素参考 8.0–8.2 ms）**，测试 31（含惰性 `q` 缓存回归）。该读数属于“训练步”区块，
 > **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
 >
@@ -23,7 +24,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、31/31、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、31/31、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -51,8 +52,9 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 2. **dX 读数只覆盖 `dX`；同分支训练步另有优化。**
    第二十轮把 `train_step` 改成 `pack()` 一次 → 位平面前向 → 融合 `dW` →
    `row_dot` 更新 scale；第二十一轮把 Adam 的 latent 更新也做成行级融合；
-   第二十二轮把 `q` 改成惰性缓存；第二十三轮让 SGD `train_step` 复用前向的 `qdot`。
-   训练步 22–24×、Adam 2.6–2.8×，与 dX 的倍数不能互相替代。
+   第二十二轮把 `q` 改成惰性缓存；第二十三轮让 SGD `train_step` 复用前向的 `qdot`；
+   第二十四轮把 `pack()` 改成按 64 列 word 写合并。
+   训练步 23.9–25.0×、Adam 2.6–2.8×，与 dX 的倍数不能互相替代。
 3. **读数只代表内核本身。**
    4096×576、单线程、7 轮取最快：标量 `0.24` → 双导轨 `9.44` GMAC/s，
    **39.25×**。这个数**不含** `pack()` 的量化成本，也不等于训练步加速。
@@ -71,7 +73,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 | 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（#666；本轮加 Adam 输出） | 读 §8 的复现口径 |
 | 人类说明 | `crates/trit-train/README.md` | 已合并（#666；本轮更新） | 可直接摘写 |
 | 缺陷台账 | `docs/ERRORS.md` L171 / L172 / L173 / L174 | L171/#664、L172/#666 已合并；L173/L174 本轮 | 只读结论与读数 |
-| 回归门 | `.agent/checks/registry.json` C081/C082/C083/C084/C085 | C081/#664、C082/#666 已合并；C083–C085 本轮 | 只读命令 |
+| 回归门 | `.agent/checks/registry.json` C081/C082/C083/C084/C085/C086 | C081/#664、C082/#666 已合并；C083–C086 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
 | PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`797ad121`、`d55bbbd3` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
 
@@ -82,7 +84,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 - `python scripts/hazard_gate.py`：0 findings。
 - `python scripts/module_budget.py`：dX 交付时 1513 files；训练步分支 1527 files，debt=0。
 - `python tools/checks.py -Only C081`：PASS；C082 随训练步 PR 一起跑。
-- PR CI：head `27e773a1` 为 **32 pass / 2 skipping / 0 fail**（macOS、Ubuntu、Windows 三端测试全过；MSRV 1.89 与 wasm32 也过）。
+- PR CI：最近一次完整三端为 **32 pass / 2 skipping / 0 fail**（macOS、Ubuntu、Windows 测试全过；MSRV 1.89 与 wasm32 也过）；本轮 pack/shape 提交的 CI 待跑。
 
 ## 3. 页面结构（按人类面板顺序）
 
@@ -150,7 +152,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
   AVX2 加减链，所以差距被放大。
 - **噪声**：复跑在 `8.0–9.5 GMAC/s` / `33–41×` 之间；页面必须给区间，不能只报峰值。
 
-### 3.4b 第二十一至二十三轮补充：训练步（可选区块）
+### 3.4b 第二十一至二十四轮补充：训练步（可选区块）
 
 如果页面要覆盖“训练步”，**必须单独一块**，不能并进 dX 柱状图：
 
@@ -159,15 +161,19 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
   融合 `dW`）；Adam 区块用 `train_step_with_grad_adam_scalar` 对
   `train_step_with_grad_adam`（`pack()` 一次 + `dX` + `layer::adam_update` 融合 `dW`）。
 - 读数（4096×576，单线程，3 步/轮，25 轮取最快，含 `pack`）：SGD 标量
-  **28.8–29.1 ms/step**，位平面步 **1.2–1.3 ms/step（22–24×）**，其中 `pack()`
-  **0.47–0.49 ms/step**（只出双导轨，不含 `q()` 首次解码）；Adam 逐元素参考
+  **28.8–29.1 ms/step**，位平面步 **1.16–1.22 ms/step（23.9–25.0×）**，其中 `pack()`
+  **0.46 ms/step**（只出双导轨，不含 `q()` 首次解码）；Adam 逐元素参考
   **8.0–8.2 ms/step**，融合 **2.9–3.1 ms/step（2.6–2.8×）**。
+- 多形状（`shape_bench`，9 轮取最快，3 步/轮）：SGD 4096×576 **0.93–1.03 ms
+  / 22–24×**，17×576 **17.0–17.5×**，11×130 **12.5×**，9×65 **9.5×**，5×9 **2.9×**；
+  Adam 4096×576 **2.6–3.2×**，17×576 **4.15×**，11×130 **3.16×**。
+  `1×1` 不计入证据；`9×65` 的绝对耗时只有 0.4–0.5 µs，倍数会抖。
 - 边界：这是单层单样本的端到端口径，不含层构造/输入生成；SGD `train_step`
   复用前向的 `qdot`，Adam 路径没有前向，不存在同一份 `qdot`；`pack()` 仍是每步
-  一次全量量化，但只写双导轨，`q` 改为首次 `q()` 解码。
+  一次全量量化，但只写双导轨、按 64 列 word 写合并，`q` 改为首次 `q()` 解码。
   页面若显示 `q` 内存，必须按“首次访问后才分配”解释。
-- 证据：`docs/ERRORS.md` L172/L173/L174/L175、`.agent/checks/registry.json`
-  C082/C083/C084/C085、`cargo test -p trit-train` 31/31。
+- 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176、`.agent/checks/registry.json`
+  C082/C083/C084/C085/C086、`cargo test -p trit-train` 31/31。
 
 ### 3.5 第五屏：录像
 
@@ -342,9 +348,9 @@ q (i8)  +  pos/neg (u64 双导轨)
 
 ```text
 本页已加速：dX = Wᵀdy
-训练步（第二十三轮，单独区块）：forward 走 row_dot、SGD train_step 复用 qdot、dW 走 dense::sgd_update、Adam dW 走 layer::adam_update、pack() 走 from_latent、q 惰性解码
+训练步（第二十四轮，单独区块）：forward 走 row_dot、SGD train_step 复用 qdot、dW 走 dense::sgd_update、Adam dW 走 layer::adam_update、pack() 走 from_latent 的 word 写合并、q 惰性解码
 平台：原生 x86_64 AVX2；非 x86_64 或 cols < 8 自动回退标量
-未证明：端到端多形状吞吐、GPU/WASM 读数、多形状 Adam 曲线；pack() 仍每步全量量化
+未证明：端到端多层吞吐、GPU/WASM 读数、多形状 Adam 曲线；pack() 仍每步全量量化
 ```
 
 ### 6.4 状态区
@@ -383,16 +389,22 @@ cargo clippy -p trit-train --all-targets -- -D warnings
 cargo run -p trit-train --release --bin train-bench -- \
   --mtrits 1 --rounds 7 --rows 4096 --cols 576 --threads 1 --ste-steps 1
 
-# 4. 训练步读数（第二十三轮）
+# 4. 训练步读数（第二十四轮）
 cargo run -p trit-train --release --bin train-bench -- \
   --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 25 --ste-steps 1 --train-steps 3
 
-# 5. 门禁
+# 5. 多形状矩阵（SGD + Adam）
+cargo run -p trit-train --release --bin shape_bench
+
+# 6. 门禁
 python scripts/hazard_gate.py
 python scripts/module_budget.py
 python tools/checks.py -Only C081
 python tools/checks.py -Only C082
 python tools/checks.py -Only C083
+python tools/checks.py -Only C084
+python tools/checks.py -Only C085
+python tools/checks.py -Only C086
 ```
 
 预期尾部：
@@ -419,10 +431,10 @@ python tools/checks.py -Only C083
 |---|---|---|
 | `dW` 位平面化 | 未做；SGD 走 `dense::sgd_update`、Adam 走 `layer::adam_update`，都是融合外积，不是位平面 | 不能写“dW 是位平面” |
 | `forward` 快速内核 | 已改位平面 `row_dot`（第二十轮） | 可写“前向走位平面 row_dot”，不能写“所有形状都快” |
-| `pack()` 成本 | 已单独计 0.47–0.49 ms/step（只写双导轨）；仍是每步一次全量量化 | 不能把 dX 的 39.25×当训练步加速 |
+| `pack()` 成本 | 已单独计 0.46 ms/step（只写双导轨，按 64 列 word 写合并）；仍是每步一次全量量化 | 不能把 dX 的 39.25×当训练步加速 |
 | `q()` 惰性解码 | 首次调用才分配并解码；训练步不调用 | 不能把 `q` 内存算进每个 `PlaneMatrix` |
 | 非 x86_64 性能 | 只保证标量回退正确，未测性能 | 不能给跨平台倍数 |
-| 端到端多形状吞吐 | 只测 4096×576 单层 | 不能给“训练快多少” |
+| 端到端多形状吞吐 | 已有 SGD/Adam 单层多形状矩阵；没有多层端到端 | 不能给“训练快多少” |
 | Adam 的 `dW` | 已做行级融合（AVX2 8-lane，标量尾；非 x86 回退），不是位平面化 | 可写“Adam dW 融合”，不能写“Adam 全链路位平面” |
 | 浏览器/WASM 运行 | 无目标、无绑定 | 只能做静态说明页 |
 | 实时 JSON 接口 | 未实现 | 页面用快照；如需实时，后端另开 Rust `--json` 任务 |

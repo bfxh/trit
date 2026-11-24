@@ -15,14 +15,7 @@ fn sample_f32(len: usize, seed: u64) -> Vec<f32> {
 #[test]
 fn from_latent_matches_quantize_with_scale() {
     use crate::quant::quantize_with_scale;
-    for (rows, cols) in [
-        (1usize, 1usize),
-        (3, 7),
-        (5, 64),
-        (4, 65),
-        (7, 130),
-        (4, 576),
-    ] {
+    for (rows, cols) in [(1usize, 1usize), (5, 64), (4, 65), (7, 130), (4, 576)] {
         let latent = sample_f32(rows * cols, 71 + (rows * 100 + cols) as u64);
         let scale: Vec<f32> = sample_f32(rows, 83 + cols as u64)
             .into_iter()

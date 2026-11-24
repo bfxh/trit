@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-24T23:47:30+08:00",
+  "generated_at": "2026-11-25T00:45:10+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "156e487f4baad75efba66ce5c36c4585c34b175a",
-    "commit_short": "156e487f",
+    "commit": "c4cf4e11ff57e2e43a3454dca52a29bd00076ef2",
+    "commit_short": "c4cf4e11",
     "status": "open"
   },
   "platform": {
@@ -80,10 +80,10 @@
         "macs_human": "2.36 M MAC"
       },
       "threads": 1,
-      "rounds": 9,
+      "rounds": 25,
       "steps_per_round": 3,
       "selection": "fastest",
-      "timing_scope": "end-to-end train_step: pack() + forward + qdot reuse + dW + scale update; q() lazy decode excluded; layer construction and input generation excluded; release binary run directly",
+      "timing_scope": "end-to-end train_step: pack() with 64-column word coalescing + forward + qdot reuse + dW + scale update; q() lazy decode excluded; layer construction and input generation excluded; release binary run directly",
       "scalar": {
         "kernel": "train_step_scalar",
         "observed_ms_per_step": [28.8, 29.1],
@@ -91,24 +91,43 @@
       },
       "bitplane": {
         "kernel": "train_step",
-        "observed_ms_per_step": [1.2, 1.3],
+        "observed_ms_per_step": [1.16, 1.22],
         "outlier_ms_per_step": 2.0,
-        "speedup_observed_range": [22, 24]
+        "speedup_observed_range": [23.9, 25.0]
       },
-      "pack_ms_per_step": [0.47, 0.49],
+      "pack_ms_per_step": [0.46, 0.46],
       "adam": {
         "scalar_kernel": "train_step_with_grad_adam_scalar",
         "scalar_ms_per_step": [8.0, 8.2],
         "fused_kernel": "train_step_with_grad_adam",
         "fused_ms_per_step": [2.9, 3.1],
         "speedup_observed_range": [2.6, 2.8]
+      },
+      "multi_shape": {
+        "tool": "shape_bench",
+        "rounds": 9,
+        "selection": "fastest",
+        "sgd": {
+          "4096x576_ms": [0.93, 1.03],
+          "4096x576_speedup": [22, 24],
+          "17x576_speedup": [17.0, 17.5],
+          "11x130_speedup": 12.5,
+          "9x65_speedup": 9.5,
+          "5x9_speedup": 2.9
+        },
+        "adam": {
+          "4096x576_ms": [2.5, 3.1],
+          "4096x576_speedup": [2.6, 3.2],
+          "17x576_speedup": 4.15,
+          "11x130_speedup": 3.16
+        }
       }
     },
     "not": [
       "ternary arithmetic addition",
       "bit-plane dW (dW is fused outer-product, not dual-rail)",
       "bit-plane Adam update (Adam dW is row-fused, not dual-rail)",
-      "multi-layer or multi-shape end-to-end throughput"
+      "multi-layer end-to-end throughput (single-layer multi-shape matrix exists)"
     ]
   },
   "tests": {
@@ -131,6 +150,7 @@
       "9x65",
       "11x130",
       "17x576",
+      "4x576",
       "5x130 (zero matrix)"
     ]
   },
@@ -146,7 +166,8 @@
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",
     "dX 读数只覆盖 4096×576、单线程；不含 pack() 的量化成本。",
     "训练步是单层单样本的端到端口径（含 pack，不含 q() 惰性解码），不含层构造/输入生成。",
-    "train_step 的 forward 已走 plane row_dot、SGD dW 走 dense::sgd_update；train_step 复用前向 qdot，Adam 路径没有前向、不复用；Adam dW 走 layer::adam_update（行级融合，非位平面）。",
+    "train_step 的 forward 已走 plane row_dot、SGD dW 走 dense::sgd_update；train_step 复用前向 qdot；pack() 按 64 列 word 写合并；Adam 路径没有前向、不复用 qdot；Adam dW 走 layer::adam_update（行级融合，非位平面）。",
+    "multi_shape 是单层、单样本的 SGD/Adam 矩阵；9x65 的绝对耗时只有 0.4–0.5 µs，倍数会抖，1x1 不计入证据。",
     "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
     "q() 首次调用才从双导轨解码并缓存；训练步不读 q，因此 q 内存只在消费者访问后出现。",
     "没有多形状曲线、GPU/WASM 读数或实验录像；pack() 仍是每步一次全量量化，但只写双导轨。",

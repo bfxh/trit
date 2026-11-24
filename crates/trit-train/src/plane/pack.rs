@@ -1,17 +1,11 @@
-//! `PlaneMatrix` 的量化打包：从 latent + per-row scale 一步生成双导轨；`q` 惰性解码。
-//!
-//! 这是训练步的入口热点：`pack()` 每步跑一次。`from_latent` 在 x86_64/AVX2 上
-//! 每 8 列做一次除法、round、clamp，并用 `movemask` 直接写一个字节的
-//! `pos` / `neg` 掩码；非 x86 或列数 < 8 走标量参考。
-
+//! `PlaneMatrix` 量化打包：latent + per-row scale 生成双导轨，`q` 惰性解码。
+//! 训练步热点；AVX2 每 8 列除法/round/clamp + `movemask`，非 x86 或列数 < 8 走标量。
 #[cfg(target_arch = "x86_64")]
 use super::backward::has_avx2;
 use super::{PlaneMatrix, TRITS_PER_WORD};
 impl PlaneMatrix {
-    /// 从 latent + 每行 scale 一步量化并打包双导轨；`q` 首次 `q()` 时解码。
-    ///
-    /// 语义与 `quantize_with_scale(row, scale[r])` 完全一致：
-    /// `q = clamp(round(w / scale), -1, 1)`，`scale` 先抬到 `f32::MIN_POSITIVE`。
+    /// 从 latent + 每行 scale 量化打包双导轨；`q` 惰性解码。
+    /// 语义同 `quantize_with_scale`：`q = clamp(round(w / scale), -1, 1)`，scale 抬到 `MIN_POSITIVE`。
     #[inline]
     pub fn from_latent(latent: &[f32], scale: &[f32], rows: usize, cols: usize) -> Self {
         assert_eq!(latent.len(), rows * cols, "latent 长度必须是 rows * cols");
@@ -59,8 +53,7 @@ mod simd {
 
     use super::PlaneMatrix;
 
-    /// 从 latent + per-row scale 一步量化并打包：每 8 列一次除法、round、clamp，
-    /// 用 `movemask` 直接写一个字节的 `pos` / `neg` 掩码。
+    /// 每 8 列除法/round/clamp，`movemask` 写 `pos`/`neg` 掩码。
     ///
     /// # Safety
     /// 需要 AVX2；`latent.len() == rows * cols`，`scale.len() == rows`。

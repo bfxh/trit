@@ -1601,6 +1601,26 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C086",
+      "title": "trit-train pack 按 64 列 word 写合并",
+      "kind": "cmd",
+      "covers": [
+        "L176"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/plane/pack/tests.rs",
+        "crates/trit-train/src/bin/shape_bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T00:27:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
