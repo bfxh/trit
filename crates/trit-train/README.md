@@ -53,15 +53,17 @@ scale 的梯度会绕回量化门控，训练不稳。
 `TernaryLinear::pack()` 把当前 latent 量化一次，按行打成 `pos`/`neg` 两条导轨
 （`PlaneMatrix`，1 trit = 2 bit），现在**只保留为公开检查/对拍入口**。训练实际走
 `plane::fused::backward`：每行量化一次，3 个 `q` 掩码同时驱动 `dX` 与 `qdot`，
-不再分配双导轨，也不再用 `row_dot` 扫第二遍。旧位平面路径的语义是：
+不再分配双导轨，也不再用 `row_dot` 扫第二遍。带梯度 SGD 更进一步走
+`plane::fused::backward_step`，把 STE `dW`/scale 更新也并进同一遍。旧位平面路径的语义是：
 
 1. 对第 `r` 行取 `coeff = dy[r] * scale[r]`；
 2. 每 8 列取一个字节的 `pos`/`neg` 掩码，用 AVX2 把 `coeff` 加/减到 `dX` 的 8 个 lane；
 3. 4 个行累加器打散依赖链，尾部按标量补齐。
 
 `PlaneMatrix::input_grad_scalar` 与 `row_dot_scalar` 保留，测试逐尺寸对拍
-`fused::backward` 的 `dX`/`qdot`。边界：这里只做「掩码选符号 + f32 累加」，
-**不是三进制算术加法**；非 x86_64 或列数小于 8 时自动回退标量。
+`fused::backward` 的 `dX`/`qdot`、`fused::backward_step` 的 `dX`/latent/scale。
+边界：这里只做「掩码选符号 + f32 累加」，**不是三进制算术加法**；非 x86_64 或
+列数小于 8 时自动回退标量。
 
 ## 训练步：SGD 量化点积融合
 
@@ -77,9 +79,15 @@ scale 的梯度会绕回量化门控，训练不稳。
 `pack()` 已退出训练/前向生产路径；`forward_scalar` / `train_step_scalar` 保留为
 标量对拍与基准路径。
 
-**Adam 训练步**：`train_step_with_grad_adam` 与 `train_step_with_grad` 共用
-`fused::backward`（量化 + `dX` + `qdot` 一遍），`layer::adam_update` 每 8 lane
-一次算 STE 门、一阶/二阶矩、偏置校正和参数更新，短行、尾部或非 AVX2 走标量。
+**带梯度 SGD**：`train_step_with_grad` 走 `fused::backward_step`，每行只读一次
+latent，量化 `q` 后同时算 `dX`、`qdot`、STE `dW` 与行末 scale 更新；不再
+`fused::backward` → `dense::sgd_update` 两遍。STE 门控和 `dense::sgd_update` 的
+8-lane 路径相同（正数 `w/s`、短行/尾部用 `Ste::backward`），`dX`/`qdot` 的累加
+顺序也与 `fused::backward` 相同。
+
+**Adam 训练步**：`train_step_with_grad_adam` 仍走 `fused::backward`（量化 + `dX`
++ `qdot` 一遍）+ `layer::adam_update`（每 8 lane 一次算 STE 门、一阶/二阶矩、
+偏置校正和参数更新；短行、尾部或非 AVX2 走标量）两遍。
 `train_step_with_grad_adam_scalar` 保留旧的 `pack()` + 逐元素 Adam 路径，既做对拍
 也做基准。
 
@@ -127,9 +135,20 @@ scale 的梯度会绕回量化门控，训练不稳。
 不把高载单次当稳定值。`forward()` 的复算见 `forward_probe`：**0.62 ms → 0.36 ms
 （1.7×）**，4096/4096 位相等。
 
-反向也已去掉 `pack()`：`train_step_with_grad` 与 Adam 共用
-`fused::backward::backward`，一次量化同时产出 `dX` 和 `qdot`，不再
-`pack()` → `input_grad` → `row_dot`。复算 example
+带梯度 SGD（4096×576，单线程，3 步/轮，同轮交替 A/B 5 组，9 轮取最快）：
+
+| 路径 | ms/step | 相对 |
+|---|---:|---:|
+| 旧两遍（`fused::backward` + `dense::sgd_update`） | 0.92–1.32 | 1.00× |
+| 单遍（`fused::backward_step`） | 0.68–0.76 | **1.22–1.74×（中位 1.38×）** |
+
+`train-bench` 的「带梯度 SGD」段直接复算这一行；对拍用例覆盖
+`(1,1)/(4,7)/(5,9)/(6,63)/(8,130)/(3,9 零/负 scale)/(4,576)` × `Identity/Clipped/Soft`，
+`dX`、latent、scale 与旧两遍逐位相等。
+
+反向也已去掉 `pack()`：Adam 走 `fused::backward::backward`，一次量化同时产出 `dX`
+和 `qdot`，不再 `pack()` → `input_grad` → `row_dot`；带梯度 SGD 走
+`fused::backward_step::backward_step`，在同一遍里再加上 `dW`。复算 example
 （`cargo run -p trit-train --release --example fused_backward_probe`，4096×576）
 旧路径 **0.747–0.759 ms** → 新 **0.430–0.441 ms（1.72–1.74×）**，
 `dX` 576/576、`qdot` 4096/4096 逐位相等。
@@ -206,7 +225,7 @@ SGD 的 `2×7` 只有 2.0×，仍是计时噪声；`5×9` 放大到 3.0–4.9×�
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 31 个（位平面/打包/惰性 q/dW/Adam 对拍；量化/STE 的 6 个测试在 trit-learn）
+cargo test -p trit-train                       # 34 个（位平面/打包/惰性 q/dW/Adam/单遍更新对拍；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3 --adam-scalar
@@ -215,10 +234,11 @@ cargo run -p trit-train --release --bin shape_bench
 
 ## 边界与下一步
 
-- 前向点积：`forward()` 与 SGD `train_step` 走 **`fused::forward_dot`**；with_grad/Adam
-  的 `dX` 与 scale 梯度走 **`fused::backward`**，两者都不再构造双导轨。更快的掩码内核
-  在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到可发布 crate 再复用；
-  本轮没有跨 crate 依赖。
+- 前向点积：`forward()` 与 SGD `train_step` 走 **`fused::forward_dot`**；Adam 的
+  `dX` 与 scale 梯度走 **`fused::backward`**；带梯度 SGD 走
+  **`fused::backward_step`**（`dX`/`qdot`+STE `dW`/scale 同一遍），都不再构造双导轨。
+  更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到
+  可发布 crate 再复用；本轮没有跨 crate 依赖。
 - 反向 `dX`/`qdot`、前向、SGD `dW` 与 Adam `dW` 都已融合；`forward()`、SGD `train_step`、
   `train_step_with_grad`、Adam 四条路径都不再 `pack()`。`pack()` 只剩公开检查/对拍用途，
   `q` 缓存改为首次 `q()` 时惰性解码；训练步不读 `q`，因此不付这笔写回。

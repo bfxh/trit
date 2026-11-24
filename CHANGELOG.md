@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed（第二十八轮：带梯度 SGD 的 `dX`/`qdot`/`dW` 单遍）
+
+- `train_step_with_grad` 不再走 `fused::backward` → `dense::sgd_update` 两遍：
+  新增 `plane/fused/backward_step.rs`，每行量化一次，同一遍同时算 `dX`、`qdot`、
+  STE 更新 latent，并在行末更新 scale。STE 门控与 `dense::sgd_update` 的 8-lane
+  路径相同（`w/s` 正数除法、短行/尾部走 `Ste::backward`），`dX`/`qdot` 的累加
+  分组和顺序也与 `fused::backward` 相同。
+- 对拍：`(1,1)/(4,7)/(5,9)/(6,63)/(8,130)/(3,9 零/负 scale)/(4,576)` ×
+  `Identity/Clipped/Soft`，`dX`、latent、scale 与旧路径逐位相等；测试 **33→34**。
+- 4096×576 同轮交替 A/B 5 组（3 步/轮，9 轮取最快）：旧两遍
+  **0.92–1.32 ms/step** → 新单遍 **0.68–0.76 ms/step**（中位 **0.98→0.71**，
+  约 **1.38×**）。`train-bench` 增加「带梯度 SGD」段，默认输出
+  `train_step_with_grad` 读数。
+- Adam 的 `fused::backward` → `layer::adam_update` 仍是两遍，本轮未改；`pack()`
+  仍只在公开检查/对拍与标量参考路径出现。缺陷台账新增 L180/C090，
+  `fused/backward_step.rs` 加入 hazard allowlist。
+
 ### Changed（第二十七轮：反向 `dX`+`qdot` 单遍，训练彻底去掉 `pack`）
 
 - 新增 `plane/fused/backward.rs`：每行量化一次，同时算 `dX` 与 `qdot`，不再为
