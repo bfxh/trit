@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Changed（第十八轮：DeliveryReceipt 改为纯 Rust 持久化）
+
+- 新增 `crates/trit-orch/src/delivery.rs`：把 `receipt::DeliveryReceipt` 的内存四态
+  扩成可审计的落盘账本。账本 `trit-delivery/1` 绑定 `packet_id + packet_sha256 +
+  from/to`；每条记录带 `at/actor/evidence/note`；顺序不可跳，`sent` 只能由 `from`
+  登记，后三态只能由 `to` 登记，`acted` 必须带仓库相对证据，时间倒退与包字节改写
+  一律拒绝。
+- 新增 `trit-orch delivery` CLI（`sent/attach/deliver/read/act/advance/verify/check/show/gate`）：
+  stdin 一份 JSON，账本默认写 `<root>/.agent/delivery/<packet-id>.json`；`gate` 只在
+  交接门为 `True` 时补 `sent+delivered`，**绝不自动写 read/acted**；`verify` 输出
+  `complete/incomplete/missing/invalid` 并可用包文件复核 SHA-256；`check` 是只读预检，
+  一次返回 `gate/ready/receipt`，不落账。
+- 删除 `tools/delivery_receipt.py` 与 `tools/selftest.ps1` 的 AW1–AW3：不再维护
+  Python DeliveryReceipt 或 Python attach 路径；相关宿主集成与文档统一指向 Rust
+  `trit-orch delivery`。Python 全仓自测由 **719→716**（去掉 AW 3 项），Rust 侧
+  `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` **9/9**。
+- 台账：C079 改为 `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check`；
+  `docs/engineering/AGENT-DELIVERY.md` 重写为 Rust 用法/边界；`docs/ERRORS.md` L169、
+  `AGENT-COORDINATION.md`、`docs/README.md` 索引同步。
+
 ### Changed（第十七轮：直算 IR 的交换律规范化与死代码消除）
 
 - `direct` 的 lowering 拆到 `crates/trit-build/src/direct/lower.rs`；`&` / `|` / `^` / `<=>`
@@ -15,7 +35,6 @@
 - `BUILD_VERSION` 5 → 6：`direct.c` 的语句顺序可能变化，旧缓存必须失效。
 - 测试：新增 `direct/lower/tests.rs` 5 条（表对称性、镜像子式共用、操作数定序、孤儿压缩、
   真实表达式无孤儿），单测 38 → 43。
-
 ### Added（第十六轮：TTIR → C 直算后端）
 
 - `trit-build` 新增 `--backend table|direct|both`（默认 `table`，旧产物逐字节不变）：
@@ -35,7 +54,6 @@
 - 测试：`direct/tests.rs` 4 条（六张表逐格对拍 `eval`、IR 全赋值对拍、CSE、渲染形状），
   `tests/direct_c.rs` 6 条（direct 产物/默认 table 不变/both 与 table 的 `truth.csv`+`tritbin`
   逐字节相同/缓存键含后端/Verilog 边界/`--verify-c` 27 行；最后一条只在 Unix 跑）。
-
 ### Added（第十五轮：交接包 DeliveryReceipt 四态账本）
 
 - 新增 `tools/delivery_receipt.py`：`sent → delivered → read → acted` 四态账本，

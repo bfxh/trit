@@ -2747,6 +2747,10 @@
       "lines": 29
     },
     {
+      "file": "crates/trit-orch/src/bin/cli_delivery/mod.rs",
+      "lines": 125
+    },
+    {
       "file": "crates/trit-orch/src/bin/cli_finish/core.rs",
       "lines": 106
     },
@@ -2829,6 +2833,14 @@
     {
       "file": "crates/trit-orch/src/context.rs",
       "lines": 326
+    },
+    {
+      "file": "crates/trit-orch/src/delivery.rs",
+      "lines": 479
+    },
+    {
+      "file": "crates/trit-orch/src/delivery/check.rs",
+      "lines": 44
     },
     {
       "file": "crates/trit-orch/src/digest.rs",
@@ -3253,6 +3265,18 @@
     {
       "file": "crates/trit-orch/tests/counts.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-orch/tests/delivery.rs",
+      "lines": 165
+    },
+    {
+      "file": "crates/trit-orch/tests/delivery_check.rs",
+      "lines": 131
+    },
+    {
+      "file": "crates/trit-orch/tests/delivery_cli.rs",
+      "lines": 173
     },
     {
       "file": "crates/trit-orch/tests/durable.rs",
