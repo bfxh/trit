@@ -102,7 +102,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 - `python scripts/hazard_gate.py`：0 findings。
 - `python scripts/module_budget.py`：dX 交付时 1513 files；第二十八轮分支 **1539 files，debt=0**。
 - `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090`：C081 已合并；C082–C090 随分支跑。
-- PR CI：`08d81853` 上 **32 pass / 2 skipping / 0 fail，mergeState CLEAN**（代码 `c64fe0c7`、文档 `08d81853`；三端测试与结构门禁全过）。
+- PR CI：代码+测试 head `c50a3e12` 上 **32 pass / 2 skipping / 0 fail，mergeState CLEAN**（代码 `a62dd419`、文档 `c50a3e12`；三端测试与结构门禁全过，含 macOS aarch64 标量对拍）；本台账提交仅同步 CI 读数，不再改代码。
 
 ## 3. 页面结构（按人类面板顺序）
 

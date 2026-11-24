@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T04:35:00+08:00",
+  "generated_at": "2026-11-25T04:55:00+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -244,9 +244,9 @@
     "pr_checks_pass": 32,
     "pr_checks_skipping": 2,
     "pr_checks_pending": 0,
-    "pr_checks_fail": 1,
+    "pr_checks_fail": 0,
     "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"],
-    "note": "dd9e2575: 32 pass / 2 skip / 1 fail; macOS aarch64 scalar dX 1 ULP mismatch, fixed at a62dd419 (rerun pending)"
+    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at code+test head c50a3e12 (code a62dd419); macOS aarch64 scalar comparison included; later docs-only commit only records this result"
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",
