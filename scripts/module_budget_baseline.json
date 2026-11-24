@@ -4900,7 +4900,11 @@
     },
     {
       "file": "crates/trit-train/src/layer/adam.rs",
-      "lines": 305
+      "lines": 218
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/tests.rs",
+      "lines": 129
     },
     {
       "file": "crates/trit-train/src/layer/packed_tests.rs",

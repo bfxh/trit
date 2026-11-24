@@ -114,9 +114,9 @@ Adam 路径，既做对拍也做基准。
 
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
-| 标量参考（`train_step_scalar`） | 29–30 | 1.00× |
-| 位平面步（`train_step`） | 1.8–1.9 | **16–17×** |
-| 其中 `pack()` | 0.74–0.76 | — |
+| 标量参考（`train_step_scalar`） | 25.8–30 | 1.00× |
+| 位平面步（`train_step`） | 1.8–1.9 | **13.8–17.1×** |
+| 其中 `pack()` | 0.73–0.76 | — |
 
 同一轮 `dX` 读数在 8.0–9.5 GMAC/s；训练步是端到端口径，含打包、前向、`dW`
 和 scale 更新，不含层构造/输入生成。偶发的 2.0 ms 以上是热降频单次，不当作稳定值。
@@ -125,7 +125,7 @@ Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`
 
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
-| 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.6–9.2 | 1.00× |
+| 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.2–9.2 | 1.00× |
 | 行级融合（`train_step_with_grad_adam`） | 3.1–3.7 | **2.3–2.8×** |
 
 两条路径用同一条基准复算：融合是默认输出，参考路径加 `--adam-scalar`。
@@ -155,7 +155,7 @@ Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 29 个（位平面/打包/dW/Adam 对拍；量化/STE 的 6 个测试在 trit-learn）
+cargo test -p trit-train                       # 30 个（位平面/打包/dW/Adam 对拍；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3 --adam-scalar

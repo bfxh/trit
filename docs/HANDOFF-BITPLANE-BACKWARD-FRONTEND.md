@@ -4,8 +4,8 @@
 > 第二十轮训练步已并入 main（`9d1f0cc6`，#666；读数区间修正 `365a39d5`，#667）：`forward`
 > 改位平面 `row_dot`、SGD `dW` 走 `dense::sgd_update`、`pack()` 改 `from_latent`。第二十一轮
 > 把 Adam 的 latent 更新也做成行级融合（`layer::adam_update`），训练步读数
-> **1.8–1.9 ms/step（16–17×）**，`pack()` **0.74–0.76 ms**，Adam **3.1–3.7 ms/step
-> （2.3–2.8×，逐元素参考 8.6–9.2 ms）**，测试 29。该读数属于“训练步”区块，
+> **1.8–1.9 ms/step（13.8–17.1×）**，`pack()` **0.73–0.76 ms**，Adam **3.1–3.7 ms/step
+> （2.3–2.8×，逐元素参考 8.2–9.2 ms）**，测试 30（含整步对拍）。该读数属于“训练步”区块，
 > **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
 >
 > 本文的“前端”按 [`reference/ATLAS.md`](reference/ATLAS.md) 的定义：**浏览器 playground / WASM 面**，
@@ -21,7 +21,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/8c4886f0、dX 21/21、训练步 L172/C082 与 L173/C083、29/29、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/8c4886f0、dX 21/21、训练步 L172/C082 与 L173/C083、30/30、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -49,7 +49,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/8c4886f0
 2. **dX 读数只覆盖 `dX`；同分支训练步另有优化。**
    第二十轮把 `train_step` 改成 `pack()` 一次 → 位平面前向 → 融合 `dW` →
    `row_dot` 更新 scale；第二十一轮把 Adam 的 latent 更新也做成行级融合。
-   训练步 16–17×、Adam 2.3–2.8×，与 dX 的倍数不能互相替代。
+   训练步 13.8–17.1×、Adam 2.3–2.8×，与 dX 的倍数不能互相替代。
 3. **读数只代表内核本身。**
    4096×576、单线程、7 轮取最快：标量 `0.24` → 双导轨 `9.44` GMAC/s，
    **39.25×**。这个数**不含** `pack()` 的量化成本，也不等于训练步加速。
@@ -73,7 +73,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/8c4886f0
 
 **验证读数（dX 同一提交 / 第二十一轮训练步）**
 
-- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步与 Adam 对拍 **29 passed / 0 failed**。
+- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步、Adam 与整步对拍 **30 passed / 0 failed**。
 - `cargo clippy -p trit-train --all-targets -- -D warnings`：通过。
 - `python scripts/hazard_gate.py`：0 findings。
 - `python scripts/module_budget.py`：dX 交付时 1513 files；训练步分支 1519 files，debt=0。
@@ -155,13 +155,13 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/8c4886f0
   `row_dot` 更新 scale）；Adam 区块用 `train_step_with_grad_adam_scalar` 对
   `train_step_with_grad_adam`（`pack()` 一次 + `dX` + `layer::adam_update` 融合 `dW`）。
 - 读数（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`）：SGD 标量
-  **29–30 ms/step**，位平面步 **1.8–1.9 ms/step（16–17×）**，其中 `pack()`
-  **0.74–0.76 ms/step**；Adam 逐元素参考 **8.6–9.2 ms/step**，融合
+  **25.8–30 ms/step**，位平面步 **1.8–1.9 ms/step（13.8–17.1×）**，其中 `pack()`
+  **0.73–0.76 ms/step**；Adam 逐元素参考 **8.2–9.2 ms/step**，融合
   **3.1–3.7 ms/step（2.3–2.8×）**。
 - 边界：这是单层单样本的端到端口径，不含层构造/输入生成；Adam 只融合 latent 的
   逐元素更新，`pack()` 仍是每步一次全量量化。
 - 证据：`docs/ERRORS.md` L172/L173、`.agent/checks/registry.json` C082/C083、
-  `cargo test -p trit-train` 29/29。
+  `cargo test -p trit-train` 30/30。
 
 ### 3.5 第五屏：录像
 
@@ -412,7 +412,7 @@ python tools/checks.py -Only C083
 |---|---|---|
 | `dW` 位平面化 | 未做；SGD 走 `dense::sgd_update`、Adam 走 `layer::adam_update`，都是融合外积，不是位平面 | 不能写“dW 是位平面” |
 | `forward` 快速内核 | 已改位平面 `row_dot`（第二十轮） | 可写“前向走位平面 row_dot”，不能写“所有形状都快” |
-| `pack()` 成本 | 已单独计 0.74–0.76 ms/step；仍是每步一次全量量化 | 不能把 dX 的 39.25×当训练步加速 |
+| `pack()` 成本 | 已单独计 0.73–0.76 ms/step；仍是每步一次全量量化 | 不能把 dX 的 39.25×当训练步加速 |
 | 非 x86_64 性能 | 只保证标量回退正确，未测性能 | 不能给跨平台倍数 |
 | 端到端多形状吞吐 | 只测 4096×576 单层 | 不能给“训练快多少” |
 | Adam 的 `dW` | 已做行级融合（AVX2 8-lane，标量尾；非 x86 回退），不是位平面化 | 可写“Adam dW 融合”，不能写“Adam 全链路位平面” |

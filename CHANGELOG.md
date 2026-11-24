@@ -12,13 +12,15 @@
   一次写 8 个字节，不再逐个 `push`/`extend`；测试拆到 `plane/pack/tests.rs`。
 - `train-bench` 新增 Adam 训练步输出；默认跑融合路径，`--adam-scalar` 复算逐元素基线。
   读数（4096×576，单线程，3 步/轮，9 轮取最快，直接运行 release 可执行文件）：逐元素
-  Adam **8.6–9.2 ms/step**，行级融合 **3.1–3.7 ms/step（2.3–2.8×）**；同轮
-  `train_step` **1.8–1.9 ms/step（16–17×）**，其中 `pack()` **0.74–0.76 ms/step**
+  Adam **8.2–9.2 ms/step**，行级融合 **3.1–3.7 ms/step（2.3–2.8×）**；同轮
+  `train_step` **1.8–1.9 ms/step（13.8–17.1×）**，其中 `pack()` **0.73–0.76 ms/step**
   （上一轮 1.9–2.1 / 0.85–0.89）。
-- `cargo test -p trit-train` **27→29**（新增 Adam 行级内核的三种 STE × 四形状 ×
-  连续三步对拍，以及 `lr=0`）。模块预算新增 `layer/adam.rs`、`plane/pack/tests.rs`、
-  `bin/bench/adam_step.rs`、`bin/bench/adam_setup.rs`；`layer.rs` 与 `plane/pack.rs`
-  收紧；hazard gate 登记 `layer/adam.rs` 的 AVX2 运行时探测理由。
+- `cargo test -p trit-train` **27→30**（新增 Adam 行级内核的三种 STE × 四形状 ×
+  连续三步对拍、`lr=0`，以及 `pack + dX + dW + scale` 整步 × 三种 STE × 五形状 ×
+  连续三步对拍）。测试拆到 `layer/adam/tests.rs`。模块预算新增 `layer/adam.rs`、
+  `layer/adam/tests.rs`、`plane/pack/tests.rs`、`bin/bench/adam_step.rs`、
+  `bin/bench/adam_setup.rs`；`layer.rs` 与 `plane/pack.rs` 收紧；hazard gate
+  登记 `layer/adam.rs` 的 AVX2 运行时探测理由。
 - 边界：Adam 只融合 `dW` 的逐元素更新，`pack()` 仍是每步一次全量量化；
   没有多形状曲线、GPU/WASM 读数或多层端到端吞吐。
 

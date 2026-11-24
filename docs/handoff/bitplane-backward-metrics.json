@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-24T20:04:23+08:00",
+  "generated_at": "2026-11-24T21:15:46+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -56,9 +56,9 @@
     },
     "bitplane": {
       "kernel": "input_grad (AVX2 mask path)",
-      "latest_gmac_s": 9.44,
+      "latest_gmac_s": 9.31,
       "observed_range_gmac_s": [8.8, 9.8],
-      "speedup_latest": 39.25,
+      "speedup_latest": 39.85,
       "speedup_observed_range": [37, 41],
       "speedup_peak_observed": 40.96
     }
@@ -86,19 +86,19 @@
       "timing_scope": "end-to-end train_step: pack() + forward + dW + scale update; layer construction and input generation excluded; release binary run directly",
       "scalar": {
         "kernel": "train_step_scalar",
-        "observed_ms_per_step": [29, 30],
+        "observed_ms_per_step": [25.8, 30],
         "relative": 1.0
       },
       "bitplane": {
         "kernel": "train_step",
         "observed_ms_per_step": [1.8, 1.9],
         "outlier_ms_per_step": 2.0,
-        "speedup_observed_range": [16, 17]
+        "speedup_observed_range": [13.8, 17.1]
       },
-      "pack_ms_per_step": [0.74, 0.76],
+      "pack_ms_per_step": [0.73, 0.76],
       "adam": {
         "scalar_kernel": "train_step_with_grad_adam_scalar",
-        "scalar_ms_per_step": [8.6, 9.2],
+        "scalar_ms_per_step": [8.2, 9.2],
         "fused_kernel": "train_step_with_grad_adam",
         "fused_ms_per_step": [3.1, 3.7],
         "speedup_observed_range": [2.3, 2.8]
@@ -113,13 +113,13 @@
   },
   "tests": {
     "suite": "cargo test -p trit-train",
-    "passed": 29,
-    "training_step_passed": 29,
+    "passed": 30,
+    "training_step_passed": 30,
     "failed": 0,
     "before": 21,
-    "added": 8,
+    "added": 9,
     "training_step_before": 27,
-    "training_step_added": 2,
+    "training_step_added": 3,
     "coverage_shapes": [
       "1x1",
       "3x7",
@@ -128,6 +128,7 @@
       "6x63",
       "7x64",
       "8x65",
+      "9x65",
       "11x130",
       "17x576",
       "5x130 (zero matrix)"

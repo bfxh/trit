@@ -1544,6 +1544,7 @@
       ],
       "scope": [
         "crates/trit-train/src/layer/adam.rs",
+        "crates/trit-train/src/layer/adam/tests.rs",
         "crates/trit-train/src/layer.rs",
         "crates/trit-train/src/plane/pack.rs",
         "crates/trit-train/src/plane/pack/tests.rs",
