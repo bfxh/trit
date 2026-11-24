@@ -780,6 +780,22 @@
   （1,088 / 1,891 / 1,898 唯一句 / 各 1,000 对），不是 sentence-disjoint。
   逐配置读数与 bootstrap 已落为 `docs/research/data/wsp-budget-external-3set.tsv`
   （24 行）与 `wsp-budget-external-bootstrap.tsv`（54 行）。
+- **第二模型 L6 复验（M1.6）**：`all-MiniLM-L6-v2`（6 层/384 hidden）全量
+  STS 1,379 对；f32 `0.827406 / 0.820325`，纯 int3 `0.814594 / 0.810425`
+  （`−0.012813 / −0.009900`），纯 int4 `0.826061 / 0.819354`
+  （`−0.001346 / −0.000971`）。**L12 候选不能按层号搬**：绝对层号投影的
+  I10/K10K11/R12 都低于 L6 纯 int3（ΔS `−0.0011` 到 `−0.0033`）；输出端
+  对齐缩放的 R12 尾段 `3/30/3` 是 `−0.000100 / −0.000702`，10k CI
+  `[−0.004402, +0.004150]` / `[−0.005731, +0.004212]` 跨 0，只是中性。
+  L6 重扫 36 块后选出的 `5 int2/26 int3/5 int4` 为
+  `0.828687 / 0.821084`，相对纯 int3 `+0.014093 / +0.010660`（双 CI 过 0），
+  对纯 int4 `+0.002626 / +0.001731`（两个 CI 都跨 0）；两折 held-out 的
+  ΔS 为 `+0.009694 / +0.000707`，CI 都跨 0。3→2 伤害与 L12 后 6 层输出端
+  对齐（0.597 Spearman），3→4 收益不跟（−0.182）；36 块全表与候选读数见
+  `docs/research/data/wsp-budget-l6-perturb.tsv`（72 行）、
+  `wsp-budget-l6-candidates.tsv`（10 行）、`wsp-budget-l6-bootstrap.tsv`
+  （12 行）。结论：**块表有模型内信号，但没有一个 L12 布局能跨模型保住
+  增益；I10 只能算 L12 外部保守默认，不是跨模型默认。**
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
@@ -794,8 +810,8 @@
   STS13 各 1,000 对即由它导出；`test_surface` 登记后为 136 单位 / 3533 条 / 拦 0。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
   R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/§9.5 留一来源/
-  §10 外部三套复验/§11 下一步），`docs/research/WSP-ALT.md` §5.5，
-  `WSP-BERT6-RESULTS.md`，`docs/results/LESSONS.md` 第 16/17 条。
+  §10 外部三套复验/§11 L6 第二模型/§12 下一步），`docs/research/WSP-ALT.md` §5.5，
+  `WSP-BERT6-RESULTS.md` §3.16.9，`docs/results/LESSONS.md` 第 16/17/18 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
   `docs/results/LESSONS.md` 第 16 条。

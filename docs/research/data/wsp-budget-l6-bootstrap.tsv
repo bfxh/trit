@@ -1,0 +1,13 @@
+comparison	metric	delta	ci95_low	ci95_high	candidate_better_frac
+l6-native vs int3	pearson	+0.014093085	+0.007391910	+0.020620488	1.0000
+l6-native vs int3	spearman	+0.010659567	+0.003408386	+0.017886401	0.9984
+l6-native vs int4	pearson	+0.002626217	-0.006530830	+0.012206367	0.7126
+l6-native vs int4	spearman	+0.001730800	-0.008079896	+0.011897683	0.6386
+int4 vs int3	pearson	+0.011466868	+0.002790898	+0.019829694	0.9948
+int4 vs int3	spearman	+0.008928767	-0.000482390	+0.018221589	0.9690
+R12-tail vs int3	pearson	-0.000100248	-0.004401931	+0.004150484	0.4756
+R12-tail vs int3	spearman	-0.000701658	-0.005730719	+0.004211782	0.3911
+foldA trainA/testB	pearson	+0.010384	+0.001281	+0.019690	0.9863
+foldA trainA/testB	spearman	+0.009694	-0.000930	+0.020739	0.9644
+foldB trainB/testA	pearson	+0.004804	-0.004866	+0.014233	0.8390
+foldB trainB/testA	spearman	+0.000707	-0.010593	+0.011956	0.5496
