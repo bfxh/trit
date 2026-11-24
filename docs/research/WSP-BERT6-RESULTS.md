@@ -753,6 +753,14 @@ held-out。数据里 2,758 个句子 ID 全部唯一，按 pair 切分天然 sen
 模型复验，而不是继续修 4-bit 的偏差或宣称“3-bit 超过 4-bit”。详见
 `WSP-BUDGET-RESULTS.md` §9。
 
+M1.5 已经做了第一个外部复验：SICK-R 前 1,000 对、同一 L12。`R12` 和 `F5F7V7`
+都低于纯 int3（R12 `−0.004961 / −0.004868`），`K10K11` 反而双正
+（`+0.005282 / +0.005375`，10k CI 下界都过 0），且比 R12 高 `+0.010243`
+（CI 完全在 0 下）。所以 STS benchmark 上的 R12 是 in-sample/来源构成相关
+的点估计，不能当默认候选；K10K11 是更稳的同字节基线。SICK-R 句子跨 pair
+复用（1,088 唯一句 / 1,000 对），不是 sentence-disjoint，也只覆盖一个外部
+数据集。详见 `WSP-BUDGET-RESULTS.md` §10。
+
 ## 4. 未证栏
 
 - 基础对齐与逐层快照只有 8 句、`8×64` token；STS 读数另有 128 对与 1379 对两档，但都不是
@@ -766,8 +774,9 @@ held-out。数据里 2,758 个句子 ID 全部唯一，按 pair 切分天然 sen
   **没有进 WSP/TTX 容器，也没有导出/加载路径**，因此上面的字节数是估算不是落地格式。
 - 没有任务头（检索/分类），`cosine` 与 Pearson 不能直接换算成任务掉点。
 - BUDGET 的 `R12` 只在同一批 STS 1,379 对上选块并评测，没有 held-out、
-  sentence-disjoint 或第二模型；它的 Spearman 点估计高于纯 int4，但 50k CI 跨 0，
-  Pearson 仍低，不能当留出验证或“3-bit 超过 4-bit”的证据。
+  sentence-disjoint 或第二模型；外部 SICK-R 上 `R12`/`F5F7V7` 双负，只有
+  `K10K11` 双正且 10k CI 下界过 0。不能把 R12 的 STS 点估计当留出验证或
+  “3-bit 超过 4-bit”的证据；SICK-R 也只有一个外部数据集、句子跨 pair 复用。
 - GELU 用 erf 近似；f32 对齐 6e-7，但严格逐位复现仍需与 PyTorch 用同一近似。
 - 只从第 0 层输入开始；embedding/tokenizer 不在 Rust 侧。
 

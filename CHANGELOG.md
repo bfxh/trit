@@ -760,15 +760,31 @@
   `R12` 的 12 个 int4；位置比数量重要。`R12` 仍是同一批 1,379 对上的 in-sample
   搜索，没有 held-out / 第二模型；数据里 2,758 个句子 ID 全部唯一，按 pair 切分
   天然 sentence-disjoint，但本轮还没做切分复验，不能当留出验证。
+- **外部 SICK-R 复验（M1.5）**：同一 L12、`mteb/sickr-sts` test 前 1,000 对。
+  纯 int3 `0.794947 / 0.713724`；`K10K11` `0.800229 / 0.719099`
+  （`+0.005282 / +0.005375`，10k CI `[+0.001728, +0.008880]` /
+  `[+0.001208, +0.009640]`，双下界过 0）；`F5F7V7` `0.790981 / 0.710513`
+  （`−0.003966 / −0.003211`）；`R12` `0.789986 / 0.708856`
+  （`−0.004961 / −0.004868`，Pearson CI 上界 `−0.000004`）。`R12` vs `K10K11`
+  双指标 `−0.010243`，CI 完全在 0 下。**STS benchmark 的点估计最优在外部数据上
+  负迁移；K10K11 是更稳的同字节基线，R12 只能算 in-sample 点估计。**
+  SICK-R 句子跨 pair 复用（1,088 唯一句 / 1,000 对），不是 sentence-disjoint。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
   留一来源敏感性里对 int4 的符号会翻转（去 MSRvid `+0.009`，去
   answer-answer `−0.004`），不是稳定胜过 int4。
+- **外部 STS 导出器**：新增 `scripts/wsp_export_sts_pairs.py`，把任意
+  `sentence1/sentence2` STS 数据集前 N 对导成 bert6 的
+  `input/reference/mask/pairs/manifest`；只保留第 0 层输入和最后隐状态，按
+  `--chunk-pairs` 分块前向，`mask.u8` header 写句子数（pair*2）而不是对数。
+  `--self-test` 只校验 WSPACT1/WSPMSK1 header，不加载模型。SICK-R 1,000 对
+  即由它导出；`test_surface` 登记后为 136 单位 / 3533 条 / 拦 0。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
-  R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/复算），
-  `docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，`docs/results/LESSONS.md`
-  第 16 条。
+  R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/§9.5 留一来源/
+  §10 外部 SICK-R 复验/§11 下一步），`docs/research/WSP-ALT.md` §5.5，
+  `WSP-BERT6-RESULTS.md`，`docs/results/LESSONS.md` 第 16/17 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
   `docs/results/LESSONS.md` 第 16 条。

@@ -132,6 +132,7 @@
  "script/wsp_budget_source_eval.py": 1,
  "script/wsp_budget_swap.py": 0,
  "script/wsp_budget_variant.py": 0,
+ "script/wsp_export_sts_pairs.py": 1,
  "script/wt_target.py": 1,
  "script/yara_diff.py": 0,
  "script/yara_scale.py": 0
