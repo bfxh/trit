@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T04:05:00+08:00",
+  "generated_at": "2026-11-25T04:35:00+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "aa92dd1b88eabf8c37e77bfe6be09558c80bca07",
-    "commit_short": "aa92dd1b",
+    "commit": "a62dd4194ec120162966add2c0b382059fadadef",
+    "commit_short": "a62dd419",
     "status": "open"
   },
   "platform": {
@@ -65,7 +65,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad PR #668 (open, aa92dd1b)",
+    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad PR #668 (open, a62dd419)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "fused": "crates/trit-train/src/plane/fused.rs",
@@ -155,6 +155,7 @@
         ],
         "ste_variants": ["Identity", "Clipped", "Soft"],
         "bit_exact_fields": ["dX", "latent", "scale"],
+        "scalar_fallback_test": "compares backward_step_scalar with input_grad_scalar / row_dot_scalar / update_row_scalar order",
         "note": "旧两遍为 fused::backward + dense::sgd_update；新单遍更新 latent/scale，dense::sgd_update 仍服务 train_step"
       },
       "row_dot": {
@@ -213,13 +214,13 @@
   },
   "tests": {
     "suite": "cargo test -p trit-train",
-    "passed": 34,
-    "training_step_passed": 34,
+    "passed": 35,
+    "training_step_passed": 35,
     "failed": 0,
     "before": 21,
-    "added": 13,
+    "added": 14,
     "training_step_before": 27,
-    "training_step_added": 7,
+    "training_step_added": 8,
     "coverage_shapes": [
       "1x1",
       "3x7",
@@ -243,9 +244,9 @@
     "pr_checks_pass": 32,
     "pr_checks_skipping": 2,
     "pr_checks_pending": 0,
-    "pr_checks_fail": 0,
+    "pr_checks_fail": 1,
     "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"],
-    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at 08d81853 (code c64fe0c7)"
+    "note": "dd9e2575: 32 pass / 2 skip / 1 fail; macOS aarch64 scalar dX 1 ULP mismatch, fixed at a62dd419 (rerun pending)"
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",

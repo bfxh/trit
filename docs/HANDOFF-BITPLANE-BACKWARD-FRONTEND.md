@@ -14,10 +14,12 @@
 > `train_step_with_grad` 与 Adam 不再 `pack()`；复算 **0.747–0.759→0.430–0.441 ms
 > （1.72–1.74×）**，`dX`/`qdot` 逐位相等。第二十八轮把带梯度 SGD 的 STE `dW`
 > 与 scale 更新也并进同一遍（`fused::backward_step`），旧两遍 **0.92–1.32** →
-> 新单遍 **0.68–0.76 ms/step（中位 0.98→0.71，约 1.38×）**。
+> 新单遍 **0.68–0.76 ms/step（中位 0.98→0.71，约 1.38×）**。macOS aarch64 的标量
+> 回退曾因 `dX` 四累加器与旧 `input_grad_scalar` 顺序累加差 1 ULP，已改成单个
+> `dx[c]` 顺序累加并补纯标量对拍（`a62dd419`）。
 > 当前训练步读数 **0.81–1.14 ms/step（27–35×；第二十四
 > 轮旧口径 1.16–1.22 / 23.9–25.0×）**，`pack()` **0.46 ms**（不参与任何训练步，仅参考），
-> Adam **2.4–2.8 ms/step（2.9–3.4×，逐元素参考 8.0–8.2 ms）**，测试 **34**。
+> Adam **2.4–2.8 ms/step（2.9–3.4×，逐元素参考 8.0–8.2 ms）**，测试 **35**。
 > **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
 >
 > 本文的“前端”按 [`reference/ATLAS.md`](reference/ATLAS.md) 的定义：**浏览器 playground / WASM 面**，
@@ -33,7 +35,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、34/34、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b/a62dd419、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、35/35、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -95,10 +97,10 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 
 **验证读数（dX 同一提交 / 第二十八轮训练步）**
 
-- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步、Adam、反向单遍、带梯度单遍与整步对拍 **34 passed / 0 failed**。
+- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步、Adam、反向单遍、带梯度单遍与整步对拍 **35 passed / 0 failed**。
 - `cargo clippy -p trit-train --all-targets -- -D warnings`：通过。
 - `python scripts/hazard_gate.py`：0 findings。
-- `python scripts/module_budget.py`：dX 交付时 1513 files；第二十八轮分支 **1538 files，debt=0**。
+- `python scripts/module_budget.py`：dX 交付时 1513 files；第二十八轮分支 **1539 files，debt=0**。
 - `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090`：C081 已合并；C082–C090 随分支跑。
 - PR CI：`08d81853` 上 **32 pass / 2 skipping / 0 fail，mergeState CLEAN**（代码 `c64fe0c7`、文档 `08d81853`；三端测试与结构门禁全过）。
 
@@ -203,7 +205,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
   只保留为公开检查/对拍入口；`train_step_with_grad_adam_scalar` 仍走 `pack()` 作为
   逐元素参考。页面若显示 `q` 内存，必须按“首次访问后才分配”解释。
 - 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176/L177/L178/L179/L180、`.agent/checks/registry.json`
-  C082/C083/C084/C085/C086/C087/C088/C089/C090、`cargo test -p trit-train` **34/34**。
+  C082/C083/C084/C085/C086/C087/C088/C089/C090、`cargo test -p trit-train` **35/35**。
 
 ### 3.5 第五屏：录像
 
@@ -392,7 +394,7 @@ backward_step 分支：同一遍再写 STE dW 与 scale[r]
 ```text
 后端：dX available（main 6b910bc9，PR #664 已合并）
       训练步 available（main 9d1f0cc6，PR #666 已合并；区间 #667）
-      Adam dW 融合 + fused backward + 带梯度单遍 available（PR #668，c64fe0c7/aa92dd1b；open）
+      Adam dW 融合 + fused backward + 带梯度单遍 available（PR #668，c64fe0c7/aa92dd1b/a62dd419；open）
 前端：planned（本页）
 录像：unrecorded
 ```

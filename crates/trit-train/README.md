@@ -144,7 +144,8 @@ latent，量化 `q` 后同时算 `dX`、`qdot`、STE `dW` 与行末 scale 更新
 
 `train-bench` 的「带梯度 SGD」段直接复算这一行；对拍用例覆盖
 `(1,1)/(4,7)/(5,9)/(6,63)/(8,130)/(3,9 零/负 scale)/(4,576)` × `Identity/Clipped/Soft`，
-`dX`、latent、scale 与旧两遍逐位相等。
+`dX`、latent、scale 与旧两遍逐位相等；标量回退单独对拍 `input_grad_scalar` /
+`row_dot_scalar` / `update_row_scalar`，避免非 AVX2 平台走错累加顺序。
 
 反向也已去掉 `pack()`：Adam 走 `fused::backward::backward`，一次量化同时产出 `dX`
 和 `qdot`，不再 `pack()` → `input_grad` → `row_dot`；带梯度 SGD 走
@@ -225,7 +226,7 @@ SGD 的 `2×7` 只有 2.0×，仍是计时噪声；`5×9` 放大到 3.0–4.9×�
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 34 个（位平面/打包/惰性 q/dW/Adam/单遍更新对拍；量化/STE 的 6 个测试在 trit-learn）
+cargo test -p trit-train                       # 35 个（位平面/打包/惰性 q/dW/Adam/单遍更新与标量回退对拍；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3 --adam-scalar

@@ -10,7 +10,11 @@
   路径相同（`w/s` 正数除法、短行/尾部走 `Ste::backward`），`dX`/`qdot` 的累加
   分组和顺序也与 `fused::backward` 相同。
 - 对拍：`(1,1)/(4,7)/(5,9)/(6,63)/(8,130)/(3,9 零/负 scale)/(4,576)` ×
-  `Identity/Clipped/Soft`，`dX`、latent、scale 与旧路径逐位相等；测试 **33→34**。
+  `Identity/Clipped/Soft`，`dX`、latent、scale 与旧路径逐位相等；另加标量回退
+  对拍，防止非 AVX2 平台走错累加顺序；测试 **33→35**。
+- macOS aarch64 CI 暴露标量回退的 `dX` 用 `r & 3` 四累加器，和旧
+  `input_grad_scalar` 的逐行顺序累加差 1 ULP；标量路径改为单个 `dx[c]` 顺序累加，
+  并补 `input_grad_scalar` / `row_dot_scalar` / `update_row_scalar` 的纯标量对拍。
 - 4096×576 同轮交替 A/B 5 组（3 步/轮，9 轮取最快）：旧两遍
   **0.92–1.32 ms/step** → 新单遍 **0.68–0.76 ms/step**（中位 **0.98→0.71**，
   约 **1.38×**）。`train-bench` 增加「带梯度 SGD」段，默认输出

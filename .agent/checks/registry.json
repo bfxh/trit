@@ -1694,6 +1694,7 @@
       "scope": [
         "crates/trit-train/src/plane/fused/backward_step.rs",
         "crates/trit-train/src/plane/fused/backward_step/tests.rs",
+        "crates/trit-train/src/plane/fused/backward_step/tests/scalar.rs",
         "crates/trit-train/src/layer/grad.rs",
         "crates/trit-train/src/bin/bench/grad_step.rs",
         "crates/trit-train/README.md"
