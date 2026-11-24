@@ -1621,6 +1621,25 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C087",
+      "title": "trit-train row_dot 固定累加器展开",
+      "kind": "cmd",
+      "covers": [
+        "L177"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/backward.rs",
+        "crates/trit-train/README.md",
+        "docs/ERRORS.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T01:42:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

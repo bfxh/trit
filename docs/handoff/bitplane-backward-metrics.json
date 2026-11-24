@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T01:03:19+08:00",
+  "generated_at": "2026-11-25T01:38:41+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -67,6 +67,7 @@
     "status": "training_step merged at 9d1f0cc6 (#666); adam_dw + lazy q + qdot PR #668 (open, CI 32 pass / 2 skip; mergeState CLEAN)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
+      "row_dot": "crates/trit-train/src/plane/backward.rs",
       "dense": "crates/trit-train/src/dense.rs",
       "adam": "crates/trit-train/src/layer/adam.rs",
       "layer": "crates/trit-train/src/layer.rs"
@@ -96,6 +97,22 @@
         "speedup_observed_range": [23.9, 25.0]
       },
       "pack_ms_per_step": [0.46, 0.46],
+      "row_dot": {
+        "kernel": "PlaneMatrix::row_dot (AVX2)",
+        "implementation": "4 fixed accumulators + inlined 8-lane block closure",
+        "accumulation_order": "j mod 4 unchanged; bit-identical to the dynamic-index version",
+        "probe_rows": 4096,
+        "probe_ms": {
+          "dynamic": 0.2444,
+          "fixed": 0.1428
+        },
+        "probe_speedup": 1.71,
+        "step_ab_quiet_ms": [
+          [1.27, 1.22],
+          [1.42, 1.14]
+        ],
+        "note": "整步 A/B 是同轮交替的安静样本；不与 25 轮绝对区间混用"
+      },
       "adam": {
         "scalar_kernel": "train_step_with_grad_adam_scalar",
         "scalar_ms_per_step": [8.0, 8.2],
@@ -168,6 +185,7 @@
     "训练步是单层单样本的端到端口径（含 pack，不含 q() 惰性解码），不含层构造/输入生成。",
     "train_step 的 forward 已走 plane row_dot、SGD dW 走 dense::sgd_update；train_step 复用前向 qdot；pack() 按 64 列 word 写合并；Adam 路径没有前向、不复用 qdot；Adam dW 走 layer::adam_update（行级融合，非位平面）。",
     "multi_shape 是单层、单样本的 SGD/Adam 矩阵；9x65 的绝对耗时只有 0.4–0.5 µs，倍数会抖，1x1 不计入证据。",
+    "row_dot 独立探针只测 4096 行、单线程；整步 A/B 是负载噪声下的同轮交替安静样本，不是 25 轮统计。",
     "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
     "q() 首次调用才从双导轨解码并缓存；训练步不读 q，因此 q 内存只在消费者访问后出现。",
     "没有多形状曲线、GPU/WASM 读数或实验录像；pack() 仍是每步一次全量量化，但只写双导轨。",
