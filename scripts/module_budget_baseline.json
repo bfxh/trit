@@ -4968,11 +4968,15 @@
     },
     {
       "file": "crates/trit-train/src/plane/fused/backward_step.rs",
-      "lines": 207
+      "lines": 202
     },
     {
       "file": "crates/trit-train/src/plane/fused/backward_step/tests.rs",
       "lines": 72
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward_step/tests/scalar.rs",
+      "lines": 70
     },
     {
       "file": "crates/trit-train/src/plane/fused/tests.rs",

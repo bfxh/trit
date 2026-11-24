@@ -1,7 +1,8 @@
 use super::backward_step;
 use crate::plane::PlaneMatrix;
 use crate::quant::Ste;
-
+#[path = "tests/scalar.rs"]
+mod scalar;
 fn sample(len: usize, seed: u64) -> Vec<f32> {
     let mut state = seed | 1;
     (0..len)
@@ -13,7 +14,6 @@ fn sample(len: usize, seed: u64) -> Vec<f32> {
         })
         .collect()
 }
-
 #[test]
 fn matches_backward_plus_sgd_update_for_all_ste_variants() {
     for (rows, cols) in [

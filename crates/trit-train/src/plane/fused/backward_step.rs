@@ -45,30 +45,25 @@ fn backward_step_scalar(
     lr: f32,
     ste: Ste,
 ) -> Vec<f32> {
-    let mut acc: [Vec<f32>; 4] = std::array::from_fn(|_| vec![0.0f32; cols]);
+    let mut dx = vec![0.0f32; cols];
     let mut qdot = vec![0.0f32; rows];
     for r in 0..rows {
         let s_orig = scale[r];
         let s = s_orig.max(f32::MIN_POSITIVE);
         let coeff = dy[r] * s_orig;
-        let a = &mut acc[r & 3];
         for c in 0..cols {
             let idx = r * cols + c;
             let w = latent[idx];
             let q = (w / s).round().clamp(-1.0, 1.0);
             qdot[r] += q * x[c];
             if q > 0.0 {
-                a[c] += coeff;
+                dx[c] += coeff;
             } else if q < 0.0 {
-                a[c] -= coeff;
+                dx[c] -= coeff;
             }
             latent[idx] = w - lr * ste.backward(w, s_orig, coeff * x[c]);
         }
         scale[r] = (s_orig - lr * dy[r] * qdot[r]).max(1e-4);
-    }
-    let mut dx = vec![0.0f32; cols];
-    for (c, slot) in dx.iter_mut().enumerate() {
-        *slot = acc[0][c] + acc[1][c] + acc[2][c] + acc[3][c];
     }
     dx
 }
