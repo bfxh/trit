@@ -1429,6 +1429,24 @@
       "run": "python3 tools/alignment_gate.py self-test && python3 tools/alignment_gate.py stress --cases 100 && python3 tools/agent_settings.py --self-test",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C078",
+      "title": "稳定性/抖动探针：重复执行项目命令，按退出码混判、输出指纹和耗时比分出 flaky、nondeterministic、jittery、稳定失败与 unknown；报告可离线复算，unknown 不放行",
+      "kind": "cmd",
+      "covers": [
+        "L168"
+      ],
+      "scope": [
+        "tools/stability_probe.py",
+        "docs/engineering/AGENT-STABILITY.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T09:20:00+08:00",
+      "run": "python3 tools/stability_probe.py self-test",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

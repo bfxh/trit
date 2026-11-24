@@ -5077,6 +5077,23 @@ print("ALDRV done")
 
 
 # =====================================================================================
+"== ST. 稳定性/抖动探针：重复执行命令，区分 flaky、nondeterministic、jittery、确定性失败与 unknown =="
+# 一次通过不是稳定。ST1 证明探针自身能把“混判退出码”“同码不同输出”“耗时抖动”
+# “确定性失败”“失败也抖动”“超时 unknown”分开；不把 unknown 当放行。
+if ($alPy) {
+    $stOut = @(& $alPy (Join-Path $tools 'stability_probe.py') self-test 2>&1)
+    $stCode = $LASTEXITCODE
+    $stText = ($stOut -join "`n")
+    Assert-True ($stCode -eq 0 -and $stText -match 'stability_probe self-test: \d+/\d+') `
+        "ST1 稳定性探针自测：flaky/nondeterministic/jittery/stable-fail/unstable-fail/unknown 可区分" `
+        "exit=$stCode out=$stText"
+} else {
+    "  SKIP  ST1 找不到可用的 Python，跳过稳定性探针自测"
+    $skipped++
+}
+
+
+# =====================================================================================
 "== AM. 确定性模拟测试 + 账本崩溃一致性：黑盒 DST、恢复扫描三态、fsync 后 kill 不丢已确认账 =="
 # 出处（simchain usage 与台账 L124）：业界确定性模拟测试的标杆是 FoundationDB（SIGMOD 2021，
 # 全部新功能在无数故障组合下先模拟后上线、单进程种子化故障注入，每个 bug 从种子可复现）+
