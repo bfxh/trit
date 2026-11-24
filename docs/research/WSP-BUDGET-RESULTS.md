@@ -1,8 +1,7 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.14 完成（STS 全量 + SciFact 检索 + SST-2/CoLA 线性 probe / 线性 SVM 复验）。
-> 逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2` 供体表和 `3→4`
-> 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
+> 状态：M1.15 完成（STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM 复验）。
+> 逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2` 供体表和 `3→4` 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
 > 总字节仍 `10,782,720 B`，全量 Pearson `0.833671`、Spearman `0.835411`。
 > 相对 `F5F7V7` `+0.003287 / +0.006733`；Spearman 50k CI
 > `[+0.002300, +0.011308]` 过 0，Pearson CI `[−0.000560, +0.007191]` 跨 0。
@@ -34,6 +33,19 @@
 > SST-2 的 +0.040/+0.044 同量级效应已落在 CoLA 的 95% CI 之外；`R12`/
 > `rescan-k2` 仍无分类增益。**SST-2 的 int4 正向是单数据集/单 probe 家族的
 > 观察，不能写成量化普遍提升线性分类**（§11.14）。
+> **M1.15 第三个分类集（TweetEval/hate）也没有复现 int4 的正向**：
+> 清洗后 8,985 train / 2,734 test；主口径与 SST-2 一致（无类别权重 +
+> accuracy 选 C），L12 logreg `int4−f32 = −0.003679`
+> （CI `[−0.012802,+0.005486]`），SVC `−0.004826`
+> （CI `[−0.015362,+0.005852]`），点估计略负、CI 都跨 0；balanced
+> 口径（macro-F1 选 C）反转为 `−0.012694`（logreg）/ `−0.013028`（SVC），
+> 两个 CI 整段为负；fixed C=1 仍为 `−0.009860`。L6 balanced 两 probe
+> 也没有一致优势（logreg `+0.006576`、CI 跨 0；SVC `−0.009173`、
+> CI 整段为负）。hate 的 test 有 2,734 条，无权重口径 CI 上界只有
+> 约 `+0.006`，SST-2 的 `+0.040/+0.044` 同量级效应被更严格地排除。
+> **SST-2 的 int4 正向是数据集/任务/probe 特定的观察，不是量化普遍
+> 提升线性分类；`R12`/`rescan-k2` 在第三个分类集上也没有任务头增益**
+> （§11.15）。
 
 ## 1. 结论先行
 
@@ -2370,8 +2382,9 @@ SVC 的 f32/int4 仍选 `C=10`，差值维持 `+0.008629`；R12 在扩网格后�
 - **CoLA 的 probe 太弱，不能把“不显著”写成“已证不存在”。** balanced
   accuracy 只有 0.57–0.59、AUC 0.60，1,043 条 test 对 1–2 个百分点的效应
   没有足够功效；它能排除 SST-2 同量级（约 4 个百分点）的效应，但不能排除
-  一个更小的、数据集/正则化特定的正向。要判“完全没有”需要更强 probe 或
-  第三数据集，当前不做。
+  一个更小的、数据集/正则化特定的正向。要判“完全没有”需要更强 probe；
+  第三数据集已在 §11.15 完成，但仍只能排除同量级效应，不能把“不显著”
+  写成“已证不存在”。
 - 边界：第二个数据集只有一个（GLUE CoLA）、dev 作 test、单 split、单 seq 64、
   两个 MiniLM、只训练线性头、无 MLP、无 encoder 微调；CoLA 的标签分布
   69/31，主口径必须带类别权重。不能外推到平衡/多分类/NLI/生成任务。
@@ -2430,6 +2443,266 @@ L6 把前缀换成 `l6`、budget 换成 `budget-l6-pure-int3.json`/`l6-rescan-k2
 `data/wsp-classify-cola-l12-unweighted.tsv`（4 行）、
 `data/wsp-classify-cola-l12-cgrid.tsv`（16 行）。
 
+## 11.15 第三个分类数据集（M1.15，TweetEval/hate / 线性 probe）
+
+### 11.15.1 口径
+
+- 数据集 `tweet_eval/hate`（HuggingFace `tweet_eval` 的 `hate` 配置），原始
+  parquet：
+  `https://huggingface.co/datasets/tweet_eval/resolve/main/hate/train-00000-of-00001.parquet`
+  / `.../test-00000-of-00001.parquet`。单句二分类，标签 `0=non-hate`、`1=hate`。
+- 原始 8,993 train / 2,970 test；清洗规则是去掉空文本、按 stripped text 去重、
+  丢弃同文本标签冲突、移除 test 中与 train 精确重叠的文本。train 去掉 7 条空文本
+  与 1 条标签冲突，test 去掉 232 条 train 重叠及 test 内重复后，得到
+  **8,985 train / 2,734 test**；标签为 train 5,204/3,781、test 1,619/1,115。
+  清洗统计见 `prepare-summary.json`，清洗后的 JSONL 是 `raw/train.jsonl` /
+  `raw/test.jsonl`。
+- test 多数类（全判 non-hate）基线：accuracy `0.592173`、macro-F1 `0.371927`。
+- seq 64，mean pooling + L2 normalize，编码器冻结；L12/L6 各四档，与
+  §11.12–§11.14 的量化预算相同（L12 `f32/int3/int4/R12`，L6
+  `f32/int3/int4/rescan-k2`）。用关闭截断的 tokenizer 统计：train 4.5% 超过
+  64 token（均值 31.8、p95 63），test 12.8% 超过 64 token（均值 36.6、p95 77、
+  max 141）。
+- 评测口径分两套，均只训练线性头，不做 MLP、不做 encoder 微调：
+  1. **无权重口径**，与 SST-2 主口径一致：`class_weight="none"`、train 内
+     5 折按 accuracy 选 C，主指标 accuracy；用于直接回答“SST-2 的 int4 正向
+     是否在第三数据集复现”。
+  2. **balanced 口径**，用于类别不均衡的稳健性：`class_weight="balanced"`、
+     train 内 5 折按 macro-F1 选 C，同时报 accuracy 与 macro-F1。
+- 两种线性头都跑：logistic regression 与平方 hinge `LinearSVC`；`C` 网格
+  `{0.01,0.1,1,10}`，test 只评一次。10k test-level paired bootstrap 报差值、
+  95% CI 与 `better_fraction`；另做 L12 balanced logreg 的 fixed `C=1`
+  敏感性，消除“不同档位选到不同 C”的 confound。
+- 编码按 1,500 条分块（11,719 → 8 块，前 7 块 1,500、尾块 1,219）；
+  L12/L6 每个档位拼回 `WSPEMB1` 后均为 11,719 行。
+
+### 11.15.2 L12 无权重口径（与 SST-2 同口径）
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV accuracy |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.576445 | 0.567921 | 0.686456 | 1 | 0.771842 |
+| logreg | int3 | 0.560717 | 0.549944 | 0.698220 | 1 | 0.777629 |
+| logreg | int4 | 0.572787 | 0.564640 | 0.687451 | 1 | 0.769839 |
+| logreg | R12 | 0.562546 | 0.551344 | 0.700598 | 1 | 0.779410 |
+| linear_svc | f32 | 0.571324 | 0.562138 | 0.688636 | 0.1 | 0.772510 |
+| linear_svc | int3 | 0.553767 | 0.541568 | 0.698113 | 0.1 | 0.777518 |
+| linear_svc | int4 | 0.566569 | 0.557233 | 0.691178 | 1 | 0.770840 |
+| linear_svc | R12 | 0.557791 | 0.545421 | 0.703384 | 0.1 | 0.778408 |
+
+L12，probe 重新训练、10k paired bootstrap（下列均为“候选−f32”）：
+
+- logreg `int4−f32 = −0.003679`，95% CI `[−0.012802,+0.005486]`，
+  better `0.2304`；点估计略负，CI 跨 0。
+- logreg `int3−f32 = −0.015737`，CI `[−0.028164,−0.003292]`；
+  `R12−f32 = −0.013923`，CI `[−0.026701,−0.001463]`；两者都显著为负。
+- SVC `int4−f32 = −0.004826`，CI `[−0.015362,+0.005852]`，better `0.1908`；
+  `int3−f32 = −0.017598`（CI `[−0.029993,−0.004755]`），
+  `R12−f32 = −0.013585`（CI `[−0.025969,−0.001454]`）。
+
+AUC 在四档之间只有 `0.686–0.703` 的小幅差异，且没有做 AUC 的区间估计；
+它不能把 int4 的 accuracy 负号翻成正号。无权重口径下的直接结论是：
+**int4 没有复现 SST-2 的正向，点估计反而略低；`int3`/`R12` 明显低于 f32。**
+
+### 11.15.3 L12 balanced 口径（macro-F1 选 C）
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.547549 | 0.530500 | 0.689610 | 10 | 0.765937 |
+| logreg | int3 | 0.529627 | 0.505323 | 0.695445 | 10 | 0.768920 |
+| logreg | int4 | 0.534748 | 0.513450 | 0.689071 | 1 | 0.765414 |
+| logreg | R12 | 0.532187 | 0.508100 | 0.702542 | 1 | 0.774654 |
+| linear_svc | f32 | 0.545721 | 0.528534 | 0.694737 | 1 | 0.766030 |
+| linear_svc | int3 | 0.526335 | 0.500743 | 0.702604 | 0.1 | 0.768441 |
+| linear_svc | int4 | 0.532553 | 0.510524 | 0.693180 | 0.1 | 0.764588 |
+| linear_svc | R12 | 0.532187 | 0.508267 | 0.708809 | 0.1 | 0.775566 |
+
+balanced 口径下，int4 对 f32 的点估计与 CI 全部转负：
+
+- logreg：accuracy `int4−f32 = −0.012694`，CI `[−0.022677,−0.002917]`；
+  macro-F1 `−0.016905`，CI `[−0.028280,−0.005419]`。
+- SVC：accuracy `−0.013028`，CI `[−0.022312,−0.003292]`；
+  macro-F1 `−0.017835`，CI `[−0.028703,−0.006747]`。
+- `int3−f32` 与 `R12−f32` 也全部为负：logreg accuracy `−0.017922` /
+  `−0.015281`，SVC `−0.019338` / `−0.013453`；对应的 macro-F1 也整段为负。
+
+**选 C 不匹配的对照**：balanced logreg 的 f32/int3 选到上界 `C=10`，
+int4/R12 选 `C=1`。为排除这个 confound，另跑 fixed `C=1`
+（`eval-l12-balanced-c1.json`）：f32 `0.544623 / 0.525344`，int4
+`0.534748 / 0.513450`；`int4−f32` accuracy `−0.009860`
+（CI `[−0.017922,−0.002195]`），macro-F1 `−0.011855`
+（CI `[−0.021066,−0.002938]`）。**负号不是选 C 造成的**；固定 C 后仍是约
+−1 个百分点的显著负向。`int3−f32`（`−0.015424`）与 `R12−f32`
+（`−0.012446`）在 fixed C=1 下也仍为负。
+
+### 11.15.4 L6 balanced 口径
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.516459 | 0.490066 | 0.674528 | 1 | 0.761785 |
+| logreg | int3 | 0.512070 | 0.483218 | 0.693341 | 1 | 0.759251 |
+| logreg | int4 | 0.509876 | 0.482207 | 0.680805 | 1 | 0.757567 |
+| logreg | rescan-k2 | 0.515362 | 0.486043 | 0.709857 | 1 | 0.767368 |
+| linear_svc | f32 | 0.513168 | 0.485776 | 0.677936 | 0.1 | 0.760818 |
+| linear_svc | int3 | 0.506218 | 0.476248 | 0.685253 | 1 | 0.759570 |
+| linear_svc | int4 | 0.504023 | 0.476024 | 0.671679 | 1 | 0.757271 |
+| linear_svc | rescan-k2 | 0.514265 | 0.484592 | 0.710314 | 0.1 | 0.768537 |
+
+L6 的两个 probe 方向不一致，没有一致优势：
+
+- logreg `int4−f32 = +0.006576`，CI `[−0.001463,+0.014265]`；macro-F1
+  `+0.007854`，CI `[−0.001562,+0.017248]`；点估计为正但 CI 跨 0。
+- SVC `int4−f32 = −0.009173`，CI `[−0.018288,−0.000366]`；macro-F1
+  `−0.009786`，CI `[−0.020570,+0.000887]`；accuracy 的负向擦边显著。
+- `rescan-k2−f32` 在 logreg/SVC 都约为 0（`+0.001127` / `+0.001069`），
+  CI 全跨 0；L6 的块级重扫同样没有分类增益。
+
+### 11.15.5 跨数据集对照与结论
+
+L12 `int4−f32` 的跨数据集汇总（候选−基线；SST-2 无权重、CoLA/hate balanced
+为各自主口径，hate 另列无权重同口径）：
+
+| 数据集 / 口径 | test 条数 | logreg | 95% CI | SVC | 95% CI |
+|---|---:|---:|---|---:|---|
+| SST-2，无权重 | 1,821 | +0.040034 | `[+0.020868,+0.058759]` | +0.043783 | `[+0.025261,+0.062603]` |
+| CoLA，balanced | 1,043 | +0.013341 | `[−0.006711,+0.033557]` | +0.008467 | `[−0.011505,+0.028763]` |
+| Hate，无权重 | 2,734 | −0.003679 | `[−0.012802,+0.005486]` | −0.004826 | `[−0.015362,+0.005852]` |
+| Hate，balanced | 2,734 | −0.012694 | `[−0.022677,−0.002917]` | −0.013028 | `[−0.022312,−0.003292]` |
+
+- **SST-2 的 int4 正向没有跨任务/跨数据集复现。** 第三个数据集上，无权重口径
+  点估计略负且 CI 跨 0；balanced 口径（以及 fixed C=1）整段为负。hate 的
+  test 有 2,734 条，无权重口径 CI 上界只有 `+0.005486`，比 CoLA 的
+  `+0.033557` 更严格地把 SST-2 的 `+0.040/+0.044` 排除在外。
+- **结论强度**：三个数据集（SST-2 电影评论、CoLA 语法判断、TweetEval/hate
+  社媒仇恨言论）覆盖不同任务/领域，SST-2 的正向只在 SST-2 出现；因此它应被
+  写成数据集/任务/probe 家族特定的观察，而不是“int4 普遍提升线性分类”。
+- **`R12`/`rescan-k2` 仍无任务头增益。** L12 `R12` 在这个数据集上不仅低于
+  int4，也显著低于 f32；L6 `rescan-k2` 与 f32 打平。STS 上的块级重排收益
+  没有转成分类收益的结论继续成立。
+- **probe 很弱，不能把“没有正向”写成“已证不存在任何正向”。** hate 的
+  raw accuracy 只有 `0.51–0.58`，低于多数类 `0.592173`；macro-F1 `0.48–0.57`
+  高于全判 non-hate 的 `0.371927`；AUC 约 `0.67–0.71`。这说明线性头能分开
+  两类但阈值/间隔很差，绝对 accuracy 不能当任务 SOTA，只能做同一 test 上的
+  配对比较。2,734 条 test 足以排除 +4 个百分点量级的效应，不能排除更小的、
+  数据集/正则化特定的正向。
+- 边界：单 split、单 seq 64（test 12.8% 被截断）、两个 MiniLM、只训练线性头、
+  无 MLP、无 encoder 微调；hate 标签本身噪声/主观性高；清洗后的 test 移除了
+  232 条与 train 重叠的文本，不能直接等同官方榜单读数；结论不能外推到平衡/
+  多分类/NLI/生成任务。
+
+### 11.15.6 复算
+
+```bash
+# 1) 下载原始 parquet
+curl -L -o hate-train.parquet \
+  https://huggingface.co/datasets/tweet_eval/resolve/main/hate/train-00000-of-00001.parquet
+curl -L -o hate-test.parquet \
+  https://huggingface.co/datasets/tweet_eval/resolve/main/hate/test-00000-of-00001.parquet
+
+# 2) 清洗并写 JSONL：去空文本、按 stripped text 去重、丢弃标签冲突、
+#    移除 test 中与 train 重叠的文本；同时输出 prepare-summary.json
+python - <<'PY'
+import json
+from pathlib import Path
+import pandas as pd
+
+out = Path("raw"); out.mkdir(parents=True, exist_ok=True)
+train = pd.read_parquet("hate-train.parquet")[["text", "label"]]
+test = pd.read_parquet("hate-test.parquet")[["text", "label"]]
+for frame in (train, test):
+    frame["text"] = frame["text"].fillna("").astype(str).str.strip()
+train = train[train["text"] != ""]
+test = test[test["text"] != ""]
+
+conflict = train.groupby("text")["label"].nunique()
+conflict = set(conflict[conflict > 1].index)
+train = train[~train["text"].isin(conflict)].drop_duplicates("text")
+test = test.drop_duplicates("text")
+test = test[~test["text"].isin(set(train["text"]))]
+
+for name, frame in (("train", train), ("test", test)):
+    with (out / f"{name}.jsonl").open("w", encoding="utf-8") as handle:
+        for row in frame.itertuples(index=False):
+            handle.write(json.dumps({"text": row.text, "label": int(row.label)},
+                                    ensure_ascii=False) + "\n")
+summary = {
+    "dataset": "tweet_eval/hate",
+    "label_names": {"0": "non-hate", "1": "hate"},
+    "raw": {"train": 8993, "test": 2970},
+    "drop_label_conflicts": {"train": len(conflict), "test": 0},
+    "drop_test_train_overlap": 232,
+    "clean": {"train": len(train), "test": len(test)},
+    "labels": {
+        name: {str(k): int(v) for k, v in frame["label"].value_counts().items()}
+        for name, frame in (("train", train), ("test", test))
+    },
+    "note": "empty text dropped; exact stripped-text duplicates deduped; "
+            "conflicting duplicate labels dropped; test texts present in train removed",
+}
+(out / "prepare-summary.json").write_text(
+    json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+PY
+
+# 3) 导出：manifest 的 dataset/labels 由 --dataset-name/--label-names 覆盖
+python scripts/wsp_export_sst2.py \
+  --format jsonl --train raw/train.jsonl --test raw/test.jsonl \
+  --dataset-name 'TweetEval/hate (dedup/leak-filtered)' \
+  --label-names non-hate,hate \
+  --out data-l12 --model all-MiniLM-L12-v2 --seq 64
+python scripts/wsp_export_sst2.py \
+  --format jsonl --train raw/train.jsonl --test raw/test.jsonl \
+  --dataset-name 'TweetEval/hate (dedup/leak-filtered)' \
+  --label-names non-hate,hate \
+  --out data-l6 --model all-MiniLM-L6-v2 --seq 64
+
+# 4) 1,500 条分块；编码前先把全量 texts.json 另存为 texts-l12.json/texts-l6.json
+python scripts/wsp_chunk_embed_input.py \
+  --src data-l12 --dst chunks-l12-1500 --chunk-size 1500
+python scripts/wsp_chunk_embed_input.py \
+  --src data-l6 --dst chunks-l6-1500 --chunk-size 1500
+
+# 5) 编码：以 L12 int3 chunk-000 为例；f32 由每次运行的 pure-f32.f32 另存
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=16 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=emb12 TRIT_EMBED_TAG=l12-int3-000 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir chunks-l12-1500/chunk-000 --activation-mode f32 \
+  --out runs12/l12-int3-000.json
+
+# 6) 无权重主口径（与 SST-2 一致）
+python scripts/wsp_classify_eval.py \
+  --texts texts-l12.json \
+  --run l12-f32='emb12/l12-pure-f32-*.f32' \
+  --run l12-int3='emb12/l12-int3-*.f32' \
+  --run l12-int4='emb12/l12-int4-*.f32' \
+  --run l12-r12='emb12/l12-r12-*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --bootstrap 10000 --probe logreg --out eval-l12-cv.json
+
+# 7) balanced 口径（macro-F1 选 C，accuracy/macro-F1 双 bootstrap）
+python scripts/wsp_classify_eval.py \
+  --texts texts-l12.json \
+  --run l12-f32='emb12/l12-pure-f32-*.f32' \
+  --run l12-int3='emb12/l12-int3-*.f32' \
+  --run l12-int4='emb12/l12-int4-*.f32' \
+  --run l12-r12='emb12/l12-r12-*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --cv-metric macro_f1 --class-weight balanced \
+  --bootstrap 10000 --bootstrap-metric both \
+  --probe logreg --out eval-l12-balanced-cv.json
+```
+
+L6 把前缀换成 `l6`、budget 换成 `budget-l6-pure-int3.json`/`l6-rescan-k2.json`，
+`--probe` 换成 `linear_svc` 即得另一套。表见
+`data/wsp-classify-hate-l12.tsv`（8 行）、
+`data/wsp-classify-hate-l12-bootstrap.tsv`（24 行）、
+`data/wsp-classify-hate-l12-balanced.tsv`（8 行）、
+`data/wsp-classify-hate-l12-balanced-bootstrap.tsv`（48 行）、
+`data/wsp-classify-hate-l12-probe-compare.tsv`（4 行）、
+`data/wsp-classify-hate-l12-c1.tsv`（4 行）、
+`data/wsp-classify-hate-l6-balanced.tsv`（8 行）、
+`data/wsp-classify-hate-l6-balanced-bootstrap.tsv`（48 行）、
+`data/wsp-classify-hate-l6-probe-compare.tsv`（4 行）。
+
 ## 12. 下一步
 
 - **逐块 `3→2`/`3→4` 与第二模型 L6 都已完成（§8/§9/§11）**：不要再重复跑
@@ -2441,16 +2714,18 @@ L6 把前缀换成 `l6`、budget 换成 `budget-l6-pure-int3.json`/`l6-rescan-k2
   增益没有转到 SciFact 检索；`R12` 对 int3 的 MRR/nDCG@10 点估计为负、CI 跨 0，
   对 int4/f32 的 MRR/nDCG CI 基本整段为负；L6 `rescan-k2` 对 int3 的 MRR/
   nDCG@10 CI 整段为负。任务头不是新的调参维度，而是现有 STS 候选的否决门。
-- **分类任务头已做（§11.12–§11.14），结论是负向/不外推**：SST-2（6,920/1,821，
+- **分类任务头已做（§11.12–§11.15），结论是负向/不外推**：SST-2（6,920/1,821，
   冻结编码器 + 线性 probe，train 内 5 折选 C）上，L12 `R12` 对 int3 点估计低
   `−0.008842`、CI 跨 0，对 int4 整段为负；L6 `rescan-k2` 对 int3/int4 的
   CI 都跨 0。分类头没有接住 STS 的块级增益。L12 均匀 int4 在 SST-2 上比 f32
-  高 `+0.040088`，换 `LinearSVC` 后仍为 `+0.043783`；但第二分类集 GLUE CoLA
-  （balanced + macro-F1 选 C）只得到 `+0.013341` / `+0.008467`，两个 CI 都跨 0，
-  L6 更是打平或略低。**int4 的 SST-2 正向没有跨数据集泛化；不要再把
-  “量化普遍提升线性分类”当结论。** 若还要继续，应该换更强 probe 或第三数据集，
-  而不是继续调 `R12`；否则接受“BUDGET 只在 STS 相关性上有效”，把 `R12` 留在
-  STS in-domain，不进运行时默认。
+  高 `+0.040088`，换 `LinearSVC` 后仍为 `+0.043783`；第二分类集 GLUE CoLA
+  （balanced + macro-F1 选 C）只得到 `+0.013341` / `+0.008467`，两个 CI 都跨 0；
+  第三分类集 TweetEval/hate 的无权重口径为 `−0.003679` / `−0.004826`，balanced
+  口径为 `−0.012694` / `−0.013028`，后者 CI 整段为负，L6 也没有一致优势。
+  **int4 的 SST-2 正向没有跨任务/跨数据集泛化；不要再把“量化普遍提升线性分类”
+  当结论。** 分类头这一路的验证已够，不要继续调 `R12`；接受“BUDGET 只在 STS
+  相关性上有效”，把 `R12` 留在 STS in-domain，不进运行时默认。若以后还要做，
+  应该换更强 probe（但当前用户口径排除 MLP）或新的任务族，而不是重复第三数据集。
 - **重扫选择器已落库，且 5 折交叉拟合已把“选择”留出（§11.6/§11.7）**：
   `wsp_budget_rescan.py` 能从两张表生成严格同字节候选；L6 全量 `6/24/6` 是
   `0.831304 / 0.824457`（高于 int4 点估计），但这是 in-sample。5 折 × 2 种子

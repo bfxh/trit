@@ -8,6 +8,8 @@ invocation per mode produces all sentence vectors.
 ``--format cola`` accepts the GLUE CoLA ``train.tsv`` / ``dev.tsv`` layout
 (source, label, asterisk, sentence; dev is used as the held-out test split).
 The default ``jsonl`` accepts ``{"text": ..., "label": 0|1}`` per line.
+``--dataset-name`` / ``--label-names`` override the manifest metadata for
+JSONL datasets other than SST-2.
 
 Only the BERT embedding block is needed; the exporter reads it directly from
 safetensors and never loads the transformer.
@@ -144,6 +146,8 @@ def parse_args():
     parser.add_argument("--test", default="")
     parser.add_argument("--out", default="")
     parser.add_argument("--format", choices=("jsonl", "cola"), default="jsonl")
+    parser.add_argument("--dataset-name", default="")
+    parser.add_argument("--label-names", default="")
     parser.add_argument("--model", default=MODEL_ID)
     parser.add_argument("--seq", type=int, default=SEQ)
     parser.add_argument("--batch", type=int, default=BATCH)
@@ -162,6 +166,20 @@ def main():
         raise SystemExit("--train, --test and --out are required")
     if args.seq < 1 or args.batch < 1:
         raise SystemExit("--seq/--batch must be positive")
+    dataset_name = args.dataset_name or (
+        "GLUE/CoLA (dev as test)" if args.format == "cola" else "SetFit/sst2"
+    )
+    if args.label_names:
+        names = [name.strip() for name in args.label_names.split(",")]
+        if len(names) != 2 or any(not name for name in names):
+            raise SystemExit("--label-names must be two comma-separated names")
+        label_names = {names[0]: 0, names[1]: 1}
+    else:
+        label_names = (
+            {"unacceptable": 0, "acceptable": 1}
+            if args.format == "cola"
+            else {"negative": 0, "positive": 1}
+        )
 
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
     os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -244,11 +262,7 @@ def main():
     with open(os.path.join(args.out, "manifest.json"), "w", encoding="utf-8") as handle:
         json.dump(
             {
-                "dataset": (
-                    "GLUE/CoLA (dev as test)"
-                    if args.format == "cola"
-                    else "SetFit/sst2"
-                ),
+                "dataset": dataset_name,
                 "model": args.model,
                 "seq": args.seq,
                 "hidden": hidden,
@@ -256,11 +270,7 @@ def main():
                 "texts": len(texts),
                 "train": len(train),
                 "test": len(test),
-                "labels": (
-                    {"unacceptable": 0, "acceptable": 1}
-                    if args.format == "cola"
-                    else {"negative": 0, "positive": 1}
-                ),
+                "labels": label_names,
             },
             handle,
             indent=2,

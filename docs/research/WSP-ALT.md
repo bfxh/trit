@@ -399,6 +399,21 @@ balanced class weight + train 内 macro-F1 选 C。结果：L12 logreg
 `R12`/`rescan-k2` 在第二个分类集上也仍无任务头增益。** 详见
 `WSP-BUDGET-RESULTS.md` §11.14。
 
+M1.15 换第三个分类集 TweetEval/hate（原始 8,993/2,970，去空文本、去重、
+去标签冲突并移除 232 条 test/train 重叠后为 8,985/2,734；单句二分类，
+`0=non-hate`、`1=hate`；seq 64、mean pooling + L2、编码器冻结）。主口径先
+沿用 SST-2 的无类别权重 + accuracy 选 C，再补 balanced + macro-F1 选 C。
+结果：L12 无权重 logreg `int4−f32 = −0.003679`（CI
+`[−0.012802,+0.005486]`），SVC `−0.004826`（CI
+`[−0.015362,+0.005852]`）；balanced 口径 logreg `−0.012694`
+（CI `[−0.022677,−0.002917]`），SVC `−0.013028`（CI
+`[−0.022312,−0.003292]`），fixed C=1 仍为 `−0.009860`。L6 balanced
+两 probe 方向不一致（logreg `+0.006576`、CI 跨 0；SVC `−0.009173`、CI
+整段为负）。**第三个数据集没有复现 int4 的正向，balanced 口径反而显著为负；
+SST-2 的 `+0.040/+0.044` 同量级效应被 hate 的 95% CI 更严格地排除。**
+`R12`/`rescan-k2` 在第三个分类集上也没有任务头增益；SST-2 的正向只能写成
+数据集/任务/probe 特定的观察。详见 `WSP-BUDGET-RESULTS.md` §11.15。
+
 ## 6. WSP-MXQ 在新排序里的位置
 
 MXQ 仍然成立，但不再是第一枪：

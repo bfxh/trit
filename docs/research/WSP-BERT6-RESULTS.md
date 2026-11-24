@@ -928,6 +928,40 @@ SST-2 的 int4 正向写成量化普遍提升线性分类；它更像单数据�
 dev 作 test、单 split、两个 MiniLM、只训练线性头、无 MLP/encoder 微调。
 详见 `WSP-BUDGET-RESULTS.md` §11.14。
 
+### 3.16.17 第三分类集 TweetEval/hate：int4 正向仍未复现
+
+M1.15 用 TweetEval/hate 做第三个单句二分类集：原始 8,993 train / 2,970
+test，按 stripped text 去空、去重、丢弃标签冲突，并移除 test 中与 train
+精确重叠的 232 条后，得到 8,985 train / 2,734 test；标签 `0=non-hate`、
+`1=hate`，test 为 1,619/1,115。seq 64、mean pooling + L2、编码器冻结；
+L12/L6 各四档，1,500 条分块编码。test 多数类 accuracy `0.592173`、全判
+non-hate 的 macro-F1 `0.371927`。主口径先沿用 SST-2 的无类别权重 +
+accuracy 选 C，再补 balanced + macro-F1 选 C，两种线性头都跑，10k paired
+bootstrap。
+
+- L12 无权重：logreg `int4−f32 = −0.003679`（CI
+  `[−0.012802,+0.005486]`），SVC `−0.004826`（CI
+  `[−0.015362,+0.005852]`）；点估计略负、CI 跨 0。`int3−f32` 与
+  `R12−f32` 都显著为负。
+- L12 balanced：logreg `int4−f32 = −0.012694`（CI
+  `[−0.022677,−0.002917]`），SVC `−0.013028`（CI
+  `[−0.022312,−0.003292]`）；macro-F1 也整段为负。balanced logreg 的
+  f32/int3 选 C=10、int4/R12 选 C=1，但 fixed C=1 仍为 `−0.009860`
+  （CI `[−0.017922,−0.002195]`），负号不是选 C 造成的。
+- L6 balanced：logreg `int4−f32 = +0.006576`（CI
+  `[−0.001463,+0.014265]`），SVC `−0.009173`（CI
+  `[−0.018288,−0.000366]`）；方向不一致。`rescan-k2−f32` 约为 0，CI 跨 0。
+
+**hate 的 test 有 2,734 条，无权重口径 CI 上界只有 `+0.005486`，balanced
+口径整段为负；SST-2 的 `+0.040/+0.044` 同量级效应被更严格地排除。**
+三个数据集（SST-2、CoLA、TweetEval/hate）覆盖不同任务/领域后，SST-2 的
+int4 正向应写成数据集/任务/probe 特定的观察，不是量化普遍提升线性分类。
+边界：hate 的线性 probe 很弱（raw accuracy `0.51–0.58`，低于多数类
+`0.592173`；AUC `0.67–0.71`），只能排除 +4 个百分点量级效应，不能排除更小
+的正向；单 split、seq 64（test 12.8% 截断）、两个 MiniLM、只训练线性头、
+无 MLP/encoder 微调，清洗后的 test 也不等同官方榜单。详见
+`WSP-BUDGET-RESULTS.md` §11.15。
+
 ## 4. 未证栏
 
 - 基础对齐与逐层快照只有 8 句、`8×64` token；STS 读数另有 128 对与 1379 对两档，但都不是

@@ -953,6 +953,43 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.14、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.16、`LESSONS.md` 第 26 条。
 
+- **第三分类集 TweetEval/hate（M1.15）**：`scripts/wsp_export_sst2.py` 新增
+  `--dataset-name` / `--label-names`，让非 SST-2 的 JSONL 数据能写正确的
+  manifest metadata；默认值不变。
+  - 数据：HuggingFace `tweet_eval` 的 `hate` 配置，原始 8,993 train / 2,970
+    test；去空文本、按 stripped text 去重、丢弃标签冲突并移除 test 中与
+    train 精确重叠的 232 条后为 8,985 / 2,734，标签 `0=non-hate`、
+    `1=hate`（test 1,619/1,115）。seq 64、mean pooling + L2、编码器冻结；
+    L12/L6 各四档，1,500 条分块编码，11,719 行全部对齐。
+  - 口径：test 多数类 accuracy `0.592173`、全判 non-hate 的 macro-F1
+    `0.371927`；主口径沿用 SST-2 的无类别权重 + accuracy 选 C，另跑
+    balanced + train 内 5 折 macro-F1 选 C，10k paired bootstrap 同时报
+    accuracy/macro-F1；L12 balanced logreg 另做 fixed C=1 敏感性。
+  - L12 无权重：logreg `int4−f32 = −0.003679`
+    （CI `[−0.012802,+0.005486]`），SVC `−0.004826`
+    （CI `[−0.015362,+0.005852]`）；`int3−f32`/`R12−f32` 都显著为负。
+  - L12 balanced：logreg `int4−f32 = −0.012694`
+    （CI `[−0.022677,−0.002917]`），SVC `−0.013028`
+    （CI `[−0.022312,−0.003292]`）；fixed C=1 仍为 `−0.009860`
+    （CI `[−0.017922,−0.002195]`）。
+  - L6 balanced：logreg `int4−f32 = +0.006576`（CI 跨 0），SVC `−0.009173`
+    （CI `[−0.018288,−0.000366]`）；两 probe 方向不一致，无一致优势。
+  - **SST-2 的 L12 int4 正向没有跨任务/跨数据集泛化**：第三数据集无权重
+    口径点估计略负，balanced 口径显著为负；hate 的 2,734 条 test 把
+    SST-2 的 +0.040/+0.044 同量级效应更严格地排除在 95% CI 之外。
+    `R12`/`rescan-k2` 在第三个分类集上也没有任务头增益。
+  - 表：`wsp-classify-hate-l12.tsv`（8 行）、
+    `wsp-classify-hate-l12-bootstrap.tsv`（24 行）、
+    `wsp-classify-hate-l12-balanced.tsv`（8 行）、
+    `wsp-classify-hate-l12-balanced-bootstrap.tsv`（48 行）、
+    `wsp-classify-hate-l12-probe-compare.tsv`（4 行）、
+    `wsp-classify-hate-l12-c1.tsv`（4 行）、
+    `wsp-classify-hate-l6-balanced.tsv`（8 行）、
+    `wsp-classify-hate-l6-balanced-bootstrap.tsv`（48 行）、
+    `wsp-classify-hate-l6-probe-compare.tsv`（4 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.15、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.17、`LESSONS.md` 第 27 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
