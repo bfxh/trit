@@ -3,7 +3,7 @@
 //! 和 `lookup.c` 是同一条边界上的两种产物：
 //! - `lookup.c` 把 3^n 真值表整块塞进 C，运行时一次索引；
 //! - `direct.c` 把表达式**降成线性 IR**（每个节点一条 `int8_t tN = ...;`），
-//!   运行时按节点顺序算，不展开 3^n 表。
+//!   交换律规范化后再做 CSE，出口过一遍死代码消除；运行时按节点顺序算，不展开 3^n 表。
 //!
 //! 语义不靠手写 C 算子保证：六张 3×3/3 表由 [`Algebra`] 现算，测试再拿
 //! `trit_eval::eval` 逐赋值对拍。生成物仍需 C 工具链编译 —— 这与
@@ -13,7 +13,6 @@
 //! `int8_t trit_direct(const int8_t *vars, unsigned nvars)`。
 //! 入参不足（`nvars < 变量数`）一律返回 `0`（X），fail-closed，不读越界内存。
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -25,89 +24,8 @@ use trit_core::{Algebra, Expr};
 /// 三值枚举顺序 = C 侧 `-1/0/1` 的顺序，也是表的下标顺序。
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
 
-/// 线性 IR 的一条指令：结果是第 `index` 个临时变量。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Op {
-    Const(Ternary),
-    Var(usize),
-    Not(usize),
-    And(usize, usize),
-    Or(usize, usize),
-    Xor(usize, usize),
-    Implies(usize, usize),
-    Equiv(usize, usize),
-}
-
-/// 表达式 → 线性 IR（后序，最后一条即根）。同构子式走 CSE，只算一次。
-fn lower(expr: &Expr, vars: &[String]) -> Result<Vec<Op>> {
-    let mut ops = Vec::new();
-    let mut memo = HashMap::new();
-    push(expr, vars, &mut ops, &mut memo)?;
-    Ok(ops)
-}
-
-/// 去重键：`(算子, 左子, 右子)`，一元/常量/变量的右子位补 0。
-type Key = (u8, usize, usize);
-
-fn intern(ops: &mut Vec<Op>, memo: &mut HashMap<Key, usize>, key: Key, op: Op) -> usize {
-    if let Some(index) = memo.get(&key) {
-        return *index;
-    }
-    ops.push(op);
-    let index = ops.len() - 1;
-    memo.insert(key, index);
-    index
-}
-
-fn push(
-    expr: &Expr,
-    vars: &[String],
-    ops: &mut Vec<Op>,
-    memo: &mut HashMap<Key, usize>,
-) -> Result<usize> {
-    Ok(match expr {
-        Expr::Const(value) => {
-            let slot = code(*value) as usize;
-            intern(ops, memo, (0, slot, 0), Op::Const(*value))
-        }
-        Expr::Var(name) => {
-            let slot = vars
-                .iter()
-                .position(|var| var == name)
-                .with_context(|| format!("变量 {name:?} 不在变量表 {vars:?} 里"))?;
-            intern(ops, memo, (1, slot, 0), Op::Var(slot))
-        }
-        Expr::Not(inner) => {
-            let inner = push(inner, vars, ops, memo)?;
-            intern(ops, memo, (2, inner, 0), Op::Not(inner))
-        }
-        Expr::And(left, right) => {
-            let left = push(left, vars, ops, memo)?;
-            let right = push(right, vars, ops, memo)?;
-            intern(ops, memo, (3, left, right), Op::And(left, right))
-        }
-        Expr::Or(left, right) => {
-            let left = push(left, vars, ops, memo)?;
-            let right = push(right, vars, ops, memo)?;
-            intern(ops, memo, (4, left, right), Op::Or(left, right))
-        }
-        Expr::Xor(left, right) => {
-            let left = push(left, vars, ops, memo)?;
-            let right = push(right, vars, ops, memo)?;
-            intern(ops, memo, (5, left, right), Op::Xor(left, right))
-        }
-        Expr::Implies(left, right) => {
-            let left = push(left, vars, ops, memo)?;
-            let right = push(right, vars, ops, memo)?;
-            intern(ops, memo, (6, left, right), Op::Implies(left, right))
-        }
-        Expr::Equiv(left, right) => {
-            let left = push(left, vars, ops, memo)?;
-            let right = push(right, vars, ops, memo)?;
-            intern(ops, memo, (7, left, right), Op::Equiv(left, right))
-        }
-    })
-}
+mod lower;
+use lower::{Op, lower};
 
 fn code(value: Ternary) -> i8 {
     match value {

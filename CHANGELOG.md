@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed（第十七轮：直算 IR 的交换律规范化与死代码消除）
+
+- `direct` 的 lowering 拆到 `crates/trit-build/src/direct/lower.rs`；`&` / `|` / `^` / `<=>`
+  先按 IR 下标做交换律规范化再查 CSE，镜像子式共用一个节点：`(a & b) | (b & a)`
+  的 IR 从 5 条降到 4 条；`=>` 不可交换，不参与重排。
+- 新增 IR 级死代码消除 `prune_dead`：从根反向标记可达节点，再按原顺序压缩、重编号；
+  `lower` 出口统一过这一遍。当前 lowering 不产生孤儿节点，这一遍是给后续重写/常量折叠留的兜底，
+  行为用合成 IR 测试钉住。
+- 语义不变：三种代数下四个可交换算子的 3×3 表逐格对称性有测试；`--verify-c` 12 变量复跑
+  **531,441/531,441** 行通过，`direct.c` 仍 **1,628 B**。
+- `BUILD_VERSION` 5 → 6：`direct.c` 的语句顺序可能变化，旧缓存必须失效。
+- 测试：新增 `direct/lower/tests.rs` 5 条（表对称性、镜像子式共用、操作数定序、孤儿压缩、
+  真实表达式无孤儿），单测 38 → 43。
+
 ### Added（第十六轮：TTIR → C 直算后端）
 
 - `trit-build` 新增 `--backend table|direct|both`（默认 `table`，旧产物逐字节不变）：

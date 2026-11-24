@@ -232,7 +232,15 @@
     },
     {
       "file": "crates/trit-build/src/direct.rs",
-      "lines": 376
+      "lines": 294
+    },
+    {
+      "file": "crates/trit-build/src/direct/lower.rs",
+      "lines": 172
+    },
+    {
+      "file": "crates/trit-build/src/direct/lower/tests.rs",
+      "lines": 93
     },
     {
       "file": "crates/trit-build/src/direct/tests.rs",
