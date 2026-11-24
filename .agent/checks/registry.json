@@ -1452,20 +1452,22 @@
     },
     {
       "id": "C079",
-      "title": "交接包 DeliveryReceipt 四态账本：sent/delivered/read/acted 顺序、actor、acted 证据、包哈希绑定；.agent/delivery 不污染 handoff state_hash",
+      "title": "交接包 DeliveryReceipt 四态账本（Rust）：sent/delivered/read/acted 顺序、actor、acted 证据、包哈希绑定、gate 只 attach 到 delivered",
       "kind": "cmd",
       "covers": [
         "L169"
       ],
       "scope": [
-        "tools/delivery_receipt.py",
-        "tools/handoff.py",
+        "crates/trit-orch/src/delivery.rs",
+        "crates/trit-orch/src/bin/cli_delivery/mod.rs",
+        "crates/trit-orch/tests/delivery.rs",
+        "crates/trit-orch/tests/delivery_cli.rs",
         "docs/engineering/AGENT-DELIVERY.md"
       ],
       "since": "2026-11-24",
       "tier": "fast",
       "added": "2026-11-24T04:30:00+08:00",
-      "run": "python3 tools/delivery_receipt.py --self-test",
+      "run": "cargo test -p trit-orch --test delivery --test delivery_cli",
       "shell": "bash",
       "expect_exit": 0
     },
