@@ -1,0 +1,42 @@
+[
+ {
+  "name": "log: 过滤表排序反向（长前缀不再优先）",
+  "file": "crates/trit-log/src/lib.rs",
+  "old": "        self.filters\n            .sort_by_key(|(target, _)| std::cmp::Reverse(target.len()));",
+  "new": "        self.filters\n            .sort_by_key(|(target, _)| target.len());",
+  "pkg": "trit-log",
+  "filter": "filter_spec_parses_bare_and_scoped"
+ },
+ {
+  "name": "log: 前缀匹配丢掉 :: 边界（trit_partsx 被误判命中）",
+  "file": "crates/trit-log/src/lib.rs",
+  "old": "if norm == *prefix || norm.starts_with(&format!(\"{prefix}::\")) {",
+  "new": "if norm == *prefix || norm.starts_with(prefix) {",
+  "pkg": "trit-log",
+  "filter": "longest_prefix_wins"
+ },
+ {
+  "name": "log: target 不归一（- 不转 _）",
+  "file": "crates/trit-log/src/lib.rs",
+  "old": "target.trim().replace('-', \"_\")",
+  "new": "target.trim().to_string()",
+  "pkg": "trit-log",
+  "filter": "filter_spec_parses_bare_and_scoped"
+ },
+ {
+  "name": "log: JSONL 不转义引号",
+  "file": "crates/trit-log/src/lib.rs",
+  "old": "            '\"' => out.push_str(\"\\\\\\\"\"),",
+  "new": "            '\"' => out.push('\"'),",
+  "pkg": "trit-log",
+  "filter": "render_jsonl_escapes"
+ },
+ {
+  "name": "log: 时间戳把毫秒写成秒",
+  "file": "crates/trit-log/src/lib.rs",
+  "old": "let millis = (ms % 1000) as u32;",
+  "new": "let millis = (ms / 1000) as u32;",
+  "pkg": "trit-log",
+  "filter": "render_text_has_utc_stamp_and_level"
+ }
+]
