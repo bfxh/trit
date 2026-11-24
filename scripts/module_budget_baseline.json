@@ -4891,6 +4891,10 @@
       "lines": 80
     },
     {
+      "file": "crates/trit-train/src/bin/shape_bench.rs",
+      "lines": 92
+    },
+    {
       "file": "crates/trit-train/src/dense.rs",
       "lines": 192
     },

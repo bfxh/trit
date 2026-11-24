@@ -1551,6 +1551,7 @@
         "crates/trit-train/src/bin/bench/adam_step.rs",
         "crates/trit-train/src/bin/bench/adam_setup.rs",
         "crates/trit-train/src/bin/bench.rs",
+        "crates/trit-train/src/bin/shape_bench.rs",
         "crates/trit-train/README.md"
       ],
       "since": "2026-11-24",

@@ -130,6 +130,21 @@ Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`
 
 两条路径用同一条基准复算：融合是默认输出，参考路径加 `--adam-scalar`。
 
+多形状矩阵（`shape_bench`，按形状放大步数，9 轮取最快，含 `pack`）：
+
+| shape | 融合 ms/step | 逐元素 ms/step | 倍数 |
+|---|---:|---:|---:|
+| 2×7 | 0.0003 | 0.0003 | 0.99× |
+| 5×9 | 0.0005 | 0.0005 | 1.14× |
+| 9×65 | 0.0009 | 0.0021 | 2.41× |
+| 11×130 | 0.0015 | 0.0045 | 3.07× |
+| 17×576 | 0.0070 | 0.0284 | 4.09× |
+| 4096×576 | 3.08 | 8.10 | 2.63× |
+
+`2×7` 没进 SIMD，和逐元素持平；`5×9` 只有 1.14×；从 `9×65`
+开始到 `17×576` 逐级升高，大矩阵回落到 2.63×。`1×1` 太短，计时分辨率不足，
+不作为倍数证据。**不能拿 4096×576 的倍数覆盖所有形状**。
+
 三条结论：
 
 1. **并发到 4 线程见顶**（约 90–100 Gop/s），8 线程回落 15–30%：工作集 16 MB 左右，
@@ -159,6 +174,7 @@ cargo test -p trit-train                       # 30 个（位平面/打包/dW/Ad
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3 --adam-scalar
+cargo run -p trit-train --release --bin shape_bench
 ```
 
 ## 边界与下一步
