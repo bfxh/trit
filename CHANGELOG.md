@@ -760,15 +760,26 @@
   `R12` 的 12 个 int4；位置比数量重要。`R12` 仍是同一批 1,379 对上的 in-sample
   搜索，没有 held-out / 第二模型；数据里 2,758 个句子 ID 全部唯一，按 pair 切分
   天然 sentence-disjoint，但本轮还没做切分复验，不能当留出验证。
-- **外部 SICK-R 复验（M1.5）**：同一 L12、`mteb/sickr-sts` test 前 1,000 对。
-  纯 int3 `0.794947 / 0.713724`；`K10K11` `0.800229 / 0.719099`
-  （`+0.005282 / +0.005375`，10k CI `[+0.001728, +0.008880]` /
-  `[+0.001208, +0.009640]`，双下界过 0）；`F5F7V7` `0.790981 / 0.710513`
-  （`−0.003966 / −0.003211`）；`R12` `0.789986 / 0.708856`
-  （`−0.004961 / −0.004868`，Pearson CI 上界 `−0.000004`）。`R12` vs `K10K11`
-  双指标 `−0.010243`，CI 完全在 0 下。**STS benchmark 的点估计最优在外部数据上
-  负迁移；K10K11 是更稳的同字节基线，R12 只能算 in-sample 点估计。**
-  SICK-R 句子跨 pair 复用（1,088 唯一句 / 1,000 对），不是 sentence-disjoint。
+- **外部三套复验（M1.5）**：同一 L12，`mteb/sickr-sts`、`mteb/sts12-sts`、
+  `mteb/sts13-sts` test 各前 1,000 对。SICK-R：纯 int3 `0.794947 / 0.713724`，
+  `v6e` `+0.003083 / +0.002689`，`I10` `+0.004302 / +0.004342`（双 10k CI
+  过 0），`K10K11` `+0.005282 / +0.005375`（双 CI 过 0），`R10`
+  `−0.006884 / −0.003471`，`F5F7V7` `−0.003966 / −0.003211`，`R12`
+  `−0.004961 / −0.004868`。STS12：int3 `0.740258 / 0.704207`，I10
+  `+0.005010 / +0.004523`，K10K11 `+0.004460 / +0.003097`，R10
+  `+0.012910 / +0.014696`（双 CI 过 0），R12 `+0.007176 / +0.009035`。
+  STS13：int3 `0.786142 / 0.802354`，R12 `+0.021556 / +0.017861`（双 CI
+  过 0），R10 `+0.021610 / +0.017299`（双 CI 过 0），F5F7V7
+  `+0.015209 / +0.012291`（双 CI 过 0），I10 `+0.002127 / +0.001906`，
+  K10K11 `−0.000308 / −0.000291`。**已测 6 个同字节配置里只有 v6e/I10
+  三套外部点估计全正（I10 仅 SICK-R 双 CI 过 0）；K10K11 在 STS13 轻微负，
+  R10/R12/F5F7V7 在 SICK-R 负。STS 全量仍是 R12 > K10K11 > I10，没有单一
+  候选同时赢 in-domain 和外部。** I10 vs K10K11：SICK-R
+  `−0.000980 / −0.001033`，STS12 `+0.000550 / +0.001426`（CI 都跨 0），
+  STS13 `+0.002435 / +0.002197`（双 CI 过 0）。三套外部都有句子跨 pair 复用
+  （1,088 / 1,891 / 1,898 唯一句 / 各 1,000 对），不是 sentence-disjoint。
+  逐配置读数与 bootstrap 已落为 `docs/research/data/wsp-budget-external-3set.tsv`
+  （24 行）与 `wsp-budget-external-bootstrap.tsv`（54 行）。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
@@ -779,11 +790,11 @@
   `sentence1/sentence2` STS 数据集前 N 对导成 bert6 的
   `input/reference/mask/pairs/manifest`；只保留第 0 层输入和最后隐状态，按
   `--chunk-pairs` 分块前向，`mask.u8` header 写句子数（pair*2）而不是对数。
-  `--self-test` 只校验 WSPACT1/WSPMSK1 header，不加载模型。SICK-R 1,000 对
-  即由它导出；`test_surface` 登记后为 136 单位 / 3533 条 / 拦 0。
+  `--self-test` 只校验 WSPACT1/WSPMSK1 header，不加载模型。SICK-R/STS12/
+  STS13 各 1,000 对即由它导出；`test_surface` 登记后为 136 单位 / 3533 条 / 拦 0。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
   R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/§9.5 留一来源/
-  §10 外部 SICK-R 复验/§11 下一步），`docs/research/WSP-ALT.md` §5.5，
+  §10 外部三套复验/§11 下一步），`docs/research/WSP-ALT.md` §5.5，
   `WSP-BERT6-RESULTS.md`，`docs/results/LESSONS.md` 第 16/17 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
