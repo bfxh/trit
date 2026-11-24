@@ -7,7 +7,19 @@ int4 vs int3	pearson	+0.011466868	+0.002790898	+0.019829694	0.9948
 int4 vs int3	spearman	+0.008928767	-0.000482390	+0.018221589	0.9690
 R12-tail vs int3	pearson	-0.000100248	-0.004401931	+0.004150484	0.4756
 R12-tail vs int3	spearman	-0.000701658	-0.005730719	+0.004211782	0.3911
+rescan-k2 vs int3	pearson	+0.016710496	+0.009081152	+0.024204651	0.9999
+rescan-k2 vs int3	spearman	+0.014032174	+0.005364655	+0.022585743	0.9995
+rescan-k2 vs int4	pearson	+0.005243628	-0.004133833	+0.015053253	0.8575
+rescan-k2 vs int4	spearman	+0.005103407	-0.005314550	+0.016090150	0.8270
 foldA trainA/testB	pearson	+0.010384	+0.001281	+0.019690	0.9863
 foldA trainA/testB	spearman	+0.009694	-0.000930	+0.020739	0.9644
 foldB trainB/testA	pearson	+0.004804	-0.004866	+0.014233	0.8390
 foldB trainB/testA	spearman	+0.000707	-0.010593	+0.011956	0.5496
+rescan-k2 A trainA/testB	pearson	+0.007193	-0.005616	+0.019827	0.8692
+rescan-k2 A trainA/testB	spearman	+0.002260	-0.011473	+0.015970	0.6370
+rescan-k2 B trainB/testA	pearson	+0.007985	-0.001130	+0.016948	0.9580
+rescan-k2 B trainB/testA	spearman	+0.006351	-0.004302	+0.016880	0.8805
+rescan-k2 A trainA/testB vs int4	pearson	-0.002826	-0.017240	+0.011776	0.3484
+rescan-k2 A trainA/testB vs int4	spearman	-0.007214	-0.022297	+0.007467	0.1734
+rescan-k2 B trainB/testA vs int4	pearson	-0.004958	-0.018254	+0.008529	0.2254
+rescan-k2 B trainB/testA vs int4	spearman	-0.002192	-0.018024	+0.013400	0.3819

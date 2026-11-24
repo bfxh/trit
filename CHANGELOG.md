@@ -793,9 +793,19 @@
   ΔS 为 `+0.009694 / +0.000707`，CI 都跨 0。3→2 伤害与 L12 后 6 层输出端
   对齐（0.597 Spearman），3→4 收益不跟（−0.182）；36 块全表与候选读数见
   `docs/research/data/wsp-budget-l6-perturb.tsv`（72 行）、
-  `wsp-budget-l6-candidates.tsv`（10 行）、`wsp-budget-l6-bootstrap.tsv`
-  （12 行）。结论：**块表有模型内信号，但没有一个 L12 布局能跨模型保住
+  `wsp-budget-l6-candidates.tsv`（13 行）、`wsp-budget-l6-bootstrap.tsv`
+  （24 行）。结论：**块表有模型内信号，但没有一个 L12 布局能跨模型保住
   增益；I10 只能算 L12 外部保守默认，不是跨模型默认。**
+- **重扫选择器（M1.7）**：新增 `scripts/wsp_budget_rescan.py`，按
+  `(rows, cols, group)` 分形状组，每组选同样数量的 int2 降级块与 int4
+  升级块，自动保证严格同字节；`--self-test` 守配平/排序/去重。L6 默认
+  `per-shape=2` 选出 `6 int2 / 24 int3 / 6 int4`，全量
+  `0.831304 / 0.824457`，相对纯 int3 `+0.016710 / +0.014032`（双 10k CI
+  过 0），相对纯 int4 `+0.005244 / +0.005103`（两个 CI 都跨 0）。但两折
+  held-out 对 int3 的 ΔP/ΔS 为 `+0.007193 / +0.002260`（A→B）和
+  `+0.007985 / +0.006351`（B→A），CI 全跨 0；对 int4 点估计两折都转负。
+  **固定结构只减少手工自由度，不消除块选择方差；全量点估计仍是 in-sample，
+  不能当默认规则。** `test_surface` 登记为 137 单位 / 3534 条。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
@@ -811,7 +821,7 @@
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
   R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/§9.5 留一来源/
   §10 外部三套复验/§11 L6 第二模型/§12 下一步），`docs/research/WSP-ALT.md` §5.5，
-  `WSP-BERT6-RESULTS.md` §3.16.9，`docs/results/LESSONS.md` 第 16/17/18 条。
+  `WSP-BERT6-RESULTS.md` §3.16.9，`docs/results/LESSONS.md` 第 16/17/18/19 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
   `docs/results/LESSONS.md` 第 16 条。
