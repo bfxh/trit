@@ -177,13 +177,13 @@ impl TernaryLinear {
 
     /// 单样本 SGD 一步，返回更新前的 MSE。
     ///
-    /// 前向与 scale 梯度共用一份 [`PlaneMatrix`]；`dW` 走 `dense::sgd_update` 融合更新。
+    /// 前向与 scale 梯度共用一份 [`PlaneMatrix`] 的 `qdot`；`dW` 走 `dense::sgd_update` 融合更新。
     pub fn train_step(&mut self, x: &[f32], target: &[f32]) -> f32 {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
         assert_eq!(target.len(), self.rows, "目标长度必须是 rows");
-
         let planes = self.pack();
-        let y = self.forward_with_planes(&planes, x);
+        let qdot: Vec<f32> = (0..self.rows).map(|r| planes.row_dot(r, x)).collect();
+        let y: Vec<f32> = qdot.iter().zip(&self.scale).map(|(&d, &s)| s * d).collect();
         let (loss, dy) = self.loss_and_grad(&y, target);
 
         let (lr, ste, cols) = (self.lr, self.ste, self.cols);
@@ -198,7 +198,7 @@ impl TernaryLinear {
             ste,
         );
         for (r, &dy_r) in dy.iter().enumerate() {
-            self.scale[r] = (self.scale[r] - lr * dy_r * planes.row_dot(r, x)).max(1e-4);
+            self.scale[r] = (self.scale[r] - lr * dy_r * qdot[r]).max(1e-4);
         }
         loss
     }
