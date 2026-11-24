@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T05:39:26+08:00",
+  "generated_at": "2026-11-25T06:40:00+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "ba217795c9e36c23f2908b67f56d86dd43e6be6b",
-    "commit_short": "ba217795",
+    "commit": "be4cb3fe4be582c7ce202342cd38176e59b6e605",
+    "commit_short": "be4cb3fe",
     "status": "open"
   },
   "platform": {
@@ -74,7 +74,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad + single-pass Adam PR #668 (open, ba217795)",
+    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad + single-pass Adam + Soft gate ordered-mask removal PR #668 (open, be4cb3fe)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "fused": "crates/trit-train/src/plane/fused.rs",
@@ -360,6 +360,45 @@
         ],
         "scalar_fallback_test": "compares adam_step_scalar with input_grad_scalar / row_dot_scalar / elementwise Adam",
         "note": "旧两遍为 fused::backward + layer::adam_update；新单遍不 pack()，旧路径只留测试对拍"
+      },
+      "soft_gate": {
+        "kernel": "Soft STE gate in dense::sgd_update / fused::backward_step / fused::adam_step (AVX2)",
+        "implementation": "g = max(1 - ratio*ratio, 0) with 0 as the second maxps operand; when ratio is NaN, Intel maxps returns the second operand 0, matching scalar f32::max, so the cmp(ratio,ratio,ORD) + and ordered mask is removed",
+        "reproduce": "train-bench --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --ste-steps 1 --train-steps 3",
+        "shape": "4096x576",
+        "ab_groups": 7,
+        "rounds": 9,
+        "selection": "fastest",
+        "ab_context": "same-round alternating; benchmark process high priority to avoid background load stealing cores",
+        "train_step": {
+          "old_ms_per_step": 0.80,
+          "new_ms_per_step": 0.77,
+          "speedup": 1.04
+        },
+        "grad_step": {
+          "old_ms_per_step": 0.62,
+          "new_ms_per_step": 0.58,
+          "speedup_range": [
+            1.05,
+            1.07
+          ]
+        },
+        "adam_train_step": {
+          "old_ms_per_step": 1.73,
+          "new_ms_per_step": 1.69,
+          "speedup_range": [
+            1.02,
+            1.03
+          ]
+        },
+        "bit_exact": "finite inputs unchanged; when ratio is NaN the gate returns 0 like the old ordered-mask lane; existing 37/37 tests pass",
+        "negative_candidates": [
+          "q as float to reuse masks (slower)",
+          "const-generic STE specialization (no measurable gain)",
+          "SIMD scale update (no measurable gain; scalar loop already auto-vectorized)",
+          "Markstein reciprocal correction division (slower than divps)"
+        ],
+        "note": "Adam still dominated by the three divisions + sqrt in the m/v update, so its gain is smaller than the two SGD paths"
       }
     },
     "not": [
@@ -408,7 +447,7 @@
       "ubuntu-latest",
       "windows-latest"
     ],
-    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at code+test head ba217795 (Adam step cd5e9a00, mutation/hazard fix ba217795); macOS aarch64 scalar comparison and mutation changed-crates 9/9 included; later docs-only commit only records this result"
+    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at code+test head be4cb3fe (Soft gate ordered-mask removal; 37/37 tests; agent checks registry includes C092; mutation changed-crates 9/9); a later docs-only commit only records this result"
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",

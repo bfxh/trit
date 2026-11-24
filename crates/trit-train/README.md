@@ -173,6 +173,22 @@ Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快；量化单�
 另加 `adam_step_scalar` 对 `input_grad_scalar` / `row_dot_scalar` / 逐元素 Adam 的
 纯标量对拍。新单遍 4096×576 单次矩阵 **1.9953 ms**，逐元素 8.1575 ms（**4.09×**）。
 
+第三十轮 Soft 门控（4096×576，单线程，3 步/轮，同轮交替 A/B 7 组，进程高优先级，
+9 轮取最快；基线与新码同源）：
+
+| 路径 | 旧 ms/step | 新 ms/step | 相对 |
+|---|---:|---:|---:|
+| `train_step`（SGD 融合前向） | 0.80 | 0.77 | **1.04×** |
+| `train_step_with_grad`（带梯度 SGD 单遍） | 0.62 | 0.58 | **1.05–1.07×** |
+| `train_step_with_grad_adam`（Adam 单遍） | 1.73 | 1.69 | **1.02–1.03×** |
+
+Soft 门控原写法是 `max(0, 1-ratio²)` 后再用 `cmp(ratio,ratio,ORD)` 清 NaN；把
+`0` 放到 `maxps` 的第二个操作数后，`ratio` 为 NaN 时硬件直接返回 0，与标量
+`f32::max` 一致，于是省掉一条比较和一条 `and`。三条 AVX2 路径（`dense::sgd_update`、
+`fused::backward_step`、`fused::adam_step`）同步修改；有限输入逐位不变，测试
+37/37 继续通过。Adam 内核仍由 m/v 更新的 3 次除法 + `sqrt` 主导，所以倍数
+明显小于两条 SGD 路径。
+
 精确旧基线 `8b846d4a` 的 `shape_bench` 交替 3 组：旧 2.7310 / 2.2572 / 2.2746，
 新 1.7219 / 1.8348 / 1.8633；中位 **2.2746→1.8348 ms（约 1.24×）**。
 第二十一轮行级 Adam 的 **2.4–2.8 ms/step（2.9–3.4×）** 是历史口径；本轮 A/B 的
@@ -249,6 +265,9 @@ cargo run -p trit-train --release --bin shape_bench
   行外更新）；带梯度 SGD 走 **`fused::backward_step`**（`dX`/`qdot`+STE `dW`/scale
   同一遍），都不再构造双导轨。更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate
   互相依赖 → M1 要把内核下沉到可发布 crate 再复用；本轮没有跨 crate 依赖。
+- Soft STE 门控在 `dense::sgd_update`、`fused::backward_step`、`fused::adam_step`
+  三条 AVX2 路径统一为 `max(1-ratio², 0)`，靠 `maxps` 的 NaN 语义省掉 `ordered`
+  掩码；有限输入逐位不变。
 - 反向 `dX`/`qdot`、前向、SGD `dW` 与 Adam `dW` 都已融合；`forward()`、SGD `train_step`、
   `train_step_with_grad`、Adam 四条路径都不再 `pack()`。`pack()` 只剩公开检查/对拍用途，
   `q` 缓存改为首次 `q()` 时惰性解码；训练步不读 `q`，因此不付这笔写回。

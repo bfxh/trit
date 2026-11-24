@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Changed（第三十轮：Soft STE 门控去掉 `ordered` 掩码）
+
+- `dense::sgd_update`、`fused::backward_step`、`fused::adam_step` 的 Soft 门控从
+  `max(0, 1-ratio²)` 改为 `max(1-ratio², 0)`：把 `0` 放在第二个操作数后，Intel
+  `maxps` 遇 NaN 返回第二个操作数，与 Rust 标量 `(1 - NaN).max(0.0)` 的 0 一致；
+  因此删掉 `cmp(ratio, ratio, ORD)` + `and` 两步。
+- 逐位口径不变（有限输入）：交换 `max` 操作数结果相同；`ratio` 为 NaN 时新写法
+  的 gate 返回 0，旧写法则在该 lane 用 `ordered` 掩码清零。`cargo test -p trit-train --lib`
+  **37/37**，三条路径的 Soft 对拍继续通过。
+- 4096×576 同轮交替 A/B 7 组（3 步/轮，9 轮取最快；进程高优先级，避免后台负载
+  抢核）：`train_step` **0.80→0.77 ms/step（约 1.04×）**；`train_step_with_grad`
+  **0.62→0.58（约 1.05–1.07×）**；Adam `train_step_with_grad_adam`
+  **1.73→1.69（约 1.02–1.03×）**。Soft 门控在 SGD 内核算术占比更高；Adam 仍由
+  m/v 更新里的 3 次除法 + `sqrt` 主导，收益较小。
+- 同轮负结果（未采用）：`q` 转浮点复用省掩码、STE 常量泛型特化、SIMD scale 更新、
+  Markstein 倒数修正除法，分别无可测收益、比 `divps` 慢或无法保持逐位；详见 L182。
+- 模块预算 **1544 files，debt=0** 不变；测试 37，hazard allow 96；新增 C092。
+
 ### Changed（第二十九轮：Adam 训练步量化/`dX`/`qdot`/`dW` 单遍）
 
 - `train_step_with_grad_adam` 不再走 `fused::backward` → `layer::adam_update` 两遍：

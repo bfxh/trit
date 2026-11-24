@@ -22,9 +22,13 @@
 > **2.12–2.48** → 新单遍 **1.70–1.85 ms/step（中位 2.33→1.76，约 1.32×）**；
 > `shape_bench` 4096×576 精确旧基线中位 **2.2746→1.8348 ms（约 1.24×）**，
 > `dX`/latent/scale/m/v 在 6 形状 × 3 STE × 3 步下逐位相等，测试 **37**。
-> 当前训练步读数 **0.81–1.14 ms/step（27–35×；第二十四
+> 第三十轮把三条 AVX2 路径的 Soft STE 门控改成 `max(1-ratio², 0)`，靠 `maxps`
+> 的 NaN 返回第二操作数语义省掉 `ordered` 掩码：`train_step` **0.80→0.77
+> ms/step（1.04×）**，`train_step_with_grad` **0.62→0.58（1.05–1.07×）**，
+> Adam **1.73→1.69（1.02–1.03×）**；有限输入逐位不变，测试仍 37/37。
+> 当前训练步读数 **0.77–1.14 ms/step（27–37×；第二十四
 > 轮旧口径 1.16–1.22 / 23.9–25.0×）**，`pack()` **0.46 ms**（不参与任何训练步，仅参考），
-> Adam **1.70–1.85 ms/step（约 1.32×，逐元素参考 8.0–8.2 ms）**。
+> Adam **1.69–1.85 ms/step（约 1.32×，逐元素参考 8.0–8.2 ms）**。
 > **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
 >
 > 本文的“前端”按 [`reference/ATLAS.md`](reference/ATLAS.md) 的定义：**浏览器 playground / WASM 面**，
@@ -40,7 +44,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b/a62dd419/cd5e9a00/ba217795、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、L181/C091、37/37、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b/a62dd419/cd5e9a00/ba217795/f00d9dcc/be4cb3fe、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、L181/C091、L182/C092、37/37、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -76,8 +80,9 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
    第二十七轮把反向也改成 `fused::backward` 单遍，`train_step_with_grad` 与 Adam 不再 `pack()`；
    第二十八轮把带梯度 SGD 的 STE `dW` 并进同一遍（`fused::backward_step`）；
    第二十九轮把 Adam 的量化、`dX`/`qdot` 与 latent/m/v 更新并进 `fused::adam_step` 单遍。
-   训练步 27–35×、带梯度 SGD 0.68–0.76 ms/step（旧两遍 0.92–1.32）、
-   Adam 1.70–1.85 ms/step（旧两遍 2.12–2.48），与 dX 的倍数不能互相替代。
+   第三十轮把 Soft STE 门控改成 `max(1-ratio², 0)`，省掉 `ordered` 掩码。
+   训练步 27–37×、带梯度 SGD 0.58–0.76 ms/step（旧两遍 0.92–1.32）、
+   Adam 1.69–1.85 ms/step（旧两遍 2.12–2.48），与 dX 的倍数不能互相替代。
 3. **读数只代表内核本身。**
    4096×576、单线程、7 轮取最快：标量 `0.24` → 双导轨 `9.44` GMAC/s，
    **39.25×**。这个数**不含** `pack()` 的量化成本，也不等于训练步加速。
@@ -97,8 +102,8 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 | 层接入 | `crates/trit-train/src/layer/grad.rs`、`layer/adam.rs` | 本轮分支 | 读 §4 的反向语义 |
 | 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（#666；本轮加 Adam 输出） | 读 §8 的复现口径 |
 | 人类说明 | `crates/trit-train/README.md` | 已合并（#666；本轮更新） | 可直接摘写 |
-| 缺陷台账 | `docs/ERRORS.md` L171–L181 | L171/#664、L172/#666 已合并；L173–L181 本轮 | 只读结论与读数 |
-| 回归门 | `.agent/checks/registry.json` C081–C091 | C081/#664、C082/#666 已合并；C083–C091 本轮 | 只读命令 |
+| 缺陷台账 | `docs/ERRORS.md` L171–L182 | L171/#664、L172/#666 已合并；L173–L182 本轮 | 只读结论与读数 |
+| 回归门 | `.agent/checks/registry.json` C081–C092 | C081/#664、C082/#666 已合并；C083–C092 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
 | PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`797ad121`、`d55bbbd3`、`c64fe0c7`、`cd5e9a00`、`ba217795` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
 
@@ -108,8 +113,8 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 - `cargo clippy -p trit-train --all-targets -- -D warnings`：通过。
 - `python scripts/hazard_gate.py`：0 findings。
 - `python scripts/module_budget.py`：dX 交付时 1513 files；第二十九轮分支 **1544 files，debt=0**。
-- `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090,C091`：C081 已合并；C082–C091 随分支跑。
-- PR CI：代码+测试 head `ba217795` 上 **32 pass / 2 skipping / 0 fail，mergeState CLEAN**（Adam 单遍 `cd5e9a00` + mutation/hazard 修复 `ba217795`；三端测试全过，含 macOS aarch64 标量对拍与 mutation changed-crates **9/9 caught**）；后来 docs-only 提交只记录该结果。
+- `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090,C091,C092`：C081 已合并；C082–C092 随分支跑。
+- PR CI：代码+测试 head `be4cb3fe` 上 **32 pass / 2 skip / 0 fail，mergeState CLEAN**（Soft 门控三条 AVX2 路径；Ubuntu/Windows/macOS 三端测试全过，`agent checks (registry)` 含 C092，mutation changed-crates **9/9 caught**）；docs-only 提交只记录该结果。
 
 ## 3. 页面结构（按人类面板顺序）
 
@@ -212,12 +217,15 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 - `row_dot`（第二十五轮）：4 个固定累加器替代 `acc[j & 3]` 动态索引，独立探针
   4096 行 **0.2444→0.1428 ms（1.71×）**；它现在只服务 `pack()` 的消费方与标量对拍，
   不参与训练/前向热路径。
+- Soft 门控（第三十轮，同轮交替 A/B 7 组，高优先级）：`train_step` **0.80→0.77
+  ms/step（1.04×）**，`train_step_with_grad` **0.62→0.58（1.05–1.07×）**，Adam
+  **1.73→1.69（1.02–1.03×）**；三条 AVX2 路径省掉 `ordered` 掩码，有限输入逐位不变。
 - 边界：这是单层单样本的端到端口径，不含层构造/输入生成；`forward()`、SGD
   `train_step`、`train_step_with_grad`、Adam 四条路径都不再调用 `pack()`，`pack()`
   只保留为公开检查/对拍入口；`train_step_with_grad_adam_scalar` 仍走 `pack()` 作为
   逐元素参考。页面若显示 `q` 内存，必须按“首次访问后才分配”解释。
-- 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176/L177/L178/L179/L180/L181、`.agent/checks/registry.json`
-  C082/C083/C084/C085/C086/C087/C088/C089/C090/C091、`cargo test -p trit-train` **37/37**。
+- 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176/L177/L178/L179/L180/L181/L182、`.agent/checks/registry.json`
+  C082/C083/C084/C085/C086/C087/C088/C089/C090/C091/C092、`cargo test -p trit-train` **37/37**。
 
 ### 3.5 第五屏：录像
 
@@ -455,6 +463,10 @@ python tools/checks.py -Only C085
 python tools/checks.py -Only C086
 python tools/checks.py -Only C087
 python tools/checks.py -Only C088
+python tools/checks.py -Only C089
+python tools/checks.py -Only C090
+python tools/checks.py -Only C091
+python tools/checks.py -Only C092
 ```
 
 预期尾部：
@@ -559,6 +571,6 @@ NOTES:          只复核数字与边界，不改前端版式
 | `crates/trit-train/src/layer/grad.rs` | `train_step_with_grad` 与 Adam 标量参考 |
 | `crates/trit-train/src/bin/bench.rs` | `bench_backward`；读数输出 |
 | `crates/trit-train/README.md` | 人类说明、读数表、边界 |
-| `docs/ERRORS.md` L171–L181 | 缺陷台账与读数结论 |
-| `.agent/checks/registry.json` C081–C091 | 回归门 |
+| `docs/ERRORS.md` L171–L182 | 缺陷台账与读数结论 |
+| `.agent/checks/registry.json` C081–C092 | 回归门 |
 | `docs/handoff/bitplane-backward-metrics.json` | 前端数据快照 |

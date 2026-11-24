@@ -1732,6 +1732,29 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C092",
+      "title": "trit-train Soft STE 门控去掉 ordered 掩码",
+      "kind": "cmd",
+      "covers": [
+        "L182"
+      ],
+      "scope": [
+        "crates/trit-train/src/dense.rs",
+        "crates/trit-train/src/plane/fused/backward_step.rs",
+        "crates/trit-train/src/plane/fused/backward_step/tests.rs",
+        "crates/trit-train/src/plane/fused/adam_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/tests.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T06:24:25+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
