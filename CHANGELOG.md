@@ -696,6 +696,7 @@
 ### Added（WSP-BUDGET：同字节预算分配 + 块交换，L12 STS I10 +0.0032/+0.0055）
 ### Added（WSP-BUDGET：同字节预算分配 + 块交换，L12 STS K10K11 +0.0050/+0.0072）
 ### Added（WSP-BUDGET：同字节预算分配 + 逐块敏感度，L12 STS F5F7V7 +0.0119/+0.0153）
+### Added（WSP-BUDGET：同字节预算分配 + 逐块双向敏感度，L12 STS F5F7V7/R12）
 
 - 新增离线预算规划器 `scripts/wsp_budget.py`：从 safetensors 读 12 层 6 类线性矩阵，
   按含 per-group f32 scale/per-row bias 的真实字节，用权重重建代理 + 拉格朗日/贪心
@@ -740,6 +741,25 @@
   但 128 上只有 `0.898538 / 0.928299`，比 K10K11 低 `−0.006245 / −0.008888`，
   **128 与全量符号相反**；两者 `proxy_err_ratio` 仍同为 `0.91552`。
   距纯 int4 `−0.007121 / −0.003369`，50k CI 仍跨 0，不能写“追平 int4”。
+- **逐块 `3→4` 全量敏感度表（M1.4）**：同一 `wsp_budget_perturb.py --bits 4`
+  以纯 int3 为 base，对每个线性矩阵单独升 int4，各跑 1,379 对；72 行中 45 块双升、
+  17 块双降、10 块混合。升级收益不均匀：`10v +0.002110`、`8o +0.001236`、
+  `1k +0.001106` 较值，`11k` 只有 `+0.000207`；`8v −0.000899`、`3v −0.001958`
+  等反而双降。**降级伤害与升级收益不是同一张曲线，单块 Δ 仍不能相加。**
+- **严格同字节 `R12`**：F5/F7 两张 384×1536 f + V7/V8/V9/V6 四张 384×384 v 降 int2，
+  12 张 384×384 升 int4（`6 int2 / 54 int3 / 12 int4`），总字节仍 `10,782,720 B`。
+  全量 Pearson `0.833671`、Spearman `0.835411`，相对 F5F7V7
+  `+0.003287 / +0.006733`（Spearman 50k CI `[+0.002300, +0.011308]` 过 0，
+  Pearson CI 跨 0）；相对纯 int3 `+0.015231 / +0.022050`。相对纯 int4
+  Pearson `−0.003834`、Spearman `+0.003364`，两个 50k CI 都跨 0；对 R10
+  `+0.000670 / +0.001035` 也两个 CI 都跨 0。只能写“Spearman 点估计反超 int4”，
+  不能写“3-bit 全面追平/超过 int4”。128 上 `0.899405 / 0.929708`，仍低于 K10K11。
+- **`R15` 反证 int4 数量**：15 个 int4 的全量 `0.832161 / 0.835268`，两个指标都低于
+  `R12` 的 12 个 int4；位置比数量重要。`R12` 仍是同一批 1,379 对上的 in-sample
+  搜索，没有 held-out / sentence-disjoint / 第二模型，不能当留出验证。
+- 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
+  R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/复算），`docs/research/WSP-ALT.md`
+  §5.5，`WSP-BERT6-RESULTS.md`，`docs/results/LESSONS.md` 第 16 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
   `docs/results/LESSONS.md` 第 16 条。
