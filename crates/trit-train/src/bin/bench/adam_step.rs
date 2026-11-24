@@ -10,7 +10,7 @@ mod setup;
 
 type AdamStep = fn(&mut TernaryLinear, &[f32], &[f32], &mut Adam, &mut Adam) -> Vec<f32>;
 
-/// 单样本 Adam 训练一步并打印 `ms/step`；计时含 `pack()`、`dX`、融合 `dW` 与 scale。
+/// 单样本 Adam 训练一步并打印 `ms/step`；计时含量化、`dX`、`dW` 与 scale，不含 `pack()`。
 /// `scalar` 为真时走逐元素参考路径，用于复算融合倍数的基线。
 pub(super) fn bench_adam_step(rows: usize, cols: usize, steps: usize, rounds: usize, scalar: bool) {
     let (x, target) = setup::inputs(rows, cols);

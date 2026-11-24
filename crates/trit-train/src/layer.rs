@@ -198,18 +198,6 @@ impl TernaryLinear {
         }
         loss
     }
-
-    /// 量化 + `dX`/`qdot` 单遍；SGD 与 Adam 两条训练路径共用。
-    pub(super) fn fused_backward(&self, input: &[f32], dy: &[f32]) -> (Vec<f32>, Vec<f32>) {
-        crate::plane::fused::backward::backward(
-            &self.latent,
-            &self.scale,
-            self.rows,
-            self.cols,
-            input,
-            dy,
-        )
-    }
 }
 
 /// `q·x`，`q ∈ {-1,0,+1}`；可选软件预取（每 16 个元素预取 32 个后）。

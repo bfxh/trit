@@ -4916,15 +4916,23 @@
     },
     {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 525
+      "lines": 513
     },
     {
       "file": "crates/trit-train/src/layer/adam.rs",
-      "lines": 216
+      "lines": 58
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/support.rs",
+      "lines": 176
     },
     {
       "file": "crates/trit-train/src/layer/adam/tests.rs",
-      "lines": 129
+      "lines": 91
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/tests/fused.rs",
+      "lines": 126
     },
     {
       "file": "crates/trit-train/src/layer/grad.rs",
@@ -4957,6 +4965,14 @@
     {
       "file": "crates/trit-train/src/plane/fused.rs",
       "lines": 133
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step.rs",
+      "lines": 276
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step/tests.rs",
+      "lines": 121
     },
     {
       "file": "crates/trit-train/src/plane/fused/backward.rs",

@@ -1,5 +1,5 @@
 //! 多形状训练步矩阵：SGD `train_step` 与 Adam `train_step_with_grad_adam`。
-//! 计时含 `pack()`，构造与输入生成不计；每轮重建层与优化器，取最快。
+//! 计时不含 `pack()`，构造与输入生成不计；每轮重建层与优化器，取最快。
 
 use std::hint::black_box;
 use std::time::Instant;
