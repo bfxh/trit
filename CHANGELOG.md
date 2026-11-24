@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added（第十五轮：交接包 DeliveryReceipt 四态账本）
+
+- 新增 `tools/delivery_receipt.py`：`sent → delivered → read → acted` 四态账本，
+  每个状态记录 `at/actor/evidence/note`；`sent` 绑定交接包字节 SHA-256，
+  `delivered/read/acted` 的 actor 必须是包里的 `to`，顺序不可跳，`acted` 必须带
+  仓库相对证据；包字节改写后拒绝续账，`verify --packet` 判红。
+- 账本默认 `.agent/delivery/<packet-id>.json`；`.gitignore` 与
+  `tools/handoff.py` 的 `SKIP_UNTRACKED` 同步跳过它，登记 `sent` 后同一棵树的
+  `handoff gate` 仍是 `True`，不会把本机账本当成源码变更。
+- `verify` 三态：四态齐全 exit 0；只到中间态 exit 1；坏账本/坏 id exit 2；
+  `--json` 输出 ASCII 单行，`show` 保留中文可读账本。
+- `tools/delivery_receipt.py --self-test` **19/19**：sent 幂等、顺序不可跳、
+  actor 不匹配、acted 缺证据、机器路径拒绝、包字节改写、只到 sent 的 incomplete、
+  坏账本 shape。
+- `tools/selftest.ps1` 新增 AW1-AW3：工具自测 19/19；`handoff create → sent →
+  deliver → read → act → verify complete` 且 `sent` 后 handoff gate 仍为 True；
+  只登记 sent 的账本 verify=incomplete（exit 1）。全仓 **716→719 passed**。
+- 文档/台账：新增 `docs/engineering/AGENT-DELIVERY.md`；`AGENT-COORDINATION.md`
+  补四态边界与 `.agent/delivery` 跳过项；`docs/ERRORS.md` L169；C079；
+  `docs/README.md` 索引同步。
+
 ### Fixed（e-graph 提取：合并后的旧子 id 让根退化成 X）
 
 - `crates/trit-build/src/egraph.rs`：`union` 之后 `classes` 里仍存着指向被并掉 class 的
