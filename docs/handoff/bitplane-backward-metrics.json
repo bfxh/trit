@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T02:29:00+08:00",
+  "generated_at": "2026-11-25T03:15:00+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "9d1b947eb2fe78c6b52bd9bdd861adf01f7c0c64",
-    "commit_short": "9d1b947e",
+    "commit": "c64fe0c79a9e66dba869c97af593475811eeed12",
+    "commit_short": "c64fe0c7",
     "status": "open"
   },
   "platform": {
@@ -33,7 +33,8 @@
     "not": [
       "ternary arithmetic addition",
       "dW fused update (separate dense::sgd_update path, not part of this dX snapshot)",
-      "forward dot is plane row_dot in the train-step branch, not part of this dX snapshot"
+      "forward dot is fused::forward_dot in the train-step branch, not part of this dX snapshot",
+      "backward dX in training uses fused::backward, not this snapshot's pack+input_grad path"
     ]
   },
   "benchmark": {
@@ -64,16 +65,18 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); row_dot + fused forward (train_step + forward) + adam_dw + lazy q + qdot PR #668 (open)",
+    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward PR #668 (open, c64fe0c7)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "fused": "crates/trit-train/src/plane/fused.rs",
+      "fused_backward": "crates/trit-train/src/plane/fused/backward.rs",
       "row_dot": "crates/trit-train/src/plane/backward.rs",
       "dense": "crates/trit-train/src/dense.rs",
       "adam": "crates/trit-train/src/layer/adam.rs",
+      "grad": "crates/trit-train/src/layer/grad.rs",
       "layer": "crates/trit-train/src/layer.rs"
     },
-    "operation": "train_step: fused::forward_dot quantizes and dots in one pass -> dense::sgd_update(dW) -> scale update from qdot; forward(): fused::forward_dot -> scale; adam: pack() once -> dX -> layer::adam_update(dW) -> row_dot scale update",
+    "operation": "train_step: fused::forward_dot quantizes and dots in one pass -> dense::sgd_update(dW) -> scale update from qdot; forward(): fused::forward_dot -> scale; train_step_with_grad: fused::backward -> dense::sgd_update(dW) -> scale update from qdot; adam: fused::backward -> layer::adam_update(dW) -> scale update from qdot; pack() is public inspection/comparison only",
     "benchmark": {
       "shape": {
         "rows": 4096,
@@ -98,7 +101,7 @@
         "speedup_observed_range": [27, 35]
       },
       "pack_ms_per_step": [0.46, 0.46],
-      "pack_note": "reference only; not part of fused SGD train_step",
+      "pack_note": "reference only; training/forward paths no longer call pack()",
       "fused_forward": {
         "kernel": "plane::fused::forward_dot (AVX2)",
         "implementation": "clamp(round(w/scale),-1,1) + sign-mask dot in one pass; same j mod 4 grouping and hsum as row_dot",
@@ -116,7 +119,19 @@
         },
         "probe_speedup": [1.7, 1.9],
         "bit_exact_vs_pack_row_dot": true,
-        "note": "SGD train_step 不再构造 pos/neg 双导轨；forward/with_grad/Adam 仍用 pack()"
+        "note": "SGD train_step 与 forward() 不再构造 pos/neg 双导轨；training uses fused::backward"
+      },
+      "fused_backward": {
+        "kernel": "plane::fused::backward (AVX2)",
+        "implementation": "one quantize pass produces 3 q masks; dX uses 4 accumulators grouped by r & 3; qdot uses 4 accumulators grouped by j mod 4; scalar tail matches input_grad order",
+        "reproduce": "cargo run -p trit-train --release --example fused_backward_probe",
+        "probe_shape": "4096x576",
+        "old_pack_input_grad_row_dot_ms": [0.747, 0.759],
+        "fused_ms": [0.430, 0.441],
+        "speedup": [1.72, 1.74],
+        "dx_bit_exact": "576/576",
+        "qdot_bit_exact": "4096/4096",
+        "note": "train_step_with_grad 与 Adam 都不再 pack()；pack() 只保留公开检查/对拍"
       },
       "row_dot": {
         "kernel": "PlaneMatrix::row_dot (AVX2)",
@@ -132,14 +147,16 @@
           [1.27, 1.22],
           [1.42, 1.14]
         ],
-        "note": "整步 A/B 是同轮交替的安静样本；不与 25 轮绝对区间混用"
+        "note": "整步 A/B 是同轮交替的安静样本；row_dot 现在只服务 pack() 消费方与标量对拍"
       },
       "adam": {
         "scalar_kernel": "train_step_with_grad_adam_scalar",
         "scalar_ms_per_step": [8.0, 8.2],
         "fused_kernel": "train_step_with_grad_adam",
-        "fused_ms_per_step": [2.9, 3.1],
-        "speedup_observed_range": [2.6, 2.8]
+        "fused_ms_per_step": [2.4, 2.8],
+        "speedup_observed_range": [2.9, 3.4],
+        "old_pack_path_ms_per_step": [3.32, 3.55],
+        "ab_speedup": 1.3
       },
       "multi_shape": {
         "tool": "shape_bench",
@@ -154,10 +171,12 @@
           "5x9_speedup": [3.0, 4.9]
         },
         "adam": {
-          "4096x576_ms": [2.5, 3.1],
-          "4096x576_speedup": [2.6, 3.2],
-          "17x576_speedup": 4.15,
-          "11x130_speedup": 3.16
+          "4096x576_ms": 2.4907,
+          "4096x576_old_ms": 2.9966,
+          "4096x576_speedup": [3.1, 3.3],
+          "17x576_speedup": 5.6,
+          "11x130_speedup": 4.0,
+          "9x65_speedup": 2.6
         }
       }
     },
@@ -170,13 +189,13 @@
   },
   "tests": {
     "suite": "cargo test -p trit-train",
-    "passed": 32,
-    "training_step_passed": 32,
+    "passed": 33,
+    "training_step_passed": 33,
     "failed": 0,
     "before": 21,
-    "added": 11,
+    "added": 12,
     "training_step_before": 27,
-    "training_step_added": 5,
+    "training_step_added": 6,
     "coverage_shapes": [
       "1x1",
       "3x7",
@@ -201,23 +220,25 @@
     "pr_checks_skipping": 2,
     "pr_checks_pending": 0,
     "pr_checks_fail": 0,
-    "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"]
+    "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"],
+    "note": "32 pass / 2 skip / 0 fail measured at 2d79b0e4; c64fe0c7 CI pending push"
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",
     "dX 读数只覆盖 4096×576、单线程；不含 pack() 的量化成本。",
-    "训练步是单层单样本的端到端口径（SGD 不含 pack、Adam 含 pack，不含 q() 惰性解码），不含层构造/输入生成。",
-    "train_step 的 SGD 前向走 plane::fused::forward_dot（量化+点积一遍，不构造双导轨）、SGD dW 走 dense::sgd_update；forward() 也走 fused；Adam 与 train_step_with_grad 仍 pack() 后走 dX；Adam 路径没有前向、不复用 qdot；Adam dW 走 layer::adam_update（行级融合，非位平面）。",
+    "训练步是单层单样本的端到端口径（SGD/Adam 都不含 pack，不含 q() 惰性解码），不含层构造/输入生成。",
+    "train_step 的 SGD 前向走 plane::fused::forward_dot（量化+点积一遍，不构造双导轨）、SGD dW 走 dense::sgd_update；forward() 也走 fused；train_step_with_grad 与 Adam 走 plane::fused::backward（量化 + dX + qdot 一遍，不 pack）；Adam 路径没有前向、不复用 qdot；Adam dW 走 layer::adam_update（行级融合，非位平面）；pack() 只保留公开检查/对拍。",
     "multi_shape 是单层、单样本的 SGD/Adam 矩阵；9x65 的绝对耗时只有 0.2–0.4 µs，倍数会抖，1x1 不计入证据。",
     "row_dot 独立探针只测 4096 行、单线程；整步 A/B 是负载噪声下的同轮交替安静样本，不是 25 轮统计。",
     "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
     "q() 首次调用才从双导轨解码并缓存；SGD train_step 不读 q，因此 q 内存只在消费者访问后出现。",
-    "没有多形状曲线、GPU/WASM 读数或实验录像；SGD train_step 与 forward() 不再 pack，Adam/with_grad 仍每步一次全量量化，但只写双导轨。",
+    "没有多形状曲线、GPU/WASM 读数或实验录像；SGD/forward/with_grad/Adam 都不再 pack，pack() 仅公开参考。",
     "浏览器 playground/WASM 不能执行该内核；前端只消费静态快照。"
   ],
   "provenance": {
     "command": "cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rounds 7 --rows 4096 --cols 576 --threads 1 --ste-steps 1",
     "training_step_command": "cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 25 --ste-steps 1 --train-steps 3",
+    "fused_backward_command": "cargo run -p trit-train --release --example fused_backward_probe",
     "note": "--mtrits 只控制位平面 ALU 基准；反向/训练步形状由 --rows/--cols 决定。",
     "expected_tail": [
       "反向 dX：4096×576（2 M MAC，单线程，7 轮取最快）",

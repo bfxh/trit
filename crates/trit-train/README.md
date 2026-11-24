@@ -51,21 +51,17 @@ scale 的梯度会绕回量化门控，训练不稳。
 ## 位平面反向 `dX = Wᵀdy`
 
 `TernaryLinear::pack()` 把当前 latent 量化一次，按行打成 `pos`/`neg` 两条导轨
-（`PlaneMatrix`，1 trit = 2 bit）。反向不再逐列读 `q[c]`，而是：
+（`PlaneMatrix`，1 trit = 2 bit），现在**只保留为公开检查/对拍入口**。训练实际走
+`plane::fused::backward`：每行量化一次，3 个 `q` 掩码同时驱动 `dX` 与 `qdot`，
+不再分配双导轨，也不再用 `row_dot` 扫第二遍。旧位平面路径的语义是：
 
 1. 对第 `r` 行取 `coeff = dy[r] * scale[r]`；
 2. 每 8 列取一个字节的 `pos`/`neg` 掩码，用 AVX2 把 `coeff` 加/减到 `dX` 的 8 个 lane；
 3. 4 个行累加器打散依赖链，尾部按标量补齐。
 
-`train_step_with_grad` 复用同一份 `PlaneMatrix`：`dX`、scale 梯度（`row_dot`）和
-`dW` 都基于这一次打包，不再二次量化。`train_step_with_grad_adam` 也复用同一份
-planes，并把 latent 的 STE 门、一阶/二阶矩和参数更新交给 `layer::adam_update`
-的行级融合内核；`train_step_with_grad_adam_scalar` 保留逐元素参考。标量参考
-`PlaneMatrix::input_grad_scalar` 保留，测试逐尺寸对拍。
-
-边界：这里只做「双导轨选符号 + f32 累加」，**不是三进制算术加法**；非 x86_64
-或列数小于 8 时自动回退标量。`forward()` 与 SGD `train_step` 都走
-`fused::forward_dot`，不再为前向构造双导轨。
+`PlaneMatrix::input_grad_scalar` 与 `row_dot_scalar` 保留，测试逐尺寸对拍
+`fused::backward` 的 `dX`/`qdot`。边界：这里只做「掩码选符号 + f32 累加」，
+**不是三进制算术加法**；非 x86_64 或列数小于 8 时自动回退标量。
 
 ## 训练步：SGD 量化点积融合
 
@@ -78,14 +74,14 @@ planes，并把 latent 的 STE 门、一阶/二阶矩和参数更新交给 `laye
 2. `dense::sgd_update`：整层 `dW` 融合外积更新，按 8 lane 计算 STE 门控；
 3. scale 梯度直接用 `qdot`，不再重算点积。
 
-`pack()` 现在只服务 `train_step_with_grad` 的 `dX` 和 Adam `dX`；`row_dot` 的
-4 个固定累加器也仍用于 with_grad/Adam 的 scale 梯度。`forward_scalar` /
-`train_step_scalar` 保留为标量对拍与基准路径。
+`pack()` 已退出训练/前向生产路径；`forward_scalar` / `train_step_scalar` 保留为
+标量对拍与基准路径。
 
-**Adam 训练步**：`train_step_with_grad_adam` 仍需一次 `pack()` 和 `dX`；
-`layer::adam_update` 每 8 lane 一次算 STE 门、一阶/二阶矩、偏置校正和参数更新，
-短行、尾部或非 AVX2 走标量。`train_step_with_grad_adam_scalar` 保留旧的逐元素
-Adam 路径，既做对拍也做基准。
+**Adam 训练步**：`train_step_with_grad_adam` 与 `train_step_with_grad` 共用
+`fused::backward`（量化 + `dX` + `qdot` 一遍），`layer::adam_update` 每 8 lane
+一次算 STE 门、一阶/二阶矩、偏置校正和参数更新，短行、尾部或非 AVX2 走标量。
+`train_step_with_grad_adam_scalar` 保留旧的 `pack()` + 逐元素 Adam 路径，既做对拍
+也做基准。
 
 ## 实测（本机 24 核，16 M trit，7 轮取最快；`bench` 可复算）
 
@@ -122,7 +118,7 @@ Adam 路径，既做对拍也做基准。
 |---|---:|---:|
 | 标量参考（`train_step_scalar`） | 28.8–29.1 | 1.00× |
 | 融合前向（`train_step` + `fused::forward_dot`） | 0.81–1.14 | **27–35×** |
-| `pack()` 参考（不参与融合步，只出双导轨） | 0.46 | — |
+| `pack()` 参考（训练不再调用，只出双导轨） | 0.46 | — |
 
 `fused::forward_dot` 的复算 example（`cargo run -p trit-train --release --example fused_probe`，4096 行）
 把 `pack()+row_dot` 的 **0.62–0.68 ms**
@@ -131,21 +127,30 @@ Adam 路径，既做对拍也做基准。
 不把高载单次当稳定值。`forward()` 的复算见 `forward_probe`：**0.62 ms → 0.36 ms
 （1.7×）**，4096/4096 位相等。
 
+反向也已去掉 `pack()`：`train_step_with_grad` 与 Adam 共用
+`fused::backward::backward`，一次量化同时产出 `dX` 和 `qdot`，不再
+`pack()` → `input_grad` → `row_dot`。复算 example
+（`cargo run -p trit-train --release --example fused_backward_probe`，4096×576）
+旧路径 **0.747–0.759 ms** → 新 **0.430–0.441 ms（1.72–1.74×）**，
+`dX` 576/576、`qdot` 4096/4096 逐位相等。
+
 `row_dot` 的 4 个累加器已从 `acc[j & 3]` 动态索引改成固定累加器 + 内联单块闭包：
 主循环一次推进 4 个 8-lane 块，余块单路收尾；累加分组仍是 `j mod 4`。独立探针
-（4096 行）**0.2444→0.1428 ms（1.71×）**；它现在用于
-`train_step_with_grad` 和 Adam 的 scale 梯度，不参与 `forward()`/SGD 融合步。
+（4096 行）**0.2444→0.1428 ms（1.71×）**；它现在只服务 `pack()` 的消费方与
+标量对拍，不参与训练热路径。
 
-Adam 训练步（4096×576，单线程，3 步/轮，25 轮取最快，含 `pack`）：
+Adam 训练步（4096×576，单线程，3 步/轮，25 轮取最快；量化单遍，不含 `pack`）：
 
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
 | 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.0–8.2 | 1.00× |
-| 行级融合（`train_step_with_grad_adam`） | 2.9–3.1 | **2.6–2.8×** |
+| 行级融合 + `fused::backward` | 2.4–2.8 | **2.9–3.4×** |
 
-两条路径用同一条基准复算：融合是默认输出，参考路径加 `--adam-scalar`。
+同轮 A/B：旧 `pack()+input_grad+row_dot` **3.32–3.55 ms/step** → 新 **2.4–2.8
+ms/step（约 1.3×）**；`shape_bench` 4096×576 **2.9966→2.4907 ms**。两条路径用同一条
+基准复算：融合是默认输出，参考路径加 `--adam-scalar`。
 
-多形状矩阵（`shape_bench`，按形状放大步数，9 轮取最快；SGD 不含 `pack`，Adam 含 `pack`）：
+多形状矩阵（`shape_bench`，按形状放大步数，9 轮取最快；SGD/Adam 都不含 `pack`）：
 
 SGD `train_step`（融合前向）：
 
@@ -163,15 +168,15 @@ Adam `train_step_with_grad_adam`：
 | shape | 融合 ms/step | 逐元素 ms/step | 倍数 |
 |---|---:|---:|---:|
 | 2×7 | 0.0003 | 0.0003 | 1.00× |
-| 5×9 | 0.0004 | 0.0005 | 1.14× |
-| 9×65 | 0.0009–0.0010 | 0.0022 | 2.3× |
-| 11×130 | 0.0014 | 0.0045 | 3.16× |
-| 17×576 | 0.0068 | 0.0282 | 4.15× |
-| 4096×576 | 2.5–3.1 | 7.8–8.0 | 2.6–3.2× |
+| 5×9 | 0.0004 | 0.0005 | 1.25× |
+| 9×65 | 0.0008 | 0.0021 | 2.6× |
+| 11×130 | 0.0011 | 0.0044 | 4.0× |
+| 17×576 | 0.0050 | 0.0281 | 5.6× |
+| 4096×576 | 2.49 | 7.8–8.2 | 3.1–3.3× |
 
 SGD 的 `2×7` 只有 2.0×，仍是计时噪声；`5×9` 放大到 3.0–4.9×；`9×65` 到
 `17×576` 逐级升高，4096×576 在 25.9–27.1×。Adam 的 `2×7` 没进 SIMD，和逐元素持平；
-`5×9` 只有 1.14×，大矩阵回落到 2.6–3.2×。`1×1` 太短，计时分辨率不足，
+`5×9` 只有 1.25×，`17×576` 到 5.6×，4096×576 回落到 3.1–3.3×。`1×1` 太短，计时分辨率不足，
 不作为倍数证据；`9×65` 的绝对时间也只有 0.2–0.4 µs，倍数会抖。
 **不能拿 4096×576 的倍数覆盖所有形状**。`shape_bench` 的 9 轮与 `train-bench`
 的 25 轮是两次独立复跑，机器负载不同；绝对 ms 不跨表比较，倍数按各自标量参考算。
@@ -211,12 +216,12 @@ cargo run -p trit-train --release --bin shape_bench
 ## 边界与下一步
 
 - 前向点积：`forward()` 与 SGD `train_step` 走 **`fused::forward_dot`**；with_grad/Adam
-  的 `dX`、scale 梯度仍走位平面 `row_dot`（每 8 个 trit 取一个字节的 `pos`/`neg` 掩码）。
-  更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到
-  可发布 crate 再复用；本轮的位平面前向/反向没有跨 crate 依赖。
-- 反向 `dX`、前向、SGD `dW` 与 Adam `dW` 都已融合；`forward()`/SGD `train_step`
-  不再 `pack()`，`pack()` 只剩 with_grad/Adam 的 `dX` 每步一次全量量化，
-  但只写双导轨，`q` 缓存改为首次 `q()` 时惰性解码。训练步不读 `q`，因此不付这笔写回。
+  的 `dX` 与 scale 梯度走 **`fused::backward`**，两者都不再构造双导轨。更快的掩码内核
+  在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到可发布 crate 再复用；
+  本轮没有跨 crate 依赖。
+- 反向 `dX`/`qdot`、前向、SGD `dW` 与 Adam `dW` 都已融合；`forward()`、SGD `train_step`、
+  `train_step_with_grad`、Adam 四条路径都不再 `pack()`。`pack()` 只剩公开检查/对拍用途，
+  `q` 缓存改为首次 `q()` 时惰性解码；训练步不读 `q`，因此不付这笔写回。
 - 没有 bias/激活/多层/优化器状态（除单层 Adam 探针）；`TernaryLinear` 是探针，不是框架。
 - 后续候选：KV cache 的三值压缩、AI-to-AI 三态消息格式（TriCom 类）——都还没做，
   需要先有格式规范与可复算的压缩/延迟读数。

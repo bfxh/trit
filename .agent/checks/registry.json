@@ -1661,6 +1661,28 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C089",
+      "title": "trit-train 反向 dX+qdot 量化单遍",
+      "kind": "cmd",
+      "covers": [
+        "L179"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/backward.rs",
+        "crates/trit-train/src/plane/fused/backward/tests.rs",
+        "crates/trit-train/src/layer/grad.rs",
+        "crates/trit-train/src/layer/adam.rs",
+        "crates/trit-train/examples/fused_backward_probe.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T03:05:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

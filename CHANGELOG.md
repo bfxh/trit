@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Changed（第二十七轮：反向 `dX`+`qdot` 单遍，训练彻底去掉 `pack`）
+
+- 新增 `plane/fused/backward.rs`：每行量化一次，同时算 `dX` 与 `qdot`，不再为
+  反向构造 `PlaneMatrix`。`train_step_with_grad` 与 `train_step_with_grad_adam`
+  改为 `fused::backward` → `sgd_update`/`adam_update` → 用 `qdot` 更新 scale；
+  `pack()` 在训练/前向生产路径上不再被调用，只保留为公开检查/对拍入口。
+- 对拍：`(1,1)/(4,7)/(5,9)/(6,63)/(8,130)/(3,9 零/负 scale)/(4,576)` 与
+  `pack()+input_grad+row_dot` 的 `dX`、`qdot` 逐位相等；4096×576 探针
+  **0.747–0.759 ms → 0.430–0.441 ms（1.72–1.74×）**，`dX 576/576`、`qdot 4096/4096`。
+- Adam 同轮 A/B：旧 `pack()+input_grad+row_dot` **3.32–3.55 ms/step** → 新
+  **2.4–2.8 ms/step（约 1.3×；逐元素参考 8.0–8.2，2.9–3.4×）**。`shape_bench`
+  4096×576 **2.9966→2.4907 ms**，17×576 **0.0066→0.0050 ms**，11×130
+  **0.0014→0.0011 ms**，9×65 **0.0009→0.0008 ms**；SGD 路径不变（4096×576
+  0.71–0.73 ms）。
+- 为守 module budget，把带梯度 SGD 与 Adam 标量参考从 `layer.rs` 拆到
+  `layer/grad.rs`；`layer.rs` **571→525**，`layer/adam.rs` **218→216**，
+  `plane/fused.rs` 保持 **133**。测试 **32→33**；缺陷台账新增 L179/C089；
+  `fused/backward.rs` 加入 hazard allowlist。
+
 ### Changed（第二十六轮：SGD 前向量化点积融合）
 
 - `train_step` 不再为前向构造 `PlaneMatrix`：新增 `plane/fused.rs`，每 8 列直接做
@@ -16,8 +35,8 @@
   ms（1.7–1.9×）**；`train_step` **0.81–1.14 ms/step（27–35×；旧 1.16–1.22 /
   23.9–25.0×）**。`shape_bench` 4096×576 **0.90–1.00 ms（25.9–27.1×）**，17×576
   **27–30×**，11×130 **19–20×**，9×65 **14.5–15.3×**。
-- `pack()` 仍服务 `train_step_with_grad` 的 `dX` 和 Adam `dX`；
-  `train-bench` 的 `pack()` 行改为不参与融合步的参考读数。测试 **31→32**；
+- `pack()` 当时仍服务 `train_step_with_grad` 的 `dX` 和 Adam `dX`（第二十七轮已由
+  `fused::backward` 取代）；`train-bench` 的 `pack()` 行改为不参与融合步的参考读数。测试 **31→32**；
   缺陷台账新增 L178/C088。
 
 ### Changed（第二十五轮：`row_dot` 固定累加器展开）
