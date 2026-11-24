@@ -807,6 +807,16 @@
   **固定结构只减少手工自由度，不消除块选择方差；全量点估计仍是 in-sample，
   不能当默认规则。** `--run` 路径已在 L6 上端到端复算，读数与手工评测一致；
   `test_surface` 登记为 137 单位 / 3534 条。
+- **选择器交叉拟合（M1.8）**：新增 `scripts/wsp_budget_cv.py`，5 折 × 2 种子，
+  每折只用其余 4 折的单块 ΔSpearman 选 `per_shape=2`，候选只在测试折计分，
+  5 个测试折拼成 OOF 向量。两个种子 OOF 是 `0.827074 / 0.821085` 和
+  `0.824388 / 0.817272`，均值 `0.825731 / 0.819179`；相对纯 int3
+  `+0.011137 / +0.008754`（10 折中 P 9/10、S 8/10 正），相对纯 int4
+  `−0.000330 / −0.000175`（10 折中只有 5/10 正）。**两折的 50% 训练让方差
+  压过均值；5 折后 procedure 稳定优于 int3，但只打平 int4，仍不能当默认
+  规则。** 折级数据见 `wsp-budget-l6-cv.tsv`（10 行），bootstrap 行追加到
+  `wsp-budget-l6-bootstrap.tsv`（32 行）；`test_surface` 登记为 138 单位 /
+  3535 条。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
@@ -821,8 +831,9 @@
   STS13 各 1,000 对即由它导出；`test_surface` 登记后为 136 单位 / 3533 条 / 拦 0。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
   R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/§9.5 留一来源/
-  §10 外部三套复验/§11 L6 第二模型/§12 下一步），`docs/research/WSP-ALT.md` §5.5，
-  `WSP-BERT6-RESULTS.md` §3.16.9，`docs/results/LESSONS.md` 第 16/17/18/19 条。
+  §10 外部三套复验/§11 L6 第二模型 + 重扫选择器/§11.7 5 折交叉拟合/§12 下一步），
+  `docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md` §3.16.9/§3.16.10，
+  `docs/results/LESSONS.md` 第 16/17/18/19/20 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
   `docs/results/LESSONS.md` 第 16 条。
