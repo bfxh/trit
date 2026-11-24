@@ -124,9 +124,12 @@
    50k CI 过 0，Pearson 跨 0）；相对纯 int4 Pearson `−0.003834`、
    Spearman `+0.003364`，两个 50k CI 都跨 0。**升级收益和降级伤害不是同一张
    曲线**：`11k` 升 int4 只有 `+0.000207`，`8v`/`3v` 反而双降；`R15`（15 int4）
-   两个指标都低于 `R12`（12 int4），说明 int4 数量不保证更好。`R12` 仍是同一批
-   1,379 对上的 in-sample 搜索，没有 held-out / sentence-disjoint；下一步必须
-   补留出或第二模型，不能直接写“3-bit 超过 4-bit”。
+   两个指标都低于 `R12`（12 int4），说明 int4 数量不保证更好。按 6 个来源拆开，
+   `R12` 对 F5F7V7 是 4 胜 1 平 1 负，但对纯 int4 是 0/6 胜（MSRvid/headlines
+   各低 `−0.017`）；总体 Spearman 反超更像跨来源排序/校准效应。`R12` 仍是同一批
+   1,379 对上的 in-sample 搜索，没有 held-out；数据里 2,758 个句子 ID 全部唯一，
+   按 pair 切分天然 sentence-disjoint，但本轮还没做切分复验。下一步必须补
+   leave-one-source-out / train-test 切分或第二模型，不能直接写“3-bit 超过 4-bit”。
    复算：`python scripts/wsp_budget_perturb.py --base budget-l12-pure-int3.json
    --bits 2 --run ...` 和 `--bits 4 --run ...`；表见
    `WSP-BUDGET-RESULTS.md` §8/§9。

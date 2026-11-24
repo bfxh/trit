@@ -754,12 +754,21 @@
   Pearson `−0.003834`、Spearman `+0.003364`，两个 50k CI 都跨 0；对 R10
   `+0.000670 / +0.001035` 也两个 CI 都跨 0。只能写“Spearman 点估计反超 int4”，
   不能写“3-bit 全面追平/超过 int4”。128 上 `0.899405 / 0.929708`，仍低于 K10K11。
+  按 6 个来源拆开，`R12` 对 F5F7V7 是 4 胜 1 平 1 负，但对纯 int4 是 **0/6 胜**
+  （MSRvid/headlines 各低 `−0.017`）；总体 Spearman 反超更像跨来源排序/校准效应。
 - **`R15` 反证 int4 数量**：15 个 int4 的全量 `0.832161 / 0.835268`，两个指标都低于
   `R12` 的 12 个 int4；位置比数量重要。`R12` 仍是同一批 1,379 对上的 in-sample
-  搜索，没有 held-out / sentence-disjoint / 第二模型，不能当留出验证。
+  搜索，没有 held-out / 第二模型；数据里 2,758 个句子 ID 全部唯一，按 pair 切分
+  天然 sentence-disjoint，但本轮还没做切分复验，不能当留出验证。
+- **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
+  按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
+  Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
+  留一来源敏感性里对 int4 的符号会翻转（去 MSRvid `+0.009`，去
+  answer-answer `−0.004`），不是稳定胜过 int4。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
-  R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/复算），`docs/research/WSP-ALT.md`
-  §5.5，`WSP-BERT6-RESULTS.md`，`docs/results/LESSONS.md` 第 16 条。
+  R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/复算），
+  `docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，`docs/results/LESSONS.md`
+  第 16 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
   `docs/results/LESSONS.md` 第 16 条。
