@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed（e-graph 提取：合并后的旧子 id 让根退化成 X）
+
+- `crates/trit-build/src/egraph.rs`：`union` 之后 `classes` 里仍存着指向被并掉 class 的
+  旧子 id，而 `extract` 的代价表只按根 id 建键——旧 id 查不到代价，整个根就退化成常量
+  `X`，CLI 报「化简/重写结果与原文不等价（内部错误）」。修法：`rebuild` 里把存活 class
+  的 kind 子节点改写到根 id 并去重（`canonicalize_kinds`），`kind_stats` 查代价前也按根
+  解析；提取逻辑拆到 `egraph/extract.rs`，在模块预算内（台账只收紧，未抬高）。
+- 回归：`((a => b) <=> (!a | b)) ^ c` 此前在默认饱和下无法构建（只有 `--egraph-rounds 0`
+  能过），现在退出 0、`truth.csv` 与不饱和路径**逐字节相同**。新增
+  `egraph::tests_regression::equiv_xor_chain_does_not_degrade_to_unknown`、
+  `equiv_forms_keep_semantics_in_every_algebra` 与 `tests/egraph_equiv.rs` 端到端各一条；
+  `cargo test -p trit-build` 全绿。
+
 ### Added（第十三轮：每个 goal 必须被需求覆盖）
 
 - `alignment_gate.py` 不再把“树里存在任意需求”当成目标覆盖：遍历每条 requirement
