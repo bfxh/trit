@@ -141,6 +141,14 @@ STS12/STS13 都正（STS13 `+0.021556 / +0.017861`，双 10k CI 过 0）；`K10K
 in-sample 点估计，`K10K11` 是 STS in-domain 优先点，`I10` 是外部保守默认；
 没有单一候选同时赢两边（§10）。**
 
+M1.9 的相对深度规则在 L12→L6 上看起来可用（`0.828707 / 0.824484`，对 int3
+双 CI 过 0），但 M1.10 用两个新模型把这条规则打回“模型对特定”：同一套 L12 块
+布局在 3 层 L3 上比纯 int3 低 `−0.012450 / −0.010778`（CI 整段为负），在
+同深度不同训练目标的 par-L6 上低 `−0.016161 / −0.007308`；连 L6 自己的最优
+`6/24/6` 布局投到 par-L6 也是 `−0.011203 / −0.008646`。**同一布局在两个 6 层
+模型上相对各自 int3 的 Δ 从 `+0.014/+0.014` 翻成 `−0.016/−0.007`；L12→L6
+的正向不能写成跨模型规则，只能当这对模型的候选生成器（§11.10）。**
+
 ## 2. 字节账
 
 预算固定为纯 int3 的**实际工件字节**，不是 weight-only：
@@ -1558,16 +1566,264 @@ bert6 --file all-MiniLM-L12-v2.safetensors \
 ```
 
 `python scripts/wsp_budget_rule.py --self-test` 输出 `self-test: ok`。表见
-`data/wsp-budget-rule-candidates.tsv`（2 行）和
+`data/wsp-budget-rule-candidates.tsv`（6 行，含 M1.10 的四个新方向）和
 `data/wsp-budget-rule-bootstrap.tsv`（12 行）；L6 的对比行追加在
 `data/wsp-budget-l6-candidates.tsv`。
+
+### 11.10 第三模型与同深度交叉检验（M1.10）
+
+§11.9.3 的边界只有一句话最重要：**只有 L12/L6 一对模型，L12→L6 的正向
+不能排除是这对模型的偶然。** 本轮把同一条规则投到两个新模型：
+
+- **L3**：`sentence-transformers/paraphrase-MiniLM-L3-v2`，3 层、384 hidden、
+  12 heads、intermediate 1536；与 L12/L6 深度不同，是“规则能否跨深度”的边界；
+- **par-L6**：`sentence-transformers/paraphrase-MiniLM-L6-v2`，6 层、384 hidden、
+  12 heads、intermediate 1536；与 all-MiniLM-L6 **同深度、同架构、不同训练目标**，
+  是“L12→L6 的正向是不是模型对特定”的直接对照。
+
+规则仍然是 `scripts/wsp_budget_rule.py`：只读源表和目标 base budget，目标模型的
+块表完全不参与；`per_shape=2`，整包严格同字节。
+
+#### 11.10.1 3 层模型的可行性边界与选择器收缩
+
+L3 的 18 块分成三个形状组：`384×384` 12 块、`384×1536` 3 块、`1536×384` 3 块。
+“每形状组 2 降 2 升”要求每组至少 4 块，后两组只有 3 块，物理上不可行。
+本轮把 `wsp_budget_rescan.select_blocks` 的口径改成：
+
+- `per_shape` 是**每组上限**，不是硬性配额；
+- 每组实际对数 `effective = min(per_shape, floor(n/2))`；
+- 每个形状组的 `requested_per_shape/effective_per_shape` 写进报告，
+  预算 `variant.per_shape_effective` 也保留实际值。
+
+对 L3，实际是 `2 / 1 / 1` 对，共 4 降 4 升，分布 `4/10/4`。对 L6/L12，
+三个形状组都 ≥6 块，`effective` 仍为 2；把 L12→L6 的规则候选重跑一遍，
+`6/24/6`、`5,391,360 B`、上下选块与 §11.9.1 完全一致，旧结果不受影响。
+
+#### 11.10.2 L3 基线：规则候选两个方向都显著低于纯 int3
+
+L3 的 STS-B 全量 1,379 对、seq 64，f32/int3/int4 基线：
+
+| 配置 | 分布 | Pearson | Spearman | ΔP vs int3 | ΔS vs int3 |
+|---|---|---:|---:|---:|---:|
+| L3 纯 f32 | — | 0.823637 | 0.824059 | +0.003946 | +0.001281 |
+| L3 纯 int3 | 0/18/0 | 0.819691 | 0.822778 | — | — |
+| L3 纯 int4 | 0/0/18 | 0.823378 | 0.825063 | +0.003687 | +0.002285 |
+| **rule-L12-prior** | **4/10/4** | **0.807241** | **0.812000** | **−0.012450** | **−0.010778** |
+| **rule-L6-prior** | **4/10/4** | **0.808890** | **0.809610** | **−0.010801** | **−0.013168** |
+| rescan-k1（原生） | 3/12/3 | 0.819736 | 0.825566 | +0.000045 | +0.002787 |
+| rescan-k2（原生） | 4/10/4 | 0.814996 | 0.823230 | −0.004695 | +0.000452 |
+
+两条规则候选相对纯 int3 的 10k bootstrap：
+
+- `rule-L12-prior`：Pearson `−0.012454`，CI `[−0.017612, −0.007431]`，
+  候选更好 `0.00%`；Spearman `−0.010809`，CI `[−0.017126, −0.004982]`，
+  更好 `0.03%`。
+- `rule-L6-prior`：Pearson `−0.010838`，CI `[−0.016771, −0.005033]`，
+  更好 `0.01%`；Spearman `−0.013212`，CI `[−0.020570, −0.006132]`，
+  更好 `0.01%`。
+
+对纯 int4 也是双负：L12 先验 `−0.016160 / −0.013096`，L6 先验
+`−0.014544 / −0.015499`，四个 CI 都整段为负。**这不是“没赢 int4”，
+是“连纯 int3 都显著更差”。**
+
+失败原因可以落到块上。L3 自己的 36 行单块表（`data/wsp-budget-l3-perturb.tsv`）
+显示：
+
+- 降 int2 最伤的是 `1i −0.006620 / −0.007579`、`0v −0.005989 / −0.007134`、
+  `0o −0.006315 / −0.006519`、`0k −0.005865 / −0.006009`；最耐降的是
+  `1k −0.001718 / +0.000430`、`1o −0.003511 / +0.000408`、`1q −0.001518 / +0.000342`。
+- 升 int4 最受益的是 `1f +0.000601 / +0.000941`、`1q +0.000549 / +0.000880`、
+  `1o +0.000313 / +0.000850`、`0f +0.001047 / +0.000731`；`2q −0.000119 / −0.000227`、
+  `2v −0.000308 / −0.000152` 是负收益。
+- 两个规则方向**都选了 `0o` 降 int2**；L3 上它是 layer 0 最伤的降级块之一。
+  L6 先验还选了 `1i`、`1f`，正好是 L3 最伤降级块的第 1、第 8 名；
+  L12 先验的升级里 `1i`、`2v`、`2o` 也是负收益。**源模型上的“最安全/最受益”，
+  到 L3 变成了“最伤/负收益”，排序整体反转。**
+
+这不是“规则插值算错了”，而是**块级敏感度的排序本身不跨模型守恒**：
+同一块在 L3 上甚至两个方向都小幅为正（`1k` 降 `+0.000430`、升 `+0.000362`；
+`1o` 降 `+0.000408`、升 `+0.000850`），源表的 `kind` 均值无法预测这种符号。
+
+#### 11.10.3 L3 原生重扫对照：3 对只能打平 int3，4 对 Pearson 翻负
+
+为了区分“规则选错块”和“L3 本身没有同字节空间”，本轮对 L3 的 18 块 × 2
+方向全部跑了全量单块评测（36 个变体，`perturb-l3-3to2/3to4`），再用
+`wsp_budget_rescan.py` 在目标自己的表上选块：
+
+- `rescan-k1`：每形状组 1 对，`3/12/3`，`2,695,680 B`；
+  选块降 `1k / 2i / 2f`，升 `0i / 1q / 1f`；
+  全量 `0.819736 / 0.825566`。相对纯 int3 `+0.000045 / +0.002787`，
+  10k CI Pearson `[−0.003241, +0.003351]`（更好 `51.92%`）、
+  Spearman `[−0.000918, +0.006489]`（更好 `92.98%`）；相对纯 int4
+  `−0.003641 / +0.000503`，CI `[−0.007748, +0.000548]` / `[−0.004002, +0.005122]`
+  都跨 0。**3 对原生混合只能和 int3 打平，Pearson 点估计几乎为 0。**
+- `rescan-k2`：`per_shape=2` 自动收缩成 `4/10/4`；
+  选块降 `1o / 1k / 2i / 2f`，升 `0o / 0i / 1q / 1f`（与 k1 同一批块，
+  只是 attention 组多 1 对）；全量 `0.814996 / 0.823230`。相对纯 int3
+  `−0.004695 / +0.000452`，CI Pearson `[−0.009505, +0.000189]`（更好 `2.93%`）、
+  Spearman `[−0.005153, +0.005989]`（更好 `56.80%`）；相对纯 int4
+  `−0.008382 / −0.001833`，Pearson CI `[−0.013627, −0.002990]` 整段为负。
+  **4 对原生混合在 L3 上把 Pearson 推负，Spearman 只打平。**
+
+所以 L3 的可用空间很窄：3 对能吸收，4 对就翻负。但**规则候选比原生 k2 还差**：
+`rule-L12` 是 `−0.007755 / −0.011230`，`rule-L6` 是 `−0.006106 / −0.013621`。
+这说明规则不是“输给了 L3 的容量边界”，而是把最伤的块当成最安全的块。
+即使 L3 完全没有 headroom，也不能替规则候选解释掉这 0.6–0.8 个百分点（P）
+/ 1.0–1.4 个百分点（S）的额外损失。
+
+#### 11.10.4 同深度 paraphrase-L6：同一布局的符号翻转
+
+par-L6 与 all-MiniLM-L6 同为 6 层、384 hidden、12 heads、intermediate 1536，
+但训练目标不同。它的 STS-B 全量基线是：
+
+| 配置 | 分布 | Pearson | Spearman | ΔP vs int3 | ΔS vs int3 |
+|---|---|---:|---:|---:|---:|
+| par-L6 纯 f32 | — | 0.836131 | 0.841234 | +0.011089 | +0.014458 |
+| par-L6 纯 int3 | 0/36/0 | 0.825042 | 0.826777 | — | — |
+| par-L6 纯 int4 | 0/0/36 | 0.830598 | 0.837303 | +0.005556 | +0.010527 |
+| **rule-L12-prior** | **6/24/6** | **0.808881** | **0.819468** | **−0.016161** | **−0.007308** |
+| **rule-L6-prior** | **6/24/6** | **0.813839** | **0.818131** | **−0.011203** | **−0.008646** |
+
+- L12 先验选出的块与 §11.9.1 的 L12→L6 **完全相同**（同一目标深度、同一 base
+  形状，规则只读源表）：升 `1f / 2i / 2f / 4o / 4i / 5v`，降
+  `3v / 3i / 3f / 4v / 4f / 5i`。在 all-MiniLM-L6 上它是
+  `+0.014113 / +0.014060`（对 int3）；在 par-L6 上是
+  `−0.016161 / −0.007308`。**同一布局、同一字节账、同为 6 层，Δ 双指标符号翻转。**
+- L6 先验选出的块与 L6 自己的 rescan-k2 **完全相同**（升
+  `0i / 0f / 1v / 4k / 4i / 4f`，降 `2i / 2f / 3v / 3i / 3f / 4v`）；
+  在 all-MiniLM-L6 上它是 `+0.016710 / +0.014032`，在 par-L6 上是
+  `−0.011203 / −0.008646`，同样双负。
+- par-L6 的 10k bootstrap：L12 先验对 int3 Pearson CI
+  `[−0.023405, −0.009015]`（更好 `0.00%`）、Spearman
+  `[−0.015931, +0.001055]`（更好 `4.48%`）；对 int4
+  `−0.021716 / −0.017835`，两个 CI 整段为负。L6 先验对 int3
+  Pearson CI `[−0.019033, −0.003352]`（更好 `0.26%`）、Spearman
+  `[−0.018165, +0.000603]`（更好 `3.50%`）；对 int4
+  `−0.016759 / −0.019173`，两个 CI 整段为负。
+
+par-L6 没有做 36 块原生表，所以**不能**说“par-L6 没有 headroom”。但它也不需要
+这个前提：本轮要证的是“布局/规则可迁移”，而**L6 自己在 all-MiniLM-L6 上的
+最优布局，原样投到同架构的 par-L6 就双负**。这已经足以否定“L12→L6 的正向
+是可复用的跨模型规则”，并把它归为**模型对特定**。
+
+#### 11.10.5 结论与边界
+
+- **M1.9 的 L12→L6 正向是模型对特定的，不是可迁移规则。** 同一套 L12 规则/
+  L6 原生布局，换到同深度的 par-L6 后，相对各自 int3 的 ΔP/ΔS 从
+  `+0.0141/+0.0141`（L6-L12 先验）、`+0.0167/+0.0140`（L6 原生）翻成
+  `−0.0162/−0.0073`、`−0.0112/−0.0086`；在 3 层的 L3 上，两条规则候选
+  相对 int3 的 CI 都整段为负（`−0.0125/−0.0108` 与 `−0.0108/−0.0132`）。
+- **规则只能当“某一对源/目标模型”的候选生成器，不能当运行时默认。**
+  它没有读目标块表，这一点在 L12→L6 上像优点；但 L3/par-L6 证明它也会
+  把源模型的排序原样搬错。**跨模型块级敏感度排序不守恒。**
+- **L3 的原生重扫只打平 int3，不能反推“3-bit 追平 int4”。** k1 `3/12/3`
+  对 int3 是 `+0.000045 / +0.002787`（CI 都跨 0），k2 `4/10/4` 是
+  `−0.004695 / +0.000452`（Pearson CI 跨 0、Spearman CI 跨 0），对 int4
+  都没有统计优势。3 层模型的同字节块重排没有可用 headroom；这与 L6 的
+  in-sample `0.831304` 不能互相外推。
+- **运行时默认不动**：仍是 `I10` 外部保守、`K10K11`/`R12` STS in-domain；
+  L3/par-L6 的新候选都不进默认。
+- **边界**：两套新模型都只跑 STS-B 1,379 对、seq 64；L3 做了 18 块 × 2 方向
+  全量单块表，par-L6 没有做 36 块原生表；par-L6 的结论是“布局不迁移”，
+  不是“par-L6 无 headroom”。bootstrap 是 pair-level，不是句子级；两套新数据
+  的 2,758 个句子 ID 都唯一、不跨 pair 复用，但没有做按句子切分的 held-out；
+  也没有把新候选跑 SICK-R/STS12/STS13 三套外部数据。
+- **下一步优先级**：**停止调跨模型规则和 `per_shape`**。要么接受“每个模型
+  自己重扫 36/72 块表”，要么转检索/分类任务头；只有在这两类证据上仍为正的
+  块组合，才进入 int5/f32/侧车或 MXQ。不要再拿 L12→L6 的单向正向当通用结论。
+
+#### 11.10.6 复算
+
+```bash
+# L3 数据：STS-B 全量 1,379 对，seq 64
+python scripts/wsp_export_sts_pairs.py \
+  --dataset mteb/stsbenchmark-sts --split test --pairs 1379 \
+  --out paraphrase-MiniLM-L3-sts-full \
+  --model paraphrase-MiniLM-L3-v2 --seq 64 --local-only
+
+# L3 纯 int3 base：18 块全部 bits=3（2,695,680 B）
+# L3 单块表：18 块 × 3->2 / 3->4，各 1,379 对
+python scripts/wsp_budget_perturb.py \
+  --base budget-l3-pure-int3-all3.json --bits 2 \
+  --out-dir perturb-l3-3to2 --run --resume --layers 3 --threads 6 --jobs 4 \
+  --exe target/release/examples/bert6.exe \
+  --model paraphrase-MiniLM-L3-v2.safetensors \
+  --data-dir paraphrase-MiniLM-L3-sts-full \
+  --f32-cache l3-f32-cache-full.json --base-result l3-int3-result.json
+
+python scripts/wsp_budget_perturb.py \
+  --base budget-l3-pure-int3-all3.json --bits 4 \
+  --out-dir perturb-l3-3to4 --run --resume --layers 3 --threads 6 --jobs 4 \
+  --exe target/release/examples/bert6.exe \
+  --model paraphrase-MiniLM-L3-v2.safetensors \
+  --data-dir paraphrase-MiniLM-L3-sts-full \
+  --f32-cache l3-f32-cache-full.json --base-result l3-int3-result.json
+
+# L3 原生 k1/k2（per_shape=2 会被收缩成 2/1/1）
+python scripts/wsp_budget_rescan.py \
+  --base budget-l3-pure-int3-all3.json \
+  --summary-3to2 perturb-l3-3to2/perturb-summary.json \
+  --summary-3to4 perturb-l3-3to4/perturb-summary.json \
+  --per-shape 1 --out budget-l3-rescan-k1.json
+python scripts/wsp_budget_rescan.py \
+  --base budget-l3-pure-int3-all3.json \
+  --summary-3to2 perturb-l3-3to2/perturb-summary.json \
+  --summary-3to4 perturb-l3-3to4/perturb-summary.json \
+  --per-shape 2 --out budget-l3-rescan-k2.json
+
+# L3 两条规则候选：源表 L12 / L6，目标 3 层
+python scripts/wsp_budget_rule.py \
+  --base budget-l3-pure-int3-all3.json \
+  --table docs/research/data/wsp-budget-l12-perturb.tsv \
+  --target-layers 3 --per-shape 2 --out budget-l3-rule-l12.json
+python scripts/wsp_budget_rule.py \
+  --base budget-l3-pure-int3-all3.json \
+  --table docs/research/data/wsp-budget-l6-perturb.tsv \
+  --target-layers 3 --per-shape 2 --out budget-l3-rule-l6.json
+
+# par-L6 数据：同 STS-B 1,379 对，seq 64
+python scripts/wsp_export_sts_pairs.py \
+  --dataset mteb/stsbenchmark-sts --split test --pairs 1379 \
+  --out paraphrase-MiniLM-L6-sts-full \
+  --model paraphrase-MiniLM-L6-v2 --seq 64 --local-only
+
+# par-L6 纯 int3 / 纯 int4（复用 L6 的架构预算；int4 只设全局位宽 4）
+TRIT_LAYERS=6 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l6-pure-int3.json \
+TRIT_THREADS=24 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 TRIT_DUMP_PREDS=1 \
+TRIT_F32_CACHE=par-l6-f32-cache-full.json \
+bert6 --file paraphrase-MiniLM-L6-v2.safetensors \
+  --data-dir paraphrase-MiniLM-L6-sts-full --activation-mode f32 \
+  --out par-l6-int3.json
+TRIT_LAYERS=6 TRIT_WEIGHT_BITS=4 TRIT_THREADS=24 TRIT_SKIP_DIAG=1 \
+TRIT_NO_LAYERS=1 TRIT_DUMP_PREDS=1 TRIT_F32_CACHE=par-l6-f32-cache-full.json \
+bert6 --file paraphrase-MiniLM-L6-v2.safetensors \
+  --data-dir paraphrase-MiniLM-L6-sts-full --activation-mode f32 \
+  --out par-l6-int4.json
+
+# par-L6 两条规则候选
+python scripts/wsp_budget_rule.py \
+  --base budget-l6-pure-int3.json \
+  --table docs/research/data/wsp-budget-l12-perturb.tsv \
+  --target-layers 6 --per-shape 2 --out budget-par-l6-rule-l12.json
+python scripts/wsp_budget_rule.py \
+  --base budget-l6-pure-int3.json \
+  --table docs/research/data/wsp-budget-l6-perturb.tsv \
+  --target-layers 6 --per-shape 2 --out budget-par-l6-rule-l6.json
+```
+
+L3 的表：`data/wsp-budget-l3-perturb.tsv`（36 行）、
+`data/wsp-budget-l3-candidates.tsv`（7 行）、`data/wsp-budget-l3-bootstrap.tsv`
+（16 行）；par-L6 的表：`data/wsp-budget-parl6-candidates.tsv`（5 行）、
+`data/wsp-budget-parl6-bootstrap.tsv`（8 行）；四个新方向的规则候选追加在
+`data/wsp-budget-rule-candidates.tsv`（6 行）。
 
 ## 12. 下一步
 
 - **逐块 `3→2`/`3→4` 与第二模型 L6 都已完成（§8/§9/§11）**：不要再重复跑
   L12 的同一批 72 块或把 L12 布局按层号搬到 L6。选择规则已在 §11.9 做了
-  双向检验（L12→L6 正、L6→L12 对 int4 负），下一步是第三模型或任务头，
-  而不是继续换 STS 子集或单块手调。
+  双向检验（L12→L6 正、L6→L12 对 int4 负）；第三模型与同深度对照也已在
+  §11.10 做完（L3/par-L6 双负），下一步不是再找模型，而是任务头或接受
+  每模型重扫。
 - **重扫选择器已落库，且 5 折交叉拟合已把“选择”留出（§11.6/§11.7）**：
   `wsp_budget_rescan.py` 能从两张表生成严格同字节候选；L6 全量 `6/24/6` 是
   `0.831304 / 0.824457`（高于 int4 点估计），但这是 in-sample。5 折 × 2 种子
@@ -1609,8 +1865,18 @@ bert6 --file all-MiniLM-L12-v2.safetensors \
   `0.827813 / 0.823365` 对 int3 双 CI 过 0，对 int4 是
   `−0.009692 / −0.008682`，Pearson CI `[−0.018357, −0.000968]` 整段为负。
   **同一条规则两个方向不对称；它只能当候选生成器，不能替代每模型重扫。**
-- **下一步优先级**：5 折交叉拟合和相对深度规则都已做过（§11.7/§11.9），不要
-  再对同一批 STS 调 `per_shape` 或改规则。要么找第三模型验证“L12→L6 的正向
-  是不是这对模型的偶然”，要么接受“每个模型重扫 36/72 块表”；再补检索/分类
-  任务头。只有在这两类证据上仍为正的块组合，才进入 int5/f32/侧车或 MXQ。
+- **第三模型与同深度交叉检验已完成（§11.10），L12→L6 的正向是模型对特定**：
+  同一套 L12 块布局在 L3 上相对纯 int3 是 `−0.012450 / −0.010778`
+  （CI 整段为负），在 par-L6 上是 `−0.016161 / −0.007308`；L6 自己的
+  `6/24/6` 最优布局投到 par-L6 也是 `−0.011203 / −0.008646`。同一布局在
+  两个 6 层模型上相对各自 int3 的 Δ 从 `+0.014/+0.014` 翻成 `−0.016/−0.007`。
+  **不能再把 L12→L6 的单向正向写成跨模型规则。**
+- **L3 的原生重扫只打平 int3，不构成“3-bit 追平 int4”证据**：18 块 × 2 方向
+  全量单块表已完成，k1 `3/12/3` 对 int3 是 `+0.000045 / +0.002787`（CI 都跨 0），
+  k2 `4/10/4` 是 `−0.004695 / +0.000452`（CI 都跨 0），对 int4 都没有统计优势。
+  3 层模型的同字节块重排没有可用 headroom（§11.10.3）。
+- **下一步优先级**：第三模型与同深度对照都已做完（§11.10），**停止调跨模型
+  规则和 `per_shape`**。要么接受“每个模型自己重扫 36/72 块表”，要么转检索/
+  分类任务头；不要再拿 L12→L6 的单向正向当通用结论。只有在这两类证据上
+  仍为正的块组合，才进入 int5/f32/侧车或 MXQ。
 - 4-bit 的权重修正（BIAS/SCALE）已经证伪，不再回到那条线。

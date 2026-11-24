@@ -830,6 +830,33 @@
   `wsp-budget-rule-candidates.tsv`（2 行）、
   `wsp-budget-rule-bootstrap.tsv`（12 行）；`wsp-budget-l6-candidates.tsv`
   扩到 14 行。`test_surface` 登记为 139 单位 / 3536 条。
+- **第三模型与同深度交叉检验（M1.10）**：`wsp_budget_rescan.select_blocks`
+  把 `per_shape` 改成每组上限，按 `effective=min(per_shape, floor(n/2))`
+  自动收缩；3 层 L3 的两个 3 块形状组只能 1 对，实际 `4/10/4`。L6/L12 的
+  组都 ≥6 块，行为不变；L12→L6 规则候选重跑后 `6/24/6`、`5,391,360 B`、
+  上下选块与 M1.9 完全一致。
+  - L3（`paraphrase-MiniLM-L3-v2`，3 层）：纯 f32 `0.823637 / 0.824059`，
+    纯 int3 `0.819691 / 0.822778`，纯 int4 `0.823378 / 0.825063`。两条
+    规则候选 `4/10/4` 是 `0.807241 / 0.812000`（L12 先验）和
+    `0.808890 / 0.809610`（L6 先验），相对 int3 `−0.012450 / −0.010778`
+    与 `−0.010801 / −0.013168`，10k CI 都整段为负。原生重扫 k1
+    `3/12/3` `0.819736 / 0.825566`（对 int3 `+0.000045 / +0.002787`，
+    CI 都跨 0）；k2 `4/10/4` `0.814996 / 0.823230`（对 int3
+    `−0.004695 / +0.000452`，Pearson CI 跨 0）。**3 层没有同字节
+    headroom；但原生 k2 仍比规则候选高 0.006–0.008（P）/0.011–0.014（S）。**
+  - par-L6（`paraphrase-MiniLM-L6-v2`，6 层、同架构、不同训练目标）：
+    纯 f32 `0.836131 / 0.841234`，纯 int3 `0.825042 / 0.826777`，纯 int4
+    `0.830598 / 0.837303`。L12 先验与 §11.9.1 同一套 `6/24/6` 块，在
+    all-MiniLM-L6 上 `+0.014113 / +0.014060`，在 par-L6 上
+    `−0.016161 / −0.007308`；L6 自己的最优 `6/24/6` 布局在 all-MiniLM-L6
+    上 `+0.016710 / +0.014032`，在 par-L6 上 `−0.011203 / −0.008646`。
+    **同一布局、同一字节账、同为 6 层，Δ 双指标符号翻转；L12→L6 的正向
+    是模型对特定，不是跨模型规则。**
+  - 新增 `wsp-budget-l3-perturb.tsv`（36 行）、`wsp-budget-l3-candidates.tsv`
+    （7 行）、`wsp-budget-l3-bootstrap.tsv`（16 行）、
+    `wsp-budget-parl6-candidates.tsv`（5 行）、
+    `wsp-budget-parl6-bootstrap.tsv`（8 行）；`wsp-budget-rule-candidates.tsv`
+    扩到 6 行。运行时默认不变（`I10` 外部保守、`K10K11`/`R12` STS in-domain）。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
@@ -845,7 +872,7 @@
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
   R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/§9.5 留一来源/
   §10 外部三套复验/§11 L6 第二模型 + 重扫选择器/§11.7 5 折交叉拟合/§11.9
-  跨模型相对深度规则/§12 下一步），
+  跨模型相对深度规则/§11.10 第三模型 L3 + 同深度 par-L6/§12 下一步），
   `docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md` §3.16.9/§3.16.10/§3.16.11，
   `docs/results/LESSONS.md` 第 16/17/18/19/20/21 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7

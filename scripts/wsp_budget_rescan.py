@@ -9,7 +9,8 @@
    降/升块，整包严格同字节。
 2. 降级候选按 `delta_spearman` 从高到低取（降级伤害最小）；
    升级候选同样从高到低取（升级收益最大），并避开已选降级块。
-3. 默认每个形状组选 2 降 + 2 升；可用 `--per-shape` 改这个结构参数。
+3. 默认每个形状组最多选 2 降 + 2 升；可用 `--per-shape` 改这个上限。
+   一组 n 块最多支持 floor(n/2) 对，块数不足时按组收缩并写入报告。
 
 只选预算：
 
@@ -110,11 +111,27 @@ def select_blocks(
                 f"per_shape={per_shape}"
             )
 
+        # `per_shape` 是每组上限，不是硬性配额：降级和升级必须从同一组的不同块
+        # 里配对，所以一组 n 块最多支持 floor(n/2) 对。3 层模型的两个投影组
+        # 只有 3 块，per_shape=2 在物理上不可行，这里按组收缩到 1 对。
+        effective = min(per_shape, len(keys) // 2)
+        if effective < 1:
+            report.append(
+                {
+                    "shape": {"rows": shape[0], "cols": shape[1], "group": shape[2]},
+                    "requested_per_shape": per_shape,
+                    "effective_per_shape": 0,
+                    "down": [],
+                    "up": [],
+                }
+            )
+            continue
+
         # 降级取“伤害最小”，升级取“收益最大”；两者都按 delta_spearman 降序。
         down_sorted = sorted(
             down_pool, key=lambda r: (-float(r["delta_spearman"]), block_key(r))
         )
-        chosen_down = [block_key(r) for r in down_sorted[:per_shape]]
+        chosen_down = [block_key(r) for r in down_sorted[:effective]]
         down_set = set(chosen_down)
         up_sorted = sorted(
             up_pool, key=lambda r: (-float(r["delta_spearman"]), block_key(r))
@@ -124,9 +141,9 @@ def select_blocks(
             key = block_key(row)
             if key not in down_set:
                 chosen_up.append(key)
-            if len(chosen_up) == per_shape:
+            if len(chosen_up) == effective:
                 break
-        if len(chosen_up) < per_shape:
+        if len(chosen_up) < effective:
             raise SystemExit(f"形状组 {shape} 升级候选与降级候选重叠过多")
 
         selected_down.extend(chosen_down)
@@ -134,6 +151,8 @@ def select_blocks(
         report.append(
             {
                 "shape": {"rows": shape[0], "cols": shape[1], "group": shape[2]},
+                "requested_per_shape": per_shape,
+                "effective_per_shape": effective,
                 "down": [
                     {
                         "block": short_key(block_of(blocks, key)),
@@ -190,6 +209,12 @@ def select_blocks(
         "base": Path(base.get("_base_path", "base.json")).name,
         "selector": "wsp_budget_rescan.py",
         "per_shape": per_shape,
+        "per_shape_effective": {
+            f"{item['shape']['rows']}x{item['shape']['cols']}x{item['shape']['group']}": item[
+                "effective_per_shape"
+            ]
+            for item in report
+        },
         "up": [f"{l}:{k}" for l, k in sorted(selected_up)],
         "down": [f"{l}:{k}" for l, k in sorted(selected_down)],
     }
