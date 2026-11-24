@@ -228,15 +228,23 @@
     },
     {
       "file": "crates/trit-build/src/egraph.rs",
-      "lines": 712
+      "lines": 628
     },
     {
       "file": "crates/trit-build/src/egraph/cost.rs",
       "lines": 115
     },
     {
+      "file": "crates/trit-build/src/egraph/extract.rs",
+      "lines": 132
+    },
+    {
       "file": "crates/trit-build/src/egraph/tests.rs",
       "lines": 164
+    },
+    {
+      "file": "crates/trit-build/src/egraph/tests_regression.rs",
+      "lines": 56
     },
     {
       "file": "crates/trit-build/src/gpu.rs",
@@ -273,6 +281,10 @@
     {
       "file": "crates/trit-build/tests/build.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-build/tests/egraph_equiv.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-build/tests/gpu_export.rs",
