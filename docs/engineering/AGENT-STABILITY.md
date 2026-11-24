@@ -194,8 +194,8 @@ python tools/stability_probe.py \
   `_classify`，不靠真实 sleep 计时；真实探针执行由 ST2-ST6 覆盖。
 - `tools/selftest.ps1` 的 `ST1`：把探针自测接进全仓自测（当前 38 项）；
   `ST2-ST6`：稳定通过进入 run、确定性失败拒绝、flaky 拒绝、`--no-stability`
-  跳过、清单命令被 policy 拒绝时不执行探针。全仓当前 **716 passed / 0 failed /
-  0 skipped**。
+  跳过、清单命令被 policy 拒绝时不执行探针。全仓当前 **719 passed / 0 failed /
+  0 skipped**（AW1-AW3 之后）。
 
 ## 不做什么
 

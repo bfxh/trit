@@ -3,8 +3,10 @@
 > 定位：给在本仓多会话/多 worktree 里干活的人读。它回答：改动前凭什么判断“这些路径归我”、
 > 接活时凭什么判断“这还是上一棒那棵树”，以及两道门在什么情况下必须拒绝。
 > 边界：只覆盖宿主侧 `tools/agent_verify.py` 的 `--claim-gate` / `--handoff` 与
-> `tools/handoff.py`；不覆盖跨机信封、分布式锁、DeliveryReceipt 四态推进。
-> 状态：**已跑通**（`tools/selftest.ps1` 696/0/0 全绿，其中 AF23/AF24 共 8 条断言）。
+> `tools/handoff.py`；不覆盖跨机信封、分布式锁；四态确认账本见
+> [AGENT-DELIVERY.md](AGENT-DELIVERY.md)。
+> 状态：**已跑通**（claim/handoff 门在 AF23/AF24 共 8 条断言；四态账本
+> AW1-AW3；当前全仓 719/0/0）。
 > 容量/并发协调另见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)：硬件探针 + 跨项目租约 +
 > `subagent_dispatch --capacity auto|enforce` 的 provider 前准入。本文只覆盖认领与交接。
 
@@ -68,7 +70,7 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
 - `state_hash` = HEAD + `git status --porcelain -z --no-renames`（过滤本机账本后的行）+
   `git diff HEAD --binary` 的哈希 + 未跟踪文件内容哈希。它证明“交接时与接收时是同一棵树”，
   **不证明树是对的**；后者是测试/回执的活。超过 256 MB 或 20000 个未跟踪文件判“状态不可证”。
-- 不计入的路径：`.journal/`、`.agent/handoff/`、`.agent/resume/`、`.agent/memory/`、
+- 不计入的路径：`.journal/`、`.agent/handoff/`、`.agent/delivery/`、`.agent/resume/`、`.agent/memory/`、
   `.agent/signals.jsonl`、`.agent/last-selftest.json`、`.agent/last-simchain.json`、
   `.agent/doctor-cache.json`——宿主账本不是下一棒继承的源码状态。
 - 三态与拒绝：
@@ -104,12 +106,16 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
 - 认领门是 **opt-in**：不传 `--claim-gate` 时行为与以前完全一样。是否在 `--agent-id` 存在时
   强制，尚未定；子代理规范要求带门，但工具不替调用者做身份推断。
 - 交接门只验“同一棵树”，不验“上一棒做对了没有”；`DeliveryReceipt` 的
-  Sent→Delivered→Read→Acted 四态推进**尚未**在 Python 宿主落地，不能声称已闭环。
+  Sent→Delivered→Read→Acted 四态账本已在 `tools/delivery_receipt.py` 落地
+  （见 [AGENT-DELIVERY.md](AGENT-DELIVERY.md)），但**尚未自动接进**
+  `agent_verify --handoff` 的 gate 通过路径，不能声称单入口链已闭环。
 - 不合并内容冲突；冲突归 VCS。包内禁止本机盘符/UNC 路径，跨机传递用 `--out` 到共享位置。
 
 ## 6. 还没落地（下一棒清单）
 
-1. DeliveryReceipt 四态 + 账本：谁在什么时候读到了包、有没有真的动手。
+1. ~~DeliveryReceipt 四态 + 账本：谁在什么时候读到了包、有没有真的动手。~~
+   **已落地** `tools/delivery_receipt.py`（19/19 自测、AW1–AW3）；自动接进
+   `agent_verify --handoff` 仍是下一棒。
 2. 认领生命周期自动化：dispatch 前自动 claim、收工自动 release；现在是调用者手动两步。
 3. 调度环 `plan/select/dispatch` 的宿主侧驱动：Rust CLI 有原语，Python 还没有通用循环；
    `tools/subagent_dispatch.py` 只是“按 role 分模型并行调用”的模型派发环，不消费

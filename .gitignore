@@ -43,6 +43,10 @@ scripts/.mutation-check.lock/
 # 包内的 evidence 只写仓库相对路径，跨机交接显式 --out 到共享位置
 .agent/handoff/
 
+# DeliveryReceipt 四态账本（tools/delivery_receipt.py）：本机自报证据，不进公开树；
+# handoff 的 state_hash 也显式跳过它
+.agent/delivery/
+
 # 断粮续跑账本（tools/resume.py）：本机任务状态，不进公开树；
 # handoff 的 state_hash 也显式跳过它（见 tools/handoff.py SKIP_UNTRACKED）
 .agent/resume/

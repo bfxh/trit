@@ -28,7 +28,7 @@
 - 不是分布式锁，不做共识；单机文件 + 调用方传 now。
 - 不合并文件内容冲突；那归 VCS。
 - state_hash 只覆盖 `-Root` 之下、git 看得见的东西；树外写入不在范围。
-- `.journal/`、`.agent/handoff/`、`.agent/resume/`、`.agent/last-*` 等本机账本
+- `.journal/`、`.agent/handoff/`、`.agent/delivery/`、`.agent/resume/`、`.agent/last-*` 等本机账本
   不计入 state_hash：它们是宿主状态，不是下一棒继承的源码状态；这也意味着
   state_hash 是出处指纹，不是安全边界。
 - 过期不是 False（旧线索可能仍有用），是 Unknown。
@@ -53,7 +53,7 @@ REQUIRED = ("id", "from", "to", "goal", "base_commit", "state_hash",
 LISTS = ("decisions", "open_questions", "claims", "evidence")
 MAX_STATE_BYTES = 256 * 1024 * 1024
 MAX_UNTRACKED_FILES = 20000
-SKIP_UNTRACKED = (".journal/", ".agent/handoff/", ".agent/resume/",
+SKIP_UNTRACKED = (".journal/", ".agent/handoff/", ".agent/delivery/", ".agent/resume/",
                   ".agent/memory/", ".agent/signals.jsonl",
                   ".agent/last-selftest.json", ".agent/last-simchain.json",
                   ".agent/doctor-cache.json")

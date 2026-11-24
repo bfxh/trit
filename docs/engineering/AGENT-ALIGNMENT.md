@@ -288,8 +288,8 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 - `python tools/alignment_gate.py stress --cases 100`：**200 用例，valid 100 aligned，mutated 100 rejected，0 errors**
 - `python tools/agent_settings.py --self-test`：**37/37**
 - `tools/selftest.ps1` 的 AL27–AL40：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝、non_goal 对象级排除在 preflight 拒绝且 run 不启动、空实际变更集下声明变更未兑现被 post 拒绝、空挂子目标在 preflight 拒绝且 goals_covered 记录真实覆盖数
-- 全仓 `tools/selftest.ps1`：**716 passed / 0 failed / 0 skipped**（第七阶段 710；
-  ST1 711；ST2-ST6 覆盖 stability 门后 716）
+- 全仓 `tools/selftest.ps1`：**719 passed / 0 failed / 0 skipped**（第七阶段 710；
+  ST1 711；ST2-ST6 覆盖 stability 门后 716；AW1-AW3 覆盖 delivery 账本后 719）
 
 ## 诚实边界
 
