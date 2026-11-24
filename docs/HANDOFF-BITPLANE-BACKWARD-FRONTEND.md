@@ -21,7 +21,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667、commit 6b910bc9/9d1f0cc6/365a39d5、dX 21/21、训练步 L172/C082 与 L173/C083、29/29、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/a94d5ff6、dX 21/21、训练步 L172/C082 与 L173/C083、29/29、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -69,7 +69,7 @@ EVIDENCE:    PR #664/#666/#667、commit 6b910bc9/9d1f0cc6/365a39d5、dX 21/21、
 | 缺陷台账 | `docs/ERRORS.md` L171 / L172 / L173 | L171/#664、L172/#666 已合并；L173 本轮 | 只读结论与读数 |
 | 回归门 | `.agent/checks/registry.json` C081/C082/C083 | C081/#664、C082/#666 已合并；C083 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
-| PR / commit | `PR #664/#666/#667` / `6b910bc9`、`9d1f0cc6`、`365a39d5` | 已合并 | 页面证据链接 |
+| PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`a94d5ff6` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
 
 **验证读数（dX 同一提交 / 第二十一轮训练步）**
 
@@ -345,7 +345,7 @@ q (i8)  +  pos/neg (u64 双导轨)
 ```text
 后端：dX available（main 6b910bc9，PR #664 已合并）
       训练步 available（main 9d1f0cc6，PR #666 已合并；区间 #667）
-      Adam dW 融合 本轮分支（layer/adam.rs）
+      Adam dW 融合 available（PR #668，a94d5ff6；open）
 前端：planned（本页）
 录像：unrecorded
 ```

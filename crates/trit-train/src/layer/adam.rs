@@ -1,7 +1,6 @@
 //! `TernaryLinear` 的 Adam 训练步：复用一份 planes 的 `dX`/scale，`dW` 走融合更新。
 //!
-//! 放在独立模块里，避免 `layer.rs` 的热路径被 Adam 内核挤动；SIMD 只在 x86_64 +
-//! AVX2 + 列数 ≥ 8 时启用，尾部与短行走标量。
+//! 放在独立模块里，避免 `layer.rs` 热路径被挤动；SIMD 只在 x86_64 + AVX2 + 列数 ≥ 8 时启用，尾部与短行走标量。
 
 use super::{Adam, TernaryLinear};
 use crate::quant::Ste;
@@ -44,29 +43,6 @@ impl TernaryLinear {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Params {
-    lr: f32,
-    beta1: f32,
-    beta2: f32,
-    eps: f32,
-    bias1: f32,
-    bias2: f32,
-}
-
-impl Params {
-    fn of(opt: &Adam) -> Self {
-        Self {
-            lr: opt.lr,
-            beta1: opt.beta1,
-            beta2: opt.beta2,
-            eps: opt.eps,
-            bias1: opt.bias1,
-            bias2: opt.bias2,
-        }
-    }
-}
-
 /// 对整层 latent 做一次 Adam 外积更新（调用方需先 [`Adam::begin`]）。
 ///
 /// 计时/调用口径：`dy`、`scale` 长度是 `rows`，`x` 长度是 `cols`，
@@ -87,7 +63,8 @@ fn adam_update(
     assert_eq!(dy.len(), rows, "dy 长度必须是 rows");
     assert_eq!(scale.len(), rows, "scale 长度必须是 rows");
     assert_eq!(opt.len(), rows * cols, "Adam 大小必须是 rows * cols");
-    let params = Params::of(opt);
+    #[cfg(target_arch = "x86_64")]
+    let params = simd::Params::of(opt);
     for r in 0..rows {
         let coeff = dy[r] * scale[r];
         let base = r * cols;
@@ -127,8 +104,31 @@ mod simd {
     #![allow(unsafe_op_in_unsafe_fn)]
     use std::arch::x86_64::*;
 
-    use super::Params;
+    use super::Adam;
     use crate::quant::Ste;
+
+    #[derive(Clone, Copy)]
+    pub(super) struct Params {
+        lr: f32,
+        beta1: f32,
+        beta2: f32,
+        eps: f32,
+        bias1: f32,
+        bias2: f32,
+    }
+
+    impl Params {
+        pub(super) fn of(opt: &Adam) -> Self {
+            Self {
+                lr: opt.lr,
+                beta1: opt.beta1,
+                beta2: opt.beta2,
+                eps: opt.eps,
+                bias1: opt.bias1,
+                bias2: opt.bias2,
+            }
+        }
+    }
 
     /// 融合 `dW` 的 Adam 更新：16 个向量寄存器一次做 gate、矩更新和参数更新。
     ///

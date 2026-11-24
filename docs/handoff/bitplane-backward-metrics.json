@@ -11,6 +11,12 @@
     "commit_short": "6b910bc9",
     "merged_at": "2026-11-24T09:51:12Z"
   },
+  "training_step_source": {
+    "pr": 668,
+    "commit": "a94d5ff6f0e9c31c0fdd52d88a5329af8b3b7cd9",
+    "commit_short": "a94d5ff6",
+    "status": "open"
+  },
   "platform": {
     "cpu": "Intel(R) Core(TM) Ultra 7 270K Plus",
     "cores": 24,
@@ -58,7 +64,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw on this branch (layer/adam.rs)",
+    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw PR #668 a94d5ff6 (open)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "dense": "crates/trit-train/src/dense.rs",
