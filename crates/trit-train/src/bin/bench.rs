@@ -2,22 +2,21 @@
 //!
 //! 用法：
 //! ```text
-//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576]
-//!       [--threads 1,2,4,8] [--ste-steps 3000] [--train-steps 3]
+//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576] [--threads 1,2,4,8] [--ste-steps 3000] [--train-steps 3] [--adam-scalar]
 //! ```
 
 use std::hint::black_box;
 use std::time::Instant;
-
 use trit_train::layer::{TernaryLinear, dot};
 use trit_train::plane::{PlaneMatrix, Planes};
 use trit_train::quant::Ste;
 
+#[path = "bench/adam_step.rs"]
+mod adam_step;
 #[path = "bench/args.rs"]
 mod args;
 #[path = "bench/train_step.rs"]
 mod train_step;
-
 use args::{arg, thread_list};
 use train_step::bench_train_step;
 
@@ -204,6 +203,7 @@ fn main() {
     let ste_steps = arg(&args, "--ste-steps").unwrap_or(3000);
     let train_steps = arg(&args, "--train-steps").unwrap_or(3);
     let threads = thread_list(&args);
+    let adam_scalar = args.iter().any(|a| a == "--adam-scalar");
 
     let trits = mtrits * 1_000_000; // 每 trit 2 bit（两条导轨各 1 bit）
     let a = Planes::from_trits(&sample_trits(trits, 0x9E37_79B9_7F4A_7C15));
@@ -269,7 +269,7 @@ fn main() {
         "位平面步", step_speedup
     );
     println!("{:<14} {pack_step:>10.2}", "其中 pack()");
-
+    adam_step::bench_adam_step(rows, cols, train_steps, rounds, adam_scalar);
     println!("\nSTE 收敛（2×3 线性层，{ste_steps} 步，MSE）：");
     for (name, ste) in [
         ("Identity", Ste::Identity),

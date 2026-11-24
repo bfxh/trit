@@ -12,6 +12,7 @@ impl PlaneMatrix {
     ///
     /// 语义与 `quantize_with_scale(row, scale[r])` 完全一致：
     /// `q = clamp(round(w / scale), -1, 1)`，`scale` 先抬到 `f32::MIN_POSITIVE`。
+    #[inline]
     pub fn from_latent(latent: &[f32], scale: &[f32], rows: usize, cols: usize) -> Self {
         assert_eq!(latent.len(), rows * cols, "latent 长度必须是 rows * cols");
         assert_eq!(scale.len(), rows, "scale 长度必须是 rows");
@@ -73,7 +74,7 @@ mod simd {
         cols: usize,
     ) -> PlaneMatrix {
         let bpr = cols.div_ceil(64).max(1);
-        let mut q = Vec::with_capacity(rows * cols);
+        let mut q = vec![0i8; rows * cols];
         let mut pos = vec![0u64; rows * bpr];
         let mut neg = vec![0u64; rows * bpr];
         let sign = _mm256_set1_ps(-0.0);
@@ -104,14 +105,16 @@ mod simd {
                 let shift = ((j * 8) % 64) as u32;
                 pos[word] |= (pm as u64) << shift;
                 neg[word] |= (nm as u64) << shift;
-                let mut tmp = [0i32; 8];
-                // SAFETY: tmp 是 8 个 i32 的栈数组，正好一个 __m256i。
-                _mm256_storeu_si256(tmp.as_mut_ptr() as *mut __m256i, qi);
-                q.extend(tmp.iter().map(|&v| v as i8));
+                let lo = _mm256_castsi256_si128(qi);
+                let hi = _mm256_extracti128_si256(qi, 1);
+                let i16 = _mm_packs_epi32(lo, hi);
+                let bytes = _mm_packs_epi16(i16, i16);
+                // SAFETY: q 已预分配 rows*cols 个 i8，qbase+8 <= rows*cols。
+                _mm_storel_epi64(q.as_mut_ptr().add(row_base + j * 8) as *mut __m128i, bytes);
             }
             for c in full * 8..cols {
                 let qi = (latent[row_base + c] / s).round().clamp(-1.0, 1.0) as i8;
-                q.push(qi);
+                q[row_base + c] = qi;
                 let word = r * bpr + c / 64;
                 let bit = 1u64 << (c % 64);
                 match qi {
@@ -133,52 +136,4 @@ mod simd {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample_f32(len: usize, seed: u64) -> Vec<f32> {
-        let mut state = seed | 1;
-        (0..len)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 7;
-                state ^= state << 17;
-                ((state % 2001) as f32 - 1000.0) / 500.0
-            })
-            .collect()
-    }
-
-    #[test]
-    fn from_latent_matches_quantize_with_scale() {
-        use crate::quant::quantize_with_scale;
-        for (rows, cols) in [(1usize, 1usize), (3, 7), (5, 64), (4, 65), (7, 130)] {
-            let latent = sample_f32(rows * cols, 71 + (rows * 100 + cols) as u64);
-            let scale: Vec<f32> = sample_f32(rows, 83 + cols as u64)
-                .into_iter()
-                .map(|v| v.abs() + 0.01)
-                .collect();
-            let m = PlaneMatrix::from_latent(&latent, &scale, rows, cols);
-            let q: Vec<i8> = (0..rows)
-                .flat_map(|r| quantize_with_scale(&latent[r * cols..(r + 1) * cols], scale[r]))
-                .collect();
-            assert_eq!(m.q(), q.as_slice());
-            assert_eq!(m, PlaneMatrix::from_quantized(q, rows, cols));
-        }
-    }
-
-    #[test]
-    fn from_latent_matches_scalar_at_half_boundaries() {
-        let latent = [
-            0.5, -0.5, 1.5, -1.5, 0.499, -0.499, 2.0, -2.0, 0.5001, -0.5001, 1.0, -1.0, 0.0, -0.0,
-            3.5, -3.5,
-        ];
-        let scale = [1.0f32];
-        let fast = PlaneMatrix::from_latent(&latent, &scale, 1, latent.len());
-        let slow = PlaneMatrix::from_latent_scalar(&latent, &scale, 1, latent.len());
-        assert_eq!(fast, slow);
-        assert_eq!(
-            fast.q(),
-            &[1, -1, 1, -1, 0, 0, 1, -1, 1, -1, 1, -1, 0, 0, 1, -1]
-        );
-    }
-}
+mod tests;

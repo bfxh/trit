@@ -4875,6 +4875,14 @@
       "lines": 283
     },
     {
+      "file": "crates/trit-train/src/bin/bench/adam_setup.rs",
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-train/src/bin/bench/adam_step.rs",
+      "lines": 47
+    },
+    {
       "file": "crates/trit-train/src/bin/bench/args.rs",
       "lines": 21
     },
@@ -4888,7 +4896,11 @@
     },
     {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 581
+      "lines": 576
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam.rs",
+      "lines": 305
     },
     {
       "file": "crates/trit-train/src/layer/packed_tests.rs",
@@ -4916,7 +4928,11 @@
     },
     {
       "file": "crates/trit-train/src/plane/pack.rs",
-      "lines": 184
+      "lines": 139
+    },
+    {
+      "file": "crates/trit-train/src/plane/pack/tests.rs",
+      "lines": 47
     },
     {
       "file": "crates/trit-train/src/prefetch.rs",

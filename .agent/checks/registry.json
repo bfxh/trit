@@ -1534,6 +1534,30 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C083",
+      "title": "trit-train Adam 行级 dW 融合与 pack q 字节写回",
+      "kind": "cmd",
+      "covers": [
+        "L173"
+      ],
+      "scope": [
+        "crates/trit-train/src/layer/adam.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/plane/pack/tests.rs",
+        "crates/trit-train/src/bin/bench/adam_step.rs",
+        "crates/trit-train/src/bin/bench/adam_setup.rs",
+        "crates/trit-train/src/bin/bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T19:44:20+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

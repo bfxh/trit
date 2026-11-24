@@ -7,6 +7,7 @@
 use crate::plane::PlaneMatrix;
 use crate::quant::{Ste, quantize_with_scale};
 
+mod adam;
 #[cfg(test)]
 mod packed_tests;
 mod scalar;
@@ -16,15 +17,15 @@ mod scalar;
 /// 只存一阶/二阶矩与步数；`lr`、`beta`、`eps` 是构造时固定的超参数。
 #[derive(Clone, Debug)]
 pub struct Adam {
-    lr: f32,
-    beta1: f32,
-    beta2: f32,
-    eps: f32,
+    pub(crate) lr: f32,
+    pub(crate) beta1: f32,
+    pub(crate) beta2: f32,
+    pub(crate) eps: f32,
     step: u32,
-    bias1: f32,
-    bias2: f32,
-    m: Vec<f32>,
-    v: Vec<f32>,
+    pub(crate) bias1: f32,
+    pub(crate) bias2: f32,
+    pub(crate) m: Vec<f32>,
+    pub(crate) v: Vec<f32>,
 }
 
 impl Adam {
@@ -58,14 +59,14 @@ impl Adam {
         self.step
     }
 
-    fn begin(&mut self) {
+    pub(crate) fn begin(&mut self) {
         self.step = self.step.saturating_add(1);
         let t = self.step as i32;
         self.bias1 = 1.0 - self.beta1.powi(t);
         self.bias2 = 1.0 - self.beta2.powi(t);
     }
 
-    fn apply(&mut self, index: usize, grad: f32, value: f32) -> f32 {
+    pub(crate) fn apply(&mut self, index: usize, grad: f32, value: f32) -> f32 {
         let m = &mut self.m[index];
         *m = self.beta1 * *m + (1.0 - self.beta1) * grad;
         let v = &mut self.v[index];
@@ -231,21 +232,15 @@ impl TernaryLinear {
         input_grad
     }
 
-    /// 用 Adam 更新一层，并返回输入梯度（供上一层反向）。
-    ///
-    /// 三值量化与 STE 口径与 [`Self::train_step_with_grad`] 相同；`latent_opt` /
-    /// `scale_opt` 的参数个数必须分别是 `rows * cols` / `rows`。
-    pub fn train_step_with_grad_adam(
+    /// Adam 的逐元素参考路径：用于对拍与基准；融合路径见
+    /// [`TernaryLinear::train_step_with_grad_adam`]。
+    pub fn train_step_with_grad_adam_scalar(
         &mut self,
         input: &[f32],
         output_grad: &[f32],
         latent_opt: &mut Adam,
         scale_opt: &mut Adam,
     ) -> Vec<f32> {
-        assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
-        assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
-        assert_eq!(latent_opt.len(), self.latent.len(), "latent 优化器大小");
-        assert_eq!(scale_opt.len(), self.rows, "scale 优化器大小");
         latent_opt.begin();
         scale_opt.begin();
         let planes = self.pack();

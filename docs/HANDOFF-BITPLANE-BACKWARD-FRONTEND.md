@@ -1,10 +1,12 @@
 # HANDOFF：位平面反向 `dX` 内核（浏览器前端）
 
 > 状态：dX 后端 **已合并**（main `6b910bc9`，PR #664）；前端 **待实现**；实验录像 **unrecorded**。
-> 第二十轮训练步改动在 `feat/train-step-plane`（**尚未提交**）：`forward` 改位平面
-> `row_dot`、`dW` 走 `dense::sgd_update`、`pack()` 改 `from_latent`。训练步读数
-> **1.9–2.1 ms/step（13.4–14.1×；偶发 2.4 ms）**，`pack()` 0.85–0.89 ms，测试 27。该读数属于
-> “训练步”区块，**不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
+> 第二十轮训练步已并入 main（`9d1f0cc6`，#666；读数区间修正 `365a39d5`，#667）：`forward`
+> 改位平面 `row_dot`、SGD `dW` 走 `dense::sgd_update`、`pack()` 改 `from_latent`。第二十一轮
+> 把 Adam 的 latent 更新也做成行级融合（`layer::adam_update`），训练步读数
+> **1.8–1.9 ms/step（16–17×）**，`pack()` **0.74–0.76 ms**，Adam **3.1–3.7 ms/step
+> （2.3–2.8×，逐元素参考 8.6–9.2 ms）**，测试 29。该读数属于“训练步”区块，
+> **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
 >
 > 本文的“前端”按 [`reference/ATLAS.md`](reference/ATLAS.md) 的定义：**浏览器 playground / WASM 面**，
 > 不是 YARA 的词法/语法前端。若接手的是 YARA 解析前端，请看
@@ -19,7 +21,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664、commit 6b910bc9、dX 21/21、训练步 L172/C082 与 27/27、CI 32 pass / 2 skip、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667、commit 6b910bc9/9d1f0cc6/365a39d5、dX 21/21、训练步 L172/C082 与 L173/C083、29/29、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -45,9 +47,9 @@ EVIDENCE:    PR #664、commit 6b910bc9、dX 21/21、训练步 L172/C082 与 27/2
    三值权重打成 `pos` / `neg` 两条导轨（1 trit = 2 bit），反向按掩码选符号，
    把 `coeff = dy[r] * scale[r]` 加/减到 f32 的 `dX` lane 上。
 2. **dX 读数只覆盖 `dX`；同分支训练步另有优化。**
-   截至 #664 的交付，`dW` 与 `forward` 未加速；第二十轮把 `train_step` 改成
-   `pack()` 一次 → 位平面前向 → 融合 `dW` → `row_dot` 更新 scale，训练步 13.4–14.1×。
-   这两个倍数不能互相替代。
+   第二十轮把 `train_step` 改成 `pack()` 一次 → 位平面前向 → 融合 `dW` →
+   `row_dot` 更新 scale；第二十一轮把 Adam 的 latent 更新也做成行级融合。
+   训练步 16–17×、Adam 2.3–2.8×，与 dX 的倍数不能互相替代。
 3. **读数只代表内核本身。**
    4096×576、单线程、7 轮取最快：标量 `0.24` → 双导轨 `9.44` GMAC/s，
    **39.25×**。这个数**不含** `pack()` 的量化成本，也不等于训练步加速。
@@ -56,21 +58,22 @@ EVIDENCE:    PR #664、commit 6b910bc9、dX 21/21、训练步 L172/C082 与 27/2
 
 | 交付物 | 位置 | 状态 | 前端是否要读 |
 |---|---|---|---|
-| 位平面反向内核 | `crates/trit-train/src/plane/backward.rs` | 已合并 | 只读 §4 的契约，不必读 SIMD 细节 |
-| 位平面打包 | `crates/trit-train/src/plane/pack.rs` | `feat/train-step-plane` 未提交 | 读 §4 的 `pack()` 成本口径 |
-| `dW` 融合更新 | `crates/trit-train/src/dense.rs` | `feat/train-step-plane` 未提交 | 只在训练步区块引用，不是 dX 页内容 |
-| 模块导出与文档 | `crates/trit-train/src/plane.rs` | 已合并 | 读 §4 |
-| 层接入 | `crates/trit-train/src/layer.rs` | 已合并（训练步改造未提交） | 读 §4 的 `pack()` 与反向语义 |
-| 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（`--train-steps` 未提交） | 读 §8 的复现口径 |
-| 人类说明 | `crates/trit-train/README.md` | 已合并（训练步读数未提交） | 可直接摘写 |
-| 缺陷台账 | `docs/ERRORS.md` L171 / L172 | L171 已合并；L172 未提交 | 只读结论与读数 |
-| 回归门 | `.agent/checks/registry.json` C081 / C082 | C081 已合并；C082 未提交 | 只读命令 |
+| 位平面反向内核 | `crates/trit-train/src/plane/backward.rs` | 已合并（#664） | 只读 §4 的契约，不必读 SIMD 细节 |
+| 位平面打包 | `crates/trit-train/src/plane/pack.rs` | 已合并（#666；本轮补 q 字节写回） | 读 §4 的 `pack()` 成本口径 |
+| SGD `dW` 融合更新 | `crates/trit-train/src/dense.rs` | 已合并（#666） | 只在训练步区块引用，不是 dX 页内容 |
+| Adam `dW` 融合 | `crates/trit-train/src/layer/adam.rs` | 本轮分支 | 只在 Adam 训练步区块引用 |
+| 模块导出与文档 | `crates/trit-train/src/plane.rs` | 已合并（#666） | 读 §4 |
+| 层接入 | `crates/trit-train/src/layer.rs` | 已合并（#666） | 读 §4 的 `pack()` 与反向语义 |
+| 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（#666；本轮加 Adam 输出） | 读 §8 的复现口径 |
+| 人类说明 | `crates/trit-train/README.md` | 已合并（#666；本轮更新） | 可直接摘写 |
+| 缺陷台账 | `docs/ERRORS.md` L171 / L172 / L173 | L171/#664、L172/#666 已合并；L173 本轮 | 只读结论与读数 |
+| 回归门 | `.agent/checks/registry.json` C081/C082/C083 | C081/#664、C082/#666 已合并；C083 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
-| PR / commit | `PR #664` / `6b910bc9` | 已合并 | 页面证据链接 |
+| PR / commit | `PR #664/#666/#667` / `6b910bc9`、`9d1f0cc6`、`365a39d5` | 已合并 | 页面证据链接 |
 
-**验证读数（dX 同一提交 / 第二十轮训练步）**
+**验证读数（dX 同一提交 / 第二十一轮训练步）**
 
-- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步分支 **27 passed / 0 failed**。
+- `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步与 Adam 对拍 **29 passed / 0 failed**。
 - `cargo clippy -p trit-train --all-targets -- -D warnings`：通过。
 - `python scripts/hazard_gate.py`：0 findings。
 - `python scripts/module_budget.py`：dX 交付时 1513 files；训练步分支 1519 files，debt=0。
@@ -138,25 +141,27 @@ EVIDENCE:    PR #664、commit 6b910bc9、dX 21/21、训练步 L172/C082 与 27/2
 
 - **强在哪**：同样形状下，dX 内核从 `0.24` 提到 `9.44 GMAC/s`，复跑峰值 `40.96×`。
 - **没证明什么**：dX 页本身没有端到端训练吞吐；没有多形状曲线；没有 GPU/WASM 读数。
-  训练步的 `forward` / `dW` 已在第二十轮单独优化，见 §3.4b；不要拿 dX 的 39.25× 代替。
+  训练步的 `forward` / SGD `dW` / Adam `dW` 已在第二十、二十一轮单独优化，见 §3.4b；不要拿 dX 的 39.25× 代替。
 - **为什么**：标量 `dX` 每列都要读 `q[c]` 并随机更新 `dX`；掩码内核把 8 列压进一条
   AVX2 加减链，所以差距被放大。
 - **噪声**：复跑在 `8.0–9.5 GMAC/s` / `33–41×` 之间；页面必须给区间，不能只报峰值。
 
-### 3.4b 第二十轮补充：训练步（可选区块）
+### 3.4b 第二十一轮补充：训练步（可选区块）
 
 如果页面要覆盖“训练步”，**必须单独一块**，不能并进 dX 柱状图：
 
 - 路径：`train_step_scalar`（逐行量化 + 标量点积 + 逐元素 STE）对 `train_step`
   （`pack()` 一次 + `PlaneMatrix::row_dot` 前向 + `dense::sgd_update` 融合 `dW` +
-  `row_dot` 更新 scale）。
-- 读数（4096×576，单线程，3 步/轮，7 轮取最快，含 `pack`）：标量
-  **27.2–27.6 ms/step**，位平面步 **1.9–2.1 ms/step（13.4–14.1×；偶发 2.4 ms）**，
-  其中 `pack()` **0.85–0.89 ms/step**。
-- 边界：这是单层单样本 SGD 的端到端口径，不含层构造/输入生成；`train_step_with_grad_adam`
-  的 latent 更新仍是逐元素 Adam；`pack()` 仍是每步一次全量量化。
-- 证据：`docs/ERRORS.md` L172、`.agent/checks/registry.json` C082、
-  `cargo test -p trit-train` 27/27；PR 与 commit 在训练步分支合并后补。
+  `row_dot` 更新 scale）；Adam 区块用 `train_step_with_grad_adam_scalar` 对
+  `train_step_with_grad_adam`（`pack()` 一次 + `dX` + `layer::adam_update` 融合 `dW`）。
+- 读数（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`）：SGD 标量
+  **29–30 ms/step**，位平面步 **1.8–1.9 ms/step（16–17×）**，其中 `pack()`
+  **0.74–0.76 ms/step**；Adam 逐元素参考 **8.6–9.2 ms/step**，融合
+  **3.1–3.7 ms/step（2.3–2.8×）**。
+- 边界：这是单层单样本的端到端口径，不含层构造/输入生成；Adam 只融合 latent 的
+  逐元素更新，`pack()` 仍是每步一次全量量化。
+- 证据：`docs/ERRORS.md` L172/L173、`.agent/checks/registry.json` C082/C083、
+  `cargo test -p trit-train` 29/29。
 
 ### 3.5 第五屏：录像
 
@@ -330,16 +335,17 @@ q (i8)  +  pos/neg (u64 双导轨)
 
 ```text
 本页已加速：dX = Wᵀdy
-训练步（第二十轮，单独区块）：forward 走 row_dot、dW 走 dense::sgd_update、pack() 走 from_latent
+训练步（第二十一轮，单独区块）：forward 走 row_dot、SGD dW 走 dense::sgd_update、Adam dW 走 layer::adam_update、pack() 走 from_latent
 平台：原生 x86_64 AVX2；非 x86_64 或 cols < 8 自动回退标量
-未证明：端到端多形状吞吐、GPU/WASM 读数、Adam 的 dW 融合
+未证明：端到端多形状吞吐、GPU/WASM 读数、多形状 Adam 曲线；pack() 仍每步全量量化
 ```
 
 ### 6.4 状态区
 
 ```text
 后端：dX available（main 6b910bc9，PR #664 已合并）
-      训练步 feat/train-step-plane（未提交）
+      训练步 available（main 9d1f0cc6，PR #666 已合并；区间 #667）
+      Adam dW 融合 本轮分支（layer/adam.rs）
 前端：planned（本页）
 录像：unrecorded
 ```
@@ -370,15 +376,16 @@ cargo clippy -p trit-train --all-targets -- -D warnings
 cargo run -p trit-train --release --bin train-bench -- \
   --mtrits 1 --rounds 7 --rows 4096 --cols 576 --threads 1 --ste-steps 1
 
-# 4. 训练步读数（第二十轮）
+# 4. 训练步读数（第二十一轮）
 cargo run -p trit-train --release --bin train-bench -- \
-  --rows 4096 --cols 576 --threads 1 --rounds 7 --ste-steps 1 --train-steps 3
+  --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --ste-steps 1 --train-steps 3
 
 # 5. 门禁
 python scripts/hazard_gate.py
 python scripts/module_budget.py
 python tools/checks.py -Only C081
 python tools/checks.py -Only C082
+python tools/checks.py -Only C083
 ```
 
 预期尾部：
@@ -403,12 +410,12 @@ python tools/checks.py -Only C082
 
 | 缺口 | 状态 | 对前端的影响 |
 |---|---|---|
-| `dW` 位平面化 | 未做；当前走 `dense::sgd_update` 融合外积，不是位平面 | 不能写“dW 是位平面” |
+| `dW` 位平面化 | 未做；SGD 走 `dense::sgd_update`、Adam 走 `layer::adam_update`，都是融合外积，不是位平面 | 不能写“dW 是位平面” |
 | `forward` 快速内核 | 已改位平面 `row_dot`（第二十轮） | 可写“前向走位平面 row_dot”，不能写“所有形状都快” |
-| `pack()` 成本 | 已单独计 0.85–0.89 ms/step；仍是每步一次全量量化 | 不能把 dX 的 39.25×当训练步加速 |
+| `pack()` 成本 | 已单独计 0.74–0.76 ms/step；仍是每步一次全量量化 | 不能把 dX 的 39.25×当训练步加速 |
 | 非 x86_64 性能 | 只保证标量回退正确，未测性能 | 不能给跨平台倍数 |
 | 端到端多形状吞吐 | 只测 4096×576 单层 | 不能给“训练快多少” |
-| Adam 的 `dW` | latent 更新仍是逐元素 Adam | 不能写“Adam 也融合了 dW” |
+| Adam 的 `dW` | 已做行级融合（AVX2 8-lane，标量尾；非 x86 回退），不是位平面化 | 可写“Adam dW 融合”，不能写“Adam 全链路位平面” |
 | 浏览器/WASM 运行 | 无目标、无绑定 | 只能做静态说明页 |
 | 实时 JSON 接口 | 未实现 | 页面用快照；如需实时，后端另开 Rust `--json` 任务 |
 | 实验录像 | unrecorded | 不能称论文级证据 |

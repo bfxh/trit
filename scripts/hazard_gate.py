@@ -99,6 +99,11 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
         "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
         "非 x86_64 不编译 SIMD 模块"
     ),
+    "crates/trit-train/src/layer/adam.rs": (
+        "Adam 融合 dW：AVX2 update_row 只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译 SIMD 模块"
+    ),
 }
 
 ALLOW_RELAXED: dict[str, str] = {
