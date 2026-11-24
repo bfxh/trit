@@ -106,6 +106,10 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
         "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
         "非 x86_64 不编译 SIMD 模块"
     ),
+    "crates/trit-train/src/plane/fused/adam_step/q_sign.rs": (
+        "Adam q 符号阈值：AVX2 掩码内核只在 adam_step 的 has_avx2() 分支内调用；"
+        "阈值附近回退原除法量化；非 x86_64 不编译"
+    ),
     "crates/trit-train/src/plane/pack.rs": (
         "位平面打包 from_latent：AVX2 内核只在 has_avx2() 的 "
         "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"

@@ -4976,7 +4976,15 @@
     },
     {
       "file": "crates/trit-train/src/plane/fused/adam_step.rs",
-      "lines": 276
+      "lines": 269
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
+      "lines": 62
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs",
+      "lines": 68
     },
     {
       "file": "crates/trit-train/src/plane/fused/adam_step/tests.rs",

@@ -112,6 +112,8 @@ fn adam_step_scalar(
 }
 
 #[cfg(target_arch = "x86_64")]
+mod q_sign;
+#[cfg(target_arch = "x86_64")]
 mod simd {
     #![allow(unsafe_op_in_unsafe_fn)]
     use std::arch::x86_64::*;
@@ -147,10 +149,7 @@ mod simd {
         let full = cols / 8;
         let mut acc: [Vec<f32>; 4] = std::array::from_fn(|_| vec![0.0f32; cols]);
         let mut qdot = vec![0.0f32; rows];
-        let izero = _mm256_setzero_si256();
         let one = _mm256_set1_ps(1.0);
-        let neg_one = _mm256_set1_ps(-1.0);
-        let half = _mm256_set1_ps(0.5);
         let sign = _mm256_set1_ps(-0.0);
         let zero = _mm256_setzero_ps();
         let b1 = _mm256_set1_ps(params.beta1);
@@ -165,6 +164,9 @@ mod simd {
             let s_orig = scale[r];
             let s = s_orig.max(f32::MIN_POSITIVE);
             let sv = _mm256_set1_ps(s);
+            let half_s = _mm256_set1_ps(0.5 * s);
+            let neg_half_s = _mm256_set1_ps(-0.5 * s);
+            let margin = _mm256_set1_ps((0.5 * s * (1.0 / 4096.0)).max(f32::MIN_POSITIVE));
             let iv = _mm256_set1_ps(1.0 / s);
             let coeff = dy[r] * s_orig;
             let cv = _mm256_set1_ps(coeff);
@@ -178,22 +180,11 @@ mod simd {
                 let off = j * 8;
                 let wv = _mm256_loadu_ps(row.as_ptr().add(off));
                 let xv = _mm256_loadu_ps(x.as_ptr().add(off));
-                let scaled = _mm256_div_ps(wv, sv);
-                let signed_half = _mm256_or_ps(_mm256_and_ps(scaled, sign), half);
-                let rounded = _mm256_round_ps::<{ _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC }>(
-                    _mm256_add_ps(scaled, signed_half),
-                );
-                let clamped = _mm256_min_ps(one, _mm256_max_ps(neg_one, rounded));
-                let qi = _mm256_cvtps_epi32(clamped);
-                let p = _mm256_cmpgt_epi32(qi, izero);
-                let n = _mm256_cmpgt_epi32(izero, qi);
-                let qx = _mm256_sub_ps(
-                    _mm256_and_ps(xv, _mm256_castsi256_ps(p)),
-                    _mm256_and_ps(xv, _mm256_castsi256_ps(n)),
-                );
+                let (p, n) = super::q_sign::masks(wv, sv, half_s, neg_half_s, margin);
+                let qx = _mm256_sub_ps(_mm256_and_ps(xv, p), _mm256_and_ps(xv, n));
                 let mut dv = _mm256_loadu_ps(a.as_ptr().add(off));
-                dv = _mm256_add_ps(dv, _mm256_and_ps(cv, _mm256_castsi256_ps(p)));
-                dv = _mm256_sub_ps(dv, _mm256_and_ps(cv, _mm256_castsi256_ps(n)));
+                dv = _mm256_add_ps(dv, _mm256_and_ps(cv, p));
+                dv = _mm256_sub_ps(dv, _mm256_and_ps(cv, n));
                 _mm256_storeu_ps(a.as_mut_ptr().add(off), dv);
 
                 let ratio = _mm256_mul_ps(wv, iv);
@@ -272,5 +263,7 @@ mod simd {
     }
 }
 
+#[cfg(all(test, target_arch = "x86_64"))]
+mod simd_tests;
 #[cfg(test)]
 mod tests;
