@@ -14,6 +14,25 @@
   `egraph::tests_regression::equiv_xor_chain_does_not_degrade_to_unknown`、
   `equiv_forms_keep_semantics_in_every_algebra` 与 `tests/egraph_equiv.rs` 端到端各一条；
   `cargo test -p trit-build` 全绿。
+### Added（第十四轮：稳定性/抖动探针）
+
+- 新增 `tools/stability_probe.py` 与 `stability/1` 清单：按命令重复执行，记录每次
+  `exit`、耗时、stdout+stderr 的 SHA-256 与字节数，不保存原始输出。
+- 分类拆开：`stable-pass`（全过、输出一致、耗时比在阈值内）、`stable-fail`
+  （全失败且输出一致，确定性失败不是 flaky）、`flaky`（退出码混判）、
+  `nondeterministic`（全过但输出指纹不同）、`jittery`（全过但 max/min 耗时超阈值）、
+  `unstable-fail`（全失败但退出码/输出还在变）、`unknown`（超时/启动失败）。
+- `stability/1` 支持顶层与逐命令覆盖 `repeat`（2..50）、`timeout_s`、`max_duration_ratio`、
+  `require_identical_output`；CLI 支持 `--repeat` / `--timeout-s` /
+  `--max-duration-ratio` / `--lenient-output` / `--json` / `--out`。
+- 退出码：`0` stable、`1` failed/unstable、`2` 坏调用、`3` unknown；清单缺失/坏 JSON/
+  schema 不对/逃逸 root/命令超时/启动失败都 fail-closed，`unknown` 不当通过。
+- 超时杀进程树（Windows `taskkill /T /F`，POSIX 新 session + `killpg`），避免 shell
+  退出后子进程继续跑、占住临时目录。
+- `tools/stability_probe.py self-test` **31/31**；`tools/selftest.ps1` 新增 ST1，
+  全仓 **710→711 passed / 0 failed / 0 skipped**。
+- 文档/台账：新增 `docs/engineering/AGENT-STABILITY.md`；`docs/ERRORS.md` L168；
+  C078；`docs/README.md` 索引同步。
 
 ### Added（第十三轮：每个 goal 必须被需求覆盖）
 
