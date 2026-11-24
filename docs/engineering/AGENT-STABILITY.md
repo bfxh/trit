@@ -25,6 +25,7 @@
 {
   "schema": "stability/1",
   "repeat": 3,
+  "warmup": 1,
   "timeout_s": 120,
   "max_duration_ratio": 3.0,
   "require_identical_output": true,
@@ -51,16 +52,21 @@
 | --- | --- | --- |
 | `schema` | 必填 | 固定 `stability/1` |
 | `repeat` | `3` | 每条命令重复次数，`2..50`；`repeat=1` 直接 unknown |
+| `warmup` | `0` | 正式测量前的预热次数，`0..5`；预热退出码参与 flaky 判定，耗时/输出指纹不计入 |
 | `timeout_s` | `120` | 单次运行超时秒数，`0.1..3600` |
 | `max_duration_ratio` | `3.0` | 单次运行 max/min 耗时比阈值，`1..100` |
 | `require_identical_output` | `true` | 是否要求重复运行的 stdout+stderr 指纹一致 |
 | `commands` | 必填 | 非空数组；每项有唯一 `id` 和非空 `command` |
 
-每条命令可覆盖 `repeat` / `timeout_s` / `max_duration_ratio` /
-`require_identical_output`；CLI 的 `--repeat`、`--timeout-s`、
+每条命令可覆盖 `repeat` / `warmup` / `timeout_s` / `max_duration_ratio` /
+`require_identical_output`；CLI 的 `--repeat`、`--warmup`、`--timeout-s`、
 `--max-duration-ratio`、`--lenient-output` 会覆盖整份清单。命令用 shell 执行，
 工作目录固定为 `--root`；清单路径必须留在 root 内，绝对路径/`..` 逃逸按
 `manifest-outside-root` 拒绝。
+
+`warmup` 是为了把“首次编译/冷启动”从耗时判定里拿掉，不是为了让失败消失：
+预热运行如果超时或启动失败，整体仍是 `unknown`；预热运行如果非 0、正式测量
+却全过，整体仍是 `flaky`。预热只影响耗时和输出指纹的统计口径。
 
 ## 分类规则
 
@@ -75,6 +81,9 @@
 | `jittery` | 全部 exit 0，输出一致，`max/min` 耗时超过阈值（且最短运行 ≥ 1 ms） | 耗时抖动 |
 | `unstable-fail` | 全部非 0，但退出码或输出还在变 | 不稳定的失败，不是确定性失败 |
 | `unknown` | 任一次超时或启动失败 | 无法判定；按 fail-closed 处理 |
+
+分类看全部退出码（含预热）：预热失败 + 正式测量通过仍是 `flaky`；`jittery` /
+`nondeterministic` 只看正式测量段的耗时和输出指纹，避免把首次编译算成抖动。
 
 整体状态：
 
@@ -100,7 +109,7 @@ python tools/stability_probe.py \
 
 python tools/stability_probe.py \
   --root . --manifest .agent/stability.json \
-  --repeat 5 --timeout-s 60 --out target/stability.json
+  --repeat 5 --warmup 1 --timeout-s 60 --out target/stability.json
 
 python tools/stability_probe.py self-test
 ```
@@ -108,6 +117,7 @@ python tools/stability_probe.py self-test
 `--out` 写一份 ASCII JSON 报告；报告里每条命令记录：
 
 - `classification`、`exit_codes`、`passes` / `failures`；
+- `warmup`、`warmup_exit_codes`、`warmup_failures` / `warmup_runs`；
 - `duration_ms`、`duration_min_ms` / `duration_max_ms`、`duration_ratio`；
 - `distinct_outputs`、每次 run 的 `output_sha` 和 `output_bytes`；
 - 每次 run 的 `timeout` / `error`（如果有）。
@@ -122,6 +132,9 @@ python tools/stability_probe.py self-test
 - **耗时比是相对量。** 默认 `max_duration_ratio=3.0`；启动开销很大的命令会把
   真实抖动稀释。对启动慢、但执行时间短的命令，应显式调低阈值或改用绝对耗时
   上限；后者本工具尚未建模。
+- **预热只去掉冷启动，不证明后续稳定。** `warmup=1` 会把首次编译/缓存填充的
+  耗时排除在 `duration_ratio` 之外；它不能消除后续的锁竞争、GC、磁盘抖动。
+  预热运行的退出码仍计入 flaky 判定，不能被用来“洗掉”首次失败。
 - **输出指纹是字节级。** CRLF/LF、时间戳、随机 ID、并发日志顺序都会让
   `distinct_outputs` 变大；这可能是真实 nondeterminism，也可能只是日志噪声。
   清单可以显式 `require_identical_output=false`，但报告仍记录
@@ -148,9 +161,10 @@ python tools/stability_probe.py self-test
 
 ## 测试与读数
 
-- `python tools/stability_probe.py self-test`：31/31，覆盖 stable-pass、
-  stable-fail、flaky、unstable-fail、nondeterministic、jittery、timeout/unknown、坏清单、
-  root 外清单、`require_identical_output=false` 等分支。
+- `python tools/stability_probe.py self-test`：40/40，覆盖 stable-pass、
+  stable-fail、flaky、unstable-fail、nondeterministic、jittery、warmup 去冷启动、
+  warmup 失败不洗白、timeout/unknown、坏清单、root 外清单、
+  `require_identical_output=false` 等分支。
 - `tools/selftest.ps1` 的 `ST1`：把探针自测接进全仓自测；全仓读数随之
   710 → 711 passed。
 - 探针自身不产生 CI 读数；CI 是否阻塞由调用方决定。
