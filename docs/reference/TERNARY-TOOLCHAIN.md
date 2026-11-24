@@ -49,7 +49,7 @@
    ├── truth.csv      真值表（人读/对拍）
    ├── truth.tritbin  TRB2 v3：头 + 变量名 + 5 trit/字节 + GF(3) CRC-3
    ├── lookup.c       主机查表函数（交给 cc/rustc 编译 —— 边界示范）
-   ├── direct.c       主机直算函数（`--backend direct|both`：线性 IR + CSE，不展开 3ⁿ 表）
+   ├── direct.c       主机直算函数（`--backend direct|both`：线性 IR + 交换律 CSE + DCE，不展开 3ⁿ 表）
    ├── design.v       双导轨 Verilog（K3/Ł3/B3 均支持）
    ├── design_tb.v    自检 testbench + expected.mem（`--verify-hdl`）
    ├── truth.wgsl     WGSL 查表内核 + truth.gpu.bin（2 bit/trit，`--emit-gpu`）
@@ -97,6 +97,7 @@ trit build demo.tri --out out --check  # 校验产物哈希
 | 变量名 | v3 存原名，`--decode` 重建的 CSV 表头与原表一致；v2 回退 `v0..vN` |
 | 主机对拍 | `lookup.c` 用 gcc 编译后 27/27 行与 `truth.csv` 一致 |
 | 直算对拍 | `direct.c`（`--backend direct --verify-c`）用 cc 编译后 **531,441/531,441** 行与 `truth.csv` 一致（12 变量，本机 0.9 s） |
+| 直算 IR 优化 | 交换律规范化后镜像子式共用一个节点；`prune_dead` 压缩孤儿并重编号；12 变量仍 **531,441/531,441** 行通过 |
 | 增量 | 同源二次构建 `cached=true`，不重写产物 |
 | 完整性 | 篡改 `truth.tritbin` 后 `--check` 退出非 0 |
 | 复核 | 化简不等价 ⇒ 构建失败，不写任何产物 |

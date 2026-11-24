@@ -827,7 +827,7 @@ OK     free slot must not reject on unknown hopelessness
   [docs/positioning/TERNARY-BOUNDARIES.md](docs/positioning/TERNARY-BOUNDARIES.md)。
 - 三进制构建工具（M0–M3 + 2026-11-08 补齐）：`.tri`/Verilog 子集 → 化简 + e-graph **饱和重写**
   （规则逐条自证，`--cost nodes|gates` 代价模型）→ **多线程**位并行真值表 →
-  `TRB2` v3（含变量名）/CSV/`lookup.c`/`direct.c`（`--backend direct|both` 直算）/双导轨 Verilog/WGSL 查表内核；
+  `TRB2` v3（含变量名）/CSV/`lookup.c`/`direct.c`（`--backend direct|both` 直算，交换律 CSE + DCE）/双导轨 Verilog/WGSL 查表内核；
   `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog] [--verify-hdl] [--emit-gpu] [--backend table|direct|both] [--verify-c] [--threads N]`；
   为什么只做这一层、哪部分仍靠 LLVM/Rust 见 [docs/reference/TERNARY-TOOLCHAIN.md](docs/reference/TERNARY-TOOLCHAIN.md)。
 - 三进制训练实验（`trit-train`）：三值 STE（Identity/Clipped/Soft）+ 每行 scale、
