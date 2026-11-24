@@ -26,8 +26,8 @@
     "fallback": "scalar when target_arch != x86_64 or cols < 8 or AVX2 unavailable",
     "not": [
       "ternary arithmetic addition",
-      "dW acceleration",
-      "forward dot acceleration"
+      "dW fused update (separate dense::sgd_update path, not part of this dX snapshot)",
+      "forward dot is plane row_dot in the train-step branch, not part of this dX snapshot"
     ]
   },
   "benchmark": {
@@ -57,12 +57,55 @@
       "speedup_peak_observed": 40.96
     }
   },
+  "training_step": {
+    "status": "feat/train-step-plane (uncommitted at snapshot time)",
+    "paths": {
+      "pack": "crates/trit-train/src/plane/pack.rs",
+      "dense": "crates/trit-train/src/dense.rs",
+      "layer": "crates/trit-train/src/layer.rs"
+    },
+    "operation": "pack() once -> forward_with_planes(row_dot) -> dense::sgd_update(dW) -> row_dot scale update",
+    "benchmark": {
+      "shape": {
+        "rows": 4096,
+        "cols": 576,
+        "macs": 2359296,
+        "macs_human": "2.36 M MAC"
+      },
+      "threads": 1,
+      "rounds": 7,
+      "steps_per_round": 3,
+      "selection": "fastest",
+      "timing_scope": "end-to-end train_step: pack() + forward + dW + scale update; layer construction and input generation excluded",
+      "scalar": {
+        "kernel": "train_step_scalar",
+        "observed_ms_per_step": [27.2, 27.6],
+        "relative": 1.0
+      },
+      "bitplane": {
+        "kernel": "train_step",
+        "observed_ms_per_step": [1.9, 2.1],
+        "outlier_ms_per_step": 2.4,
+        "speedup_observed_range": [13.4, 14.1]
+      },
+      "pack_ms_per_step": [0.85, 0.89]
+    },
+    "not": [
+      "ternary arithmetic addition",
+      "bit-plane dW (dW is fused outer-product, not dual-rail)",
+      "Adam latent update fusion (train_step_with_grad_adam still element-wise)",
+      "multi-layer or multi-shape end-to-end throughput"
+    ]
+  },
   "tests": {
     "suite": "cargo test -p trit-train",
     "passed": 21,
+    "training_step_passed": 27,
     "failed": 0,
     "before": 14,
     "added": 7,
+    "training_step_before": 21,
+    "training_step_added": 6,
     "coverage_shapes": [
       "1x1",
       "3x7",
@@ -83,16 +126,18 @@
     "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"]
   },
   "limits": [
-    "只加速 dX = Wᵀdy；dW 仍逐元素走 STE。",
-    "forward 仍是标量点积；pack() 仍是每步一次全量量化。",
-    "读数只覆盖 4096×576、单线程；不含 pack() 的量化成本，不等于训练步加速。",
+    "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",
+    "dX 读数只覆盖 4096×576、单线程；不含 pack() 的量化成本。",
+    "训练步是单层单样本 SGD 的端到端口径（含 pack），不含层构造/输入生成。",
+    "train_step 的 forward 已走 plane row_dot、dW 走 dense::sgd_update；Adam 的 latent 更新仍是逐元素。",
     "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
-    "没有端到端训练吞吐、GPU/WASM 读数或实验录像。",
+    "没有多形状曲线、GPU/WASM 读数或实验录像。",
     "浏览器 playground/WASM 不能执行该内核；前端只消费静态快照。"
   ],
   "provenance": {
     "command": "cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rounds 7 --rows 4096 --cols 576 --threads 1 --ste-steps 1",
-    "note": "--mtrits 只控制位平面 ALU 基准；反向形状由 --rows/--cols 决定。",
+    "training_step_command": "cargo run -p trit-train --release --bin train-bench -- --rows 4096 --cols 576 --threads 1 --rounds 7 --ste-steps 1 --train-steps 3",
+    "note": "--mtrits 只控制位平面 ALU 基准；反向/训练步形状由 --rows/--cols 决定。",
     "expected_tail": [
       "反向 dX：4096×576（2 M MAC，单线程，7 轮取最快）",
       "内核                 GMAC/s         相对",

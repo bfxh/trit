@@ -3,15 +3,17 @@
 `publish = false`，不属于稳定 API。
 
 > 与 `trit-net` 的关系：那边已有一个**最小 STE**（`q = clamp(round(w))`、identity 梯度、
-> 无 scale、两层 MLP、全批 GD）。本层在同一台机器上把它扩成可比较的四件事：
-> **per-row 可学习 scale**、**三种 STE 变体**、**位平面 ALU**、**位平面反向 `dX`**，
-> 并给出并发/预取/反向吞吐读数。两个实验层不共享代码（发布图禁止），数值口径可以直接对照。
+> 无 scale、两层 MLP、全批 GD）。本层在同一台机器上把它扩成一组可比较的原语：
+> **per-row 可学习 scale**、**三种 STE 变体**、**位平面 ALU**、**位平面反向 `dX`**、
+> **位平面训练步 + `dW` 融合更新**，并给出并发/预取/反向/训练步吞吐读数。
+> 两个实验层不共享代码（发布图禁止），数值口径可以直接对照。
 
 | 模块 | 内容 |
 |---|---|
 | `quant` | absmean 三值量化；**STE** 三变体（Identity / Clipped / Soft）；scale 梯度 |
-| `plane` | **位平面 ALU**：双导轨（1 trit = 2 bit），按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz / Bochvar；`PlaneMatrix` 反向 `dX` 掩码内核 |
-| `layer` | `TernaryLinear`：前向 `q + scale`，反向 STE + scale 梯度，单样本 SGD；`dX` 走 `PlaneMatrix` |
+| `plane` | **位平面 ALU**：双导轨（1 trit = 2 bit），按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz / Bochvar；`PlaneMatrix` 打包、前向点积与反向 `dX` 掩码内核 |
+| `dense` | `dW` 融合外积更新：`w -= lr · STE(w, scale, dy·scale·x)`，AVX2 8-lane + 标量尾 |
+| `layer` | `TernaryLinear`：前向走 `PlaneMatrix`，反向 STE + scale 梯度 + 融合 `dW`，单样本 SGD / Adam |
 | `prefetch` | `_mm_prefetch` 提示（非 x86_64 空操作），用于 A/B |
 
 ## STE 做了什么
@@ -51,12 +53,26 @@ scale 的梯度会绕回量化门控，训练不稳。
 2. 每 8 列取一个字节的 `pos`/`neg` 掩码，用 AVX2 把 `coeff` 加/减到 `dX` 的 8 个 lane；
 3. 4 个行累加器打散依赖链，尾部按标量补齐。
 
-`train_step_with_grad` / `train_step_with_grad_adam` 都复用同一份 `PlaneMatrix`：
-`dX`、scale 梯度（`row_dot`）和 latent 更新都不再二次量化。标量参考
+`train_step_with_grad` 复用同一份 `PlaneMatrix`：`dX`、scale 梯度（`row_dot`）和
+`dW` 都基于这一次打包，不再二次量化。`train_step_with_grad_adam` 的 `dX`/scale 也复用，
+但 latent 的 Adam 更新仍是逐元素循环——这是明确的未覆盖项。标量参考
 `PlaneMatrix::input_grad_scalar` 保留，测试逐尺寸对拍。
 
 边界：这里只做「双导轨选符号 + f32 累加」，**不是三进制算术加法**；非 x86_64
-或列数小于 8 时自动回退标量。它加速的是反向，不改变前向仍是标量点积这件事。
+或列数小于 8 时自动回退标量。前向也已改为同一份打包后的 `row_dot`，不再逐行
+`quantize_with_scale`。
+
+## 位平面训练步
+
+`train_step` 每步只做一次 `pack()`：
+
+1. `PlaneMatrix::from_latent(latent, scale, rows, cols)`：AVX2 每 8 列做一次除法、
+   round、clamp，用 `movemask` 直接写 `pos`/`neg` 字节；不再分配每行临时 `q`；
+2. `forward_with_planes`：每行 `scale[r] * planes.row_dot(r, x)`；
+3. `dense::sgd_update`：整层 `dW` 融合外积更新，按 8 lane 计算 STE 门控；
+4. scale 梯度用同一份 planes 的 `row_dot`，不再重算点积。
+
+`forward_scalar` / `train_step_scalar` 保留为标量对拍与基准路径。
 
 ## 实测（本机 24 核，16 M trit，7 轮取最快；`bench` 可复算）
 
@@ -81,11 +97,22 @@ scale 的梯度会绕回量化门控，训练不稳。
 | 内核 | GMAC/s | 相对标量 |
 |---|---:|---:|
 | 标量参考 | 0.23–0.24 | 1.00× |
-| 双导轨掩码 | 8.8–9.8 | **37–41×** |
+| 双导轨掩码 | 8.0–9.5 | **33–40×** |
 
 标量 `dX` 比标量点积慢一个量级，是因为它每列都要读 `q[c]` 并随机更新 `dX`；
 掩码内核把 8 列压进一条 AVX2 加减链，差距被放大。这个读数只算内核本身，
-不含 `pack()` 的量化成本；训练步的真实开销还取决于行数、列数和 latent 更新。
+不含 `pack()` 的量化成本；训练步的真实开销见下一张表。
+
+训练步（4096×576，单线程，3 步/轮，7 轮取最快，含 `pack`）：
+
+| 路径 | ms/step | 相对 |
+|---|---:|---:|
+| 标量参考（`train_step_scalar`） | 27.2–27.6 | 1.00× |
+| 位平面步（`train_step`） | 1.9–2.1（偶发 2.4） | **13.4–14.1×** |
+| 其中 `pack()` | 0.85–0.89 | — |
+
+同一轮 `dX` 读数在 8.0–9.5 GMAC/s；训练步是端到端口径，含打包、前向、`dW`
+和 scale 更新，不含层构造/输入生成。2.4 ms 是热降频单次，不当作稳定值。
 
 三条结论：
 
@@ -112,16 +139,19 @@ scale 的梯度会绕回量化门控，训练不稳。
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 21 个（plane/反向/layer；量化/STE 的 6 个测试在 trit-learn）
+cargo test -p trit-train                       # 27 个（plane/反向/打包/dW/layer；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
+cargo run -p trit-train --release --bin train-bench -- --rows 4096 --cols 576 --rounds 7 --train-steps 3
 ```
 
 ## 边界与下一步
 
-- 前向点积仍是**标量参考**（2.4 GMAC/s）。快速掩码内核在 `trit-ops`，但发布图禁止实验 crate
-  互相依赖 → M1 要把内核下沉到可发布 crate 再复用；本轮的位平面反向没有跨 crate 依赖。
-- 反向只加速了 `dX = Wᵀdy`；`dW` 仍按元素走 STE，`pack()` 也仍是每步一次全量量化。
-- 没有 bias/激活/多层/优化器状态；`TernaryLinear` 是探针，不是框架。
+- 前向点积已走**位平面 `row_dot`**（每 8 个 trit 取一个字节的 `pos`/`neg` 掩码）。
+  更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到
+  可发布 crate 再复用；本轮的位平面前向/反向没有跨 crate 依赖。
+- 反向 `dX`、前向与 `dW` 已融合；`train_step_with_grad_adam` 的 latent 更新仍是逐元素
+  Adam，`pack()` 仍是每步一次全量量化。
+- 没有 bias/激活/多层/优化器状态（除单层 Adam 探针）；`TernaryLinear` 是探针，不是框架。
 - 后续候选：KV cache 的三值压缩、AI-to-AI 三态消息格式（TriCom 类）——都还没做，
   需要先有格式规范与可复算的压缩/延迟读数。
 - 前端交接（浏览器面，不是 YARA 解析前端）：`docs/HANDOFF-BITPLANE-BACKWARD-FRONTEND.md`。
