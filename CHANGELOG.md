@@ -805,7 +805,8 @@
   held-out 对 int3 的 ΔP/ΔS 为 `+0.007193 / +0.002260`（A→B）和
   `+0.007985 / +0.006351`（B→A），CI 全跨 0；对 int4 点估计两折都转负。
   **固定结构只减少手工自由度，不消除块选择方差；全量点估计仍是 in-sample，
-  不能当默认规则。** `test_surface` 登记为 137 单位 / 3534 条。
+  不能当默认规则。** `--run` 路径已在 L6 上端到端复算，读数与手工评测一致；
+  `test_surface` 登记为 137 单位 / 3534 条。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出

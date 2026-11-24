@@ -1373,12 +1373,28 @@ python scripts/wsp_budget_rescan.py \
   --per-shape 2 --out budget-l6-rescan.json \
   --report budget-l6-rescan.report.json
 
+# 5b) 选择器自带评测路径的端到端复算（可选）
+python scripts/wsp_budget_rescan.py \
+  --base budget-l6-pure-int3.json \
+  --summary-3to2 perturb-l6-3to2/perturb-summary.json \
+  --summary-3to4 perturb-l6-3to4/perturb-summary.json \
+  --per-shape 2 --out budget-l6-rescan-runcheck.json \
+  --report budget-l6-rescan-runcheck.report.json \
+  --run --exe target/release/examples/bert6.exe \
+  --model all-MiniLM-L6-v2.safetensors --data-dir miniLM-bert6-sts-full \
+  --layers 6 --threads 24 --f32-cache l6-f32-cache-full.json \
+  --result l6-rescan-k2-runcheck-result.json
+
 # 6) 配对 bootstrap
 python scripts/wsp_budget_bootstrap.py \
   --baseline l6-int3.json --candidate l6-native-result.json \
   --pairs miniLM-bert6-sts-full/pairs.json \
   --out bootstrap-l6-native-vs-int3.json
 ```
+
+`--self-test` 输出 `self-test: ok`；`--run` 路径已在 L6 上做过端到端复算，候选
+预算和 report 与手工选择逐字段一致，评测输出 `0.8313043073454619 /
+0.8244569451453719`，与 `l6-rescan-k2-result.json` 相同。
 
 两折 held-out 的切分固定 seed `20261124`、按 pair 随机打乱后前/后各半；选块只在
 训练折的单块 ΔSpearman 上排序，降级取最大（最不伤）、升级取最大（最受益），
