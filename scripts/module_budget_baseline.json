@@ -4872,23 +4872,27 @@
     },
     {
       "file": "crates/trit-train/src/bin/bench.rs",
-      "lines": 249
+      "lines": 283
     },
     {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 505
+      "lines": 586
     },
     {
       "file": "crates/trit-train/src/lib.rs",
-      "lines": 20
+      "lines": 21
     },
     {
       "file": "crates/trit-train/src/plane.rs",
-      "lines": 215
+      "lines": 221
     },
     {
       "file": "crates/trit-train/src/plane/alu.rs",
       "lines": 96
+    },
+    {
+      "file": "crates/trit-train/src/plane/backward.rs",
+      "lines": 430
     },
     {
       "file": "crates/trit-train/src/prefetch.rs",

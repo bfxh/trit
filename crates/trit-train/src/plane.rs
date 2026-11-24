@@ -5,8 +5,14 @@
 //!
 //! 只做能按字并行的运算。**算术加法不做**：三进制进位在打包表示上只能逐 lane
 //! 串行展开，此前 `trit-balanced` 的实测是比 i64 慢 2–3 个数量级，属于已证负结果。
+//!
+//! [`PlaneMatrix`] 把整行权重打成两条导轨，反向 `dX = Wᵀdy` 只按掩码加减 f32，
+//! 不做三进制进位；这是训练侧的反向内核，不改变上面的加法边界。
 
 mod alu;
+mod backward;
+
+pub use backward::PlaneMatrix;
 
 /// 每个字的 trit 数。
 pub const TRITS_PER_WORD: usize = 64;

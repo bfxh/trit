@@ -3,15 +3,15 @@
 `publish = false`，不属于稳定 API。
 
 > 与 `trit-net` 的关系：那边已有一个**最小 STE**（`q = clamp(round(w))`、identity 梯度、
-> 无 scale、两层 MLP、全批 GD）。本层在同一台机器上把它扩成可比较的三件事：
-> **per-row 可学习 scale**、**三种 STE 变体**、**位平面 ALU**，并给出并发/预取读数。
-> 两个实验层不共享代码（发布图禁止），数值口径可以直接对照。
+> 无 scale、两层 MLP、全批 GD）。本层在同一台机器上把它扩成可比较的四件事：
+> **per-row 可学习 scale**、**三种 STE 变体**、**位平面 ALU**、**位平面反向 `dX`**，
+> 并给出并发/预取/反向吞吐读数。两个实验层不共享代码（发布图禁止），数值口径可以直接对照。
 
 | 模块 | 内容 |
 |---|---|
 | `quant` | absmean 三值量化；**STE** 三变体（Identity / Clipped / Soft）；scale 梯度 |
-| `plane` | **位平面 ALU**：双导轨（1 trit = 2 bit），按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz / Bochvar |
-| `layer` | `TernaryLinear`：前向 `q + scale`，反向 STE + scale 梯度，单样本 SGD |
+| `plane` | **位平面 ALU**：双导轨（1 trit = 2 bit），按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz / Bochvar；`PlaneMatrix` 反向 `dX` 掩码内核 |
+| `layer` | `TernaryLinear`：前向 `q + scale`，反向 STE + scale 梯度，单样本 SGD；`dX` 走 `PlaneMatrix` |
 | `prefetch` | `_mm_prefetch` 提示（非 x86_64 空操作），用于 A/B |
 
 ## STE 做了什么
@@ -42,6 +42,22 @@ scale 的梯度会绕回量化门控，训练不稳。
 **算术加法不做**：三进制进位在打包表示上只能逐 lane 串行，此前 `trit-balanced`
 实测比 i64 慢 2–3 个数量级——已证负结果，不重复踩。
 
+## 位平面反向 `dX = Wᵀdy`
+
+`TernaryLinear::pack()` 把当前 latent 量化一次，按行打成 `pos`/`neg` 两条导轨
+（`PlaneMatrix`，1 trit = 2 bit）。反向不再逐列读 `q[c]`，而是：
+
+1. 对第 `r` 行取 `coeff = dy[r] * scale[r]`；
+2. 每 8 列取一个字节的 `pos`/`neg` 掩码，用 AVX2 把 `coeff` 加/减到 `dX` 的 8 个 lane；
+3. 4 个行累加器打散依赖链，尾部按标量补齐。
+
+`train_step_with_grad` / `train_step_with_grad_adam` 都复用同一份 `PlaneMatrix`：
+`dX`、scale 梯度（`row_dot`）和 latent 更新都不再二次量化。标量参考
+`PlaneMatrix::input_grad_scalar` 保留，测试逐尺寸对拍。
+
+边界：这里只做「双导轨选符号 + f32 累加」，**不是三进制算术加法**；非 x86_64
+或列数小于 8 时自动回退标量。它加速的是反向，不改变前向仍是标量点积这件事。
+
 ## 实测（本机 24 核，16 M trit，7 轮取最快；`bench` 可复算）
 
 位平面 ALU（Kleene，Gop/s）：
@@ -59,6 +75,17 @@ scale 的梯度会绕回量化门控，训练不稳。
 | 线程 | 1 | 2 | 4 | 8 |
 |---|---:|---:|---:|---:|
 | GMAC/s | 2.36 | 4.41 | 6.90 | 8.13 |
+
+反向 `dX`（4096×576，单线程，7 轮取最快，多次复跑）：
+
+| 内核 | GMAC/s | 相对标量 |
+|---|---:|---:|
+| 标量参考 | 0.23–0.24 | 1.00× |
+| 双导轨掩码 | 8.8–9.8 | **37–41×** |
+
+标量 `dX` 比标量点积慢一个量级，是因为它每列都要读 `q[c]` 并随机更新 `dX`；
+掩码内核把 8 列压进一条 AVX2 加减链，差距被放大。这个读数只算内核本身，
+不含 `pack()` 的量化成本；训练步的真实开销还取决于行数、列数和 latent 更新。
 
 三条结论：
 
@@ -85,15 +112,15 @@ scale 的梯度会绕回量化门控，训练不稳。
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 8 个（plane + layer；量化/STE 的 6 个测试在 trit-learn）
+cargo test -p trit-train                       # 21 个（plane/反向/layer；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 ```
 
 ## 边界与下一步
 
-- 点积是**标量参考**（2.4 GMAC/s）。快速掩码内核在 `trit-ops`，但发布图禁止实验 crate
-  互相依赖 → M1 要把内核下沉到可发布 crate 再复用。
-- 没有反向的位平面加速（`dX = Wᵀdy` 也走标量）——这是训练侧最大的一块欠账。
+- 前向点积仍是**标量参考**（2.4 GMAC/s）。快速掩码内核在 `trit-ops`，但发布图禁止实验 crate
+  互相依赖 → M1 要把内核下沉到可发布 crate 再复用；本轮的位平面反向没有跨 crate 依赖。
+- 反向只加速了 `dX = Wᵀdy`；`dW` 仍按元素走 STE，`pack()` 也仍是每步一次全量量化。
 - 没有 bias/激活/多层/优化器状态；`TernaryLinear` 是探针，不是框架。
 - 后续候选：KV cache 的三值压缩、AI-to-AI 三态消息格式（TriCom 类）——都还没做，
   需要先有格式规范与可复算的压缩/延迟读数。

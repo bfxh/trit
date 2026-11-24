@@ -1489,6 +1489,27 @@
       "run": "cargo test -p trit-orch --test ledger_cross_process",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C081",
+      "title": "trit-train 位平面反向 dX = Wᵀdy：双导轨掩码内核、标量对拍与 AVX2 尾列回退",
+      "kind": "cmd",
+      "covers": [
+        "L171"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/backward.rs",
+        "crates/trit-train/src/plane.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/bin/bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T10:30:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

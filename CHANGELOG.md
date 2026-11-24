@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed（第十九轮：位平面反向 `dX`）
+
+- 新增 `crates/trit-train/src/plane/backward.rs`：`PlaneMatrix` 把三值权重按行打成
+  `pos`/`neg` 双导轨（1 trit = 2 bit），反向 `dX = Wᵀdy` 不再逐列读 `q[c]`，而是每
+  8 列取一个字节掩码、用 AVX2 把 `dy[r] * scale[r]` 加减到 `dX` lane；4 个行累加器
+  打散依赖链，尾部按标量补齐。标量参考 `input_grad_scalar` 保留，逐尺寸对拍。
+- `TernaryLinear::pack()` 每步只量化一次；`train_step_with_grad` 与
+  `train_step_with_grad_adam` 复用同一份 `PlaneMatrix` 算 `dX`、scale 梯度
+  （`row_dot`）与 latent 更新，不再二次量化。
+- 读数（4096×576，单线程，7 轮取最快，多次复跑）：标量 `dX` **0.23–0.24 GMAC/s**，
+  双导轨掩码 **8.8–9.8 GMAC/s**，**37–41×**。`train-bench` 新增反向读数；
+  `cargo test -p trit-train` **14→21**，覆盖非 64 倍列、AVX2/标量对拍、SGD 与 Adam 接入。
+- 边界：反向只做「双导轨选符号 + f32 累加」，**不是三进制算术加法**；非 x86_64 或
+  列数 <8 回退标量；`dW` 仍按元素走 STE，前向点积仍是标量参考。台账新增 C081
+  （`docs/ERRORS.md` L171），登记 `plane/backward.rs`（430 行），当前 1513 个 `.rs`
+  全部 capped。
+
 ### Changed（第十八轮：DeliveryReceipt 改为纯 Rust 持久化）
 
 - 新增 `crates/trit-orch/src/delivery.rs`：把 `receipt::DeliveryReceipt` 的内存四态
