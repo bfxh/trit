@@ -8,8 +8,8 @@
 //!
 //! [`PlaneMatrix`] 把整行权重打成两条导轨，反向 `dX = Wᵀdy` 只按掩码加减 f32，
 //! 不做三进制进位；这是训练侧的反向内核，不改变上面的加法边界。
-
 mod alu;
+#[allow(dead_code)] // 非 x86_64 上 has_avx2 只是回退路径的编译占位
 mod backward;
 
 pub use backward::PlaneMatrix;

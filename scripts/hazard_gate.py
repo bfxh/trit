@@ -85,6 +85,10 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
     "crates/trit-ops/src/simd.rs": "AVX 内核（见 raw-memory 条目）",
     "crates/trit-ops/src/gemv.rs": "AVX/FMA 内核（见 raw-memory 条目）",
     "crates/trit-dot/src/lib.rs": "POPCNT 内核（见 raw-memory 条目）",
+    "crates/trit-train/src/plane/backward.rs": (
+        "位平面反向 dX：三个 AVX2 函数只在 has_avx2() 的 is_x86_feature_detected! "
+        "之后调用；列数 <8 或尾部走标量，非 x86_64 不编译 SIMD 模块"
+    ),
 }
 
 ALLOW_RELAXED: dict[str, str] = {
