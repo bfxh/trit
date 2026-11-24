@@ -1,0 +1,103 @@
+{
+  "schema": "trit.handoff.bitplane-backward/v1",
+  "kind": "curated-snapshot",
+  "generated_at": "2026-11-24T18:07:01+08:00",
+  "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
+  "source": {
+    "repo": "https://github.com/bfxh/trit",
+    "crate": "trit-train",
+    "pr": 664,
+    "commit": "6b910bc93c449e8dca4a03afb114d57ce367f528",
+    "commit_short": "6b910bc9",
+    "merged_at": "2026-11-24T09:51:12Z"
+  },
+  "platform": {
+    "cpu": "Intel(R) Core(TM) Ultra 7 270K Plus",
+    "cores": 24,
+    "logical_threads": 24,
+    "os": "Microsoft Windows 11 专业版 10.0.28000",
+    "rustc": "1.99.0 (b940084d7 2026-09-28)",
+    "build": "release"
+  },
+  "kernel": {
+    "name": "PlaneMatrix::input_grad",
+    "operation": "dX[c] = sum_r(dy[r] * scale[r] * q[r,c])",
+    "layout": "row-major q; pos/neg dual-rail u64; 1 trit = 2 bit",
+    "fallback": "scalar when target_arch != x86_64 or cols < 8 or AVX2 unavailable",
+    "not": [
+      "ternary arithmetic addition",
+      "dW acceleration",
+      "forward dot acceleration"
+    ]
+  },
+  "benchmark": {
+    "shape": {
+      "rows": 4096,
+      "cols": 576,
+      "macs": 2359296,
+      "macs_human": "2.36 M MAC"
+    },
+    "threads": 1,
+    "rounds": 7,
+    "selection": "fastest",
+    "unit": "GMAC/s",
+    "timing_scope": "kernel-only; pack()/quantization excluded; caller-preallocated out; internal accumulator allocation included",
+    "scalar": {
+      "kernel": "input_grad_scalar",
+      "latest_gmac_s": 0.24,
+      "observed_range_gmac_s": [0.23, 0.24],
+      "relative": 1.0
+    },
+    "bitplane": {
+      "kernel": "input_grad (AVX2 mask path)",
+      "latest_gmac_s": 9.44,
+      "observed_range_gmac_s": [8.8, 9.8],
+      "speedup_latest": 39.25,
+      "speedup_observed_range": [37, 41],
+      "speedup_peak_observed": 40.96
+    }
+  },
+  "tests": {
+    "suite": "cargo test -p trit-train",
+    "passed": 21,
+    "failed": 0,
+    "before": 14,
+    "added": 7,
+    "coverage_shapes": [
+      "1x1",
+      "3x7",
+      "4x8",
+      "5x9",
+      "6x63",
+      "7x64",
+      "8x65",
+      "11x130",
+      "17x576",
+      "5x130 (zero matrix)"
+    ]
+  },
+  "ci": {
+    "pr_checks_pass": 32,
+    "pr_checks_skipping": 2,
+    "pr_checks_fail": 0,
+    "platforms": ["macos-latest", "ubuntu-latest", "windows-latest"]
+  },
+  "limits": [
+    "只加速 dX = Wᵀdy；dW 仍逐元素走 STE。",
+    "forward 仍是标量点积；pack() 仍是每步一次全量量化。",
+    "读数只覆盖 4096×576、单线程；不含 pack() 的量化成本，不等于训练步加速。",
+    "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
+    "没有端到端训练吞吐、GPU/WASM 读数或实验录像。",
+    "浏览器 playground/WASM 不能执行该内核；前端只消费静态快照。"
+  ],
+  "provenance": {
+    "command": "cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rounds 7 --rows 4096 --cols 576 --threads 1 --ste-steps 1",
+    "note": "--mtrits 只控制位平面 ALU 基准；反向形状由 --rows/--cols 决定。",
+    "expected_tail": [
+      "反向 dX：4096×576（2 M MAC，单线程，7 轮取最快）",
+      "内核                 GMAC/s         相对",
+      "标量参考                 0.24      1.00×",
+      "双导轨掩码                9.44     39.25×"
+    ]
+  }
+}
