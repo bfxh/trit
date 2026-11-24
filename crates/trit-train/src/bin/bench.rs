@@ -10,7 +10,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use trit_train::layer::{TernaryLinear, dot};
-use trit_train::plane::Planes;
+use trit_train::plane::{PlaneMatrix, Planes};
 use trit_train::quant::Ste;
 
 #[derive(Clone, Copy, Debug)]
@@ -139,6 +139,27 @@ fn bench_dot(
     (rows * cols) as f64 / best / 1e9
 }
 
+/// 反向 `dX = Wᵀdy`：标量参考 vs 双导轨掩码内核，返回 `(标量, 内核, 加速比)`。
+fn bench_backward(m: &PlaneMatrix, dy: &[f32], scale: &[f32], rounds: usize) -> (f64, f64, f64) {
+    let macs = (m.rows() * m.cols()) as f64;
+    let mut out = vec![0.0f32; m.cols()];
+    let mut best_scalar = f64::INFINITY;
+    let mut best_plane = f64::INFINITY;
+    for _ in 0..rounds.max(1) {
+        let start = Instant::now();
+        m.input_grad_scalar(dy, scale, &mut out);
+        best_scalar = best_scalar.min(start.elapsed().as_secs_f64());
+        black_box(&out);
+        let start = Instant::now();
+        m.input_grad(dy, scale, &mut out);
+        best_plane = best_plane.min(start.elapsed().as_secs_f64());
+        black_box(&out);
+    }
+    let scalar = macs / best_scalar / 1e9;
+    let plane = macs / best_plane / 1e9;
+    (scalar, plane, plane / scalar)
+}
+
 /// 三值线性层在固定任务上的收敛（与 `layer` 的单测同一任务）。
 fn ste_round(ste: Ste, steps: usize) -> (f32, Option<usize>, Vec<Vec<i8>>) {
     let (rows, cols) = (2usize, 3usize);
@@ -235,6 +256,19 @@ fn main() {
             );
         }
     }
+
+    let dy: Vec<f32> = (0..rows).map(|r| ((r % 31) as f32 - 15.0) / 15.0).collect();
+    let scale: Vec<f32> = (0..rows).map(|r| 0.25 + ((r % 17) as f32) * 0.05).collect();
+    let plane = PlaneMatrix::from_quantized(q, rows, cols);
+    let (scalar, plane_gmac, speedup) = bench_backward(&plane, &dy, &scale, rounds);
+    println!(
+        "\n反向 dX：{rows}×{cols}（{} M MAC，单线程，{} 轮取最快）",
+        rows * cols / 1_000_000,
+        rounds
+    );
+    println!("{:<14} {:>10} {:>10}", "内核", "GMAC/s", "相对");
+    println!("{:<14} {scalar:>10.2} {:>10}", "标量参考", "1.00×");
+    println!("{:<14} {plane_gmac:>10.2} {:>9.2}×", "双导轨掩码", speedup);
 
     println!("\nSTE 收敛（2×3 线性层，{ste_steps} 步，MSE）：");
     for (name, ste) in [

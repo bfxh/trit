@@ -4,6 +4,7 @@
 //! - 反向用 [`Ste`] 把 `∂L/∂q` 直通回 latent，scale 也一起学；
 //! - 训练是单样本 SGD——这是 M0 的收敛性/性能探针，不是训练框架。
 
+use crate::plane::PlaneMatrix;
 use crate::quant::{Ste, quantize_with_scale, scale_grad};
 
 /// Adam 优化器状态：与一组参数一一对应。
@@ -148,6 +149,20 @@ impl TernaryLinear {
         (0..self.rows).map(|r| self.quantized_row(r)).collect()
     }
 
+    /// 把当前 latent 量化一次，打成双导轨位平面。
+    ///
+    /// 反向 `dX` 与 scale 梯度共用这份位平面；`forward` 仍是独立的标量点积。
+    pub fn pack(&self) -> PlaneMatrix {
+        let mut q = Vec::with_capacity(self.rows * self.cols);
+        for r in 0..self.rows {
+            q.extend(quantize_with_scale(
+                &self.latent[r * self.cols..(r + 1) * self.cols],
+                self.scale[r],
+            ));
+        }
+        PlaneMatrix::from_quantized(q, self.rows, self.cols)
+    }
+
     /// 前向：`y[r] = scale[r] * Σ q[r,c]·x[c]`。
     pub fn forward(&self, x: &[f32]) -> Vec<f32> {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
@@ -197,23 +212,26 @@ impl TernaryLinear {
     ///
     /// `output_grad[r] = ∂L/∂y[r]`；内部按 STE 更新 latent/scale，返回
     /// `∂L/∂x[c] = Σ_r output_grad[r] · scale[r] · q[r,c]`（用更新前的三值权重）。
+    /// `dX` 与 scale 梯度都走一次打包后的双导轨位平面，标量路径保留在
+    /// [`crate::plane::PlaneMatrix::input_grad_scalar`] 供对拍。
     pub fn train_step_with_grad(&mut self, input: &[f32], output_grad: &[f32]) -> Vec<f32> {
         assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
         assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
+        let planes = self.pack();
         let mut input_grad = vec![0.0f32; self.cols];
+        planes.input_grad(output_grad, &self.scale, &mut input_grad);
         let (lr, ste, cols) = (self.lr, self.ste, self.cols);
         for (r, &dy_r) in output_grad.iter().enumerate() {
             let scale = self.scale[r];
-            let row = &self.latent[r * cols..(r + 1) * cols];
-            let q = quantize_with_scale(row, scale);
+            let grad_scale = dy_r * planes.row_dot(r, input);
+            self.scale[r] = (scale - lr * grad_scale).max(1e-4);
+            let base = r * cols;
             for (c, &xc) in input.iter().enumerate() {
-                input_grad[c] += dy_r * scale * f32::from(q[c]);
                 let grad_q = dy_r * scale * xc;
-                let idx = r * cols + c;
+                let idx = base + c;
                 let grad = ste.backward(self.latent[idx], scale, grad_q);
                 self.latent[idx] -= lr * grad;
             }
-            self.scale[r] = (scale - lr * dy_r * scale_grad(&q, input)).max(1e-4);
         }
         input_grad
     }
@@ -235,21 +253,21 @@ impl TernaryLinear {
         assert_eq!(scale_opt.len(), self.rows, "scale 优化器大小");
         latent_opt.begin();
         scale_opt.begin();
+        let planes = self.pack();
         let (ste, cols) = (self.ste, self.cols);
         let mut input_grad = vec![0.0f32; self.cols];
+        planes.input_grad(output_grad, &self.scale, &mut input_grad);
         for (r, &dy_r) in output_grad.iter().enumerate() {
             let scale = self.scale[r];
-            let row = &self.latent[r * cols..(r + 1) * cols];
-            let q = quantize_with_scale(row, scale);
+            let grad_scale = dy_r * planes.row_dot(r, input);
+            self.scale[r] = scale_opt.apply(r, grad_scale, scale).max(1e-4);
+            let base = r * cols;
             for (c, &xc) in input.iter().enumerate() {
-                input_grad[c] += dy_r * scale * f32::from(q[c]);
                 let grad_q = dy_r * scale * xc;
-                let idx = r * cols + c;
+                let idx = base + c;
                 let grad = ste.backward(self.latent[idx], scale, grad_q);
                 self.latent[idx] = latent_opt.apply(idx, grad, self.latent[idx]);
             }
-            let grad_scale = dy_r * scale_grad(&q, input);
-            self.scale[r] = scale_opt.apply(r, grad_scale, scale).max(1e-4);
         }
         input_grad
     }
@@ -406,6 +424,69 @@ mod tests {
         let input = [2.0, -3.0];
         let grad = layer.train_step_with_grad(&input, &[1.0, -1.0]);
         assert_eq!(grad, vec![1.0, -1.0]);
+    }
+
+    #[test]
+    fn plane_reverse_matches_weights_before_update() {
+        let mut layer = TernaryLinear::new(
+            7,
+            13,
+            |r, c| ((r * 11 + c * 7) as f32) / 23.0 - 0.7,
+            Ste::Identity,
+            0.0,
+            0.5,
+        );
+        let q = layer.quantized();
+        let scale = layer.scales().to_vec();
+        let input: Vec<f32> = (0..13).map(|i| (i as f32 - 6.0) / 7.0).collect();
+        let dy: Vec<f32> = (0..7).map(|r| (r as f32 - 3.0) / 3.0).collect();
+        let want: Vec<f32> = (0..13)
+            .map(|c| (0..7).map(|r| dy[r] * scale[r] * f32::from(q[r][c])).sum())
+            .collect();
+        let got = layer.train_step_with_grad(&input, &dy);
+        for (g, w) in got.iter().zip(&want) {
+            assert!((g - w).abs() <= 1e-4 * (1.0 + w.abs()), "dX={g} want={w}");
+        }
+    }
+
+    #[test]
+    fn plane_reverse_matches_with_adam() {
+        let mut layer = TernaryLinear::new(
+            5,
+            17,
+            |r, c| ((r * 13 + c * 3) as f32) / 29.0 - 0.5,
+            Ste::Identity,
+            0.05,
+            0.5,
+        );
+        let q = layer.quantized();
+        let scale = layer.scales().to_vec();
+        let input: Vec<f32> = (0..17).map(|i| (i as f32 - 8.0) / 9.0).collect();
+        let dy: Vec<f32> = (0..5).map(|r| (r as f32 - 2.0) / 2.0).collect();
+        let want: Vec<f32> = (0..17)
+            .map(|c| (0..5).map(|r| dy[r] * scale[r] * f32::from(q[r][c])).sum())
+            .collect();
+        let mut latent_opt = Adam::new(5 * 17, 0.01);
+        let mut scale_opt = Adam::new(5, 0.01);
+        let got = layer.train_step_with_grad_adam(&input, &dy, &mut latent_opt, &mut scale_opt);
+        for (g, w) in got.iter().zip(&want) {
+            assert!((g - w).abs() <= 1e-4 * (1.0 + w.abs()), "dX={g} want={w}");
+        }
+    }
+
+    #[test]
+    fn pack_matches_quantized_rows() {
+        let layer = TernaryLinear::new(
+            4,
+            9,
+            |r, c| ((r * 5 + c * 7) as f32) / 17.0 - 0.4,
+            Ste::Identity,
+            0.05,
+            0.5,
+        );
+        let packed = layer.pack();
+        let flat: Vec<i8> = layer.quantized().into_iter().flatten().collect();
+        assert_eq!(packed.q(), flat.as_slice());
     }
 
     fn train_all_adam(steps: usize) -> (TernaryLinear, f32) {

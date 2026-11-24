@@ -1,9 +1,10 @@
 //! 三进制训练实验层（M0）。
 //!
-//! 三件事，各自可独立验证：
+//! 四件事，各自可独立验证：
 //! - [`quant`]：三值量化与 **STE**（直通估计器）变体、每行 scale 的梯度；
 //! - [`plane`]：**位平面 ALU**（双导轨 1 trit/2 bit，按字并行的 AND/OR/NOT/XOR，
-//!   支持 Kleene / Łukasiewicz / Bochvar 三套语义）；
+//!   支持 Kleene / Łukasiewicz / Bochvar 三套语义）与反向 `dX` 的
+//!   [`PlaneMatrix`](plane::PlaneMatrix) 掩码内核；
 //! - [`layer`]：一个带 STE 的三值线性层（QAT 风格），能真训起来。
 //!
 //! 边界：
