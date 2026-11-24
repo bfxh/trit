@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Changed（第二十二轮：惰性 `q` 缓存）
+
+- `PlaneMatrix` 的 `q` 从每步全量写回的 `Vec<i8>` 改成 `OnceLock<Vec<i8>>`：
+  `from_latent` 只写 `pos`/`neg` 双导轨，训练步和 Adam 步都不读 `q`，不再为
+  2.36 M 个 `i8` 做零初始化与逐字节写回；只有调用方首次 `q()` 时才从导轨解码并缓存。
+  新增 `plane/q.rs` 承载惰性展开与 `q_is_lazy_and_cached` 回归测试。
+- `PartialEq` 改为比较双导轨内容，不比较惰性缓存状态；`q()` 语义与行主序不变。
+- `train-bench` 的 `pack()` 行改为只计双导轨构造（`black_box` 整个 `PlaneMatrix`），
+  不再隐式调用 `q()`；`q()` 首次解码成本单独存在于调用方，不计入训练步。
+- 读数（4096×576，单线程，3 步/轮，9 轮取最快）：`train_step` **1.5–1.6 ms/step
+  （18–19.5×；上一轮 1.8–1.9）**，`pack()` **0.47–0.49 ms/step（上一轮 0.73–0.76）**；
+  Adam 逐元素 **8.0–8.2 ms/step**，行级融合 **2.7–2.9 ms/step（2.8–3.0×）**。
+  `shape_bench` 的 4096×576 融合降到 **2.5–3.1 ms/step（2.6–3.2×；3 步/轮，噪声较大）**。
+- `cargo test -p trit-train` **30→31**；模块预算新增 `plane/q.rs`（24 行 + 测试），
+  `plane/backward.rs` 收紧到 429，`plane/pack.rs` 保持 139。
+- 边界：`q()` 的惰性解码不是免费；需要 `q` 的调用方在首次访问时付一次解码。
+  训练步不读 `q`，所以本轮的收益不适用于 `q()` 消费者。
+
 ### Changed（第二十一轮：Adam `dW` 融合与打包字节写回）
 
 - 新增 `crates/trit-train/src/layer/adam.rs`：`train_step_with_grad_adam` 与 SGD 版

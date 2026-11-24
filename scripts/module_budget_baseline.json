@@ -4932,7 +4932,7 @@
     },
     {
       "file": "crates/trit-train/src/plane/backward.rs",
-      "lines": 430
+      "lines": 429
     },
     {
       "file": "crates/trit-train/src/plane/pack.rs",
@@ -4941,6 +4941,14 @@
     {
       "file": "crates/trit-train/src/plane/pack/tests.rs",
       "lines": 47
+    },
+    {
+      "file": "crates/trit-train/src/plane/q.rs",
+      "lines": 24
+    },
+    {
+      "file": "crates/trit-train/src/plane/q/tests.rs",
+      "lines": 12
     },
     {
       "file": "crates/trit-train/src/prefetch.rs",

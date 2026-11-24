@@ -63,7 +63,7 @@ pub(super) fn bench_train_step(
         let start = Instant::now();
         for _ in 0..steps.max(1) {
             let planes = plane.pack();
-            black_box((planes.q(), planes.bytes()));
+            black_box(planes);
         }
         best_pack = best_pack.min(start.elapsed().as_secs_f64());
         black_box((scalar.latent(), plane.latent()));

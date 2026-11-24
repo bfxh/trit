@@ -11,7 +11,7 @@
 | 模块 | 内容 |
 |---|---|
 | `quant` | absmean 三值量化；**STE** 三变体（Identity / Clipped / Soft）；scale 梯度 |
-| `plane` | **位平面 ALU**：双导轨（1 trit = 2 bit），按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz / Bochvar；`PlaneMatrix` 打包、前向点积与反向 `dX` 掩码内核 |
+| `plane` | **位平面 ALU**：双导轨（1 trit = 2 bit），按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz / Bochvar；`PlaneMatrix` 打包、前向点积与反向 `dX` 掩码内核，`q` 缓存惰性展开 |
 | `dense` | `dW` 的 SGD 融合外积更新：`w -= lr · STE(w, scale, dy·scale·x)`，AVX2 8-lane + 标量尾 |
 | `layer` | `TernaryLinear`：前向走 `PlaneMatrix`，反向 STE + scale 梯度 + 融合 `dW`，单样本 SGD / Adam；Adam 的行级融合在 `layer/adam.rs` |
 | `prefetch` | `_mm_prefetch` 提示（非 x86_64 空操作），用于 A/B |
@@ -68,8 +68,8 @@ planes，并把 latent 的 STE 门、一阶/二阶矩和参数更新交给 `laye
 `train_step` 每步只做一次 `pack()`：
 
 1. `PlaneMatrix::from_latent(latent, scale, rows, cols)`：AVX2 每 8 列做一次除法、
-   round、clamp，用 `movemask` 直接写 `pos`/`neg` 字节；`q` 也由
-   `_mm_packs_epi32` + `_mm_packs_epi16` 一次写 8 字节，不再逐个 `push`；
+   round、clamp，用 `movemask` 直接写 `pos`/`neg` 字节；训练步不展开 `q`，`q()`
+   首次调用时才从双导轨解码并缓存到 `OnceLock`；
 2. `forward_with_planes`：每行 `scale[r] * planes.row_dot(r, x)`；
 3. `dense::sgd_update`：整层 `dW` 融合外积更新，按 8 lane 计算 STE 门控；
 4. scale 梯度用同一份 planes 的 `row_dot`，不再重算点积。
@@ -110,14 +110,16 @@ Adam 路径，既做对拍也做基准。
 掩码内核把 8 列压进一条 AVX2 加减链，差距被放大。这个读数只算内核本身，
 不含 `pack()` 的量化成本；训练步的真实开销见下一张表。
 
-训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`）：
+训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`；不含 `q()` 惰性解码）：
 
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
-| 标量参考（`train_step_scalar`） | 25.8–30 | 1.00× |
-| 位平面步（`train_step`） | 1.8–1.9 | **13.8–17.1×** |
-| 其中 `pack()` | 0.73–0.76 | — |
+| 标量参考（`train_step_scalar`） | 28.8–29.1 | 1.00× |
+| 位平面步（`train_step`） | 1.5–1.6 | **18–19.5×** |
+| 其中 `pack()`（只出双导轨） | 0.47–0.49 | — |
 
+同一个 `PlaneMatrix` 的 `q()` 首次调用才从导轨解码并缓存；训练步不读 `q`，
+所以这一步成本不计入上表。`dX` 与训练步都不依赖 `q`。
 同一轮 `dX` 读数在 8.0–9.5 GMAC/s；训练步是端到端口径，含打包、前向、`dW`
 和 scale 更新，不含层构造/输入生成。偶发的 2.0 ms 以上是热降频单次，不当作稳定值。
 
@@ -125,8 +127,8 @@ Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`
 
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
-| 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.2–9.2 | 1.00× |
-| 行级融合（`train_step_with_grad_adam`） | 3.1–3.7 | **2.3–2.8×** |
+| 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.0–8.2 | 1.00× |
+| 行级融合（`train_step_with_grad_adam`） | 2.7–2.9 | **2.8–3.0×** |
 
 两条路径用同一条基准复算：融合是默认输出，参考路径加 `--adam-scalar`。
 
@@ -134,15 +136,15 @@ Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`
 
 | shape | 融合 ms/step | 逐元素 ms/step | 倍数 |
 |---|---:|---:|---:|
-| 2×7 | 0.0003 | 0.0003 | 0.99× |
-| 5×9 | 0.0005 | 0.0005 | 1.14× |
-| 9×65 | 0.0009 | 0.0021 | 2.41× |
-| 11×130 | 0.0015 | 0.0045 | 3.07× |
-| 17×576 | 0.0070 | 0.0284 | 4.09× |
-| 4096×576 | 3.08 | 8.10 | 2.63× |
+| 2×7 | 0.0003 | 0.0003 | 1.00× |
+| 5×9 | 0.0004 | 0.0005 | 1.15× |
+| 9×65 | 0.0009 | 0.0022 | 2.30× |
+| 11×130 | 0.0014 | 0.0045 | 3.17× |
+| 17×576 | 0.0068 | 0.0282 | 4.15× |
+| 4096×576 | 2.5–3.1 | 7.8–8.0 | 2.6–3.2× |
 
-`2×7` 没进 SIMD，和逐元素持平；`5×9` 只有 1.14×；从 `9×65`
-开始到 `17×576` 逐级升高，大矩阵回落到 2.63×。`1×1` 太短，计时分辨率不足，
+`2×7` 没进 SIMD，和逐元素持平；`5×9` 只有 1.15×；从 `9×65`
+开始到 `17×576` 逐级升高，大矩阵回落到 2.6–3.2×。`1×1` 太短，计时分辨率不足，
 不作为倍数证据。**不能拿 4096×576 的倍数覆盖所有形状**。
 
 三条结论：
@@ -170,7 +172,7 @@ Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 30 个（位平面/打包/dW/Adam 对拍；量化/STE 的 6 个测试在 trit-learn）
+cargo test -p trit-train                       # 31 个（位平面/打包/惰性 q/dW/Adam 对拍；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3
 cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --train-steps 3 --adam-scalar
@@ -183,7 +185,7 @@ cargo run -p trit-train --release --bin shape_bench
   更快的掩码内核在 `trit-ops`，但发布图禁止实验 crate 互相依赖 → M1 要把内核下沉到
   可发布 crate 再复用；本轮的位平面前向/反向没有跨 crate 依赖。
 - 反向 `dX`、前向、SGD `dW` 与 Adam `dW` 都已融合；`pack()` 仍是每步一次全量量化，
-  只是 `q` 的字节写回已改成 SIMD 打包。
+  但只写双导轨，`q` 缓存改为首次 `q()` 时惰性解码。训练步不读 `q`，因此不付这笔写回。
 - 没有 bias/激活/多层/优化器状态（除单层 Adam 探针）；`TernaryLinear` 是探针，不是框架。
 - 后续候选：KV cache 的三值压缩、AI-to-AI 三态消息格式（TriCom 类）——都还没做，
   需要先有格式规范与可复算的压缩/延迟读数。

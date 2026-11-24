@@ -1560,6 +1560,29 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C084",
+      "title": "trit-train 惰性 q 缓存：训练步只写双导轨，q() 首次解码",
+      "kind": "cmd",
+      "covers": [
+        "L174"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/backward.rs",
+        "crates/trit-train/src/plane/q.rs",
+        "crates/trit-train/src/plane/q/tests.rs",
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/plane.rs",
+        "crates/trit-train/src/bin/bench/train_step.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T22:05:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

@@ -1,4 +1,4 @@
-//! `PlaneMatrix` 的量化打包：从 latent + per-row scale 一步生成 `q` 与双导轨。
+//! `PlaneMatrix` 的量化打包：从 latent + per-row scale 一步生成双导轨；`q` 惰性解码。
 //!
 //! 这是训练步的入口热点：`pack()` 每步跑一次。`from_latent` 在 x86_64/AVX2 上
 //! 每 8 列做一次除法、round、clamp，并用 `movemask` 直接写一个字节的
@@ -8,7 +8,7 @@
 use super::backward::has_avx2;
 use super::{PlaneMatrix, TRITS_PER_WORD};
 impl PlaneMatrix {
-    /// 从 latent + 每行 scale 一步量化并打包；不分配每行临时 `q`。
+    /// 从 latent + 每行 scale 一步量化并打包双导轨；`q` 首次 `q()` 时解码。
     ///
     /// 语义与 `quantize_with_scale(row, scale[r])` 完全一致：
     /// `q = clamp(round(w / scale), -1, 1)`，`scale` 先抬到 `f32::MIN_POSITIVE`。
@@ -26,14 +26,12 @@ impl PlaneMatrix {
 
     fn from_latent_scalar(latent: &[f32], scale: &[f32], rows: usize, cols: usize) -> Self {
         let bpr = cols.div_ceil(TRITS_PER_WORD).max(1);
-        let mut q = Vec::with_capacity(rows * cols);
         let mut pos = vec![0u64; rows * bpr];
         let mut neg = vec![0u64; rows * bpr];
         for (r, &s) in scale.iter().take(rows).enumerate() {
             let s = s.max(f32::MIN_POSITIVE);
             for c in 0..cols {
                 let qi = (latent[r * cols + c] / s).round().clamp(-1.0, 1.0) as i8;
-                q.push(qi);
                 let word = r * bpr + c / TRITS_PER_WORD;
                 let bit = 1u64 << (c % TRITS_PER_WORD);
                 match qi {
@@ -47,7 +45,7 @@ impl PlaneMatrix {
             rows,
             cols,
             bpr,
-            q,
+            q: std::sync::OnceLock::new(),
             pos,
             neg,
         }
@@ -74,7 +72,6 @@ mod simd {
         cols: usize,
     ) -> PlaneMatrix {
         let bpr = cols.div_ceil(64).max(1);
-        let mut q = vec![0i8; rows * cols];
         let mut pos = vec![0u64; rows * bpr];
         let mut neg = vec![0u64; rows * bpr];
         let sign = _mm256_set1_ps(-0.0);
@@ -105,16 +102,9 @@ mod simd {
                 let shift = ((j * 8) % 64) as u32;
                 pos[word] |= (pm as u64) << shift;
                 neg[word] |= (nm as u64) << shift;
-                let lo = _mm256_castsi256_si128(qi);
-                let hi = _mm256_extracti128_si256(qi, 1);
-                let i16 = _mm_packs_epi32(lo, hi);
-                let bytes = _mm_packs_epi16(i16, i16);
-                // SAFETY: q 已预分配 rows*cols 个 i8，qbase+8 <= rows*cols。
-                _mm_storel_epi64(q.as_mut_ptr().add(row_base + j * 8) as *mut __m128i, bytes);
             }
             for c in full * 8..cols {
                 let qi = (latent[row_base + c] / s).round().clamp(-1.0, 1.0) as i8;
-                q[row_base + c] = qi;
                 let word = r * bpr + c / 64;
                 let bit = 1u64 << (c % 64);
                 match qi {
@@ -128,12 +118,22 @@ mod simd {
             rows,
             cols,
             bpr,
-            q,
+            q: std::sync::OnceLock::new(),
             pos,
             neg,
         }
     }
 }
+
+impl PartialEq for PlaneMatrix {
+    fn eq(&self, other: &Self) -> bool {
+        self.rows == other.rows
+            && self.cols == other.cols
+            && self.pos == other.pos
+            && self.neg == other.neg
+    }
+}
+impl Eq for PlaneMatrix {}
 
 #[cfg(test)]
 mod tests;

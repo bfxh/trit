@@ -7,18 +7,20 @@
 //!
 //! 这条路径只消费双导轨位平面，所以和 [`super::Planes`] 的 ALU 边界一致：
 //! 它加速的是「按位选符号 + f32 累加」，不是三进制进位加法。
+use std::sync::OnceLock;
+
 use super::TRITS_PER_WORD;
 
 /// 行主序的三值权重矩阵，同时保留双导轨位平面与展开后的 `q`。
 ///
 /// `q` 让调用方更新 latent/scale 时不用再从位平面逐位解包；位平面只服务
-/// 点积与反向的按字内核。`bytes()` 只算两条导轨，不含 `q` 缓存。
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// 点积与反向的按字内核。`q` 惰性生成，训练步不调用它就不付展开成本。
+#[derive(Clone, Debug)]
 pub struct PlaneMatrix {
     pub(super) rows: usize,
     pub(super) cols: usize,
     pub(super) bpr: usize,
-    pub(super) q: Vec<i8>,
+    pub(super) q: OnceLock<Vec<i8>>,
     pub(super) pos: Vec<u64>,
     pub(super) neg: Vec<u64>,
 }
@@ -42,11 +44,13 @@ impl PlaneMatrix {
                 }
             }
         }
+        let q_cell = OnceLock::new();
+        q_cell.set(q).unwrap();
         Self {
             rows,
             cols,
             bpr,
-            q,
+            q: q_cell,
             pos,
             neg,
         }
@@ -80,11 +84,6 @@ impl PlaneMatrix {
     /// 双导轨位平面的字节数（不含 `q` 缓存）。
     pub fn bytes(&self) -> usize {
         (self.pos.len() + self.neg.len()) * 8
-    }
-
-    /// 展开后的三值权重（行主序）。
-    pub fn q(&self) -> &[i8] {
-        &self.q
     }
 
     /// 单行点积 `Σ q[r,c] * x[c]`（标量参考）。

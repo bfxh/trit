@@ -12,7 +12,7 @@ mod alu;
 #[allow(dead_code)] // 非 x86_64 上 has_avx2 只是回退路径的编译占位
 mod backward;
 mod pack;
-
+mod q;
 pub use backward::PlaneMatrix;
 /// 每个字的 trit 数。
 pub const TRITS_PER_WORD: usize = 64;
