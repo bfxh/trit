@@ -388,10 +388,10 @@ mod tests {
 
         // 序列化/哈希：算表变快后它们才是大头。
         let started = std::time::Instant::now();
-        let csv = crate::truth_csv(&vars, &fast);
+        let csv = crate::artifacts::truth_csv(&vars, &fast);
         let csv_time = started.elapsed();
         let started = std::time::Instant::now();
-        let _lookup = crate::lookup_c(&vars, &fast, Algebra::Kleene);
+        let _lookup = crate::artifacts::lookup_c(&vars, &fast, Algebra::Kleene);
         let lookup_time = started.elapsed();
         eprintln!(
             "12 vars: truth_csv {csv_time:?}（{} B）+ lookup.c {lookup_time:?}",

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（第十六轮：TTIR → C 直算后端）
+
+- `trit-build` 新增 `--backend table|direct|both`（默认 `table`，旧产物逐字节不变）：
+  `direct` 产出 `direct.c` —— 表达式降成**线性 IR**（每个节点一条 `int8_t tN = ...;`），
+  再做同构子式 CSE；运行时按节点顺序算，不展开 3ⁿ 表。12 变量实测 `direct.c` **1,628 B**，
+  同一表达的 `lookup.c` 是 **2,303,277 B**。
+- 语义表不手写：`&` / `|` / `^` / `=>` / `<=>` 的 3×3 表与 `!` 的 3 表全部由
+  `trit-core::Algebra` 现算（K3 / Ł3 / B3 各一套），测试再拿 `trit_eval::eval` 逐赋值对拍。
+  生成函数 `int8_t trit_direct(const int8_t *vars, unsigned nvars)`；`nvars` 不足按 X 返回 0，
+  fail-closed，不读越界内存。
+- 新增 `--verify-c`：生成驱动器，用 `CC`/`cc`/`gcc`/`clang` 编译 `direct.c` 并**逐行读 `truth.csv` 对拍**；
+  12 变量 **531,441/531,441 行**通过（本机 0.9 s，含 19.6 MB CSV 读写与编译）。
+- 边界与 `lookup.c` 一致：只出 C 源码，执行仍交给 C/Rust 工具链；Verilog 读入的设计没有表达式，
+  `--backend direct|both` 明确报错（不静默少产物）。
+- 为守住模块预算，把产物层（`truth_csv` / `lookup.c` / `emit_artifacts` / `write_artifact`）
+  从 `main.rs` 拆到 `crates/trit-build/src/artifacts.rs`；`direct.rs` 独立成模块。
+- 测试：`direct/tests.rs` 4 条（六张表逐格对拍 `eval`、IR 全赋值对拍、CSE、渲染形状），
+  `tests/direct_c.rs` 6 条（direct 产物/默认 table 不变/both 与 table 的 `truth.csv`+`tritbin`
+  逐字节相同/缓存键含后端/Verilog 边界/`--verify-c` 27 行；最后一条只在 Unix 跑）。
+
 ### Added（第十五轮：交接包 DeliveryReceipt 四态账本）
 
 - 新增 `tools/delivery_receipt.py`：`sent → delivered → read → acted` 四态账本，
