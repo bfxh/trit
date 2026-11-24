@@ -87,5 +87,5 @@ fn adam_update_is_noop_for_zero_lr() {
     assert_eq!(got, latent);
 }
 
-#[path = "tests/fused.rs"]
+mod closed_form;
 mod fused;

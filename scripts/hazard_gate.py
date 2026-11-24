@@ -101,6 +101,11 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
         "带梯度 SGD 单遍：AVX2 dX/qdot/STE 更新内核只在 has_avx2() 的 is_x86_feature_detected! "
         "之后调用；列数 <8 或尾部走标量，非 x86_64 不编译 SIMD 模块"
     ),
+    "crates/trit-train/src/plane/fused/adam_step.rs": (
+        "Adam 单遍：AVX2 dX/qdot/Adam 更新内核与 hsum 只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译 SIMD 模块"
+    ),
     "crates/trit-train/src/plane/pack.rs": (
         "位平面打包 from_latent：AVX2 内核只在 has_avx2() 的 "
         "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
@@ -111,10 +116,10 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
         "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
         "非 x86_64 不编译 SIMD 模块"
     ),
-    "crates/trit-train/src/layer/adam.rs": (
-        "Adam 融合 dW：AVX2 update_row 只在 has_avx2() 的 "
-        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
-        "非 x86_64 不编译 SIMD 模块"
+    "crates/trit-train/src/layer/adam/support.rs": (
+        "测试参考旧 Adam dW：AVX2 update_row 只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；整个模块只在 cfg(test)+x86_64 编译，"
+        "列数 <8 或尾部走标量"
     ),
 }
 

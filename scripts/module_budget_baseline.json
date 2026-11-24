@@ -4916,7 +4916,7 @@
     },
     {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 513
+      "lines": 499
     },
     {
       "file": "crates/trit-train/src/layer/adam.rs",
@@ -4929,6 +4929,10 @@
     {
       "file": "crates/trit-train/src/layer/adam/tests.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/tests/closed_form.rs",
+      "lines": 25
     },
     {
       "file": "crates/trit-train/src/layer/adam/tests/fused.rs",

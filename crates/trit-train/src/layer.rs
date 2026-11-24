@@ -471,20 +471,6 @@ mod tests {
     }
 
     #[test]
-    fn adam_first_step_matches_closed_form() {
-        let mut layer = TernaryLinear::new(1, 1, |_, _| 1.0, Ste::Identity, 0.0, 1.0);
-        let mut latent_opt = Adam::new(1, 0.1);
-        let mut scale_opt = Adam::new(1, 0.0);
-        // 输入 1、输出梯度 2 ⇒ ∂L/∂latent = 2；第一步 mhat=2、vhat=4。
-        layer.train_step_with_grad_adam(&[1.0], &[2.0], &mut latent_opt, &mut scale_opt);
-        let got = layer.latent()[0];
-        assert!(
-            (got - 0.9).abs() < 1e-5,
-            "latent={got}（偏置校正后应为 1 - 0.1 = 0.9）"
-        );
-    }
-
-    #[test]
     fn adam_counts_steps_per_layer_call() {
         let mut layer = TernaryLinear::new(2, 3, |_, _| 0.1, Ste::Identity, 0.05, 0.5);
         let mut latent_opt = Adam::new(6, 0.05);
