@@ -3,7 +3,6 @@
 //! 这是 `dW` 的融合更新，不是位平面运算；`dX` 的位平面内核在
 //! [`crate::plane::PlaneMatrix`]。SIMD 路径只在 x86_64 + AVX2 + 列数 ≥ 8 时启用，
 //! 其余走标量参考。
-
 #[cfg(test)]
 use crate::quant::Ste;
 /// 对整层 latent 做一次 SGD 外积更新。

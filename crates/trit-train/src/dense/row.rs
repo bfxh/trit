@@ -1,7 +1,5 @@
 //! 单行 `dW` 更新：整块 AVX2 与标量回退。
-use super::has_avx2;
 use crate::quant::Ste;
-
 /// 单行 `dW` 更新；供 `train_step` 的逐行融合复用，逐位口径同 `dense::sgd_update`。
 pub(crate) fn sgd_update_row(
     row: &mut [f32],
@@ -11,6 +9,8 @@ pub(crate) fn sgd_update_row(
     scale: f32,
     ste: Ste,
 ) {
+    #[cfg(target_arch = "x86_64")]
+    use super::has_avx2;
     #[cfg(target_arch = "x86_64")]
     if row.len() >= 8 && has_avx2() {
         // SAFETY: row.len() == x.len()，内核只按 8 的整块和尾部访问。

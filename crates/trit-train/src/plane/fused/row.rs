@@ -1,8 +1,7 @@
 //! 单行量化点积：`Σ q·x`，供 `train_step` 的逐行融合使用。
-#[cfg(target_arch = "x86_64")]
-use super::has_avx2;
-
 pub(crate) fn forward_dot_row(latent: &[f32], scale: f32, cols: usize, x: &[f32]) -> f32 {
+    #[cfg(target_arch = "x86_64")]
+    use super::has_avx2;
     assert_eq!(latent.len(), cols, "latent 行长度必须是 cols");
     assert_eq!(x.len(), cols, "输入长度必须是 cols");
     #[cfg(target_arch = "x86_64")]
