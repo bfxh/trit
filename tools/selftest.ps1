@@ -348,7 +348,7 @@ $core = ($stepNames | Where-Object { $_ -ne 'memory-brief' -and $_ -ne 'memory-n
 Assert-True ($stepNames[0] -eq 'memory-brief') 'I2 第一步永远是读记忆（新会话先知道项目历史）' ($stepNames -join ',')
 # checks 步是无条件 add 的（没初始化也以 skipped 留痕），期望串必须包含它；
 # 这条断言曾因漏掉 checks 而永远红——见 docs/ERRORS.md L98。
-Assert-True ($core -eq 'timeline-due,preflight,checks,affected,policy,constraints,journal-begin,run,journal-end') 'I2b 核心步骤按顺序' $core
+Assert-True ($core -eq 'timeline-due,preflight,checks,affected,policy,constraints,stability,journal-begin,run,journal-end') 'I2b 核心步骤按顺序' $core
 Assert-True ($doc1.plan.proven -eq $true) 'I3 回执记录跑了持证子集' "proven=$($doc1.plan.proven)"
 Assert-True ($doc1.verdict -match 'proven subset') 'I4 verdict 说明是持证子集' $doc1.verdict
 
@@ -2056,7 +2056,7 @@ if (-not $bashExe) {
         Where-Object { $_ -ne 'memory-brief' -and $_ -ne 'memory-note' }) -join ','
     Assert-True ($ac23.agent_id -eq 'sub-9' -and $ac23.run[0].agent_id -eq 'sub-9') `
         'AC23b 回执顶层与 run[0] 都带 agent_id' ''
-    Assert-True ($ac23core -eq 'timeline-due,preflight,checks,affected,policy,constraints,journal-begin,run,journal-end') `
+    Assert-True ($ac23core -eq 'timeline-due,preflight,checks,affected,policy,constraints,stability,journal-begin,run,journal-end') `
         'AC23c 步骤序列与 I2b 完全一致（只追加不改旧）' $ac23core
 
     $acRc2 = Join-Path $Work 'ac-av-rc2.json'
@@ -5087,9 +5087,98 @@ if ($alPy) {
     Assert-True ($stCode -eq 0 -and $stText -match 'stability_probe self-test: \d+/\d+') `
         "ST1 稳定性探针自测：flaky/nondeterministic/jittery/stable-fail/unstable-fail/unknown/warmup 可区分" `
         "exit=$stCode out=$stText"
+
+    # ST2-ST6: 探针接进 agent_verify 链。独立的 $StW 避免 AL 夹具的 alignment 干扰。
+    $StW = Join-Path $Work 'st-wd'
+    New-Item -ItemType Directory -Force -Path (Join-Path $StW '.agent') | Out-Null
+    New-File (Join-Path $StW 'a.py') "x = 1$nl"
+    New-File (Join-Path $StW 'st_ok.py') "print('ok')$nl"
+    New-File (Join-Path $StW 'st_fail.py') "raise SystemExit(1)$nl"
+    New-File (Join-Path $StW 'st_flaky.py') @"
+from pathlib import Path
+p = Path('st-state.txt')
+n = int(p.read_text()) if p.exists() else 0
+p.write_text(str(n + 1))
+raise SystemExit(0 if n == 0 else 1)
+"@
+    New-File (Join-Path $StW 'plan.json') '{"proven":true,"commands":["true"],"unproven":[]}'
+    Push-Location $StW
+    & git init -q 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=a@b -c user.name=st commit -qm init 2>&1 | Out-Null
+    Pop-Location
+    & $alPy (Join-Path $tools 'constraints.py') init -Root $StW | Out-Null
+    $stPy = '"' + $alPy + '"'
+
+    function Write-StManifest([string]$command) {
+        $obj = [ordered]@{
+            schema = 'stability/1'; repeat = 2; warmup = 0; timeout_s = 30
+            max_duration_ratio = 100.0; require_identical_output = $true
+            commands = @([ordered]@{ id = 'S1'; command = $command })
+        }
+        New-File (Join-Path $StW '.agent\stability.json') ($obj | ConvertTo-Json -Depth 4)
+    }
+
+    function Invoke-StAv([string]$receipt, [string[]]$extra = @()) {
+        $argsAv = @((Join-Path $tools 'agent_verify.py'), '-Root', $StW,
+                    '-Changed', 'a.py', '-Lang', 'python',
+                    '-Store', (Join-Path $Work 'st-wd-store'), '-Receipt', $receipt,
+                    '-Plan', (Join-Path $StW 'plan.json')) + $extra
+        & $alPy @argsAv 2>&1 | Out-Null
+        return $LASTEXITCODE
+    }
+
+    Write-StManifest "$stPy st_ok.py"
+    $st2rc = Join-Path $Work 'st2.json'
+    $st2 = Invoke-StAv $st2rc @()
+    $st2doc = Read-AlReceipt $st2rc
+    $st2steps = @($st2doc.steps | ForEach-Object { $_.step })
+    Assert-True ($st2 -eq 0 -and $st2doc.stability.status -eq 'stable' `
+        -and $st2doc.stability.runs -eq 2 `
+        -and ($st2steps -contains 'stability-policy') -and ($st2steps -contains 'stability') `
+        -and ($st2steps -contains 'run')) `
+        "ST2 稳定命令→stability 门放行并进入 run，回执记录 runs=2" "e=$st2 s=$($st2doc.stability.status)"
+
+    Write-StManifest "$stPy st_fail.py"
+    $st3rc = Join-Path $Work 'st3.json'
+    $st3 = Invoke-StAv $st3rc @()
+    $st3doc = Read-AlReceipt $st3rc
+    $st3steps = @($st3doc.steps | ForEach-Object { $_.step })
+    Assert-True ($st3 -eq 1 -and $st3doc.verdict -eq 'refused by stability' `
+        -and $st3doc.stability.stable_fail -eq 1 -and ($st3steps -notcontains 'run')) `
+        "ST3 确定性失败→stability 拒绝，run 不启动" "e=$st3 v=$($st3doc.verdict)"
+
+    Remove-Item -LiteralPath (Join-Path $StW 'st-state.txt') -Force -ErrorAction SilentlyContinue
+    Write-StManifest "$stPy st_flaky.py"
+    $st4rc = Join-Path $Work 'st4.json'
+    $st4 = Invoke-StAv $st4rc @()
+    $st4doc = Read-AlReceipt $st4rc
+    Assert-True ($st4 -eq 1 -and $st4doc.verdict -eq 'refused by stability' `
+        -and $st4doc.stability.flaky -eq 1 -and $st4doc.stability.status -eq 'unstable') `
+        "ST4 退出码混判→stability 拒绝（flaky 不是稳定）" "e=$st4 s=$($st4doc.stability.status)"
+
+    $st5rc = Join-Path $Work 'st5.json'
+    $st5 = Invoke-StAv $st5rc @('--no-stability')
+    $st5doc = Read-AlReceipt $st5rc
+    $st5step = @($st5doc.steps | Where-Object { $_.step -eq 'stability' })[0]
+    Assert-True ($st5 -eq 0 -and $st5step.verdict -eq 'skipped' `
+        -and @($st5doc.steps | Where-Object { $_.step -eq 'run' }).Count -eq 1) `
+        "ST5 --no-stability→跳过探针，链继续 run" "e=$st5 verdict=$($st5step.verdict)"
+
+    Write-StManifest 'curl https://example.com'
+    $st6rc = Join-Path $Work 'st6.json'
+    $st6 = Invoke-StAv $st6rc @()
+    $st6doc = Read-AlReceipt $st6rc
+    $st6steps = @($st6doc.steps | ForEach-Object { $_.step })
+    Assert-True ($st6 -eq 1 -and $st6doc.verdict -eq 'refused by stability policy' `
+        -and ($st6steps -contains 'stability-policy') -and ($st6steps -notcontains 'stability') `
+        -and ($st6steps -notcontains 'run')) `
+        "ST6 清单命令没过 policy→在执行探针前拒绝（清单不能绕过命令策略）" "e=$st6 v=$($st6doc.verdict)"
 } else {
     "  SKIP  ST1 找不到可用的 Python，跳过稳定性探针自测"
     $skipped++
+    "  SKIP  ST2-ST6 找不到可用的 Python，跳过稳定性门集成检查"
+    $skipped += 5
 }
 
 

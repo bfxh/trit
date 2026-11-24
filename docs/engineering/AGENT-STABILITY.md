@@ -141,11 +141,36 @@ python tools/stability_probe.py self-test
   `distinct_outputs`，不能假装输出一致。
 - **超时会杀进程树。** Windows 用 `taskkill /T /F`，POSIX 用新 session +
   `killpg`；避免 shell 退出后子进程继续跑、占住临时目录。
-- **命令是信任边界。** 清单里的 `command` 会被 shell 执行；只对受信任的仓库/
-  清单运行，不要把外部输入直接拼进清单。报告会原样记录 `command`，不要把
-  token/密码写进命令，改用环境变量或外部凭证。
+- **命令是信任边界。** 清单里的 `command` 会被 shell 执行；接进 `agent_verify`
+  时会先过 `policy.py`，但 policy 允许不等于副作用安全。只对受信任的仓库/清单
+  运行，不要把外部输入直接拼进清单。报告会原样记录 `command`，不要把 token/
+  密码写进命令，改用环境变量或外部凭证。
 - **不自动修复。** 探针只分类和留证，不重跑直到绿、不修改测试、不判断
   “这个抖动是否可接受”；是否阻塞合并由调用方/CI 决定。
+
+## 接入 `agent_verify`
+
+探针已接进 `agent_verify` 链，位置在 `alignment` 之后、`journal-begin` 之前：
+
+- 项目放了 `.agent/stability.json` 且 `settings.stability.enabled=true`（默认）时自动运行；
+- `--stability <manifest>` 强制指定清单，`--no-stability` 关闭本次自动发现；
+- 清单里的每条 `command` 先由同一 `profile` 的 `policy.py` 批分类，**探针执行前
+  就拒绝**，清单不能绕过命令策略；
+- 只有探针 `exit 0` 且 `status=stable` 才通过；`flaky` / `nondeterministic` /
+  `jittery` / `stable-fail` / `unknown` 都在 `run` 之前拒绝，回执 `verdict` 为
+  `refused by stability` 或 `refused by stability policy`；
+- 回执 `stability` 段记录 `status`、`exit`、`commands`、`runs`、`warmup_runs`、
+  各分类计数、失败命令 id 和报告路径/哈希；`target/agent-stability/stability-gate.json`
+  是完整报告；
+- 探针命令在 `journal-begin` 前执行，所以**必须写临时目录/被 git 忽略的路径**；
+  它们不属于本次任务的 journal 变更。`policy` 通过不等于副作用安全。
+
+独立运行仍然可用，适合在提交前手动探一条命令：
+
+```bash
+python tools/stability_probe.py \
+  --root . --manifest .agent/stability.json --repeat 5 --warmup 1
+```
 
 ## 与现有能力的关系
 
@@ -156,18 +181,21 @@ python tools/stability_probe.py self-test
 - CI 的 rerun 历史能抓跨 job 的 flaky，但需要外部 API/日志；本工具是本地、
   离线、可复算的补充，不替代 CI 历史。
 
-当前探针是独立工具，尚未接入 `agent_verify` 的默认链；智能体应在声称“稳定”
-前显式运行它，并把 `status` / `exit` / 失败命令 id 写进回执或交付说明。
+探针是 `agent_verify` 的可选默认门（有清单才开），不是无条件全量重复；没有
+清单的项目付出为零。智能体若要声称“稳定”，应让回执里出现 `stability.status=stable`
+和 `runs>0`，不能只引用一次 `exit 0`。
 
 ## 测试与读数
 
-- `python tools/stability_probe.py self-test`：40/40，覆盖 stable-pass、
+- `python tools/stability_probe.py self-test`：38/38，覆盖 stable-pass、
   stable-fail、flaky、unstable-fail、nondeterministic、jittery、warmup 去冷启动、
   warmup 失败不洗白、timeout/unknown、坏清单、root 外清单、
-  `require_identical_output=false` 等分支。
-- `tools/selftest.ps1` 的 `ST1`：把探针自测接进全仓自测；全仓读数随之
-  710 → 711 passed。
-- 探针自身不产生 CI 读数；CI 是否阻塞由调用方决定。
+  `require_identical_output=false` 等分支。冷启动/预热分支直接构造运行样本喂
+  `_classify`，不靠真实 sleep 计时；真实探针执行由 ST2-ST6 覆盖。
+- `tools/selftest.ps1` 的 `ST1`：把探针自测接进全仓自测（当前 38 项）；
+  `ST2-ST6`：稳定通过进入 run、确定性失败拒绝、flaky 拒绝、`--no-stability`
+  跳过、清单命令被 policy 拒绝时不执行探针。全仓当前 **716 passed / 0 failed /
+  0 skipped**。
 
 ## 不做什么
 

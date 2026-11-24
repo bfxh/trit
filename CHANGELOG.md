@@ -33,9 +33,24 @@
   schema 不对/逃逸 root/命令超时/启动失败都 fail-closed，`unknown` 不当通过。
 - 超时杀进程树（Windows `taskkill /T /F`，POSIX 新 session + `killpg`），避免 shell
   退出后子进程继续跑、占住临时目录。
-- `tools/stability_probe.py self-test` **40/40**（新增 warmup 去冷启动、warmup
-  失败不洗白、warmup 越界分支）；`tools/selftest.ps1` 新增 ST1，
-  全仓 **710→711 passed / 0 failed / 0 skipped**。
+- 探针接进 `agent_verify` 默认链（有 `.agent/stability.json` 才自动启用）：
+  `alignment` 之后、`journal-begin` 之前运行；`--stability` 强制清单，
+  `--no-stability` 关闭自动发现；只有 `exit 0 + status=stable` 放行，
+  `flaky` / `nondeterministic` / `jittery` / `stable-fail` / `unknown` 全部在
+  `run` 前拒绝。清单命令先按同一 profile 过 `policy.py`，不能绕过命令策略。
+  回执新增 `stability` 段（状态/分类计数/失败命令/报告路径+哈希），完整报告在
+  `target/agent-stability/stability-gate.json`。
+- `tools/agent_settings.py` 新增 `stability` 设置（默认 `enabled=true`，
+  清单 `.agent/stability.json`，外层 watchdog `timeout_s=1800`）；清单路径必须
+  留在项目内，坏 shape 直接报错。
+- `tools/selftest.ps1` 新增 ST2-ST6：稳定通过进入 run、确定性失败拒绝、
+  flaky 拒绝、`--no-stability` 跳过、清单命令被 policy 拒绝时不执行探针；
+  全仓 **711→716 passed / 0 failed / 0 skipped**。
+- `tools/stability_probe.py self-test` **38/38**（新增 warmup 去冷启动、warmup
+  失败不洗白、warmup 越界分支）；ST1 自测改为直接喂 `_classify` 构造样本，
+  不再用真实 sleep 计时，避免满载机器把测试自身判成 jittery。
+  `tools/selftest.ps1` 的 ST1 先把探针自测接进
+  全仓（710→711），ST2-ST6 再覆盖链集成。
 - 文档/台账：新增 `docs/engineering/AGENT-STABILITY.md`；`docs/ERRORS.md` L168；
   C078；`docs/README.md` 索引同步。
 

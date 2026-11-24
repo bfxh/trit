@@ -109,6 +109,15 @@ DEFAULTS = {
         "manifest": ".agent/alignment.json",
         "strict": True,
     },
+    # Repeated-command stability probe.  Same opt-in shape as alignment: the
+    # gate runs only when a manifest exists (or --stability names one); a
+    # project without one pays nothing.  timeout_s is the outer watchdog for
+    # the whole probe, not a per-command timeout (the manifest owns those).
+    "stability": {
+        "enabled": True,
+        "manifest": ".agent/stability.json",
+        "timeout_s": 1800,
+    },
 }
 
 TOP_LEVEL = set(DEFAULTS)
@@ -176,7 +185,7 @@ def validate(settings, source="settings"):
     if unknown:
         raise ValueError(f"{source}: unknown top-level keys: {unknown}")
     for key in ("receipt", "audit", "security", "lsp", "context", "search", "reasoning",
-                "alignment"):
+                "alignment", "stability"):
         if key in settings and not isinstance(settings[key], dict):
             raise ValueError(f"{source}: {key} must be an object")
     for key in ("name", "policy_profile"):
@@ -289,6 +298,23 @@ def validate(settings, source="settings"):
         if (os.path.isabs(manifest) or raw.startswith("../") or raw == ".."
                 or ".." in norm.split("/") or (len(manifest) > 1 and manifest[1] == ":")):
             raise ValueError(f"{source}: alignment.manifest must stay inside the project root")
+    stab = settings.get("stability", {})
+    if "enabled" in stab and not isinstance(stab["enabled"], bool):
+        raise ValueError(f"{source}: stability.enabled must be boolean")
+    if "timeout_s" in stab:
+        timeout_s = stab["timeout_s"]
+        if (isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float))
+                or timeout_s <= 0):
+            raise ValueError(f"{source}: stability.timeout_s must be > 0")
+    if "manifest" in stab:
+        manifest = stab["manifest"]
+        if not isinstance(manifest, str) or not manifest.strip():
+            raise ValueError(f"{source}: stability.manifest must be a non-empty string")
+        raw = manifest.replace("\\", "/")
+        norm = os.path.normpath(raw).replace("\\", "/")
+        if (os.path.isabs(manifest) or raw.startswith("../") or raw == ".."
+                or ".." in norm.split("/") or (len(manifest) > 1 and manifest[1] == ":")):
+            raise ValueError(f"{source}: stability.manifest must stay inside the project root")
     return True
 
 
@@ -368,6 +394,9 @@ def receipt_echo(settings, meta):
         "alignment": {
             "enabled": settings.get("alignment", {}).get("enabled", True),
             "strict": settings.get("alignment", {}).get("strict", True),
+        },
+        "stability": {
+            "enabled": settings.get("stability", {}).get("enabled", True),
         },
     }
 
@@ -470,6 +499,12 @@ def _self_test():
            "default alignment gate is on when a manifest exists")
         ok(echo4["alignment"] == {"enabled": True, "strict": True},
            "receipt echoes alignment toggle")
+        ok(settings4["stability"]["enabled"] is True
+           and settings4["stability"]["manifest"] == ".agent/stability.json"
+           and settings4["stability"]["timeout_s"] == 1800,
+           "default stability gate is on when a manifest exists")
+        ok(echo4["stability"] == {"enabled": True},
+           "receipt echoes stability toggle")
         ok("C:" not in json.dumps(echo4) and "/tmp" not in json.dumps(echo4),
            "new settings echo has no absolute path")
 
@@ -492,7 +527,17 @@ def _self_test():
                 ("alignment manifest middle escape",
                  {"version": 1, "alignment": {"manifest": "cfg/../../outside.json"}}),
                 ("alignment manifest drive path",
-                 {"version": 1, "alignment": {"manifest": "C:/outside.json"}})):
+                 {"version": 1, "alignment": {"manifest": "C:/outside.json"}}),
+                ("bad stability enabled",
+                 {"version": 1, "stability": {"enabled": "yes"}}),
+                ("bad stability timeout",
+                 {"version": 1, "stability": {"timeout_s": 0}}),
+                ("stability manifest escapes",
+                 {"version": 1, "stability": {"manifest": "../outside.json"}}),
+                ("stability manifest middle escape",
+                 {"version": 1, "stability": {"manifest": "cfg/../../outside.json"}}),
+                ("stability manifest drive path",
+                 {"version": 1, "stability": {"manifest": "C:/outside.json"}})):
             with open(bad, "w", encoding="utf-8") as fh:
                 json.dump(doc, fh)
             try:

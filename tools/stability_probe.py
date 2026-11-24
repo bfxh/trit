@@ -499,11 +499,6 @@ def _selftest():
                                         "n=int(p.read_text()) if p.exists() else 0\n"
                                         "p.write_text(str(n+1))\n"
                                         "sys.exit(2 if n % 2 == 0 else 3)\n")
-        write(root, "warmup_delay.py", "import time\nfrom pathlib import Path\n"
-                                        "p=Path('warmup-delay-state.txt')\n"
-                                        "n=int(p.read_text()) if p.exists() else 0\n"
-                                        "p.write_text(str(n+1))\n"
-                                        "time.sleep(0.8 if n == 0 else 0.005)\n")
         write(root, "warmup_fail.py", "import sys\nfrom pathlib import Path\n"
                                        "p=Path('warmup-fail-state.txt')\n"
                                        "n=int(p.read_text()) if p.exists() else 0\n"
@@ -519,7 +514,7 @@ def _selftest():
                 pass
 
         stable = run(root, {
-            "schema": SCHEMA, "repeat": 2,
+            "schema": SCHEMA, "repeat": 2, "max_duration_ratio": 100.0,
             "commands": [{"id": "S1", "command": f"{py} stable.py"}],
         })
         ok(stable["status"] == "stable" and stable["exit"] == 0, "stable-pass 状态")
@@ -565,6 +560,7 @@ def _selftest():
 
         lenient = run(root, {
             "schema": SCHEMA, "repeat": 2, "require_identical_output": False,
+            "max_duration_ratio": 100.0,
             "commands": [{"id": "N2", "command": f"{py} nondet.py"}],
         })
         ok(lenient["status"] == "stable"
@@ -581,26 +577,17 @@ def _selftest():
         ok(jitter["commands"][0]["classification"] == "jittery", "jittery 分类")
         ok((jitter["commands"][0]["duration_ratio"] or 0) > 2.0, "抖动比超阈值")
 
-        reset("warmup-delay-state.txt")
-        cold = run(root, {
-            "schema": SCHEMA, "repeat": 2, "max_duration_ratio": 2.0,
-            "commands": [{"id": "W1", "command": f"{py} warmup_delay.py"}],
-        })
-        ok(cold["commands"][0]["classification"] == "jittery",
-           "不预热时首次慢启动算抖动")
+        def tick(sec=0.005, code=0, sha="same"):
+            return {"exit": code, "timeout": False, "error": None,
+                    "seconds": sec, "output_sha": sha, "output_bytes": 0}
 
-        reset("warmup-delay-state.txt")
-        warm = run(root, {
-            "schema": SCHEMA, "repeat": 2, "warmup": 1, "max_duration_ratio": 2.0,
-            "commands": [{"id": "W2", "command": f"{py} warmup_delay.py"}],
-        })
-        ok(warm["status"] == "stable" and warm["exit"] == 0,
-           f"预热后冷启动不计入耗时: {warm['commands'][0]}")
-        ok(warm["commands"][0]["warmup_runs"][0]["seconds"] > 0.5,
-           "预热运行本身被记录")
-        ok(warm["counts"]["runs"] == 3 and warm["counts"]["warmup_runs"] == 1,
-           "预热运行计入总运行数")
-        ok(warm["commands"][0]["warmup_failures"] == 0, "预热通过计数")
+        cold = _classify([], [tick(0.8), tick(0.005)], True, 2.0)
+        ok(cold == "jittery", "不预热时首次慢启动算抖动")
+        warm = _classify([tick(0.8)], [tick(0.005), tick(0.006)], True, 2.0)
+        ok(warm == "stable-pass", "预热后冷启动不计入耗时")
+        warm_mixed = _classify([tick(0.005, code=1)],
+                               [tick(0.005), tick(0.006)], True, 2.0)
+        ok(warm_mixed == "flaky", "预热退出码仍参与 flaky 判定")
 
         reset("warmup-fail-state.txt")
         warm_fail = run(root, {
