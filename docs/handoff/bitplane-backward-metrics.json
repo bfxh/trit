@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T00:45:10+08:00",
+  "generated_at": "2026-11-25T01:03:19+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "c4cf4e11ff57e2e43a3454dca52a29bd00076ef2",
-    "commit_short": "c4cf4e11",
+    "commit": "906fd507d4a6950fce7b69f27ea29d123c39c865",
+    "commit_short": "906fd507",
     "status": "open"
   },
   "platform": {
