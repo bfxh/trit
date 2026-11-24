@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（第十三轮：每个 goal 必须被需求覆盖）
+
+- `alignment_gate.py` 不再把“树里存在任意需求”当成目标覆盖：遍历每条 requirement
+  的父链，要求每个 goal 至少被一条父链经过，否则 `goal-uncovered`、状态
+  `unaligned`、run 不启动。需求挂在子目标上时，它和祖先 goal 都算覆盖。
+- `coverage.goals_covered` 从布尔“有需求=1”改为**实际覆盖的 goal 数**；2 个 goal
+  只有 1 个有需求时记 `1/2`。`--lenient` 不降级空挂目标，结构断链永远拒绝。
+- `agent_verify` 的 `alignment` / `alignment.post` 回执增加 `coverage` 块，
+  `goals_covered` 在预检和 post-run 都可审计，不再只存在于 CLI 文本。
+- `tools/selftest.ps1` 新增 AL40：G1 根 + G2 空挂子目标、需求只挂 G1→preflight
+  `refused by alignment`，`counts.goals=2`、`coverage.goals_covered=1`，run 不启动；
+  `$alTotal` 39→40。
+- `alignment_gate.py self-test` 98→**101/101**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **710 passed / 0 failed / 0 skipped**（含 AL27–AL40）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补“每个 goal 必须被需求覆盖”与回执 coverage；
+  `docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
 ### Added（第十二轮：声明变更必须实际发生）
 
 - `alignment_gate.py` 新增“声明变更兑现”检查：实际变更集已知时，每条

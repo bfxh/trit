@@ -7,6 +7,7 @@
 产物、证据、变更这条链单独建模）；它不能证明：
 
 - 这条需求仍然挂在最初的目标上；
+- 每个声明出来的目标是否真的有需求在实现它，而不是空挂一个子目标；
 - 这个产物实现的确实是这条需求，而不是顺手加的另一件事；
 - 这条证据能定位到产物/测试里的具体位置；
 - 这条证据宣称的测试命令是否真的在本次 run 里成功跑过；
@@ -81,6 +82,23 @@ TraceDev 用异构 traceability graph 维护需求、设计、代码之间的一
 每个子目标的父链必须落到这个根，不能断开或成环。需求可以挂到任意子目标，
 但需求的父链最终仍必须落到根。`alignment/1` 与 `alignment/2` 不能混用
 `goal`/`goals` 字段。
+
+### 每个 goal 必须被需求覆盖
+
+目标树不是装饰：只声明一个子目标、却没有任何 requirement 的父链经过它，等于
+树里挂了一条永远不会被验收的枝。门会遍历每条 requirement 的父链（包括
+requirement 之间可以互相挂的父链），把链上经过的 goal 都记为已覆盖；要求
+**每个 goal 至少被一条 requirement 父链覆盖**，否则 `goal-uncovered`，状态
+`unaligned`，run 不启动。
+
+- 需求挂在子目标 `G2` 上时，`G2` 和它的祖先 `G1` 都算覆盖；一条需求可以覆盖
+  它经过的整条目标链；
+- `coverage.goals_covered` 是**实际覆盖的 goal 数**，不是“有任意需求就记 1”；
+  例如 2 个 goal 只有 1 个有需求，记 `1/2`；
+- 这是结构检查：只证明有需求挂在这条目标链上，不证明该需求的产物/证据已经
+  通过；后者仍由 `missing-artifact` / `missing-evidence` 等检查负责；
+- `--lenient` 只降级 `should` 的产物/证据缺口，不降级空挂目标：目标没有需求
+  就是断链。
 
 ### 证据绑定实际 run：`alignment/3`
 
@@ -189,7 +207,7 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 | 字段 | 约束 |
 |---|---|
 | `goal`（v1） | 恰好一个；`id`/`text` 非空 |
-| `goals`（v2/v3） | 至少一个；恰好一个 `parent=null` 的根；子目标父链必须落到根，不能断/环 |
+| `goals`（v2/v3） | 至少一个；恰好一个 `parent=null` 的根；子目标父链必须落到根，不能断/环；每个 goal 必须被至少一条 requirement 父链覆盖，否则 `goal-uncovered` |
 | `requirements` | 至少一条；`text` 非空；`priority` 为 `must/should/may`，缺省按 `must` |
 | `requirements.parent` | 必须存在，且父链最终落到根 `goal`；不能成环 |
 | `requirements.changes` | 仓库相对字面路径或 glob；实际变更集已知时，每条声明都必须有实际路径见证，否则 `declared-change-missing` |
@@ -211,15 +229,16 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 
 1. schema、字段类型、id 唯一性、未知字段；
 2. 每条需求的 parent 链是否落到唯一根 goal；v2 还检查每个子目标是否落到同一个根，是否有环/断链/多个根；
-3. `must` 需求是否同时有有效产物与有效证据；`strict` 下 `should` 也一样；v3 还要求一条 run-bound 证据；
-4. artifact/evidence 的 id 是否存在、文件是否存在、sha256、locator 是否命中；
-5. v3 的 run 证据 command 是否点名证据路径；post-run 是否在本次成功 run 命令里精确出现；
-6. 每条变更是否被某条需求的 `changes` 或某个 artifact 路径覆盖；
-7. 实际变更集已知时，每条 requirement 的 `changes` 是否都实际发生（字面精确命中 / glob 至少一条）；
-8. 变更是否落进 `non_goals`，以及 requirement 是否引用了 non_goal 明确排除的
+3. 每个 goal 是否至少被一条 requirement 父链覆盖，空挂目标 `goal-uncovered`；
+4. `must` 需求是否同时有有效产物与有效证据；`strict` 下 `should` 也一样；v3 还要求一条 run-bound 证据；
+5. artifact/evidence 的 id 是否存在、文件是否存在、sha256、locator 是否命中；
+6. v3 的 run 证据 command 是否点名证据路径；post-run 是否在本次成功 run 命令里精确出现；
+7. 每条变更是否被某条需求的 `changes` 或某个 artifact 路径覆盖；
+8. 实际变更集已知时，每条 requirement 的 `changes` 是否都实际发生（字面精确命中 / glob 至少一条）；
+9. 变更是否落进 `non_goals`，以及 requirement 是否引用了 non_goal 明确排除的
    artifact/evidence、声明了重叠的字面路径或相同的 glob；
-9. 需求之间是否声明了矛盾；
-10. 所有路径是否在 root 内（含 realpath 检查）。
+10. 需求之间是否声明了矛盾；
+11. 所有路径是否在 root 内（含 realpath 检查）。
 
 退出码：
 
@@ -257,18 +276,19 @@ python tools/alignment_gate.py scaffold --root . --manifest .agent/alignment.jso
 - 若 `Store` 显式放在项目 root 内，thin bookkeeping 的 store 路径会从“产品变更”
   中过滤，避免把 journal 自己的副本当成业务产物。
 
-回执里的 `alignment.post` 记录 post-run 的 `status/score/must_score/counts/failures/warnings`；
+回执里的 `alignment.post` 记录 post-run 的 `status/score/must_score/counts/coverage/failures/warnings`；
 `counts.changed_known=1` 明确表示实际变更集已知（即使 `counts.changed=0`），
-`0` 只表示预检尚未拿到实际变更集。它仍在同一个 `alignment` 稳定字段内，不新增
-顶层波动键。
+`0` 只表示预检尚未拿到实际变更集。`coverage.goals_covered` 是两个阶段都有的实际
+覆盖计数：2 个 goal 只有 1 个有需求时是 `1`，不是旧实现的布尔 `1`。它仍在同一个
+`alignment` 稳定字段内，不新增顶层波动键。
 
 ## 测试读数
 
-- `python tools/alignment_gate.py self-test`：**98/98**
+- `python tools/alignment_gate.py self-test`：**101/101**
 - `python tools/alignment_gate.py stress --cases 100`：**200 用例，valid 100 aligned，mutated 100 rejected，0 errors**
 - `python tools/agent_settings.py --self-test`：**30/30**
-- `tools/selftest.ps1` 的 AL27–AL39：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝、non_goal 对象级排除在 preflight 拒绝且 run 不启动、空实际变更集下声明变更未兑现被 post 拒绝
-- 全仓 `tools/selftest.ps1`：**709 passed / 0 failed / 0 skipped**
+- `tools/selftest.ps1` 的 AL27–AL40：预检五种路径（通过、缺证据、清单缺失、lenient、自动发现）、v2 子目标链、run 后写出未挂变更拒绝、声明内变更仍 aligned、run 改带 sha256 产物后哈希漂移拒绝、v3 证据命令实际跑过才升级 provenance、命令没跑则 post 拒绝、non_goal 对象级排除在 preflight 拒绝且 run 不启动、空实际变更集下声明变更未兑现被 post 拒绝、空挂子目标在 preflight 拒绝且 goals_covered 记录真实覆盖数
+- 全仓 `tools/selftest.ps1`：**710 passed / 0 failed / 0 skipped**
 
 ## 诚实边界
 

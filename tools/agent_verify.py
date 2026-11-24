@@ -446,6 +446,7 @@ def alignment_summary(adoc, root, manifest_path):
     """The receipt-facing view of one alignment report (preflight and post-run)."""
     astatus = str(adoc.get("status", "")).lower()
     acounts = adoc.get("counts", {}) if isinstance(adoc.get("counts"), dict) else {}
+    acov = adoc.get("coverage", {}) if isinstance(adoc.get("coverage"), dict) else {}
     try:
         rel_manifest = os.path.relpath(manifest_path, root).replace("\\", "/")
         if rel_manifest.startswith("../"):
@@ -461,6 +462,11 @@ def alignment_summary(adoc, root, manifest_path):
                    ("goals", "requirements", "must", "artifacts", "evidence",
                     "provenance", "provenance_verified", "changed", "changed_known",
                     "linked_changes")},
+        "coverage": {k: acov.get(k) for k in
+                     ("goals_covered", "requirements_with_artifact",
+                      "requirements_with_evidence", "requirements_with_provenance",
+                      "requirements_provenance_verified", "requirements_with_changes",
+                      "requirements_changes_realized", "requirements_full", "must_full")},
         "failures": len(adoc.get("failures", []) or []),
         "warnings": len(adoc.get("warnings", []) or []),
     }
