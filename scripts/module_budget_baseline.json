@@ -4875,8 +4875,28 @@
       "lines": 283
     },
     {
+      "file": "crates/trit-train/src/bin/bench/args.rs",
+      "lines": 21
+    },
+    {
+      "file": "crates/trit-train/src/bin/bench/train_step.rs",
+      "lines": 80
+    },
+    {
+      "file": "crates/trit-train/src/dense.rs",
+      "lines": 192
+    },
+    {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 586
+      "lines": 581
+    },
+    {
+      "file": "crates/trit-train/src/layer/packed_tests.rs",
+      "lines": 86
+    },
+    {
+      "file": "crates/trit-train/src/layer/scalar.rs",
+      "lines": 62
     },
     {
       "file": "crates/trit-train/src/lib.rs",
@@ -4893,6 +4913,10 @@
     {
       "file": "crates/trit-train/src/plane/backward.rs",
       "lines": 430
+    },
+    {
+      "file": "crates/trit-train/src/plane/pack.rs",
+      "lines": 184
     },
     {
       "file": "crates/trit-train/src/prefetch.rs",

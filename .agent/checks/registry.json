@@ -1510,6 +1510,30 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C082",
+      "title": "trit-train 位平面训练步：一次 pack、前向 row_dot、dW 融合更新与标量对拍",
+      "kind": "cmd",
+      "covers": [
+        "L172"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/dense.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/layer/scalar.rs",
+        "crates/trit-train/src/layer/packed_tests.rs",
+        "crates/trit-train/src/bin/bench.rs",
+        "crates/trit-train/src/bin/bench/train_step.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T18:45:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

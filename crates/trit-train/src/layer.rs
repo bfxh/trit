@@ -5,7 +5,11 @@
 //! - 训练是单样本 SGD——这是 M0 的收敛性/性能探针，不是训练框架。
 
 use crate::plane::PlaneMatrix;
-use crate::quant::{Ste, quantize_with_scale, scale_grad};
+use crate::quant::{Ste, quantize_with_scale};
+
+#[cfg(test)]
+mod packed_tests;
+mod scalar;
 
 /// Adam 优化器状态：与一组参数一一对应。
 ///
@@ -151,59 +155,49 @@ impl TernaryLinear {
 
     /// 把当前 latent 量化一次，打成双导轨位平面。
     ///
-    /// 反向 `dX` 与 scale 梯度共用这份位平面；`forward` 仍是独立的标量点积。
+    /// 前向、`dX` 与 scale 梯度共用这份位平面；`from_latent` 一步完成量化与
+    /// 打包，不再为每行分配临时 `q`。
     pub fn pack(&self) -> PlaneMatrix {
-        let mut q = Vec::with_capacity(self.rows * self.cols);
-        for r in 0..self.rows {
-            q.extend(quantize_with_scale(
-                &self.latent[r * self.cols..(r + 1) * self.cols],
-                self.scale[r],
-            ));
-        }
-        PlaneMatrix::from_quantized(q, self.rows, self.cols)
+        PlaneMatrix::from_latent(&self.latent, &self.scale, self.rows, self.cols)
     }
 
-    /// 前向：`y[r] = scale[r] * Σ q[r,c]·x[c]`。
+    /// 前向：`y[r] = scale[r] * Σ q[r,c]·x[c]`，走双导轨位平面。
     pub fn forward(&self, x: &[f32]) -> Vec<f32> {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
+        let planes = self.pack();
+        self.forward_with_planes(&planes, x)
+    }
+
+    fn forward_with_planes(&self, planes: &PlaneMatrix, x: &[f32]) -> Vec<f32> {
         (0..self.rows)
-            .map(|r| {
-                let row = &self.latent[r * self.cols..(r + 1) * self.cols];
-                let q = quantize_with_scale(row, self.scale[r]);
-                self.scale[r] * dot(&q, x, self.prefetch)
-            })
+            .map(|r| self.scale[r] * planes.row_dot(r, x))
             .collect()
     }
 
     /// 单样本 SGD 一步，返回更新前的 MSE。
+    ///
+    /// 前向与 scale 梯度共用一份 [`PlaneMatrix`]；`dW` 走 `dense::sgd_update` 融合更新。
     pub fn train_step(&mut self, x: &[f32], target: &[f32]) -> f32 {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
         assert_eq!(target.len(), self.rows, "目标长度必须是 rows");
 
-        let y = self.forward(x);
-        let mut dy = vec![0.0f32; self.rows];
-        let mut loss = 0.0f32;
-        for (r, slot) in dy.iter_mut().enumerate() {
-            let diff = y[r] - target[r];
-            *slot = diff;
-            loss += 0.5 * diff * diff;
-        }
-        loss /= self.rows as f32;
+        let planes = self.pack();
+        let y = self.forward_with_planes(&planes, x);
+        let (loss, dy) = self.loss_and_grad(&y, target);
 
         let (lr, ste, cols) = (self.lr, self.ste, self.cols);
-        for (r, (&dy_r, scale_slot)) in dy.iter().zip(self.scale.iter_mut()).enumerate() {
-            let row = &self.latent[r * cols..(r + 1) * cols];
-            let q = quantize_with_scale(row, *scale_slot);
-            let scale = *scale_slot;
-            // ∂L/∂scale = dy · Σ q·x；scale 必须保持为正。
-            *scale_slot = (scale - lr * dy_r * scale_grad(&q, x)).max(1e-4);
-            let base = r * cols;
-            for (c, &xc) in x.iter().enumerate() {
-                let grad_q = dy_r * scale * xc;
-                let idx = base + c;
-                let grad = ste.backward(self.latent[idx], scale, grad_q);
-                self.latent[idx] -= lr * grad;
-            }
+        crate::dense::sgd_update(
+            &mut self.latent,
+            x,
+            self.rows,
+            cols,
+            &dy,
+            &self.scale,
+            lr,
+            ste,
+        );
+        for (r, &dy_r) in dy.iter().enumerate() {
+            self.scale[r] = (self.scale[r] - lr * dy_r * planes.row_dot(r, x)).max(1e-4);
         }
         loss
     }
@@ -221,17 +215,18 @@ impl TernaryLinear {
         let mut input_grad = vec![0.0f32; self.cols];
         planes.input_grad(output_grad, &self.scale, &mut input_grad);
         let (lr, ste, cols) = (self.lr, self.ste, self.cols);
+        crate::dense::sgd_update(
+            &mut self.latent,
+            input,
+            self.rows,
+            cols,
+            output_grad,
+            &self.scale,
+            lr,
+            ste,
+        );
         for (r, &dy_r) in output_grad.iter().enumerate() {
-            let scale = self.scale[r];
-            let grad_scale = dy_r * planes.row_dot(r, input);
-            self.scale[r] = (scale - lr * grad_scale).max(1e-4);
-            let base = r * cols;
-            for (c, &xc) in input.iter().enumerate() {
-                let grad_q = dy_r * scale * xc;
-                let idx = base + c;
-                let grad = ste.backward(self.latent[idx], scale, grad_q);
-                self.latent[idx] -= lr * grad;
-            }
+            self.scale[r] = (self.scale[r] - lr * dy_r * planes.row_dot(r, input)).max(1e-4);
         }
         input_grad
     }

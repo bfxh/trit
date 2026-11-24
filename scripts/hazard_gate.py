@@ -89,6 +89,16 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
         "位平面反向 dX：三个 AVX2 函数只在 has_avx2() 的 is_x86_feature_detected! "
         "之后调用；列数 <8 或尾部走标量，非 x86_64 不编译 SIMD 模块"
     ),
+    "crates/trit-train/src/plane/pack.rs": (
+        "位平面打包 from_latent：AVX2 内核只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/dense.rs": (
+        "dW 融合更新：AVX2 update_row 只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译 SIMD 模块"
+    ),
 }
 
 ALLOW_RELAXED: dict[str, str] = {

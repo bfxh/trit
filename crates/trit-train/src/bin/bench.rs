@@ -3,7 +3,7 @@
 //! 用法：
 //! ```text
 //! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576]
-//!       [--threads 1,2,4,8] [--ste-steps 3000]
+//!       [--threads 1,2,4,8] [--ste-steps 3000] [--train-steps 3]
 //! ```
 
 use std::hint::black_box;
@@ -12,6 +12,14 @@ use std::time::Instant;
 use trit_train::layer::{TernaryLinear, dot};
 use trit_train::plane::{PlaneMatrix, Planes};
 use trit_train::quant::Ste;
+
+#[path = "bench/args.rs"]
+mod args;
+#[path = "bench/train_step.rs"]
+mod train_step;
+
+use args::{arg, thread_list};
+use train_step::bench_train_step;
 
 #[derive(Clone, Copy, Debug)]
 enum Op {
@@ -30,26 +38,6 @@ fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
             (pos, !(pos | !(ap | an) | !(bp | bn)))
         }
     }
-}
-
-fn arg(args: &[String], name: &str) -> Option<usize> {
-    args.iter()
-        .position(|a| a == name)
-        .and_then(|i| args.get(i + 1))
-        .and_then(|s| s.parse().ok())
-}
-
-fn thread_list(args: &[String]) -> Vec<usize> {
-    args.iter()
-        .position(|a| a == "--threads")
-        .and_then(|i| args.get(i + 1))
-        .map(|s| {
-            s.split(',')
-                .filter_map(|v| v.parse::<usize>().ok())
-                .collect()
-        })
-        .filter(|v: &Vec<usize>| !v.is_empty())
-        .unwrap_or_else(|| vec![1, 2, 4, 8])
 }
 
 fn sample_trits(len: usize, seed: u64) -> Vec<i8> {
@@ -214,6 +202,7 @@ fn main() {
     let rows = arg(&args, "--rows").unwrap_or(4096);
     let cols = arg(&args, "--cols").unwrap_or(576);
     let ste_steps = arg(&args, "--ste-steps").unwrap_or(3000);
+    let train_steps = arg(&args, "--train-steps").unwrap_or(3);
     let threads = thread_list(&args);
 
     let trits = mtrits * 1_000_000; // 每 trit 2 bit（两条导轨各 1 bit）
@@ -269,6 +258,17 @@ fn main() {
     println!("{:<14} {:>10} {:>10}", "内核", "GMAC/s", "相对");
     println!("{:<14} {scalar:>10.2} {:>10}", "标量参考", "1.00×");
     println!("{:<14} {plane_gmac:>10.2} {:>9.2}×", "双导轨掩码", speedup);
+
+    let (scalar_step, plane_step, step_speedup, pack_step) =
+        bench_train_step(rows, cols, train_steps, rounds);
+    println!("\n训练步：{rows}×{cols}（{train_steps} 步/轮，{rounds} 轮取最快，含 pack）");
+    println!("{:<14} {:>10} {:>10}", "路径", "ms/step", "相对");
+    println!("{:<14} {scalar_step:>10.2} {:>10}", "标量参考", "1.00×");
+    println!(
+        "{:<14} {plane_step:>10.2} {:>9.2}×",
+        "位平面步", step_speedup
+    );
+    println!("{:<14} {pack_step:>10.2}", "其中 pack()");
 
     println!("\nSTE 收敛（2×3 线性层，{ste_steps} 步，MSE）：");
     for (name, ste) in [

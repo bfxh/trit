@@ -15,12 +15,12 @@ use super::TRITS_PER_WORD;
 /// 点积与反向的按字内核。`bytes()` 只算两条导轨，不含 `q` 缓存。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlaneMatrix {
-    rows: usize,
-    cols: usize,
-    bpr: usize,
-    q: Vec<i8>,
-    pos: Vec<u64>,
-    neg: Vec<u64>,
+    pub(super) rows: usize,
+    pub(super) cols: usize,
+    pub(super) bpr: usize,
+    pub(super) q: Vec<i8>,
+    pub(super) pos: Vec<u64>,
+    pub(super) neg: Vec<u64>,
 }
 
 impl PlaneMatrix {
@@ -165,12 +165,12 @@ impl PlaneMatrix {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn has_avx2() -> bool {
+pub(super) fn has_avx2() -> bool {
     std::arch::is_x86_feature_detected!("avx2")
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-fn has_avx2() -> bool {
+pub(super) fn has_avx2() -> bool {
     false
 }
 

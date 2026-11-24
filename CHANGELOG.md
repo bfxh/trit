@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Changed（第二十轮：位平面训练步与 `dW` 融合更新）
+
+- 新增 `crates/trit-train/src/plane/pack.rs`：`PlaneMatrix::from_latent(latent, scale,
+  rows, cols)` 从 latent + per-row scale 一步量化打包，不再分配每行临时 `q`。AVX2
+  每 8 列做一次除法、round、clamp，用 `movemask` 直接写 `pos`/`neg` 字节；列数 <8
+  或非 x86_64 走标量。Rust `round()` 是半远离零，SIMD 用
+  `trunc(x + copysign(0.5, x))` 复刻，并补半边界对拍测试。
+- `TernaryLinear::forward` 改为 `pack()` 一次 + `PlaneMatrix::row_dot`，不再逐行
+  `quantize_with_scale` 后做标量点积；`forward_scalar` 保留为标量参考。
+- 新增 `crates/trit-train/src/dense.rs`：`sgd_update` 做整层 `dW` 融合外积更新，
+  AVX2 按 8 lane 计算 Identity / Clipped / Soft 三种 STE 门控，尾部标量补齐。
+  修正 `_mm256_cmp_ps` 全 1 掩码（作为 f32 是 NaN）不能直接乘 1.0 的问题。
+- `train_step` 每步只 `pack()` 一次，前向、`dW`、scale 梯度共用同一份 planes；
+  `train_step_scalar` 保留旧逐行量化 + 逐元素 STE 路径作为对拍/基准。`train_step_with_grad`
+  同步改走 `dense::sgd_update`；`train_step_with_grad_adam` 的 latent 更新仍是逐元素
+  Adam，是明确未覆盖项。
+- `train-bench` 新增 `--train-steps`，输出标量参考 vs 位平面步与单独 `pack()` 成本。
+  读数（4096×576，单线程，3 步/轮，7 轮取最快）：标量 **27.2–27.6 ms/step**，
+  位平面步 **1.9–2.1 ms/step（13.4–14.1×；偶发 2.4 ms）**，其中 `pack()` **0.85–0.89 ms/step**。
+  同轮 `dX` 8.0–9.5 GMAC/s（33–40×）。
+- `cargo test -p trit-train` **21→27**（新增 `from_latent` 2、`dense` 2、`layer` 对拍 2）。
+  模块预算新增 `plane/pack.rs`、`dense.rs`、`layer/scalar.rs`、`layer/packed_tests.rs`、
+  `bin/bench/{args,train_step}.rs`，当前 1519 个 `.rs` 全部 capped；hazard gate 登记
+  两处 AVX2 的运行时探测理由。
+- 边界：训练步只做「打包 + 位平面 `row_dot` + 融合 `dW`」，**不是三进制算术加法**；
+  `pack()` 仍是每步一次全量量化；Adam 路径未融合 `dW`。
+
 ### Changed（第十九轮：位平面反向 `dX`）
 
 - 新增 `crates/trit-train/src/plane/backward.rs`：`PlaneMatrix` 把三值权重按行打成
