@@ -881,6 +881,28 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.11、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.13、`LESSONS.md` 第 23 条。
 
+- **分类任务头（M1.12）**：新增 `scripts/wsp_export_sst2.py`（直连
+  `SetFit/sst2` JSONL，流式导出 `WSPACT1/WSPMSK1`）、
+  `scripts/wsp_chunk_embed_input.py`（按文本行切 `chunk-XXX`，规避 859 MB×2
+  全量加载的 commit 失败）、`scripts/wsp_classify_eval.py`（`WSPEMB1` 拼接、
+  冻结编码器 logistic probe、train 内 5 折选 `C`、per-config/transfer 两套
+  accuracy/macro-F1/AUC、10k paired bootstrap、固定 `C`/标准化敏感性）。
+  - SST-2：6,920 train / 1,821 test，seq 64、mean pooling + L2；L12/L6 各四档，
+    1,500 条分块编码。
+  - L12 `R12` accuracy `0.814937` 低于 int3 `0.823723`/int4 `0.840198`；
+    `R12−int3 = −0.008842` CI 跨 0，`R12−int4 = −0.025402` CI 整段为负。
+  - L6 `rescan-k2` `0.802306`，对 int3 `−0.007209`、对 int4 `−0.002220`，
+    两个 CI 都跨 0。**STS 的块级增益没有转成分类；`R12`/`rescan-k2`
+    仍只能留在 STS in-domain。**
+  - 独立观察：L12 均匀 int4 比 f32 高 `+0.040088`（bootstrap CI 整段为正），
+    但 f32 probe 直接迁移到量化档掉 `−0.029` 到 `−0.062`；这是量化正则化/
+    表示变化，不是 `R12` 的块级重排。
+  - 表：`wsp-classify-sst2-l12.tsv`（4 行）、`wsp-classify-sst2-l6.tsv`
+    （4 行）、`wsp-classify-sst2-bootstrap.tsv`（24 行）、
+    `wsp-classify-sst2-sensitivity.tsv`（16 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.12、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.14、`LESSONS.md` 第 24 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

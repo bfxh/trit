@@ -1,0 +1,20 @@
+[
+ {
+  "name": "classify-eval: WSPEMB1 magic 不校验",
+  "file": "scripts/wsp_classify_eval.py",
+  "old": "        if len(head) != 16 or head[:8] != MAGIC:",
+  "new": "        if False:",
+  "pkg": "scripts/wsp_classify_eval.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "classify-eval: 准确率取反",
+  "file": "scripts/wsp_classify_eval.py",
+  "old": "        \"accuracy\": float(accuracy_score(test_y, pred)),",
+  "new": "        \"accuracy\": float(1.0 - accuracy_score(test_y, pred)),",
+  "pkg": "scripts/wsp_classify_eval.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

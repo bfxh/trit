@@ -222,8 +222,19 @@
    int3 `0.510`（CI `[−0.065,−0.008]`），nDCG@10 `0.515` 显著低于 `0.541`。
    **块级重排能改善同一对句子的相对分数，不等于改善 corpus 全体的近邻几何；
    STS 候选进任务头前必须单独过检索/分类门。** 这轮只做 SciFact 检索、300 个
-   qrels query、seq 64；分类头尚未开始。表见
+   qrels query、seq 64；分类头见第 24 条。表见
    `data/wsp-retrieval-scifact-*.tsv`，正文见 `WSP-BUDGET-RESULTS.md` §11.11。
+
+24. **STS 增益也不转分类；量化对线性 probe 的正向要单独归因**。M1.12 在
+   SST-2（6,920/1,821）上冻结编码器、只训 logistic 线性 probe，`C` 由 train
+   内 5 折选出：L12 `R12` accuracy `0.814937` 低于 int3 `0.823723`/int4
+   `0.840198`，`R12−int3` CI 跨 0、`R12−int4` CI 整段为负；L6 `rescan-k2`
+   `0.802306` 对 int3/int4 的 CI 都跨 0。**检索和分类两个任务头都没有接住
+   STS 的块级增益。** 另有一条独立观察：L12 均匀 int4 比 f32 高
+   `+0.040088`（CI 整段为正），但 f32 probe 直接投到量化档会掉 `−0.029` 到
+   `−0.062`；这是表示/正则化变化，不是 `R12` 的块级重排，不能混写成
+   “BUDGET 布局提升分类”。表见 `data/wsp-classify-sst2-*.tsv`，正文见
+   `WSP-BUDGET-RESULTS.md` §11.12。
 
 ## 4. 工程经验
 

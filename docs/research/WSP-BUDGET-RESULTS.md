@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.4/M1.5 完成，M1.11 完成（STS 全量 + SciFact 检索任务头；分类头未开始）。
+> 状态：M1.4/M1.5 完成，M1.11 完成（STS 全量 + SciFact 检索任务头），M1.12 完成（SST-2 分类线性 probe）。
 > 逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2` 供体表和 `3→4`
 > 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
 > 总字节仍 `10,782,720 B`，全量 Pearson `0.833671`、Spearman `0.835411`。
@@ -18,6 +18,10 @@
 > `K10K11` 在 STS13 轻微负，`R12`/`R10`/`F5F7V7` 在 SICK-R 负。STS 全量仍是
 > `R12 > K10K11 > I10`。所以 `I10` 是外部保守默认，`K10K11`/`R12` 是 STS
 > in-domain 选择；不能再写“K10K11 在所有外部数据上最稳”（§10）。
+> **M1.12 分类头（SST-2，冻结编码器 + 线性 probe）同样是负向**：L12 `R12`
+> 对 int3 点估计低 `−0.008842`、CI 跨 0，对 int4 整段为负；L6 `rescan-k2`
+> 对 int3/int4 的 CI 都跨 0。STS 的块级增益没有转成检索或分类增益，
+> `R12`/`rescan-k2` 只能留在 STS in-domain（§11.12）。
 
 ## 1. 结论先行
 
@@ -155,7 +159,7 @@ M1.11 按这个方向转到检索任务头：`R12` 在 STS 上相对 int3 是
 STS 的强候选；但换到 SciFact 检索后，`R12` 的 MRR/nDCG@10 点估计低于 int3，
 对 int4/f32 的 MRR/nDCG CI 基本整段为负；`rescan-k2` 对 int3 的 MRR/nDCG@10
 CI 也整段为负。**STS 相关性的块级增益没有转到检索；任务头和 STS 不是同一个
-判据（§11.11）。** 分类头尚未开始。
+判据（§11.11）。** 分类头见 §11.12。
 
 ## 2. 字节账
 
@@ -1829,7 +1833,7 @@ L3 的表：`data/wsp-budget-l3-perturb.tsv`（36 行）、
 
 §11.10.5 的下一步写的是“停止跨模型规则和 `per_shape`，转检索/分类任务头”。
 本轮先做检索头，不做分类头：检索不需要训练新头，直接检验量化后的句向量余弦
-排序是否还成立，和 MiniLM 的部署用法一致；分类头尚未开始。
+排序是否还成立，和 MiniLM 的部署用法一致；分类头在 M1.12 单独做（§11.12）。
 
 #### 11.11.1 口径
 
@@ -1936,12 +1940,13 @@ Recall@100 `0.892`（高于 int3 `0.873`、int4 `0.889`），但 top-10 排序�
   （邻域保持率、各向异性、距离秩相关），所以这只是机制假设，不是因果结论。
 - **边界**：只做 SciFact 一个检索集、300 个 qrels query、seq 64 截断、mean
   pooling、两个 6/12 层 MiniLM；没有检索微调；bootstrap 是 query-level，不是
-  corpus-level；分类头尚未开始。不能外推到所有检索/分类任务，也不能写“量化
+  corpus-level；分类头在 M1.12 单独做（§11.12）。不能外推到所有检索/分类任务，也不能写“量化
   embedding 普遍不适合检索”。本轮负向结论的具体范围是：“在这套 SciFact
   口径下，`R12` 和 L6 `rescan-k2` 的 STS 增益没有转成检索增益”。
-- **下一步**：如果继续任务头，分类头要先定数据集和是否允许训练小的线性头
-  （冻结编码器）；在这两个决定之前，不能假设分类头一定会正。否则接受
-  “BUDGET 只在 STS 相关性上有效”，把 `R12` 留在 STS in-domain，不进运行时默认。
+- **下一步**：分类头已在 M1.12 做完（§11.12），结论同样负向；若继续，先做
+  第二分类集或第二 probe 形式来验证“L12 均匀 int4 高于 f32”这一独立观察，
+  而不是再调 `R12`。否则接受“BUDGET 只在 STS 相关性上有效”，把 `R12`
+  留在 STS in-domain，不进运行时默认。
 
 #### 11.11.5 复算
 
@@ -1989,6 +1994,157 @@ python scripts/wsp_retrieval_eval.py \
 `data/wsp-retrieval-scifact-l6.tsv`（4 行）、
 `data/wsp-retrieval-scifact-bootstrap.tsv`（30 行）。
 
+## 11.12 分类任务头（M1.12，SST-2 / 冻结编码器 + 线性 probe）
+
+### 11.12.1 口径
+
+- 数据集 `SetFit/sst2`：6,920 train / 1,821 test，标签 0/1；test 留出不参与
+  C 选择。没有额外 validation split，test 就是最终评测集。
+- 文本 seq 64、mask mean pooling + L2 normalize，与检索头用同一份 `WSPEMB1`
+  句向量口径；编码器全程冻结，只训练一个 logistic 线性 probe。
+- L12 四档：`f32 / int3 / int4 / R12`；L6 四档：`f32 / int3 / int4 /
+  rescan-k2`。R12 仍是 `6/54/12`、`10,782,720 B`；rescan-k2 仍是 `6/24/6`、
+  `5,391,360 B`。
+- 主口径的 `C` 由 train 内 5 折 `StratifiedKFold` 在
+  `{0.01, 0.1, 1, 10}` 上选出，再用全 train 重训、test 只评一次；不做
+  encoder 微调，不拿 test 选 `C`。另跑固定 `C=1`、`C=10` 和逐维标准化的
+  敏感性，见 §11.12.4。
+- 10k test-level paired bootstrap；同一重采样索引同时用于两档，报告
+  accuracy 差值、95% CI 和 `better_fraction`。
+- 8,741 条文本的 `input.f32` 与 `reference.f32` 各 859 MB，一次性读入会超过
+  本机进程 commit 预算；编码按 1,500 条分块，拼回 `WSPEMB1` 后再评测。
+
+### 11.12.2 主结果（CV 选 C）
+
+L12：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C | train-CV acc | f32-probe transfer acc |
+|---|---:|---:|---:|---:|---:|---:|
+| f32 | 0.800110 | 0.800078 | 0.878938 | 10 | 0.774711 | 0.800110 |
+| int3 | 0.823723 | 0.823662 | 0.905766 | 1 | 0.802457 | 0.753981 |
+| int4 | 0.840198 | 0.840113 | 0.918861 | 10 | 0.828035 | 0.771005 |
+| R12 | 0.814937 | 0.814848 | 0.901555 | 1 | 0.799855 | 0.738605 |
+
+L6：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C | train-CV acc | f32-probe transfer acc |
+|---|---:|---:|---:|---:|---:|---:|
+| f32 | 0.798462 | 0.798427 | 0.882219 | 10 | 0.777168 | 0.798462 |
+| int3 | 0.809445 | 0.809324 | 0.894031 | 10 | 0.797110 | 0.707304 |
+| int4 | 0.804503 | 0.804439 | 0.893376 | 1 | 0.802312 | 0.747392 |
+| rescan-k2 | 0.802306 | 0.802186 | 0.888280 | 1 | 0.792341 | 0.745744 |
+
+“f32-probe transfer” 是只用该模型 f32 档 train 训练 probe，再把它原样投到
+同模型其他档 test 的 accuracy；它不是重新训练后的读数。
+
+### 11.12.3 bootstrap：关键比较
+
+L12，probe 重新训练：
+
+- `R12 − int3 = −0.008842`，95% CI `[−0.021417, +0.003844]`，
+  better `0.9094`（这里 better 指 int3 更好）；R12 点估计更低，CI 跨 0。
+- `R12 − int4 = −0.025402`，CI `[−0.041735, −0.009336]`；整段为负。
+- `R12 − f32 = +0.014632`，CI `[−0.003295, +0.032949]`；R12 点估计更高，
+  但不显著。
+- `int4 − int3 = +0.016560`，CI `[+0.001098, +0.032400]`；int4 显著更高。
+- `f32 − int3 = −0.023474`，CI `[−0.041735, −0.005491]`；
+  `f32 − int4 = −0.040034`，CI `[−0.058759, −0.020868]`。即在这个
+  线性 probe 口径下，L12 的 int3/int4 都显著高于 f32。
+
+L6，probe 重新训练：
+
+- `rescan-k2 − int3 = −0.007209`，CI `[−0.022515, +0.007688]`；CI 跨 0。
+- `rescan-k2 − int4 = −0.002220`，CI `[−0.018122, +0.013180]`；基本打平。
+- `rescan-k2 − f32 = +0.003619`，CI `[−0.013180, +0.020868]`；不显著。
+- `int3 − int4 = +0.004989`，CI `[−0.009885, +0.020319]`；不显著。
+
+f32 probe 直接迁移（不重新训练）：
+
+- L12：int3 `−0.046248` CI `[−0.068094, −0.024163]`；int4 `−0.029229`
+  CI `[−0.050522, −0.008237]`；R12 `−0.061604` CI
+  `[−0.083471, −0.039539]`。三档都显著低于 f32 自评。
+- L6：int3 `−0.091471` CI `[−0.114223, −0.068644]`；int4 `−0.051274`
+  CI `[−0.073586, −0.029654]`；rescan-k2 `−0.052979` CI
+  `[−0.073037, −0.032949]`。同样三档都显著低于 f32 自评。
+
+这说明量化后的表示确实变了：f32 probe 的决策边界不能直接迁到量化档；
+但重新训练 probe 后，L12 的 int3/int4 又能超过 f32。两种读数回答的是不同问题，
+不能混用。
+
+### 11.12.4 C 与标准化敏感性
+
+固定 `C=1` 时，量化档的优势会被放大：L12 f32 只有 `0.777046`，int4 为
+`0.842394`；但 f32 在 `C=10` 升到 `0.800110`，int4 为 `0.840198`。L6 在
+`C=10` 时 f32 `0.798462`、int3 `0.809445`，差距缩到 1.1 个百分点；
+rescan-k2 `0.805601`，与 f32 只差 0.7 个百分点。逐维标准化、固定 `C=1`
+时 L12 f32 `0.789676`、int4 `0.841296`，int4 仍高；L6 f32 `0.800110`，
+int3/int4/rescan 都在 `0.802–0.807`，基本打平。
+
+因此主结论用 CV 选 C 的读数；固定 `C=1` 只能说明“在这个正则强度下量化档
+更可分”，不能当无条件结论。完整网格见
+`data/wsp-classify-sst2-sensitivity.tsv`。
+
+### 11.12.5 结论与边界
+
+- **STS 的块级增益没有转成分类增益。** L12 `R12` 对 int3 点估计低
+  `−0.008842`、CI 跨 0，对 int4 整段为负；L6 `rescan-k2` 对 int3/int4
+  的 CI 都跨 0，点估计也不高于 int3。`R12`/`rescan-k2` 仍然只能留在
+  STS in-domain，不能进分类任务头默认。
+- **一个额外的正向观察，但不属于 BUDGET 的 STS 增益**：L12 的均匀 int4
+  在线性 probe 上比 f32 高 `+0.040088`（0.840198−0.800110；10k bootstrap
+  均值 `+0.040034`，CI 整段为正），int3 也高 `+0.023613`（bootstrap 均值
+  `+0.023474`）。这更像量化把异常维度/尺度压平后改善了线性可分性，而不是
+  `R12` 的块级重排有效；L6 上这个优势缩到不显著。没有做几何诊断，不能把它
+  写成“量化普遍提升分类”。
+- **f32 probe 不能直接迁移**到量化档：L12/L6 三档的 transfer accuracy 都
+  显著低于 f32 自评。任务头比较必须重新训练 probe；把“f32 probe 投到量化”
+  当成量化掉点会高估损失，把“各档重训 probe”当成纯表示差异又会忽略正则化。
+- 边界：单数据集 SST-2（SetFit 6,920/1,821）、单任务二分类、单 probe 家族
+  （logistic regression）、无 encoder 微调、seq 64、两个 MiniLM；没有第二
+  分类集、没有 MLP/线性 SVM 复验、没有句子级去重。不能外推到所有分类任务，
+  也不能从 SST-2 反推生成任务。
+
+### 11.12.6 复算
+
+```bash
+# 1) 导出 SST-2（直连 JSONL，避免 HF datasets 的 X-Repo-Commit 头问题）
+python scripts/wsp_export_sst2.py \
+  --train sst2/raw/train.jsonl --test sst2/raw/test.jsonl \
+  --out sst2/data-l12 --model all-MiniLM-L12-v2 --seq 64
+python scripts/wsp_export_sst2.py \
+  --train sst2/raw/train.jsonl --test sst2/raw/test.jsonl \
+  --out sst2/data-l6 --model all-MiniLM-L6-v2 --seq 64
+
+# 2) 8,741 条一次性读入会超 commit 预算，按 1,500 条分块
+python scripts/wsp_chunk_embed_input.py \
+  --src sst2/data-l12 --dst sst2/chunks-l12-1500 --chunk-size 1500
+python scripts/wsp_chunk_embed_input.py \
+  --src sst2/data-l6 --dst sst2/chunks-l6-1500 --chunk-size 1500
+
+# 3) 编码：以 L12 int3 的 chunk-000 为例；其余档按 §11.11.5 的 budget 规则
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=24 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=sst2/emb12 TRIT_EMBED_TAG=l12-int3-c000 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir sst2/chunks-l12-1500/chunk-000 --activation-mode f32 \
+  --out sst2/runs12/l12-int3-c000.json
+
+# 4) 评测：CV 选 C + 10k test bootstrap
+python scripts/wsp_classify_eval.py \
+  --texts sst2/data-l12/texts.json \
+  --run l12-f32='sst2/emb12/l12-pure-f32-c*.f32' \
+  --run l12-int3='sst2/emb12/l12-int3-c*.f32' \
+  --run l12-int4='sst2/emb12/l12-int4-c*.f32' \
+  --run l12-r12='sst2/emb12/l12-r12-c*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --bootstrap 10000 --out sst2/eval-l12-cv.json
+```
+
+表见 `data/wsp-classify-sst2-l12.tsv`（4 行）、
+`data/wsp-classify-sst2-l6.tsv`（4 行）、
+`data/wsp-classify-sst2-bootstrap.tsv`（24 行）、
+`data/wsp-classify-sst2-sensitivity.tsv`（16 行）。
+
 ## 12. 下一步
 
 - **逐块 `3→2`/`3→4` 与第二模型 L6 都已完成（§8/§9/§11）**：不要再重复跑
@@ -2000,9 +2156,14 @@ python scripts/wsp_retrieval_eval.py \
   增益没有转到 SciFact 检索；`R12` 对 int3 的 MRR/nDCG@10 点估计为负、CI 跨 0，
   对 int4/f32 的 MRR/nDCG CI 基本整段为负；L6 `rescan-k2` 对 int3 的 MRR/
   nDCG@10 CI 整段为负。任务头不是新的调参维度，而是现有 STS 候选的否决门。
-- **分类头尚未开始**：如果要做，先定数据集和“冻结编码器 + 线性头”是否允许；
-  在这两个决定之前，不能假设分类头会正。否则接受“BUDGET 只在 STS 相关性上
-  有效”，把 `R12` 留在 STS in-domain，不进运行时默认。
+- **分类任务头已做（§11.12），结论同样负向**：SST-2（6,920/1,821，冻结编码器
+  + 线性 probe，train 内 5 折选 C）上，L12 `R12` 对 int3 点估计低
+  `−0.008842`、CI 跨 0，对 int4 整段为负；L6 `rescan-k2` 对 int3/int4 的
+  CI 都跨 0。分类头也没有接住 STS 的块级增益。另有一条独立观察：L12 均匀
+  int4 比 f32 高 `+0.040088`（CI 整段为正），但这是量化正则化/表示变化，
+  不是 `R12` 的布局增益；要继续验证就做第二分类集或第二 probe 形式，
+  不要再调 `R12`。否则接受“BUDGET 只在 STS 相关性上有效”，把 `R12`
+  留在 STS in-domain，不进运行时默认。
 - **重扫选择器已落库，且 5 折交叉拟合已把“选择”留出（§11.6/§11.7）**：
   `wsp_budget_rescan.py` 能从两张表生成严格同字节候选；L6 全量 `6/24/6` 是
   `0.831304 / 0.824457`（高于 int4 点估计），但这是 in-sample。5 折 × 2 种子

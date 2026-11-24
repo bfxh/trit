@@ -1,0 +1,29 @@
+[
+ {
+  "name": "sst2-export: 矩阵 magic 写错",
+  "file": "scripts/wsp_export_sst2.py",
+  "old": "    return b\"WSPACT1\\0\" + struct.pack(\"<II\", rows, cols)",
+  "new": "    return b\"WSPACT2\\0\" + struct.pack(\"<II\", rows, cols)",
+  "pkg": "scripts/wsp_export_sst2.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "sst2-export: 非 0/1 标签放行",
+  "file": "scripts/wsp_export_sst2.py",
+  "old": "            if label not in (0, 1):",
+  "new": "            if False:",
+  "pkg": "scripts/wsp_export_sst2.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "sst2-export: 空文本放行",
+  "file": "scripts/wsp_export_sst2.py",
+  "old": "            if not text:",
+  "new": "            if False:",
+  "pkg": "scripts/wsp_export_sst2.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
