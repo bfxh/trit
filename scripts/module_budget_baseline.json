@@ -4984,7 +4984,7 @@
     },
     {
       "file": "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs",
-      "lines": 68
+      "lines": 66
     },
     {
       "file": "crates/trit-train/src/plane/fused/adam_step/tests.rs",

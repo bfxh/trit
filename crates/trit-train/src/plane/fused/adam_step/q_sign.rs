@@ -41,7 +41,7 @@ pub(super) unsafe fn masks(
 /// 需要 AVX2；调用方保证输入是有限的 8-lane 向量。
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn exact(wv: __m256, sv: __m256) -> (__m256, __m256) {
+pub(super) unsafe fn exact(wv: __m256, sv: __m256) -> (__m256, __m256) {
     let half = _mm256_set1_ps(0.5);
     let one = _mm256_set1_ps(1.0);
     let neg_one = _mm256_set1_ps(-1.0);

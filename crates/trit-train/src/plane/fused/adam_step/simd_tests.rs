@@ -5,7 +5,7 @@ fn around(v: f32, k: i32) -> f32 {
 }
 
 #[test]
-fn q_sign_masks_match_scalar_near_threshold() {
+fn q_sign_masks_match_exact_near_threshold() {
     if !std::arch::is_x86_feature_detected!("avx2") {
         return;
     }
@@ -42,27 +42,25 @@ fn assert_masks(w: &[f32; 8], s: f32, tag: &str) {
         let wv = _mm256_loadu_ps(w.as_ptr());
         let smax = s.max(f32::MIN_POSITIVE);
         let h = 0.5 * smax;
+        let sv = _mm256_set1_ps(smax);
         let (p, n) = super::q_sign::masks(
             wv,
-            _mm256_set1_ps(smax),
+            sv,
             _mm256_set1_ps(h),
             _mm256_set1_ps(-h),
             _mm256_set1_ps((h * (1.0 / 4096.0)).max(f32::MIN_POSITIVE)),
         );
-        let pm = _mm256_movemask_ps(p);
-        let nm = _mm256_movemask_ps(n);
-        for (j, &wj) in w.iter().enumerate() {
-            let q = (wj / smax).round().clamp(-1.0, 1.0);
-            assert_eq!(
-                pm & (1 << j) != 0,
-                q > 0.0,
-                "{tag} positive lane {j}: w={wj} s={s}"
-            );
-            assert_eq!(
-                nm & (1 << j) != 0,
-                q < 0.0,
-                "{tag} negative lane {j}: w={wj} s={s}"
-            );
-        }
+        // 旧量化是 `trunc(scaled + 0.5)`，加法本身会舍入，不能用 `round()` 当标量预期。
+        let (ep, en) = super::q_sign::exact(wv, sv);
+        assert_eq!(
+            _mm256_movemask_ps(p),
+            _mm256_movemask_ps(ep),
+            "{tag} positive mask w={w:?} s={s}"
+        );
+        assert_eq!(
+            _mm256_movemask_ps(n),
+            _mm256_movemask_ps(en),
+            "{tag} negative mask w={w:?} s={s}"
+        );
     }
 }
