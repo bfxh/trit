@@ -3,37 +3,18 @@
 //! 进程内先按路径分锁，再争抢 `.lock`；崩溃留下的锁文件超过 stale 时间会被回收。
 //! 这是 advisory 锁：所有写者都必须经过 `TraceEventStore` 才有效。
 
-use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use crate::Error;
 
-static LOCKS: OnceLock<Mutex<BTreeMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
+#[path = "lock_support.rs"]
+mod support;
+pub(super) use support::path_lock;
 
 const LOCK_STALE: Duration = Duration::from_secs(300);
 const LOCK_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// Windows can report `PermissionDenied` for a lock file that is in the
-/// delete-pending state. Retry that shape only for a short grace window when
-/// the path is not visible; a real ACL denial must not spin for LOCK_TIMEOUT.
-const LOCK_DENIED_GRACE: Duration = Duration::from_secs(2);
-const LOCK_RETRY: Duration = Duration::from_millis(10);
-
-/// 进程内按路径分锁；Weak 表在每次取锁时清理已释放条目。
-pub(super) fn path_lock(path: &Path) -> Arc<Mutex<()>> {
-    let map = LOCKS.get_or_init(|| Mutex::new(BTreeMap::new()));
-    let mut guard = map.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    guard.retain(|_, weak| weak.strong_count() > 0);
-    if let Some(lock) = guard.get(path).and_then(Weak::upgrade) {
-        return lock;
-    }
-    let lock = Arc::new(Mutex::new(()));
-    guard.insert(path.to_path_buf(), Arc::downgrade(&lock));
-    lock
-}
 
 /// 跨进程锁的 RAII guard；Drop 时删除 `.lock`。
 pub(crate) struct FileLock {
@@ -61,7 +42,7 @@ impl FileLock {
                 .open(&path)
             {
                 Ok(mut file) => {
-                    let _ = writeln!(file, "{}\n{}", std::process::id(), now_secs());
+                    let _ = writeln!(file, "{}\n{}", std::process::id(), support::now_secs());
                     return Ok(Self { path });
                 }
                 Err(error)
@@ -69,19 +50,13 @@ impl FileLock {
                         || (cfg!(windows)
                             && error.kind() == std::io::ErrorKind::PermissionDenied) =>
                 {
-                    // On Windows, deleting a just-closed lock file is not
-                    // instantaneous: a second process can see Access Denied
-                    // while the directory entry is delete-pending. Treat that
-                    // as contention only while the path is visible or inside
-                    // a short grace window; an ACL denial still fails closed.
-                    let denied = error.kind() == std::io::ErrorKind::PermissionDenied;
-                    if denied && !path.exists() && started.elapsed() >= LOCK_DENIED_GRACE {
+                    if support::permission_denied_is_fatal(error.kind(), &path, started) {
                         return Err(Error::TraceIo {
                             path: path.display().to_string(),
                             message: error.to_string(),
                         });
                     }
-                    if stale(&path) {
+                    if support::stale(&path) {
                         let _ = std::fs::remove_file(&path);
                         continue;
                     }
@@ -91,7 +66,7 @@ impl FileLock {
                             message: "timed out waiting for cross-process trace lock".into(),
                         });
                     }
-                    std::thread::sleep(LOCK_RETRY);
+                    std::thread::sleep(support::RETRY);
                 }
                 Err(error) => {
                     return Err(Error::TraceIo {
@@ -106,32 +81,6 @@ impl FileLock {
 
 impl Drop for FileLock {
     fn drop(&mut self) {
-        // Windows may keep the entry delete-pending for a short window while
-        // another process is opening/metadata-reading it. Do not panic in a
-        // destructor; retry briefly, then leave the stale lock to be reclaimed.
-        for _ in 0..20 {
-            match std::fs::remove_file(&self.path) {
-                Ok(()) => return,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
-                Err(_) => std::thread::sleep(LOCK_RETRY),
-            }
-        }
-        let _ = std::fs::remove_file(&self.path);
+        support::remove_with_retry(&self.path);
     }
-}
-
-fn stale(path: &Path) -> bool {
-    std::fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-        .map(|age| age >= LOCK_STALE)
-        .unwrap_or(false)
-}
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
 }
