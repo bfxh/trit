@@ -443,7 +443,7 @@ Spearman 却变成 `−0.000471`；I10+F3 也是 Pearson 更高、Spearman 更�
 
 > `R12` 是 M1.4 同字节点估计最好的配置：Pearson `0.833671`、Spearman `0.835411`；
 > 对 F5F7V7 的 Spearman 优势显著，Pearson 只是点估计更高；对 R10、对 int4 都
-> 没有统计分离。它可以写“Spearman 点估计首次反超纯 int4”，不能写
+> 没有统计分离。它可以写“Spearman 点估计反超纯 int4”，不能写
 > “3-bit 全面追平/超过 int4”。128 上它还低于 K10K11，不能拿 128 排名否定它。
 
 ## 5. 解释与失败记录
