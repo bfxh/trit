@@ -1468,6 +1468,23 @@
       "run": "python3 tools/delivery_receipt.py --self-test",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C080",
+      "title": "Windows 跨进程台账锁：delete-pending 的 PermissionDenied 按争用重试，真实 ACL 拒绝 fail-closed",
+      "kind": "cmd",
+      "covers": [
+        "L170"
+      ],
+      "scope": [
+        "crates/trit-orch/src/trace_store/lock.rs"
+      ],
+      "since": "2026-11-24",
+      "tier": "heavy",
+      "added": "2026-11-24T05:30:00+08:00",
+      "run": "cargo test -p trit-orch --test ledger_cross_process",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

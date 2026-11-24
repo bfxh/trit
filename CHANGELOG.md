@@ -23,6 +23,17 @@
   补四态边界与 `.agent/delivery` 跳过项；`docs/ERRORS.md` L169；C079；
   `docs/README.md` 索引同步。
 
+### Fixed（Windows 跨进程台账锁：delete-pending 的 Access Denied 重试）
+
+- `crates/trit-orch/src/trace_store/lock.rs`：Windows 在锁文件刚关闭、目录项仍处于
+  delete-pending 时，`create_new` 可能返回 `PermissionDenied` 而不是 `AlreadyExists`；
+  旧实现只重试 `AlreadyExists`，跨进程台账测试偶发 `ledger.lock: Access is denied. (os error 5)`。
+  现在把 Windows 的瞬时 `PermissionDenied` 按争用重试：路径可见时等到 `LOCK_TIMEOUT`，
+  路径不可见时只给 2 秒 grace，真实 ACL 拒绝仍 fail-closed；`Drop` 的删除也做 20 次
+  10ms 短重试，避免析构里只删一次就放弃。
+- 回归：`cargo test -p trit-orch --test ledger_cross_process` 本机连跑 10 次全过；
+  `cargo fmt --check`、`cargo clippy -p trit-orch --all-targets -- -D warnings` 通过。
+
 ### Fixed（e-graph 提取：合并后的旧子 id 让根退化成 X）
 
 - `crates/trit-build/src/egraph.rs`：`union` 之后 `classes` 里仍存着指向被并掉 class 的
