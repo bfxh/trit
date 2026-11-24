@@ -793,7 +793,7 @@
   ΔS 为 `+0.009694 / +0.000707`，CI 都跨 0。3→2 伤害与 L12 后 6 层输出端
   对齐（0.597 Spearman），3→4 收益不跟（−0.182）；36 块全表与候选读数见
   `docs/research/data/wsp-budget-l6-perturb.tsv`（72 行）、
-  `wsp-budget-l6-candidates.tsv`（13 行）、`wsp-budget-l6-bootstrap.tsv`
+  `wsp-budget-l6-candidates.tsv`（14 行）、`wsp-budget-l6-bootstrap.tsv`
   （24 行）。结论：**块表有模型内信号，但没有一个 L12 布局能跨模型保住
   增益；I10 只能算 L12 外部保守默认，不是跨模型默认。**
 - **重扫选择器（M1.7）**：新增 `scripts/wsp_budget_rescan.py`，按
@@ -817,6 +817,19 @@
   规则。** 折级数据见 `wsp-budget-l6-cv.tsv`（10 行），bootstrap 行追加到
   `wsp-budget-l6-bootstrap.tsv`（32 行）；`test_surface` 登记为 138 单位 /
   3535 条。
+- **跨模型相对深度规则（M1.9）**：新增 `scripts/wsp_budget_rule.py`，只读
+  源模型的逐块 ΔSpearman，按 `(相对深度, 块类型)` 插值给目标模型选块，
+  目标块表完全不读；`--table` 同时接受 L12 宽表和 L6 长表。L12→L6 选出
+  `6/24/6`，`0.828707 / 0.824484`，对纯 int3 `+0.014113 / +0.014060`
+  （双 10k CI 过 0），对纯 int4 `+0.002646 / +0.005131`（两个 CI 都跨 0）；
+  L6→L12 选出 `6/60/6`，`0.827813 / 0.823365`，对 int3
+  `+0.009373 / +0.010004`（CI 过 0），对 int4 `−0.009692 / −0.008682`，
+  Pearson CI `[−0.018357, −0.000968]` 整段为负。**同一条规则两个方向
+  不对称：它稳定优于 int3，但从没统计上超过 int4，只能当候选生成器。**
+  新增 `wsp-budget-l12-perturb.tsv`（72 行）、
+  `wsp-budget-rule-candidates.tsv`（2 行）、
+  `wsp-budget-rule-bootstrap.tsv`（12 行）；`wsp-budget-l6-candidates.tsv`
+  扩到 14 行。`test_surface` 登记为 139 单位 / 3536 条。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
@@ -831,9 +844,10 @@
   STS13 各 1,000 对即由它导出；`test_surface` 登记后为 136 单位 / 3533 条 / 拦 0。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §9 完整 72 行 `3→4` 表 +
   R9/R10/R12/R15 字节账/读数/bootstrap/128 反例/§9.4 来源拆解/§9.5 留一来源/
-  §10 外部三套复验/§11 L6 第二模型 + 重扫选择器/§11.7 5 折交叉拟合/§12 下一步），
-  `docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md` §3.16.9/§3.16.10，
-  `docs/results/LESSONS.md` 第 16/17/18/19/20 条。
+  §10 外部三套复验/§11 L6 第二模型 + 重扫选择器/§11.7 5 折交叉拟合/§11.9
+  跨模型相对深度规则/§12 下一步），
+  `docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md` §3.16.9/§3.16.10/§3.16.11，
+  `docs/results/LESSONS.md` 第 16/17/18/19/20/21 条。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（新增 §8 完整 72 行表 + F5F7V7
   字节账/读数/128 反例/复算），`docs/research/WSP-ALT.md` §5.5，`WSP-BERT6-RESULTS.md`，
   `docs/results/LESSONS.md` 第 16 条。

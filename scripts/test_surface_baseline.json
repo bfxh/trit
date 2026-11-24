@@ -131,6 +131,7 @@
  "script/wsp_budget_cv.py": 1,
  "script/wsp_budget_perturb.py": 0,
  "script/wsp_budget_rescan.py": 1,
+ "script/wsp_budget_rule.py": 1,
  "script/wsp_budget_source_eval.py": 1,
  "script/wsp_budget_swap.py": 0,
  "script/wsp_budget_variant.py": 0,
