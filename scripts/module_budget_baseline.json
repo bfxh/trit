@@ -4912,11 +4912,15 @@
     },
     {
       "file": "crates/trit-train/src/dense.rs",
-      "lines": 192
+      "lines": 125
+    },
+    {
+      "file": "crates/trit-train/src/dense/row.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 499
+      "lines": 490
     },
     {
       "file": "crates/trit-train/src/layer/adam.rs",
@@ -4968,7 +4972,7 @@
     },
     {
       "file": "crates/trit-train/src/plane/fused.rs",
-      "lines": 133
+      "lines": 125
     },
     {
       "file": "crates/trit-train/src/plane/fused/adam_step.rs",
@@ -4997,6 +5001,18 @@
     {
       "file": "crates/trit-train/src/plane/fused/backward_step/tests/scalar.rs",
       "lines": 70
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/forward_step.rs",
+      "lines": 40
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/forward_step/tests.rs",
+      "lines": 108
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/row.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-train/src/plane/fused/tests.rs",

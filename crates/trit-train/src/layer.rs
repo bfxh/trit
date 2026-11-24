@@ -173,30 +173,21 @@ impl TernaryLinear {
 
     /// 单样本 SGD 一步，返回更新前的 MSE。
     ///
-    /// 前向用 `fused::forward_dot` 一次量化+点积，scale 梯度复用 `qdot`；`dW` 走 `dense::sgd_update` 融合更新。
+    /// 前向 `q·x`、MSE/`dy`、`dW` 与 scale 更新按行融合在
+    /// [`crate::plane::fused::forward_step`] 里，一行 latent 只扫一遍。
     pub fn train_step(&mut self, x: &[f32], target: &[f32]) -> f32 {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
         assert_eq!(target.len(), self.rows, "目标长度必须是 rows");
-        let qdot =
-            crate::plane::fused::forward_dot(&self.latent, &self.scale, self.rows, self.cols, x);
-        let y: Vec<f32> = qdot.iter().zip(&self.scale).map(|(&d, &s)| s * d).collect();
-        let (loss, dy) = self.loss_and_grad(&y, target);
-
-        let (lr, ste, cols) = (self.lr, self.ste, self.cols);
-        crate::dense::sgd_update(
+        crate::plane::fused::forward_step::train_step(
             &mut self.latent,
-            x,
+            &mut self.scale,
             self.rows,
-            cols,
-            &dy,
-            &self.scale,
-            lr,
-            ste,
-        );
-        for (r, &dy_r) in dy.iter().enumerate() {
-            self.scale[r] = (self.scale[r] - lr * dy_r * qdot[r]).max(1e-4);
-        }
-        loss
+            self.cols,
+            x,
+            target,
+            self.lr,
+            self.ste,
+        )
     }
 }
 

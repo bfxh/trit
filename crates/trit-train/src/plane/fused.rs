@@ -5,6 +5,9 @@ use super::backward::has_avx2;
 pub mod adam_step;
 pub mod backward;
 pub mod backward_step;
+pub mod forward_step;
+mod row;
+pub(crate) use row::forward_dot_row;
 /// 逐行返回 `Σ_c q[r,c] * x[c]`，其中 `q = clamp(round(w / scale), -1, 1)`。
 #[inline]
 pub fn forward_dot(latent: &[f32], scale: &[f32], rows: usize, cols: usize, x: &[f32]) -> Vec<f32> {
@@ -28,18 +31,7 @@ fn forward_dot_scalar(
 ) -> Vec<f32> {
     let mut out = vec![0.0f32; rows];
     for (r, slot) in out.iter_mut().enumerate() {
-        let s = scale[r].max(f32::MIN_POSITIVE);
-        let row = &latent[r * cols..(r + 1) * cols];
-        let mut sum = 0.0f32;
-        for (&w, &xc) in row.iter().zip(x) {
-            let q = (w / s).round().clamp(-1.0, 1.0);
-            if q > 0.0 {
-                sum += xc;
-            } else if q < 0.0 {
-                sum -= xc;
-            }
-        }
-        *slot = sum;
+        *slot = forward_dot_row(&latent[r * cols..(r + 1) * cols], scale[r], cols, x);
     }
     out
 }
@@ -61,7 +53,7 @@ mod simd {
     }
 
     #[target_feature(enable = "avx2")]
-    unsafe fn row(latent: &[f32], s: f32, x: &[f32], cols: usize) -> f32 {
+    pub(super) unsafe fn row(latent: &[f32], s: f32, x: &[f32], cols: usize) -> f32 {
         let full = cols / 8;
         let sv = _mm256_set1_ps(s.max(f32::MIN_POSITIVE));
         let sign = _mm256_set1_ps(-0.0);
