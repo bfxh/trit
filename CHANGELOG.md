@@ -903,6 +903,25 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.12、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.14、`LESSONS.md` 第 24 条。
 
+- **分类任务头的第二种线性 probe（M1.13）**：`scripts/wsp_classify_eval.py`
+  新增 `--probe {logreg,linear_svc}`；`LinearSVC` 用平方 hinge、`dual=False`、
+  `max_iter=10000`，仍只训练冻结编码器上的线性头。同一批 SST-2
+  embedding/split、train 内 5 折选 `C`、10k paired bootstrap。
+  - L12：`int4−f32 = +0.043783`（CI `[+0.025261,+0.062603]`），
+    `int3−f32 = +0.020769`（CI 全正）；`R12−int3 = −0.004502`（CI 跨 0），
+    `R12−int4 = −0.027516`（CI 整段为负）。L12 均匀 int4 对 f32 的正向
+    不是 logistic 损失特有，但 `R12` 仍不是块级增益。
+  - L6：`int3−f32 +0.006939`、`int4−f32 +0.002492`、`rescan-k2−f32
+    +0.000303`，三个 CI 都跨 0；档间两两 CI 也全跨 0。
+  - f32 共享 SVM probe 投到量化档掉得更明显：L12 `0.735–0.766`、L6
+    `0.650–0.690`（各自 f32 自评 `0.797913` / `0.802306`），说明线性边界
+    方向也变了；没有几何诊断，不能因果化。
+  - 表：`wsp-classify-sst2-svc.tsv`（8 行）、
+    `wsp-classify-sst2-svc-bootstrap.tsv`（24 行）、
+    `wsp-classify-sst2-probe-compare.tsv`（8 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.13、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.15、`LESSONS.md` 第 25 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

@@ -236,6 +236,17 @@
    “BUDGET 布局提升分类”。表见 `data/wsp-classify-sst2-*.tsv`，正文见
    `WSP-BUDGET-RESULTS.md` §11.12。
 
+25. **换一种线性头能复现排序，但仍不等于跨任务头通用**。M1.13 只把
+   logistic 换成平方 hinge `LinearSVC`，同一批 SST-2 embedding/split：
+   L12 `int4−f32` 从 `+0.040088` 扩到 `+0.043932`（CI 全正），
+   `int3−f32` `+0.020769`（CI 全正），`R12−int3` `−0.004502`（CI 跨 0），
+   `R12−int4` `−0.027516`（CI 整段为负）；L6 各档仍全跨 0。
+   **L12 均匀 int4 的正向不是 logistic 损失特有，但 `R12` 仍不是块级增益；
+   L6 仍没有量化优势。** f32 共享 SVM probe 投到 L6 量化档只剩
+   `0.650–0.690`（自评 `0.802306`），说明线性边界方向也变了；没有几何诊断，
+   不能写成量化普遍提升分类。表见 `data/wsp-classify-sst2-svc*.tsv`，正文见
+   `WSP-BUDGET-RESULTS.md` §11.13。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter

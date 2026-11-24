@@ -6,6 +6,10 @@ and evaluated on the test split.  For each ``--group`` the first run is the
 shared-probe baseline: its probe is also applied to the other runs in the group
 to separate "representation improved" from "probe retrained".
 
+``--probe`` selects the frozen-encoder head: ``logreg`` (default) or
+``linear_svc`` (squared-hinge linear SVM).  Both are linear; no MLP or encoder
+fine-tuning is part of this harness.
+
 Example:
   python scripts/wsp_classify_eval.py \
     --texts sst2/data-l12/texts.json \
@@ -68,8 +72,31 @@ def _labels(texts):
     return train, test, y_train, y_test
 
 
-def _select_c(train_x, train_y, seed, grid):
-    from sklearn.linear_model import LogisticRegression
+def _make_model(probe, c, seed, max_iter=None):
+    if probe == "linear_svc":
+        from sklearn.svm import LinearSVC
+
+        return LinearSVC(
+            C=c,
+            dual=False,
+            max_iter=max_iter or 10000,
+            random_state=seed,
+            tol=1e-4,
+        )
+    if probe == "logreg":
+        from sklearn.linear_model import LogisticRegression
+
+        return LogisticRegression(
+            C=c,
+            max_iter=max_iter or 5000,
+            solver="lbfgs",
+            random_state=seed,
+            tol=1e-6,
+        )
+    raise ValueError(f"unknown probe {probe!r}")
+
+
+def _select_c(train_x, train_y, seed, grid, probe="logreg"):
     from sklearn.metrics import accuracy_score
     from sklearn.model_selection import StratifiedKFold
 
@@ -78,13 +105,7 @@ def _select_c(train_x, train_y, seed, grid):
     for c in grid:
         scores = []
         for fit_idx, val_idx in folds.split(train_x, train_y):
-            model = LogisticRegression(
-                C=c,
-                max_iter=2000,
-                solver="lbfgs",
-                random_state=seed,
-                tol=1e-6,
-            )
+            model = _make_model(probe, c, seed, max_iter=2000 if probe == "logreg" else None)
             model.fit(train_x[fit_idx], train_y[fit_idx])
             scores.append(float(accuracy_score(train_y[val_idx], model.predict(train_x[val_idx]))))
         mean = sum(scores) / len(scores)
@@ -93,21 +114,14 @@ def _select_c(train_x, train_y, seed, grid):
     return best_c, best_score
 
 
-def _probe(train_x, train_y, seed, c=1.0, standardize=False):
-    from sklearn.linear_model import LogisticRegression
+def _probe(train_x, train_y, seed, c=1.0, standardize=False, probe="logreg"):
     from sklearn.preprocessing import StandardScaler
 
     scaler = None
     if standardize:
         scaler = StandardScaler()
         train_x = scaler.fit_transform(train_x)
-    model = LogisticRegression(
-        C=c,
-        max_iter=5000,
-        solver="lbfgs",
-        random_state=seed,
-        tol=1e-6,
-    )
+    model = _make_model(probe, c, seed)
     model.fit(train_x, train_y)
     return model, scaler
 
@@ -151,7 +165,7 @@ def parse_group(spec):
 
 
 def evaluate(texts_path, run_specs, groups, bootstrap, seed, c=1.0, standardize=False,
-             cv_c=False, cv_grid=(0.01, 0.1, 1.0, 10.0)):
+             cv_c=False, cv_grid=(0.01, 0.1, 1.0, 10.0), probe="logreg"):
     texts = json.loads(Path(texts_path).read_text(encoding="utf-8"))["texts"]
     train_idx, test_idx, y_train, y_test = _labels(texts)
     runs = {}
@@ -168,16 +182,16 @@ def evaluate(texts_path, run_specs, groups, bootstrap, seed, c=1.0, standardize=
     x_train = {name: matrix[train_idx] for name, matrix in runs.items()}
     x_test = {name: matrix[test_idx] for name, matrix in runs.items()}
 
-    results = {"runs": {}, "transfer": {}, "bootstrap": []}
+    results = {"probe": probe, "runs": {}, "transfer": {}, "bootstrap": []}
     probe_correct = {}
     selected_c = {}
     for name in list(runs):
         if cv_c:
-            chosen, cv_acc = _select_c(x_train[name], y_train, seed, cv_grid)
+            chosen, cv_acc = _select_c(x_train[name], y_train, seed, cv_grid, probe)
         else:
             chosen, cv_acc = c, None
         selected_c[name] = chosen
-        model, scaler = _probe(x_train[name], y_train, seed, chosen, standardize)
+        model, scaler = _probe(x_train[name], y_train, seed, chosen, standardize, probe)
         metrics = _metrics(model, scaler, x_test[name], y_test)
         train_metrics = _metrics(model, scaler, x_train[name], y_train)
         results["runs"][name] = {
@@ -191,7 +205,7 @@ def evaluate(texts_path, run_specs, groups, bootstrap, seed, c=1.0, standardize=
     for spec in groups:
         group, baseline, others = parse_group(spec)
         model, scaler = _probe(
-            x_train[baseline], y_train, seed, selected_c[baseline], standardize
+            x_train[baseline], y_train, seed, selected_c[baseline], standardize, probe
         )
         train_metrics = _metrics(model, scaler, x_train[baseline], y_train)
         transfer_correct = {}
@@ -241,6 +255,7 @@ def parse_args():
     parser.add_argument("--bootstrap", type=int, default=10000)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--C", type=float, default=1.0)
+    parser.add_argument("--probe", choices=("logreg", "linear_svc"), default="logreg")
     parser.add_argument("--standardize", action="store_true")
     parser.add_argument("--cv-C", action="store_true")
     parser.add_argument("--cv-grid", default="0.01,0.1,1,10")
@@ -259,7 +274,7 @@ def main():
     grid = tuple(float(item) for item in args.cv_grid.split(",") if item.strip())
     result = evaluate(
         args.texts, args.run, args.group, args.bootstrap, args.seed,
-        args.C, args.standardize, args.cv_C, grid,
+        args.C, args.standardize, args.cv_C, grid, args.probe,
     )
     Path(args.out).write_text(
         json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -302,9 +317,22 @@ def self_test():
         200,
         7,
     )
+    assert result["probe"] == "logreg"
     assert result["runs"]["f32"]["accuracy"] > 0.6
     assert result["transfer"]["g:f32"]["accuracy"] > 0.6
     assert result["bootstrap"] == []
+
+    svc = evaluate(
+        str(texts_path),
+        [f"f32={emb}"],
+        ["g=f32|"],
+        0,
+        7,
+        probe="linear_svc",
+    )
+    assert svc["probe"] == "linear_svc"
+    assert svc["runs"]["f32"]["accuracy"] > 0.6
+    assert svc["transfer"]["g:f32"]["accuracy"] > 0.6
 
     bad = tmp / "bad.f32"
     bad.write_bytes(b"WSPEMB2\0" + b"\0" * 8)
