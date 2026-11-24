@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-24T23:33:53+08:00",
+  "generated_at": "2026-11-24T23:47:30+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -64,7 +64,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw + lazy q + qdot PR #668 (open, new run pending)",
+    "status": "training_step merged at 9d1f0cc6 (#666); adam_dw + lazy q + qdot PR #668 (open, CI 32 pass / 2 skip; mergeState CLEAN)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "dense": "crates/trit-train/src/dense.rs",

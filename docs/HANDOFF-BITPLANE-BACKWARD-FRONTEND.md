@@ -82,7 +82,7 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 - `python scripts/hazard_gate.py`：0 findings。
 - `python scripts/module_budget.py`：dX 交付时 1513 files；训练步分支 1527 files，debt=0。
 - `python tools/checks.py -Only C081`：PASS；C082 随训练步 PR 一起跑。
-- PR CI：本 head `156e487f` 的结果待本轮推送后确认；上一 head `f55bfc11` 为 **32 pass / 2 skipping / 0 fail**（macOS、Ubuntu、Windows 三端测试全过）。
+- PR CI：head `27e773a1` 为 **32 pass / 2 skipping / 0 fail**（macOS、Ubuntu、Windows 三端测试全过；MSRV 1.89 与 wasm32 也过）。
 
 ## 3. 页面结构（按人类面板顺序）
 
