@@ -1583,6 +1583,24 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C085",
+      "title": "trit-train SGD 训练步复用前向 qdot",
+      "kind": "cmd",
+      "covers": [
+        "L175"
+      ],
+      "scope": [
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T23:33:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

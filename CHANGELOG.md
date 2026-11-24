@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed（第二十三轮：SGD 训练步复用 `qdot`）
+
+- `train_step` 现在只算一次 `planes.row_dot(r, x)`：前向把原始 `q·x` 留在
+  `qdot`，`y[r] = scale[r] * qdot[r]`；`dW` 更新后，scale 梯度直接用
+  `dy[r] * qdot[r]`，不再为 4096 行重扫一遍双导轨。`train_step_with_grad`
+  仍是单次 `row_dot`，没有重复计算可省。
+- 读数（4096×576，单线程，3 步/轮，25 轮取最快）：`train_step`
+  **1.2–1.3 ms/step（22–24×；上一轮 1.5–1.6）**，`pack()` 仍 **0.47–0.49 ms**；
+  Adam 行级融合 **2.9–3.1 ms/step（2.6–2.8×，逐元素 8.0–8.2 ms）**。
+- `cargo test -p trit-train` 保持 **31/31**；`layer.rs` 仍是 576 行上限，
+  没有新增模块或测试文件。缺陷台账新增 L175/C085。
+- 边界：这是 SGD `train_step` 的收益；Adam 路径没有前向，不存在同一份
+  `qdot` 可复用。
+
 ### Changed（第二十二轮：惰性 `q` 缓存）
 
 - `PlaneMatrix` 的 `q` 从每步全量写回的 `Vec<i8>` 改成 `OnceLock<Vec<i8>>`：

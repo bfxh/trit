@@ -70,9 +70,9 @@ planes，并把 latent 的 STE 门、一阶/二阶矩和参数更新交给 `laye
 1. `PlaneMatrix::from_latent(latent, scale, rows, cols)`：AVX2 每 8 列做一次除法、
    round、clamp，用 `movemask` 直接写 `pos`/`neg` 字节；训练步不展开 `q`，`q()`
    首次调用时才从双导轨解码并缓存到 `OnceLock`；
-2. `forward_with_planes`：每行 `scale[r] * planes.row_dot(r, x)`；
+2. `train_step` 前向：每行 `row_dot` 只算一次并留在 `qdot`，`y[r] = scale[r] * qdot[r]`；
 3. `dense::sgd_update`：整层 `dW` 融合外积更新，按 8 lane 计算 STE 门控；
-4. scale 梯度用同一份 planes 的 `row_dot`，不再重算点积。
+4. scale 梯度直接用前向留下的 `qdot`，不再重算点积。
 
 `forward_scalar` / `train_step_scalar` 保留为标量对拍与基准路径。
 
@@ -115,7 +115,7 @@ Adam 路径，既做对拍也做基准。
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
 | 标量参考（`train_step_scalar`） | 28.8–29.1 | 1.00× |
-| 位平面步（`train_step`） | 1.5–1.6 | **18–19.5×** |
+| 位平面步（`train_step`） | 1.2–1.3 | **22–24×** |
 | 其中 `pack()`（只出双导轨） | 0.47–0.49 | — |
 
 同一个 `PlaneMatrix` 的 `q()` 首次调用才从导轨解码并缓存；训练步不读 `q`，
@@ -123,12 +123,12 @@ Adam 路径，既做对拍也做基准。
 同一轮 `dX` 读数在 8.0–9.5 GMAC/s；训练步是端到端口径，含打包、前向、`dW`
 和 scale 更新，不含层构造/输入生成。偶发的 2.0 ms 以上是热降频单次，不当作稳定值。
 
-Adam 训练步（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`）：
+Adam 训练步（4096×576，单线程，3 步/轮，25 轮取最快，含 `pack`）：
 
 | 路径 | ms/step | 相对 |
 |---|---:|---:|
 | 逐元素参考（`train_step_with_grad_adam_scalar`） | 8.0–8.2 | 1.00× |
-| 行级融合（`train_step_with_grad_adam`） | 2.7–2.9 | **2.8–3.0×** |
+| 行级融合（`train_step_with_grad_adam`） | 2.9–3.1 | **2.6–2.8×** |
 
 两条路径用同一条基准复算：融合是默认输出，参考路径加 `--adam-scalar`。
 

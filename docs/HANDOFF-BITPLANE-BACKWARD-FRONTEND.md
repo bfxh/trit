@@ -4,9 +4,10 @@
 > 第二十轮训练步已并入 main（`9d1f0cc6`，#666；读数区间修正 `365a39d5`，#667）：`forward`
 > 改位平面 `row_dot`、SGD `dW` 走 `dense::sgd_update`、`pack()` 改 `from_latent`。第二十一轮
 > 把 Adam 的 latent 更新也做成行级融合（`layer::adam_update`）；第二十二轮把 `q` 改为
-> 惰性缓存，训练步不再写 2.36 M 个 `i8`。当前训练步读数
-> **1.5–1.6 ms/step（18–19.5×）**，`pack()` **0.47–0.49 ms**，Adam **2.7–2.9 ms/step
-> （2.8–3.0×，逐元素参考 8.0–8.2 ms）**，测试 31（含惰性 `q` 缓存回归）。该读数属于“训练步”区块，
+> 惰性缓存，训练步不再写 2.36 M 个 `i8`；第二十三轮让 SGD `train_step` 复用前向的
+> `qdot`，不再重扫第二遍双导轨。当前训练步读数
+> **1.2–1.3 ms/step（22–24×）**，`pack()` **0.47–0.49 ms**，Adam **2.9–3.1 ms/step
+> （2.6–2.8×，逐元素参考 8.0–8.2 ms）**，测试 31（含惰性 `q` 缓存回归）。该读数属于“训练步”区块，
 > **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
 >
 > 本文的“前端”按 [`reference/ATLAS.md`](reference/ATLAS.md) 的定义：**浏览器 playground / WASM 面**，
@@ -22,7 +23,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、31/31、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、31/31、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -49,8 +50,9 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
    把 `coeff = dy[r] * scale[r]` 加/减到 f32 的 `dX` lane 上。
 2. **dX 读数只覆盖 `dX`；同分支训练步另有优化。**
    第二十轮把 `train_step` 改成 `pack()` 一次 → 位平面前向 → 融合 `dW` →
-   `row_dot` 更新 scale；第二十一轮把 Adam 的 latent 更新也做成行级融合。
-   训练步 18–19.5×、Adam 2.8–3.0×，与 dX 的倍数不能互相替代。
+   `row_dot` 更新 scale；第二十一轮把 Adam 的 latent 更新也做成行级融合；
+   第二十二轮把 `q` 改成惰性缓存；第二十三轮让 SGD `train_step` 复用前向的 `qdot`。
+   训练步 22–24×、Adam 2.6–2.8×，与 dX 的倍数不能互相替代。
 3. **读数只代表内核本身。**
    4096×576、单线程、7 轮取最快：标量 `0.24` → 双导轨 `9.44` GMAC/s，
    **39.25×**。这个数**不含** `pack()` 的量化成本，也不等于训练步加速。
@@ -69,18 +71,18 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 | 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（#666；本轮加 Adam 输出） | 读 §8 的复现口径 |
 | 人类说明 | `crates/trit-train/README.md` | 已合并（#666；本轮更新） | 可直接摘写 |
 | 缺陷台账 | `docs/ERRORS.md` L171 / L172 / L173 / L174 | L171/#664、L172/#666 已合并；L173/L174 本轮 | 只读结论与读数 |
-| 回归门 | `.agent/checks/registry.json` C081/C082/C083/C084 | C081/#664、C082/#666 已合并；C083/C084 本轮 | 只读命令 |
+| 回归门 | `.agent/checks/registry.json` C081/C082/C083/C084/C085 | C081/#664、C082/#666 已合并；C083–C085 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
 | PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`797ad121`、`d55bbbd3` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
 
-**验证读数（dX 同一提交 / 第二十一轮训练步）**
+**验证读数（dX 同一提交 / 第二十三轮训练步）**
 
 - `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步、Adam、整步对拍与惰性 `q` **31 passed / 0 failed**。
 - `cargo clippy -p trit-train --all-targets -- -D warnings`：通过。
 - `python scripts/hazard_gate.py`：0 findings。
-- `python scripts/module_budget.py`：dX 交付时 1513 files；训练步分支 1519 files，debt=0。
+- `python scripts/module_budget.py`：dX 交付时 1513 files；训练步分支 1527 files，debt=0。
 - `python tools/checks.py -Only C081`：PASS；C082 随训练步 PR 一起跑。
-- PR CI：**32 pass / 2 skipping / 0 fail**（macOS、Ubuntu、Windows 三端测试全过）。
+- PR CI：本 head `156e487f` 的结果待本轮推送后确认；上一 head `f55bfc11` 为 **32 pass / 2 skipping / 0 fail**（macOS、Ubuntu、Windows 三端测试全过）。
 
 ## 3. 页面结构（按人类面板顺序）
 
@@ -148,23 +150,24 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
   AVX2 加减链，所以差距被放大。
 - **噪声**：复跑在 `8.0–9.5 GMAC/s` / `33–41×` 之间；页面必须给区间，不能只报峰值。
 
-### 3.4b 第二十一、二十二轮补充：训练步（可选区块）
+### 3.4b 第二十一至二十三轮补充：训练步（可选区块）
 
 如果页面要覆盖“训练步”，**必须单独一块**，不能并进 dX 柱状图：
 
 - 路径：`train_step_scalar`（逐行量化 + 标量点积 + 逐元素 STE）对 `train_step`
-  （`pack()` 一次 + `PlaneMatrix::row_dot` 前向 + `dense::sgd_update` 融合 `dW` +
-  `row_dot` 更新 scale）；Adam 区块用 `train_step_with_grad_adam_scalar` 对
+  （`pack()` 一次 + `PlaneMatrix::row_dot` 前向 + `qdot` 复用 + `dense::sgd_update`
+  融合 `dW`）；Adam 区块用 `train_step_with_grad_adam_scalar` 对
   `train_step_with_grad_adam`（`pack()` 一次 + `dX` + `layer::adam_update` 融合 `dW`）。
-- 读数（4096×576，单线程，3 步/轮，9 轮取最快，含 `pack`）：SGD 标量
-  **28.8–29.1 ms/step**，位平面步 **1.5–1.6 ms/step（18–19.5×）**，其中 `pack()`
+- 读数（4096×576，单线程，3 步/轮，25 轮取最快，含 `pack`）：SGD 标量
+  **28.8–29.1 ms/step**，位平面步 **1.2–1.3 ms/step（22–24×）**，其中 `pack()`
   **0.47–0.49 ms/step**（只出双导轨，不含 `q()` 首次解码）；Adam 逐元素参考
-  **8.0–8.2 ms/step**，融合 **2.7–2.9 ms/step（2.8–3.0×）**。
-- 边界：这是单层单样本的端到端口径，不含层构造/输入生成；Adam 只融合 latent 的
-  逐元素更新，`pack()` 仍是每步一次全量量化，但只写双导轨，`q` 改为首次 `q()` 解码。
+  **8.0–8.2 ms/step**，融合 **2.9–3.1 ms/step（2.6–2.8×）**。
+- 边界：这是单层单样本的端到端口径，不含层构造/输入生成；SGD `train_step`
+  复用前向的 `qdot`，Adam 路径没有前向，不存在同一份 `qdot`；`pack()` 仍是每步
+  一次全量量化，但只写双导轨，`q` 改为首次 `q()` 解码。
   页面若显示 `q` 内存，必须按“首次访问后才分配”解释。
-- 证据：`docs/ERRORS.md` L172/L173/L174、`.agent/checks/registry.json`
-  C082/C083/C084、`cargo test -p trit-train` 31/31。
+- 证据：`docs/ERRORS.md` L172/L173/L174/L175、`.agent/checks/registry.json`
+  C082/C083/C084/C085、`cargo test -p trit-train` 31/31。
 
 ### 3.5 第五屏：录像
 
@@ -339,7 +342,7 @@ q (i8)  +  pos/neg (u64 双导轨)
 
 ```text
 本页已加速：dX = Wᵀdy
-训练步（第二十一轮，单独区块）：forward 走 row_dot、SGD dW 走 dense::sgd_update、Adam dW 走 layer::adam_update、pack() 走 from_latent
+训练步（第二十三轮，单独区块）：forward 走 row_dot、SGD train_step 复用 qdot、dW 走 dense::sgd_update、Adam dW 走 layer::adam_update、pack() 走 from_latent、q 惰性解码
 平台：原生 x86_64 AVX2；非 x86_64 或 cols < 8 自动回退标量
 未证明：端到端多形状吞吐、GPU/WASM 读数、多形状 Adam 曲线；pack() 仍每步全量量化
 ```
@@ -380,9 +383,9 @@ cargo clippy -p trit-train --all-targets -- -D warnings
 cargo run -p trit-train --release --bin train-bench -- \
   --mtrits 1 --rounds 7 --rows 4096 --cols 576 --threads 1 --ste-steps 1
 
-# 4. 训练步读数（第二十一轮）
+# 4. 训练步读数（第二十三轮）
 cargo run -p trit-train --release --bin train-bench -- \
-  --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 9 --ste-steps 1 --train-steps 3
+  --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 25 --ste-steps 1 --train-steps 3
 
 # 5. 门禁
 python scripts/hazard_gate.py
