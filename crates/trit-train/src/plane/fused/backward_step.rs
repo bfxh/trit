@@ -152,9 +152,9 @@ mod simd {
                     }
                     Ste::Soft => {
                         let sq = _mm256_mul_ps(ratio, ratio);
-                        let g = _mm256_max_ps(_mm256_setzero_ps(), _mm256_sub_ps(one, sq));
-                        let ordered = _mm256_cmp_ps(ratio, ratio, _CMP_ORD_Q);
-                        _mm256_and_ps(_mm256_mul_ps(base_grad, g), ordered)
+                        // NaN 时 Intel max 返回第二个操作数 0，与标量 f32::max 一致。
+                        let g = _mm256_max_ps(_mm256_sub_ps(one, sq), _mm256_setzero_ps());
+                        _mm256_mul_ps(base_grad, g)
                     }
                 };
                 let next = _mm256_sub_ps(wv, _mm256_mul_ps(lrv, grad));

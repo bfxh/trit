@@ -103,10 +103,10 @@ mod simd {
                 }
                 Ste::Soft => {
                     let sq = _mm256_mul_ps(ratio, ratio);
-                    let g = _mm256_max_ps(zero, _mm256_sub_ps(one, sq));
-                    // Rust 的 f32::max 把 NaN 折叠成 0；SIMD max 不保证，显式清掉 NaN。
-                    let ordered = _mm256_cmp_ps(ratio, ratio, _CMP_ORD_Q);
-                    _mm256_and_ps(_mm256_mul_ps(base_grad, g), ordered)
+                    // 交换 max 的操作数：NaN 时 Intel max 返回第二个操作数 0，
+                    // 与标量 `(1 - NaN).max(0.0)` 一致，省掉 ordered 掩码。
+                    let g = _mm256_max_ps(_mm256_sub_ps(one, sq), zero);
+                    _mm256_mul_ps(base_grad, g)
                 }
             };
             let next = _mm256_sub_ps(w, _mm256_mul_ps(lrv, grad));
