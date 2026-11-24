@@ -1,4 +1,4 @@
-//! `TernaryLinear` 的 Adam 训练步：复用一份 planes 的 `dX`/scale，`dW` 走融合更新。
+//! `TernaryLinear` 的 Adam 训练步：量化 + `dX`/`qdot` 单遍，`dW` 走融合更新。
 //!
 //! 放在独立模块里，避免 `layer.rs` 热路径被挤动；SIMD 只在 x86_64 + AVX2 + 列数 ≥ 8 时启用，尾部与短行走标量。
 
@@ -22,9 +22,7 @@ impl TernaryLinear {
         assert_eq!(scale_opt.len(), self.rows, "scale 优化器大小");
         latent_opt.begin();
         scale_opt.begin();
-        let planes = self.pack();
-        let mut input_grad = vec![0.0f32; self.cols];
-        planes.input_grad(output_grad, &self.scale, &mut input_grad);
+        let (input_grad, qdot) = self.fused_backward(input, output_grad);
         adam_update(
             &mut self.latent,
             input,
@@ -36,7 +34,7 @@ impl TernaryLinear {
             latent_opt,
         );
         for (r, &dy_r) in output_grad.iter().enumerate() {
-            let grad_scale = dy_r * planes.row_dot(r, input);
+            let grad_scale = dy_r * qdot[r];
             self.scale[r] = scale_opt.apply(r, grad_scale, self.scale[r]).max(1e-4);
         }
         input_grad

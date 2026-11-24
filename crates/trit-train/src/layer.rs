@@ -8,6 +8,7 @@ use crate::plane::PlaneMatrix;
 use crate::quant::{Ste, quantize_with_scale};
 
 mod adam;
+mod grad;
 #[cfg(test)]
 mod packed_tests;
 mod scalar;
@@ -156,8 +157,8 @@ impl TernaryLinear {
 
     /// 把当前 latent 量化一次，打成双导轨位平面。
     ///
-    /// 前向、`dX` 与 scale 梯度共用这份位平面；`from_latent` 一步完成量化与
-    /// 打包，不再为每行分配临时 `q`。
+    /// 训练/前向热路径已改用 `plane::fused` 单遍；这里保留为公开的位平面
+    /// 检查与对拍入口，`from_latent` 一步完成量化与打包，不再逐行分配 `q`。
     pub fn pack(&self) -> PlaneMatrix {
         PlaneMatrix::from_latent(&self.latent, &self.scale, self.rows, self.cols)
     }
@@ -198,63 +199,16 @@ impl TernaryLinear {
         loss
     }
 
-    /// 用输出梯度更新一层，并返回输入梯度（供上一层反向）。
-    ///
-    /// `output_grad[r] = ∂L/∂y[r]`；内部按 STE 更新 latent/scale，返回
-    /// `∂L/∂x[c] = Σ_r output_grad[r] · scale[r] · q[r,c]`（用更新前的三值权重）。
-    /// `dX` 与 scale 梯度都走一次打包后的双导轨位平面，标量路径保留在
-    /// [`crate::plane::PlaneMatrix::input_grad_scalar`] 供对拍。
-    pub fn train_step_with_grad(&mut self, input: &[f32], output_grad: &[f32]) -> Vec<f32> {
-        assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
-        assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
-        let planes = self.pack();
-        let mut input_grad = vec![0.0f32; self.cols];
-        planes.input_grad(output_grad, &self.scale, &mut input_grad);
-        let (lr, ste, cols) = (self.lr, self.ste, self.cols);
-        crate::dense::sgd_update(
-            &mut self.latent,
-            input,
-            self.rows,
-            cols,
-            output_grad,
+    /// 量化 + `dX`/`qdot` 单遍；SGD 与 Adam 两条训练路径共用。
+    pub(super) fn fused_backward(&self, input: &[f32], dy: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        crate::plane::fused::backward::backward(
+            &self.latent,
             &self.scale,
-            lr,
-            ste,
-        );
-        for (r, &dy_r) in output_grad.iter().enumerate() {
-            self.scale[r] = (self.scale[r] - lr * dy_r * planes.row_dot(r, input)).max(1e-4);
-        }
-        input_grad
-    }
-
-    /// Adam 的逐元素参考路径：用于对拍与基准；融合路径见
-    /// [`TernaryLinear::train_step_with_grad_adam`]。
-    pub fn train_step_with_grad_adam_scalar(
-        &mut self,
-        input: &[f32],
-        output_grad: &[f32],
-        latent_opt: &mut Adam,
-        scale_opt: &mut Adam,
-    ) -> Vec<f32> {
-        latent_opt.begin();
-        scale_opt.begin();
-        let planes = self.pack();
-        let (ste, cols) = (self.ste, self.cols);
-        let mut input_grad = vec![0.0f32; self.cols];
-        planes.input_grad(output_grad, &self.scale, &mut input_grad);
-        for (r, &dy_r) in output_grad.iter().enumerate() {
-            let scale = self.scale[r];
-            let grad_scale = dy_r * planes.row_dot(r, input);
-            self.scale[r] = scale_opt.apply(r, grad_scale, scale).max(1e-4);
-            let base = r * cols;
-            for (c, &xc) in input.iter().enumerate() {
-                let grad_q = dy_r * scale * xc;
-                let idx = base + c;
-                let grad = ste.backward(self.latent[idx], scale, grad_q);
-                self.latent[idx] = latent_opt.apply(idx, grad, self.latent[idx]);
-            }
-        }
-        input_grad
+            self.rows,
+            self.cols,
+            input,
+            dy,
+        )
     }
 }
 

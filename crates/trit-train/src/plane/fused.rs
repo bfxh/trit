@@ -1,9 +1,9 @@
-//! 量化点积融合：SGD `train_step` 只消费 `q·x`，不需要双导轨。
-//!
-//! 每 8 列直接做 `clamp(round(w / scale), -1, 1)`，用符号掩码乘 `x` 并累加；
-//! 与 `pack()` + `row_dot` 的量化、累加分组和 `hsum` 顺序一致，输出逐位相同。
+//! 量化点积融合：训练/前向只消费 `q·x` 与 `q·dy`，不需要双导轨；每 8 列直接做
+//! `clamp(round(w/scale),-1,1)`，掩码同时驱动点积与 `dX`，累加分组同 `row_dot`。
 #[cfg(target_arch = "x86_64")]
 use super::backward::has_avx2;
+
+pub mod backward;
 
 /// 逐行返回 `Σ_c q[r,c] * x[c]`，其中 `q = clamp(round(w / scale), -1, 1)`。
 #[inline]

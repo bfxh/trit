@@ -42,6 +42,6 @@ pub(super) fn bench_adam_step(rows: usize, cols: usize, steps: usize, rounds: us
     } else {
         "融合 dW"
     };
-    println!("\nAdam 训练步：{rows}×{cols}（{steps} 步/轮，{rounds} 轮取最快，含 pack）");
+    println!("\nAdam 训练步：{rows}×{cols}（{steps} 步/轮，{rounds} 轮取最快；量化单遍）");
     println!("{:<14} {:>10}", name, format!("{ms:.2} ms/step"));
 }
