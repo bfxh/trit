@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（第四十二轮：direct 直算加常量折叠）
+
+- `direct/fold.rs`：TTIR 线性 IR 的常量折叠 + 常量传播。操作数全是常量的节点直接按
+  `Algebra` 现算成 `Op::Const`，后续引用它的节点继续折；`Xor2` 走
+  `GateKind::XorClassic.eval`，不借用 `strong_add` 的表。
+- 只折「有常量就现算」，不手写 `x & 0 = 0` 这类跨代数恒等式：规则要成立得逐代数再证，
+  当前不做。折叠后仍用 `prune_dead` 统一收孤儿，根恒为最后一条，渲染器不改。
+- 判据：全常量树（`((1 & X) | !0) <=> (X => 0)`）在 K3/Ł3/B3 下都塌成 **一条 `Const`**，
+  生成物只有一条语句且不注册 `T_NOT` / `T_AND` 等算子表；混合树折叠前后对 3^n 全赋值
+  与 `trit_eval` 一致；`Xor2` 的 3×3 常量表逐格与 `GateKind::XorClassic` 一致。
+- 读数：同一 3 输入 Verilog 网表（`assign z = 1'b1 & 1'b0`）**16→14 条语句、
+  1331→1267 B**（K3）；12 变量 `direct --verify-c` 折叠前后 `direct.c` 同为 1418 B，
+  531,441/531,441 行通过，墙钟 0.42→0.41 s、RSS 46172→46124 KB（变量表达式不产常量节点）。
+- `BUILD_VERSION` 7 → 8：`direct.c` 的语句数会变，旧缓存失效。
+- 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算架构行、实测行与边界。
+
+诚实边界：折叠只减少常量节点，不做代数恒等式化简、不重排算子；Verilog 侧同样只覆盖
+组合子集与单一选中输出。
+
 ### Added（第四十一轮：direct 后端支持 Verilog 网表）
 
 - `direct.c` 不再只接 `.tri` 表达式：`.v` 组合网表也能 `--backend direct|both`。

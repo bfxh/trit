@@ -190,5 +190,29 @@
   "new": "                self.push(Op::Xor(left, right))",
   "pkg": "trit-build",
   "filter": "direct::netlist::tests::verilog_xor_becomes_classic_xor2"
+ },
+ {
+  "name": "fold: 常量节点不参与折叠",
+  "file": "crates/trit-build/src/direct/fold.rs",
+  "old": "            Op::Const(value) => Some(value),",
+  "new": "            Op::Const(_) => None,",
+  "pkg": "trit-build",
+  "filter": "direct::fold::tests::all_constant_tree_collapses_to_one_const"
+ },
+ {
+  "name": "fold: Xor2 借用 Ł3 异或",
+  "file": "crates/trit-build/src/direct/fold.rs",
+  "old": "                .map(|(a, b)| GateKind::XorClassic.eval(&[a, b], alg)),",
+  "new": "                .map(|(a, b)| alg.strong_add(a, b)),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::tests::classic_xor2_constants_fold_like_the_gate_table"
+ },
+ {
+  "name": "fold: 折叠后不按根收孤儿",
+  "file": "crates/trit-build/src/direct/fold.rs",
+  "old": "    prune_dead(kept, root)",
+  "new": "    prune_dead(kept, 0)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::tests::all_constant_tree_collapses_to_one_const"
  }
 ]

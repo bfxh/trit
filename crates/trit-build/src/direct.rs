@@ -15,12 +15,12 @@
 
 use anyhow::Result;
 use trit_circuit::{Circuit, GateKind};
-use trit_core::value::Ternary;
-use trit_core::{Algebra, Expr};
+use trit_core::{Algebra, Expr, value::Ternary};
 
 /// 三值枚举顺序 = C 侧 `-1/0/1` 的顺序，也是表的下标顺序。
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
 
+mod fold;
 mod ir;
 mod lower;
 mod netlist;
@@ -68,7 +68,7 @@ fn gate_table(alg: Algebra, kind: GateKind) -> [i8; 9] {
 
 /// 表达式 → `direct.c` 全文。
 pub(crate) fn emit(expr: &Expr, vars: &[String], alg: Algebra) -> Result<String> {
-    let ops = lower(expr, vars)?;
+    let ops = fold::fold(lower(expr, vars)?, alg);
     Ok(render(&ops, vars, alg))
 }
 
@@ -79,7 +79,7 @@ pub(crate) fn emit_netlist(
     vars: &[String],
     alg: Algebra,
 ) -> Result<String> {
-    let ops = netlist::lower(circuit, output, vars)?;
+    let ops = fold::fold(netlist::lower(circuit, output, vars)?, alg);
     Ok(render(&ops, vars, alg))
 }
 
