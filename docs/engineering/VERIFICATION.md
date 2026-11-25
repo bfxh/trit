@@ -37,6 +37,7 @@ K3:  trit-core::value::Ternary        ≡  k3_impl.rs  （scripts/check_k3_impl.
 B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （3×3）
 B4:  trit-belnap::B4                  ≡  b4.rs       （4×4）
 BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + Verus 逐位证明 + 8×8×64 对拍）
+BULK: trit-core::bulk::TriVec          ≡  bulk.rs     （spec/exec + Verus 整向量证明 + tests/bridge_bulk.rs）
 每行：执行版 ≡ spec（Verus ensures）
 ```
 
@@ -94,12 +95,14 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 - B3：毒值吸收、`∧/∨` 交换、De Morgan、`U⇒U=U`；
 - B4：双轨往返、否定对合、De Morgan、结合/分配/吸收、`xor=¬equiv`、
   consensus/gullibility 交换、conflation 对合与知识序 De Morgan；
-- 位平面 `TriBit`：`not`/`and`/`or` 的 Verus 逐位等价（`bits/proofs.rs`，120 verified）
-  与 8×8×64 对拍。
+- 位平面 `TriBit`：`not`/`and`/`or` 的 Verus 逐位等价（`bits/proofs.rs`）；
+- 位切片向量 `TriVec`：`not`/`and`/`or`（K3·Ł3 格序与 B3 毒值）的整向量等价
+  （`bulk/proofs.rs`，累计 152 verified）与 `tests/bridge_bulk.rs` 对拍。
 
 未验证（明确缺口）：
 
-- `bulk`（`TriVec`）/ SIMD 路径与标量路径等价；
+- SIMD 路径与标量路径等价；
+- `TriVec` 的 `set`/`get`/构造器等单点操作（本轮只覆盖批量运算）；
 - 并发、`unsafe`、内存模型；
 - Verus 自身、z3 模型、Rust 编译器的可信基。
 

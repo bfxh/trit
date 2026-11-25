@@ -15,6 +15,7 @@ K3:  trit-core::value::Ternary        ≡  k3_impl.rs  （scripts/check_k3_impl.
 B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （tests/bridge_algebra.rs，3×3）
 B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.rs，4×4）
 BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + Verus 逐位证明 + 8×8×64 对拍）
+BULK: trit-core::bulk::TriVec          ≡  bulk.rs     （spec/exec + Verus 整向量证明 + tests/bridge_bulk.rs）
 每行：执行版 ≡ spec（src/*.rs 的 Verus ensures）
 ```
 
@@ -33,6 +34,12 @@ BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + Verus 逐
 - `src/bits.rs`：位平面 `TriBit` 的 spec/exec（`not` / `and` / `or`），与主库位平面公式一致；
 - `src/bits/proofs.rs`：位级参数化 lemma 与 `not` / `and` / `or` 的逐位等价证明。
 - `tests/bridge_bits.rs`：8 组边界平面 × 64 位 × 3 种代数，逐位对拍 `TriBit` 与标量 `Ternary`。
+- `src/bulk.rs`：位切片向量 `TriVec` 的 spec/exec（`not` / `and` / `or` 的 K3·Ł3 格序与 B3 毒值），
+  引入结构不变式 `wf`（两个平面在 `len` 位内互斥）；
+- `src/bulk/proofs.rs`：整向量等价证明——结果视图逐位等于标量 `knot` / `tand` / `tor` /
+  `poison_and` / `poison_or`，复用 `TriBit` 的逐位 lemma；
+- `tests/bridge_bulk.rs`：边界长度（0/1/63/64/65/130）× 三种代数，对拍主库 `tri_core::TriVec`
+  与标量 `Ternary`，并覆盖 padding 掩码与二值/未知混合。
 
 ## 本地运行
 
@@ -54,18 +61,22 @@ python scripts/verify.py --json             # 机器可读报告
 
 ## 范围与限制
 
-已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 120 verified）：
+已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 152 verified）：
 
 - K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射；
 - Ł3：格序 `∧/∨`、强加/强合交换、`U⊕U=T`、`U⊗U=F`、`U⇒U=T`、De Morgan、等价自反；
 - B3：毒值吸收（任一 `U` → `U`）、`∧/∨` 交换、De Morgan、`U⇒U=U`；
 - B4：双轨往返、否定对合、De Morgan、结合/分配/吸收、`xor=¬equiv`、
   consensus/gullibility 交换、conflation 对合与知识序 De Morgan；
-- 位平面 `TriBit`：`not` / `and` / `or` 的 Verus 逐位等价（8×8×64 对拍保留为回归）。
+- 位平面 `TriBit`：`not` / `and` / `or` 的 Verus 逐位等价（8×8×64 对拍保留为回归）；
+- 位切片向量 `TriVec`：`not` / `and` / `or`（K3·Ł3 格序 + B3 毒值）的整向量等价，
+  即 `view(len, out_planes, unknowns) == Seq::new(len, |i| scalar_op(a[i], b[i]))`。
 
 **未验证**（明确缺口，不当作已完成）：
 
-- `bulk`（`TriVec`）与标量实现的等价；
+- `TriVec` 的 `set` / `get` / `from_ternary` 等单点操作与构造器（本轮只覆盖批量运算）；
+- 批量运算的 padding 掩码：`bulk.rs` 的 exec 省略了 `len` 之外的掩码写入（`view` 不读 padding），
+  padding 清零由 `tests/bridge_bulk.rs` 对拍主库覆盖；
 - 任何并发或 `unsafe` 代码；
 - Verus 本身的可靠性、z3 模型与 Rust 编译器的可信基。
 

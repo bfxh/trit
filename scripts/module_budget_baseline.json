@@ -6355,6 +6355,14 @@
       "lines": 226
     },
     {
+      "file": "verus/src/bulk.rs",
+      "lines": 582
+    },
+    {
+      "file": "verus/src/bulk/proofs.rs",
+      "lines": 402
+    },
+    {
       "file": "verus/src/k3.rs",
       "lines": 257
     },
@@ -6385,6 +6393,10 @@
     {
       "file": "verus/tests/bridge_bits.rs",
       "lines": 87
+    },
+    {
+      "file": "verus/tests/bridge_bulk.rs",
+      "lines": 106
     },
     {
       "file": "verus/tests/common/mod.rs",
