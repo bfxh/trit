@@ -2724,7 +2724,11 @@
     },
     {
       "file": "crates/trit-ops/src/simd.rs",
-      "lines": 506
+      "lines": 394
+    },
+    {
+      "file": "crates/trit-ops/src/simd/tests.rs",
+      "lines": 144
     },
     {
       "file": "crates/trit-ops/src/trit.rs",

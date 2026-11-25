@@ -147,3 +147,19 @@ padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆
 4. **M4**：统一入口 `trit-verify`：Verus / Kani / Creusot / 属性测试共用一套
    报告与门禁。
 5. **M5**（远期）：面向三值/位平面领域更强的验证器（当前不启动）。
+
+## 7. SIMD：口径拆分
+
+“SIMD 路径与标量路径等价”不是一个命题，而是三层，能证的程度不同：
+
+| 层 | 位置 | 可证性 | 手段 |
+|---|---|---|---|
+| 寄存器内位并行（SWAR） | `trit-core/src/bulk.rs`、`bits.rs` 的 `u64` 平面 | **可证**，且已证 | Verus 整向量/逐位等价 + `tests/bridge_bits/bulk.rs` |
+| 查表/掩码整数核 | `crates/trit-ops/src/simd.rs` 的 `MASK_LUT`、`pack` 路径 | **可证**（整数语义），尚未形式化 | 现为差分覆盖：`mask2_matches_single_bitwise` 等；后续可把 LUT 构造搬进 Verus |
+| 浮点 AVX2 内核 | `trit-ops/src/simd.rs` 的 `row_dot_mask`、FMA 路径 | **不可用 Verus/Lean 证**：无 IEEE-754 模型、FMA 舍入不可交换 | Kani（位精确浮点）+ 差分测试；`x=1.0` 子集已做掩码空间穷举 `mask_kernel_exhaustive_bytes`（3^8 组互斥字节，位精确） |
+
+结论：能把“SIMD = 标量”证成定理的是第一层；第二层原理上可证但尚未
+形式化；第三层（浮点内核）即使输入取 `±1` 做了全掩码穷举，也只是**差分
+证据**，不是定理，仍应走 Kani 或容差差分。`trit-simd` 的 popcount 派发
+（AVX512/POPCNT/NEON/Scalar）属于“同一整数结果、不同速度”，
+可用 `popcount` 的位级定义 + 后端间差分覆盖。
