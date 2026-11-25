@@ -7,18 +7,20 @@
 //!
 //! 这条路径只消费双导轨位平面，所以和 [`super::Planes`] 的 ALU 边界一致：
 //! 它加速的是「按位选符号 + f32 累加」，不是三进制进位加法。
+use std::sync::OnceLock;
+
 use super::TRITS_PER_WORD;
 
 /// 行主序的三值权重矩阵，同时保留双导轨位平面与展开后的 `q`。
 ///
 /// `q` 让调用方更新 latent/scale 时不用再从位平面逐位解包；位平面只服务
-/// 点积与反向的按字内核。`bytes()` 只算两条导轨，不含 `q` 缓存。
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// 点积与反向的按字内核。`q` 惰性生成，训练步不调用它就不付展开成本。
+#[derive(Clone, Debug)]
 pub struct PlaneMatrix {
     pub(super) rows: usize,
     pub(super) cols: usize,
     pub(super) bpr: usize,
-    pub(super) q: Vec<i8>,
+    pub(super) q: OnceLock<Vec<i8>>,
     pub(super) pos: Vec<u64>,
     pub(super) neg: Vec<u64>,
 }
@@ -42,11 +44,13 @@ impl PlaneMatrix {
                 }
             }
         }
+        let q_cell = OnceLock::new();
+        q_cell.set(q).unwrap();
         Self {
             rows,
             cols,
             bpr,
-            q,
+            q: q_cell,
             pos,
             neg,
         }
@@ -80,11 +84,6 @@ impl PlaneMatrix {
     /// 双导轨位平面的字节数（不含 `q` 缓存）。
     pub fn bytes(&self) -> usize {
         (self.pos.len() + self.neg.len()) * 8
-    }
-
-    /// 展开后的三值权重（行主序）。
-    pub fn q(&self) -> &[i8] {
-        &self.q
     }
 
     /// 单行点积 `Σ q[r,c] * x[c]`（标量参考）。
@@ -206,35 +205,34 @@ mod simd {
         _mm_cvtss_f32(s)
     }
 
-    /// 单行点积：每 8 个 trit 取一个字节的 `pos`/`neg` 掩码，8 个 lane 并行加减。
-    ///
-    /// # Safety
-    /// 需要 AVX2；`x.len() == cols`，`pos`/`neg` 是同一行的 `cols.div_ceil(64)` 个
-    /// 64 位字。
+    /// 单行点积：每 8 trit 取一个字节掩码，8 lane 并行加减；需 AVX2，`x.len()==cols`，`pos`/`neg` 每行 `cols.div_ceil(64)` 字。
+    #[rustfmt::skip]
     #[target_feature(enable = "avx2")]
     pub unsafe fn row_dot(pos: &[u64], neg: &[u64], x: &[f32], cols: usize) -> f32 {
         let full = cols / 8;
+        // 4 个固定累加器 + 内联单块闭包：避免 `acc[j & 3]` 的栈往返，累加顺序仍是 `j mod 4`。
         let mut acc = [_mm256_setzero_ps(); 4];
-        for j in 0..full {
-            let w = j / 8;
-            let k = j % 8;
-            let base = j * 8;
-            let pb = ((pos[w] >> (k * 8)) & 0xFF) as usize;
-            let nb = ((neg[w] >> (k * 8)) & 0xFF) as usize;
-            // SAFETY: base + 8 <= full * 8 <= cols。
+        let dot = |j: usize| -> __m256 {
+            let (w, k, base) = (j / 8, j % 8, j * 8);
+            let (pb, nb) = (((pos[w] >> (k * 8)) & 0xFF) as usize, ((neg[w] >> (k * 8)) & 0xFF) as usize);
             let xv = _mm256_loadu_ps(x.as_ptr().add(base));
-            let mp =
-                _mm256_castsi256_ps(_mm256_loadu_si256(MASK_LUT[pb].as_ptr() as *const __m256i));
-            let mn =
-                _mm256_castsi256_ps(_mm256_loadu_si256(MASK_LUT[nb].as_ptr() as *const __m256i));
-            let idx = j & 3;
-            acc[idx] = _mm256_add_ps(acc[idx], _mm256_and_ps(xv, mp));
-            acc[idx] = _mm256_sub_ps(acc[idx], _mm256_and_ps(xv, mn));
+            let mp = _mm256_castsi256_ps(_mm256_loadu_si256(MASK_LUT[pb].as_ptr() as *const __m256i));
+            let mn = _mm256_castsi256_ps(_mm256_loadu_si256(MASK_LUT[nb].as_ptr() as *const __m256i));
+            _mm256_sub_ps(_mm256_and_ps(xv, mp), _mm256_and_ps(xv, mn))
+        };
+        let mut j = 0;
+        while j + 4 <= full {
+            acc[0] = _mm256_add_ps(acc[0], dot(j));
+            acc[1] = _mm256_add_ps(acc[1], dot(j + 1));
+            acc[2] = _mm256_add_ps(acc[2], dot(j + 2));
+            acc[3] = _mm256_add_ps(acc[3], dot(j + 3));
+            j += 4;
         }
-        let mut sum = hsum(_mm256_add_ps(
-            _mm256_add_ps(acc[0], acc[1]),
-            _mm256_add_ps(acc[2], acc[3]),
-        ));
+        while j < full {
+            acc[0] = _mm256_add_ps(acc[0], dot(j));
+            j += 1;
+        }
+        let mut sum = hsum(_mm256_add_ps(_mm256_add_ps(acc[0], acc[1]), _mm256_add_ps(acc[2], acc[3])));
         for (c, &xc) in x.iter().enumerate().skip(full * 8) {
             let word = c / 64;
             let bit = 1u64 << (c % 64);

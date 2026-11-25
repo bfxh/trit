@@ -1,4 +1,4 @@
-//! 训练步基准：标量参考 vs 位平面前向/`dW` 融合更新。
+//! 训练步基准：标量参考 vs 量化点积融合 + `dW` 融合更新。
 
 use std::hint::black_box;
 use std::time::Instant;
@@ -9,7 +9,7 @@ use trit_train::quant::Ste;
 /// 单样本训练一步：标量参考 vs 位平面前向/scale 梯度，返回
 /// `(标量 ms/step, 位平面 ms/step, 加速比, pack ms/step)`。
 ///
-/// 计时含 `pack()`、前向、`dW` 更新与 scale 更新；不含层构造和输入生成。
+/// 计时含量化点积前向、`dW` 与 scale 更新；不含 `pack()`、层构造和输入生成。
 pub(super) fn bench_train_step(
     rows: usize,
     cols: usize,
@@ -63,7 +63,7 @@ pub(super) fn bench_train_step(
         let start = Instant::now();
         for _ in 0..steps.max(1) {
             let planes = plane.pack();
-            black_box((planes.q(), planes.bytes()));
+            black_box(planes);
         }
         best_pack = best_pack.min(start.elapsed().as_secs_f64());
         black_box((scalar.latent(), plane.latent()));
