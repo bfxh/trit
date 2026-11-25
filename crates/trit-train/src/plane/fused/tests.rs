@@ -1,6 +1,5 @@
 use super::forward_dot;
 use crate::plane::PlaneMatrix;
-
 fn sample(rows: usize, cols: usize, seed: u64) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let latent = (0..rows * cols)
         .map(|i| (((i as u64 + seed) * 0x9E37_79B9) as f32 * 0.000_013).sin() * 0.9)
@@ -40,3 +39,4 @@ fn matches_pack_then_row_dot() {
         }
     }
 }
+mod threshold;

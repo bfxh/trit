@@ -1,4 +1,4 @@
-//! Adam 步的 `q` 符号掩码：量化值只用于 `dX`/`qdot` 的符号，先做阈值比较，
+//! 融合内核的 `q` 符号掩码：量化值只用于 `q>0`/`q<0` 时，先做阈值比较，
 //! 只有落在阈值附近的 lane 才回退到原来的除法量化，保持逐位结果。
 #![allow(unsafe_op_in_unsafe_fn)]
 
@@ -12,7 +12,7 @@ use std::arch::x86_64::*;
 /// 需要 AVX2；`wv`/`sv` 是同一 8-lane 块。
 #[inline]
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn masks(
+pub(crate) unsafe fn masks(
     wv: __m256,
     sv: __m256,
     half_s: __m256,

@@ -1,4 +1,4 @@
-//! Adam `q` 符号掩码的逐位对拍，重点覆盖 `w/s` 的 ±0.5 边界。
+//! `q` 符号掩码的逐位对拍，重点覆盖 `w/s` 的 ±0.5 边界。
 
 fn around(v: f32, k: i32) -> f32 {
     f32::from_bits((v.to_bits() as i64 + k as i64) as u32)

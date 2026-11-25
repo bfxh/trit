@@ -112,7 +112,7 @@ fn adam_step_scalar(
 }
 
 #[cfg(target_arch = "x86_64")]
-mod q_sign;
+pub(crate) mod q_sign;
 #[cfg(target_arch = "x86_64")]
 mod simd {
     #![allow(unsafe_op_in_unsafe_fn)]

@@ -55,25 +55,16 @@ mod simd {
     #[target_feature(enable = "avx2")]
     pub(super) unsafe fn row(latent: &[f32], s: f32, x: &[f32], cols: usize) -> f32 {
         let full = cols / 8;
-        let sv = _mm256_set1_ps(s.max(f32::MIN_POSITIVE));
-        let sign = _mm256_set1_ps(-0.0);
-        let half = _mm256_set1_ps(0.5);
-        let one = _mm256_set1_ps(1.0);
-        let neg_one = _mm256_set1_ps(-1.0);
-        let zero = _mm256_setzero_si256();
+        let s = s.max(f32::MIN_POSITIVE);
+        let sv = _mm256_set1_ps(s);
+        let half_s = _mm256_set1_ps(0.5 * s);
+        let neg_half_s = _mm256_set1_ps(-0.5 * s);
+        let margin = _mm256_set1_ps((0.5 * s * (1.0 / 4096.0)).max(f32::MIN_POSITIVE));
         let mut acc = [_mm256_setzero_ps(); 4];
         let dot = |j: usize| -> __m256 {
             let wv = _mm256_loadu_ps(latent.as_ptr().add(j * 8));
-            let scaled = _mm256_div_ps(wv, sv);
-            let signed_half = _mm256_or_ps(_mm256_and_ps(scaled, sign), half);
-            let rounded = _mm256_round_ps::<{ _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC }>(
-                _mm256_add_ps(scaled, signed_half),
-            );
-            let clamped = _mm256_min_ps(one, _mm256_max_ps(neg_one, rounded));
-            let qi = _mm256_cvtps_epi32(clamped);
             let xv = _mm256_loadu_ps(x.as_ptr().add(j * 8));
-            let p = _mm256_castsi256_ps(_mm256_cmpgt_epi32(qi, zero));
-            let n = _mm256_castsi256_ps(_mm256_cmpgt_epi32(zero, qi));
+            let (p, n) = super::adam_step::q_sign::masks(wv, sv, half_s, neg_half_s, margin);
             _mm256_sub_ps(_mm256_and_ps(xv, p), _mm256_and_ps(xv, n))
         };
         let mut j = 0;

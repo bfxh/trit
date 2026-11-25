@@ -4972,7 +4972,7 @@
     },
     {
       "file": "crates/trit-train/src/plane/fused.rs",
-      "lines": 125
+      "lines": 116
     },
     {
       "file": "crates/trit-train/src/plane/fused/adam_step.rs",
@@ -5000,7 +5000,7 @@
     },
     {
       "file": "crates/trit-train/src/plane/fused/backward_step.rs",
-      "lines": 202
+      "lines": 192
     },
     {
       "file": "crates/trit-train/src/plane/fused/backward_step/tests.rs",
@@ -5025,6 +5025,10 @@
     {
       "file": "crates/trit-train/src/plane/fused/tests.rs",
       "lines": 42
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/tests/threshold.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-train/src/plane/pack.rs",
