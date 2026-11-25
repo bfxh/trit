@@ -356,6 +356,23 @@
     `data/wsp-classify-interpolate.tsv` / `wsp-classify-interpolate-svc.tsv`，
     正文见 `WSP-BUDGET-RESULTS.md` §11.21。
 
+34. **对角差值不是机制：train×test 交叉矩阵才能拆开“表示”和“正则化”**。
+    M1.21 看到 SST-2 L12 低剂量早饱和，最容易写成“int4 像噪声一样正则化
+    probe”。M1.22 固定每个 train λ 的 probe、评全部 test λ：SST-2 L12 的
+    `(0,1) f32→int4` 是 `−2.86pp`、`(1,0) int4→f32` 是 `−23.23pp`，
+    只有 `(1,1)` 是 `+4.00pp`；`(1/8,0)` 只有 `−0.50pp`、CI 跨 0。
+    **单边量化都掉点，训练侧低剂量也不正则化；SST-2 的正向只在 train/test
+    同时处于 int4 几何时成立，是匹配表示效应。** 同一矩阵里 CoLA L12
+    的 `(1,0)` 是 `+2.88pp`（CI 全正）、`(0,1)` 是 `−5.27pp`、对角只剩
+    `+1.15pp`（CI 跨 0）——CoLA 的小正向才是 train-only 正则化；hate L12
+    只有 `(0,1)` 的 `+1.87pp`、train 侧为负、对角仍负。同样一个
+    `int4−f32` 对角数字，在三个数据集上由三种不同的单边效应组成。
+    教训：**任何一个“A 比 B 好”的端点差值，先做 train×test 或
+    treatment×evaluation 的交叉表；如果两个单边各自为负、只有对角为正，
+    那是交互/匹配效应，不是任一单边的普遍属性。** 表见
+    `data/wsp-classify-cross.tsv` / `wsp-classify-cross-svc.tsv`，正文见
+    `WSP-BUDGET-RESULTS.md` §11.22。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter

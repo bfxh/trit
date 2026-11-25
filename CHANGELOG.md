@@ -1118,6 +1118,35 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.21、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.23、`LESSONS.md` 第 33 条。
 
+- **train×test 交叉迁移矩阵（M1.22）**：新增
+  `scripts/wsp_classify_cross.py`，每个 train λ 训一个线性 probe（C 在
+  train 内选），在全部 test λ 上评；λ=`0,1/8,1/4,1/2,1`，25 格，逐格对
+  `(0,0)` 做 10k paired bootstrap，同步记录 test `sep`。带 `--self-test`
+  和 2 条 mutation 锚点（忽略 test λ / 忽略 train λ）。
+  - SST-2 L12：`(0,1)` `−0.028556`（CI `[−0.049973,−0.007688]`）、
+    `(1,0)` `−0.232290`（CI `[−0.260297,−0.203734]`）、`(1,1)`
+    `+0.040088`（CI `[+0.020868,+0.058759]`）；`(1/8,0)` `−0.004942`、
+    CI 跨 0。单边量化都掉点，只有匹配剂量保留增益；不是 probe 正则化。
+    SVC 同向：`(0,1) −0.031851`、`(1,0) −0.110379`、`(1,1) +0.043783`。
+  - CoLA L12：`(1,0)` `+0.028763`（CI `[+0.008629,+0.049856]`）、
+    `(0,1)` `−0.052733`（CI `[−0.076702,−0.029722]`）、`(1,1)`
+    `+0.011505`（CI 跨 0）。SVC `(1,0) +0.028763`、`(0,1) −0.066155`、
+    `(1,1) +0.008629`（CI 跨 0）。CoLA 的小正向是 train-only 正则化，
+    不是测试表示。
+  - Hate L12：`(0,1)` `+0.018654`（CI `[+0.008413,+0.028895]`）、
+    `(1,0)` `−0.025238`（CI `[−0.034382,−0.016459]`）、`(1,1)`
+    `−0.003658`（CI 跨 0）。只有 test-only 局部正向，训练侧为负。
+  - SST-2 L6 同匹配模式，但对角 `+0.006590`、CI 跨 0；CoLA L6 / hate L6
+    没有正格子。
+  - **结论：三个数据集的“int4 正向”落在不同格子，只有 SST-2 L12 是
+    train/test 同时匹配才成立的表示效应；CoLA 是 train-only 正则化，
+    hate 是 test-only 小正向。`sep` 仍只是 SST-2 L12 对角的伴随读数。**
+    25 格共享 train fit，bootstrap 只重采样 test，不能当独立多重检验。
+  - 表：`wsp-classify-cross.tsv`（150 行：6 个数据集-深度 × 25 格）、
+    `wsp-classify-cross-svc.tsv`（32 行：2 个数据集 × 16 格）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.22、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.24、`LESSONS.md` 第 34 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
