@@ -1780,6 +1780,27 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C094",
+      "title": "trit-train Adam q 符号阈值替代量化除法",
+      "kind": "cmd",
+      "covers": [
+        "L184"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/adam_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
+        "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T07:58:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

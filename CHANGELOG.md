@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed（第三十二轮：Adam `q` 符号阈值替代量化除法）
+
+- Adam 训练步的 `q` 只用于 `dX`/`qdot` 符号，不需要量化值本身；新增
+  `plane/fused/adam_step/q_sign.rs`，把每 8 列一次 `w/s` 除法换成
+  `w >= 0.5·s` / `w <= -0.5·s` 的阈值比较。只有落在阈值 ±2^-12 相对带内或 NaN
+  的 lane 才回退原来的除法量化，保证 `q` 的符号与旧路径逐位一致。
+- 4096×576 同轮交替 A/B 7 组（3 步/轮，25 轮取最快，进程高优先级）：
+  Adam 融合 dW **1.72→1.61 ms/step（约 1.07×）**，6/7 组更快。`shape_bench`
+  4096×576 交替 7 组 **1.7023→1.5682 ms（约 1.09×）**，7/7 组更快。
+- 逐位口径不变：新增 `q_sign_masks_match_exact_near_threshold`，覆盖 6 个 scale
+  的 ±8 ulp 边界和 64 组随机 8-lane 块，直接以旧量化 `exact` 为预期；不能拿
+  `round(w/s)` 当标量预期——旧量化是 `trunc(scaled+0.5)`，加法舍入会在半 ulp
+  处把 `q` 推到 1（CI Linux 首次跑红即此）。完整 Adam 整步对旧两遍仍逐位相等，
+  `cargo test -p trit-train --lib` **39/39**。
+- m/v 的 `m/bias1`、`v/bias2` 与最终除法 + `sqrt` 未改，仍是 Adam 剩余主成本。
+  模块台账 **1550 files，debt=0**；hazard allow **98**；新增 C094。
+
 ### Changed（第三十一轮：`train_step` 前向/MSE/`dW`/scale 逐行融合）
 
 - `TernaryLinear::train_step` 不再走 `forward_dot` → `dense::sgd_update` 两遍；新增

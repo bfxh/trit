@@ -204,6 +204,21 @@ Soft 门控原写法是 `max(0, 1-ratio²)` 后再用 `cmp(ratio,ratio,ORD)` 清
 同旧路径；对拍覆盖 6 形状 × 3 STE × 3 步，latent/scale/loss 逐位相等，测试
 **38/38**。
 
+第三十二轮 Adam `q` 符号阈值（4096×576，单线程，3 步/轮，同轮交替 A/B 7 组，
+进程高优先级，25 轮取最快）：
+
+| 路径 | 旧 ms/step | 新 ms/step | 相对 |
+|---|---:|---:|---:|
+| Adam 融合 dW（`fused::adam_step`） | 1.72 | 1.61 | **1.07×** |
+
+Adam 的 `q` 只用于 `dX`/`qdot` 的符号，不需要量化值本身；因此把 `w/s` 的除法换成
+`w >= 0.5·s` / `w <= -0.5·s` 的阈值比较，只有落在阈值 ±2^-12 相对带内的 lane 才
+回退原来的除法量化。带内一律走原除法，不依赖除法舍入；NaN 也走回退；`dX`/
+`qdot` 的累加顺序不变。`shape_bench` 4096×576 交替 7 组：**1.7023→1.5682 ms
+（约 1.09×）**，7 组全部更快；边界对拍以旧量化 `exact` 为预期，覆盖 6 个 scale
+的 ±8 ulp 和随机块，完整 Adam 整步对拍仍逐位相等，测试 **39/39**。m/v 的三次
+除法 + `sqrt` 未改。
+
 精确旧基线 `8b846d4a` 的 `shape_bench` 交替 3 组：旧 2.7310 / 2.2572 / 2.2746，
 新 1.7219 / 1.8348 / 1.8633；中位 **2.2746→1.8348 ms（约 1.24×）**。
 第二十一轮行级 Adam 的 **2.4–2.8 ms/step（2.9–3.4×）** 是历史口径；本轮 A/B 的
@@ -285,6 +300,9 @@ cargo run -p trit-train --release --bin shape_bench
 - Soft STE 门控在 `dense::sgd_update_row`、`fused::backward_step`、`fused::adam_step`
   三条 AVX2 路径统一为 `max(1-ratio², 0)`，靠 `maxps` 的 NaN 语义省掉 `ordered`
   掩码；有限输入逐位不变。
+- Adam 的 `q` 只用于 `dX`/`qdot` 符号，量化除法改为 ±`0.5·s` 阈值比较，阈值附近
+  （±2^-12 相对带）回退原除法；m/v 的 `m/bias1`、`v/bias2` 与最终除法 + `sqrt`
+  仍是主成本，未改。
 - `train_step` 的 `forward_dot`、MSE、STE `dW` 与 scale 更新已压成逐行融合
   （`fused::forward_step`）；`qdot`/`y`/`dy` 不再每步分配，行数据留在缓存里。
 - 反向 `dX`/`qdot`、前向、SGD `dW` 与 Adam `dW` 都已融合；`forward()`、SGD `train_step`、
