@@ -10,6 +10,7 @@ vstd = "=0.0.0-2026-11-22-0344"
 
 [dev-dependencies]
 trit-core = { path = "../crates/trit-core" }
+trit-belnap = { path = "../crates/trit-belnap" }
 
 [package.metadata.verus]
 verify = true

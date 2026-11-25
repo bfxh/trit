@@ -1,16 +1,18 @@
 # trit-verified：主库三值语义的验证锚点
 
-`trit-verified` 用 [Verus](https://github.com/verus-lang/verus) 为 `trit-core` 的
-K3（强 Kleene）三值语义建立机器检查的规格与证明。它是**验证锚点**，不是运行时依赖：
+`trit-verified` 用 [Verus](https://github.com/verus-lang/verus) 为 `trit-core` 的三值语义
+（K3 / Ł3 / B3）与 `trit-belnap` 的四值语义（B4：N/F/T/B）建立机器检查的规格与证明。它是**验证锚点**，不是运行时依赖：
 主库的 `cargo build/test` 不构建它，验证由 `scripts/verify.py` 单独驱动，CI 走
 `.github/workflows/verus.yml`。
 
 ## 验证链
 
 ```text
-trit-core::value::Ternary  ≡  table.rs   （tests/bridge.rs：3×3 完备穷举）
-table.rs                   ≡  spec       （src/k3.rs：Verus 证明）
-⇒ trit-core 的 K3 算子满足 spec
+K3:  trit-core::value::Ternary        ≡  table.rs    （tests/bridge.rs，3×3）
+Ł3:  trit-core::algebra::Lukasiewicz  ≡  l3.rs       （tests/bridge_algebra.rs，3×3）
+B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （tests/bridge_algebra.rs，3×3）
+B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.rs，4×4）
+每行：执行版 ≡ spec（src/*.rs 的 Verus ensures）
 ```
 
 - `src/table.rs`：`NOT` / `AND` / `OR` / `EQ` / `XOR` 的编码真值表（0=F、1=U、2=T），
@@ -18,8 +20,12 @@ table.rs                   ≡  spec       （src/k3.rs：Verus 证明）
 - `src/k3.rs`：`spec fn knot/tand/tor/teq/tne/rank`、代数律证明（双重否定、
   交换律、De Morgan、`teq` 自反、`rank` 单射）、`table_*_matches_spec`、
   以及 exec 提炼（`knot_exec` 等带 `ensures`）。
-- `tests/bridge.rs`：普通 Rust 穷举对拍 `trit-core` 的 `!`/`&`/`|`/`^` 与
-  `index()`/`from_index()`。
+- `tests/bridge.rs`：对拍 `trit-core` 的 `!`/`&`/`|`/`^` 与 `index()`/`from_index()`。
+- `src/l3.rs`：Ł3 的 spec（双倍刻度 `0/1/2` 精确表达 `0/0.5/1`）、代数律、exec。
+- `src/b3.rs`：B3 的毒值吸收、De Morgan、`U ⇒ U = U`、exec。
+- `src/b4.rs`：Belnap 四值的双轨 `bool` 表示、De Morgan/结合/分配/吸收、
+  `xor = ¬equiv`、知识序共识/轻信/共轭与 exec。
+- `tests/bridge_algebra.rs`：对拍 `Algebra::{Lukasiewicz, Bochvar}` 与 `trit_belnap::B4`。
 
 ## 本地运行
 
@@ -40,17 +46,16 @@ python scripts/verify.py --json             # 机器可读报告
 
 ## 范围与限制
 
-已验证（K3，有限域穷举 + Verus）：
+已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 85 verified）：
 
-- `!`（否定）的对合；
-- `&`/`|` 的交换律与 De Morgan；
-- `teq` 自反、`teq`/`tne` 互补；
-- `rank`/`index` 单射；
-- `table` 与 spec 逐项一致。
+- K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射；
+- Ł3：格序 `∧/∨`、强加/强合交换、`U⊕U=T`、`U⊗U=F`、`U⇒U=T`、De Morgan、等价自反；
+- B3：毒值吸收（任一 `U` → `U`）、`∧/∨` 交换、De Morgan、`U⇒U=U`；
+- B4：双轨往返、否定对合、De Morgan、结合/分配/吸收、`xor=¬equiv`、
+  consensus/gullibility 交换、conflation 对合与知识序 De Morgan。
 
 **未验证**（明确缺口，不当作已完成）：
 
-- Ł3 / B3 / Belnap 四值（`trit-belnap`）尚未写 spec；
 - `trit-core` 的位平面/批量实现（`bits`、`bulk`）与标量实现的等价；
 - 任何并发或 `unsafe` 代码；
 - Verus 本身的可靠性、z3 模型与 Rust 编译器的可信基。

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（第三十六轮：Verus 覆盖 Ł3 / B3 / Belnap 四值）
+
+- `verus/` 新增 `src/l3.rs`（Ł3，双倍刻度 0/1/2 表达 0/0.5/1）、`src/b3.rs`
+  （B3 毒值吸收）、`src/b4.rs`（Belnap 双轨 bool）的 spec、代数律证明与 exec 提炼；
+  `tests/bridge_algebra.rs` 对 `Algebra::{Lukasiewicz, Bochvar}` 与
+  `trit-belnap::B4` 做 3×3 / 4×4 完备穷举对拍。
+- `docs/engineering/VERIFICATION.md` 升到 M2：覆盖范围、信任链与路线图更新；
+  `cargo-verus verify` 为 85 verified。
+
 ### Added（第三十五轮：Verus 验证锚点 K3）
 
 - 新增 `verus/` 独立 workspace（`trit-verified`，`publish = false`）：Verus 规格、
