@@ -3553,6 +3553,14 @@ SST-2 L12 是唯一一个“只看残差”就明显高于 f32 的组：`0.83251
 hate L12/L6 都低于 f32，其中 CoLA L6 与 hate L12 的 CI 整段为负。**残差不是
 普适的“额外信号”；它在 SST-2 L12 上才明显带类别信息。**
 
+SVC 在 SST-2 L12 上做了全 32 arm 复验
+（`data/wsp-classify-residual-svc.tsv`）：f32 `0.797913`、int4 `0.841845`，
+`int4−f32 +0.043932`（bootstrap `+0.043783`、CI `[+0.025261,+0.062603]`）；
+残差单独 `0.829764`，对 f32 `+0.031730`、CI `[+0.010434,+0.052718]`；
+`hybrid_rest_k16 0.841296`，对 f32 `+0.043328`、
+CI `[+0.024163,+0.062603]`，对 int4 `−0.000455`、CI 跨 0。残差方向、
+低方差 rest 和 probe margin 比值都与 logreg 同向，**不是 logistic 特有**。
+
 残差的信息在**方向**而不是幅度。SST-2 L12：
 
 - `r` 原始：`0.832510`；
@@ -3703,13 +3711,15 @@ M1.23 把 M1.22 的“匹配表示效应”再拆开一层：
   probe 正则化。SST-2 L12 的正向是“int4 坐标里的类别条件位移 + 与之匹配的
   probe”，不是“量化普遍加噪”。
 
-**边界**：6 个数据集-深度、主表 logreg；SVC 只在 M1.13/M1.22 复验过，
-M1.23 没有重跑 SVC。一个 seed；C 在每个 arm 内 5 折重选；bootstrap 只重
-采样 test，不覆盖 train 侧方差。残差是量化算子的确定性函数，本文只做
-观测性拆解，没有做 per-group/absmean、scale 或舍入模式的因果消融；
+**边界**：6 个数据集-深度、主表 logreg；SST-2 L12 额外用 SVC 全 32 arm
+复验、结论同向，其余五组没有 SVC。一个 seed；C 在每个 arm 内 5 折重选；
+bootstrap 只重采样 test，不覆盖 train 侧方差。残差是量化算子的确定性函数，
+本文只做观测性拆解，没有做 per-group/absmean、scale 或舍入模式的因果消融；
 `resid_full` 需要同时拿到 f32 和 int4 两套 embedding，是诊断特征，不是
 部署方案。类别内置换/去类均值使用 test 标签，是 oracle 对照，不能写成
-可部署增益。仍没有 MLP、encoder 微调、MNLI。
+可部署增益；SVC 的 `noclassmean` 方向仍为负但 CI 跨 0（logreg 显著为负），
+这一项只能当两套 probe 的共同方向、不能当强显著结论。仍没有 MLP、
+encoder 微调、MNLI。
 
 ### 11.23.7 复算
 
@@ -3726,6 +3736,7 @@ python scripts/wsp_classify_residual.py \
 CoLA 加 `--class-weight balanced --cv-metric macro_f1`；L6 把 texts/emb
 换成 `data-l6` / `emb6` 和 `l6-pure-f32` / `l6-int4`。主表
 `data/wsp-classify-residual.tsv`（192 行：6 个数据集-深度 × 32 arm），
+SST-2 L12 的 SVC 复验 `data/wsp-classify-residual-svc.tsv`（32 行），
 几何表 `data/wsp-classify-residual-geometry.tsv`（12 行：6 组 × train/test）。
 
 ## 12. 下一步

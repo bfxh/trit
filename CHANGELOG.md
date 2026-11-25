@@ -1245,12 +1245,19 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
   - 控制：高斯噪声 `−14.17pp`、整体行置换 `−12.08pp`、残差 ×0.5/×2
     基本不掉；类别内置换 `+3.41pp`、去类均值 `−3.19pp`（均为使用 test
     标签的 oracle 诊断，不可部署）。
+  - SST-2 L12 的 SVC 全 32 arm 复验同向：`int4−f32 +0.043783`
+    （CI `[+0.025261,+0.062603]`）、`hybrid_rest_k16−f32 +0.043328`
+    （CI `[+0.024163,+0.062603]`）、对 int4 `−0.000455`（CI 跨 0），
+    残差单独 `0.829764`（对 f32 `+0.031730`，CI 过 0），margin 比
+    `1.214×`；`noclassmean` 方向为负但 CI 跨 0。
   - 表：`wsp-classify-residual.tsv`（192 行：6 个数据集-深度 × 32 arm）、
+    `wsp-classify-residual-svc.tsv`（32 行：SST-2 L12 SVC）、
     `wsp-classify-residual-geometry.tsv`（12 行：6 组 × train/test）。
   - 文档：`WSP-BUDGET-RESULTS.md` §11.23、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.25、`LESSONS.md` 第 35 条。
-  - 边界：主表 logreg，M1.23 未重跑 SVC；一个 seed；bootstrap 只重采样
-    test；残差是量化算子的确定性函数，本文是观测性拆解，不是因果证明。
+  - 边界：主表 logreg，SST-2 L12 有 SVC 全 32 arm 复验，其余五组没有
+    SVC；一个 seed；bootstrap 只重采样 test；残差是量化算子的确定性函数，
+    本文是观测性拆解，不是因果证明。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
