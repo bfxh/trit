@@ -247,6 +247,14 @@
       "lines": 55
     },
     {
+      "file": "crates/trit-build/src/direct/fold/simplify.rs",
+      "lines": 122
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests.rs",
+      "lines": 71
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/tests.rs",
       "lines": 135
     },

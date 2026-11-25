@@ -210,9 +210,33 @@
  {
   "name": "fold: 折叠后不按根收孤儿",
   "file": "crates/trit-build/src/direct/fold.rs",
-  "old": "    prune_dead(kept, root)",
-  "new": "    prune_dead(kept, 0)",
+  "old": "prune_dead(kept, root)",
+  "new": "prune_dead(kept, 0)",
   "pkg": "trit-build",
   "filter": "direct::fold::tests::all_constant_tree_collapses_to_one_const"
+ },
+ {
+  "name": "simplify: x & T 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify.rs",
+  "old": "                } else if consts[right] == Some(Ternary::True) {",
+  "new": "                } else if false {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
+ },
+ {
+  "name": "simplify: x | F 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify.rs",
+  "old": "                } else if consts[right] == Some(Ternary::False) {",
+  "new": "                } else if false {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
+ },
+ {
+  "name": "simplify: 双重否定不消",
+  "file": "crates/trit-build/src/direct/fold/simplify.rs",
+  "old": "                    resolve.push(target);",
+  "new": "                    resolve.push(inner);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
  }
 ]

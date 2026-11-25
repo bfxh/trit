@@ -49,7 +49,7 @@
    ├── truth.csv      真值表（人读/对拍）
    ├── truth.tritbin  TRB2 v3：头 + 变量名 + 5 trit/字节 + GF(3) CRC-3
    ├── lookup.c       主机查表函数（交给 cc/rustc 编译 —— 边界示范）
-   ├── direct.c       主机直算函数（`--backend direct|both`：线性 IR + 交换律 CSE + 常量折叠 + DCE；`.tri` 表达式与 Verilog 网表共用，不展开 3ⁿ 表）
+   ├── direct.c       主机直算函数（`--backend direct|both`：线性 IR + 交换律 CSE + 常量折叠/恒等式化简 + DCE；`.tri` 表达式与 Verilog 网表共用，不展开 3ⁿ 表）
    ├── design.v       双导轨 Verilog（K3/Ł3/B3 均支持）
    ├── design_tb.v    自检 testbench + expected.mem（`--verify-hdl`）
    ├── truth.wgsl     WGSL 查表内核 + truth.gpu.bin（2 bit/trit，`--emit-gpu`）
@@ -99,7 +99,8 @@ trit build demo.tri --out out --check  # 校验产物哈希
 | 直算对拍 | `direct.c`（`--backend direct --verify-c`）用 cc 编译后 **531,441/531,441** 行与 `truth.csv` 一致（12 变量，本机 0.9 s） |
 | 直算 IR 优化 | 交换律规范化后镜像子式共用一个节点；`prune_dead` 压缩孤儿并重编号；12 变量仍 **531,441/531,441** 行通过 |
 | Verilog 直算 | `.v` 源也能开 `--backend direct` 或 `both`：从选中输出反向 DFS，只降扇入锥（其它输出不进 IR）；`NAND/NOR` 落 `Not(And/Or)`、`BUF` 直接别名、`XOR2` 单独一张表；K3/Ł3/B3 各 27/27 行 cc 对拍 |
-| 直算常量折叠 | 操作数全是常量的节点按 `Algebra` 现算（`Xor2` 按 `GateKind::XorClassic`），折叠后再 `prune_dead`；全常量树只剩一条 `Const` 语句，`direct.c` 不再注册任何算子表。Verilog 常量分支实测 16→14 条语句、1331→1267 B（K3，同一 3 输入网表） |
+| 直算常量折叠 | 操作数全是常量的节点按 `Algebra` 现算（`Xor2` 按 `GateKind::XorClassic`），折叠后再 `prune_dead`；全常量树只剩一条 `Const` 语句，`direct.c` 不再注册任何算子表 |
+| 直算恒等式化简 | 只做三种代数通用的 `x ∧ T = x`、`x ∨ F = x`、`¬¬x = x`（别名压平后 DCE）。B3 下 `U ∧ F = U`，所以吸收律不实现。同一 3 输入网表 16→14→12 条语句、1331→1267→1203 B（K3） |
 | 增量 | 同源二次构建 `cached=true`，不重写产物 |
 | 完整性 | 篡改 `truth.tritbin` 后 `--check` 退出非 0 |
 | 复核 | 化简不等价 ⇒ 构建失败，不写任何产物 |
@@ -310,7 +311,8 @@ iverilog 结构级仿真，没有综合/时序收敛；端到端构建仍被 19.
 - 真实 Verilog 工程的 M1 前端（端口/时序/多驱动）未做；当前只覆盖组合逻辑子集。
 - `direct.c` 的 Verilog 链路同样只覆盖组合子集与单一选中输出（多输出需 `--output`），
   不做综合/门级优化；网表里有多个驱动或组合环时显式报错，不猜。
-  常量折叠只折「操作数全是常量」的节点，不手写 `x & 0 = 0` 这类代数恒等式化简。
+  常量折叠只折「操作数全是常量」的节点；恒等式化简只做 K3/Ł3/B3 都成立的
+  `x ∧ T`、`x ∨ F`、双重否定，B3 的吸收律反例（`U ∧ F = U`）明确不实现。
 - e-graph 规则在 K3 下的完备性未证；规则库 18 条，没有 e-matching 索引。
 - `TRB2` 的 Python/JS 解码器未写；当前只有 Rust（`trb.rs`）与 C（`runtime/trit_runtime.c`）两份实现。
 - `design.v` 过了 iverilog 14 结构级仿真，但**没有综合、时序/面积收敛、门延迟模型**；

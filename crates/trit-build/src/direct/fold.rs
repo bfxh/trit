@@ -13,7 +13,7 @@ use trit_core::value::Ternary;
 
 use super::ir::Op;
 use super::lower::prune_dead;
-
+mod simplify;
 pub(super) fn fold(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     if ops.is_empty() {
         return ops;
@@ -48,7 +48,7 @@ pub(super) fn fold(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
         kept.push(out);
     }
     let root = kept.len() - 1;
-    prune_dead(kept, root)
+    simplify::simplify(prune_dead(kept, root))
 }
 
 #[cfg(test)]
