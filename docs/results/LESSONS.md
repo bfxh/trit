@@ -90,6 +90,14 @@
    int3（0.885716 vs 0.897582），全量却高于 int3（0.819473 vs 0.818440）；
    **128 子集能测反，预算变体至少跑全量**。严格同字节结果见
    `WSP-BUDGET-RESULTS.md`。
+14. **同字节块交换也不要信 128 的单块排名**。把 v6e 的层 11 `intermediate.dense`
+   的 int2 平移到层 10（I10），128 对只涨 `+0.001766 / +0.004692`，全量是
+   `+0.000934 / +0.000761`；把层 11 `output.dense` 的 int2 平移到层 3（F3），
+   128 对双指标为正，全量 Spearman 反而 `−0.000471`。128 只能筛候选，不能定胜负。
+   I10 对纯 int3 的 10k bootstrap CI 两个指标都过 0，但对 v6e 的两个 CI 都跨 0；
+   所以只能写“I10 是当前严格同字节的优先点”，不能写“已证优于 v6e”。复算：
+   `python scripts/wsp_budget_swap.py --base budget-l12-int3-v6e.json --move 11:i>10:i`
+   生成同字节预算，再按 `WSP-BUDGET-RESULTS.md` §7 跑全量。
 
 ## 4. 工程经验
 
