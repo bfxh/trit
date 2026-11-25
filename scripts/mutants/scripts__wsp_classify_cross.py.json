@@ -1,0 +1,20 @@
+[
+ {
+  "name": "cross: 忽略 test λ（只评第一个 test 剂量）",
+  "file": "scripts/wsp_classify_cross.py",
+  "old": "        for test_lam in lams:",
+  "new": "        for test_lam in lams[:1]:",
+  "pkg": "scripts/wsp_classify_cross.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "cross: 忽略 train λ（probe 只在 f32 上训练）",
+  "file": "scripts/wsp_classify_cross.py",
+  "old": "        train_x = INTERP._mix(f32_train, int4_train, train_lam)",
+  "new": "        train_x = INTERP._mix(f32_train, int4_train, 0.0)",
+  "pkg": "scripts/wsp_classify_cross.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

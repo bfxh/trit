@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::data::keep_layers;
 use crate::activation::ActivationMode;
 use crate::model::{Bert, BertConfig};
-use crate::sts::{Pair, metrics, sentence_vectors};
+use crate::sts::Pair;
 
 pub(crate) struct Base {
     pub(crate) out: Vec<f32>,
@@ -85,7 +85,7 @@ pub(crate) fn run(
         BertConfig::new(hidden, eps, false, ActivationMode::F32),
     );
     let (out, _, layers) = bert.forward(input, mask, batch, seq, keep_layers());
-    let sts = metrics(&sentence_vectors(&out, mask, batch, seq, hidden), pairs);
+    let sts = super::embed_dump::pure_sts(&out, mask, batch, seq, hidden, pairs);
     if allow_cache {
         save(&sts, file, data_dir, hidden, batch, seq);
     }

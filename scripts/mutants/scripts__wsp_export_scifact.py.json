@@ -1,0 +1,29 @@
+[
+ {
+  "name": "scifact-export: 矩阵 magic 写错",
+  "file": "scripts/wsp_export_scifact.py",
+  "old": "    return b\"WSPACT1\\0\" + struct.pack(\"<II\", rows, cols)",
+  "new": "    return b\"WSPACT2\\0\" + struct.pack(\"<II\", rows, cols)",
+  "pkg": "scripts/wsp_export_scifact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "scifact-export: corpus 标题和正文顺序颠倒",
+  "file": "scripts/wsp_export_scifact.py",
+  "old": "        text = f\"{title} {body}\".strip()",
+  "new": "        text = f\"{body} {title}\".strip()",
+  "pkg": "scripts/wsp_export_scifact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "scifact-export: qrels 不检查 corpus 是否存在",
+  "file": "scripts/wsp_export_scifact.py",
+  "old": "        if corpus not in corpus_ids:",
+  "new": "        if False:",
+  "pkg": "scripts/wsp_export_scifact.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

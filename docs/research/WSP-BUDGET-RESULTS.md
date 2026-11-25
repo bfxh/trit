@@ -1,7 +1,7 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.4/M1.5 完成。逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2`
-> 供体表和 `3→4` 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
+> 状态：M1.16 完成（STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + SST-2 子样本稳定性复验）。
+> 逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2` 供体表和 `3→4` 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
 > 总字节仍 `10,782,720 B`，全量 Pearson `0.833671`、Spearman `0.835411`。
 > 相对 `F5F7V7` `+0.003287 / +0.006733`；Spearman 50k CI
 > `[+0.002300, +0.011308]` 过 0，Pearson CI `[−0.000560, +0.007191]` 跨 0。
@@ -17,6 +17,43 @@
 > `K10K11` 在 STS13 轻微负，`R12`/`R10`/`F5F7V7` 在 SICK-R 负。STS 全量仍是
 > `R12 > K10K11 > I10`。所以 `I10` 是外部保守默认，`K10K11`/`R12` 是 STS
 > in-domain 选择；不能再写“K10K11 在所有外部数据上最稳”（§10）。
+> **M1.12 分类头（SST-2，冻结编码器 + 线性 probe）同样是负向**：L12 `R12`
+> 对 int3 点估计低 `−0.008842`、CI 跨 0，对 int4 整段为负；L6 `rescan-k2`
+> 对 int3/int4 的 CI 都跨 0。STS 的块级增益没有转成检索或分类增益，
+> `R12`/`rescan-k2` 只能留在 STS in-domain（§11.12）。
+> **M1.13 用第二种线性头（LinearSVC）复验**：L12 `int4−f32 = +0.043783`
+> （CI `[+0.025261,+0.062603]`），`int3−f32 = +0.020769`（CI 全正），
+> `R12−int3 = −0.004502`（CI 跨 0），`R12−int4 = −0.027516`（CI 整段为负）；
+> L6 各档仍无显著差异。**L12 均匀 int4 高于 f32 不是 logistic 特有，但仍是
+> 量化正则化/表示变化，不是 `R12` 的块级重排增益**（§11.13）。
+> **M1.14 换第二个分类集（GLUE CoLA，dev 作 test）没有复现 int4 的正向**：
+> CoLA dev 为 69/31，主口径改成 balanced class weight + macro-F1 选 C；
+> L12 logreg `int4−f32 = +0.013341`（CI `[−0.006711,+0.033557]`），SVC
+> `+0.008467`（CI `[−0.011505,+0.028763]`），L6 int4 与 f32 打平或略低。
+> SST-2 的 +0.040/+0.044 同量级效应已落在 CoLA 的 95% CI 之外；`R12`/
+> `rescan-k2` 仍无分类增益。**SST-2 的 int4 正向是单数据集/单 probe 家族的
+> 观察，不能写成量化普遍提升线性分类**（§11.14）。
+> **M1.15 第三个分类集（TweetEval/hate）也没有复现 int4 的正向**：
+> 清洗后 8,985 train / 2,734 test；主口径与 SST-2 一致（无类别权重 +
+> accuracy 选 C），L12 logreg `int4−f32 = −0.003679`
+> （CI `[−0.012802,+0.005486]`），SVC `−0.004826`
+> （CI `[−0.015362,+0.005852]`），点估计略负、CI 都跨 0；balanced
+> 口径（macro-F1 选 C）反转为 `−0.012694`（logreg）/ `−0.013028`（SVC），
+> 两个 CI 整段为负；fixed C=1 仍为 `−0.009860`。L6 balanced 两 probe
+> 也没有一致优势（logreg `+0.006576`、CI 跨 0；SVC `−0.009173`、
+> CI 整段为负）。hate 的 test 有 2,734 条，无权重口径 CI 上界只有
+> 约 `+0.006`，SST-2 的 `+0.040/+0.044` 同量级效应被更严格地排除。
+> **SST-2 的 int4 正向是数据集/任务/probe 特定的观察，不是量化普遍
+> 提升线性分类；`R12`/`rescan-k2` 在第三个分类集上也没有任务头增益**
+> （§11.15）。
+> **M1.16 固定官方 test、重复从 train 抽 80% 重训：SST-2 的 L12 int4 正向
+> 是训练子样本稳定的**：5 折 × 5 种子 = 25 次重训，L12 logreg
+> `int4−f32` 均值 `+0.042987`（min `+0.028556`，25/25 为正），SVC
+> `+0.044437`（min `+0.034596`，25/25 为正），与全量 test 的
+> `+0.040/+0.044` 一致。L6 的 int4 只有 `+0.0063/+0.0036`，且分别
+> 22/25、19/25 为正，仍有负值；`rescan-k2` 更接近 0。所以 SST-2 的
+> 正向是 **L12 在该数据集上的稳定表示效应**，不是单次划分偶然；但它仍
+> 没有跨到 CoLA/hate，也不是 L6 的普遍规律（§11.16）。
 
 ## 1. 结论先行
 
@@ -148,6 +185,13 @@ M1.9 的相对深度规则在 L12→L6 上看起来可用（`0.828707 / 0.824484
 `6/24/6` 布局投到 par-L6 也是 `−0.011203 / −0.008646`。**同一布局在两个 6 层
 模型上相对各自 int3 的 Δ 从 `+0.014/+0.014` 翻成 `−0.016/−0.007`；L12→L6
 的正向不能写成跨模型规则，只能当这对模型的候选生成器（§11.10）。**
+
+M1.11 按这个方向转到检索任务头：`R12` 在 STS 上相对 int3 是
+`+0.015231 / +0.022050`，L6 `rescan-k2` 是 `+0.016710 / +0.014032`，都是各自
+STS 的强候选；但换到 SciFact 检索后，`R12` 的 MRR/nDCG@10 点估计低于 int3，
+对 int4/f32 的 MRR/nDCG CI 基本整段为负；`rescan-k2` 对 int3 的 MRR/nDCG@10
+CI 也整段为负。**STS 相关性的块级增益没有转到检索；任务头和 STS 不是同一个
+判据（§11.11）。** 分类头见 §11.12–§11.21。
 
 ## 2. 字节账
 
@@ -1817,6 +1861,1652 @@ L3 的表：`data/wsp-budget-l3-perturb.tsv`（36 行）、
 `data/wsp-budget-parl6-bootstrap.tsv`（8 行）；四个新方向的规则候选追加在
 `data/wsp-budget-rule-candidates.tsv`（6 行）。
 
+### 11.11 检索任务头：STS 最优布局在 SciFact 上不成立（M1.11）
+
+§11.10.5 的下一步写的是“停止跨模型规则和 `per_shape`，转检索/分类任务头”。
+本轮先做检索头，不做分类头：检索不需要训练新头，直接检验量化后的句向量余弦
+排序是否还成立，和 MiniLM 的部署用法一致；分类头在 M1.12 单独做（§11.12）。
+
+#### 11.11.1 口径
+
+- 数据集 `mteb/scifact`：corpus 5,183 篇、queries 1,109 条、test qrels 339 行；
+  去重后 300 个带 qrels 的 query。corpus 取 `title + text`，query 取 `text`，
+  `seq=64`（截断），hidden 384；共 6,292 行、`402,688×384 = 154.6M` 个 f32。
+- 八个 embedding 都由同一 `sentence_vectors` 生成：mask mean pooling + L2
+  normalize，与 STS 的 `sentence_vectors` 完全同一份。corpus/query 共享一个
+  矩阵，检索只做 query×corpus 余弦排序。
+- 指标：MRR@10、Recall@10/100、nDCG@10/100；qrels 按二值相关算。300 个 query
+  做 10k query-level bootstrap（seed 7）；没有 corpus bootstrap。
+- 配置：L12 `f32/int3/int4/R12`，L6 `f32/int3/int4/rescan-k2`。`R12` 从
+  `budget-l12-pure-int3.json` 复算，分布 `6/54/12`、`10,782,720 B`；L6
+  `rescan-k2` 是 `6/24/6`、`5,391,360 B`。两者都与各自纯 int3 严格同字节。
+- 为任务头新增 `WSPEMB1` 落盘：`TRIT_EMBED_DUMP=<dir>` +
+  `TRIT_EMBED_TAG=<name>`，文件头 `WSPEMB1\0` + rows:u32 + cols:u32 +
+  row-major f32；纯 f32 由 `f32_base` 落为 `pure-f32.f32`，量化档由 `modes`
+  按 tag 落盘。`data.rs` 的矩阵元素上限从 `1<<27` 提到 `1<<29`，否则
+  `402,688×384` 在 `bert6` 加载时直接 panic。
+
+#### 11.11.2 L12：R12 的 STS 增益没有转成检索
+
+| 配置 | 分布 | 字节 | STS P | STS S | MRR@10 | R@10 | R@100 | nDCG@10 | nDCG@100 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| L12 纯 f32 | — | 84,934,656 | 0.837595 | 0.830894 | 0.553757 | 0.733167 | 0.896667 | 0.589919 | 0.626971 |
+| L12 纯 int3 | 0/72/0 | 10,782,720 | 0.818440 | 0.813363 | 0.496705 | 0.676278 | 0.842667 | 0.531968 | 0.568245 |
+| L12 纯 int4 | 0/0/72 | 13,436,928 | 0.837505 | 0.832047 | 0.529372 | 0.716389 | 0.893333 | 0.568436 | 0.608503 |
+| **L12 R12** | **6/54/12** | **10,782,720** | **0.833671** | **0.835411** | **0.482403** | **0.683389** | **0.866000** | **0.525849** | **0.565486** |
+
+`R12` 在 STS 上相对 int3 是 `+0.015231 / +0.022050`，Spearman 还比 int4 高
+`+0.003364`；但检索 MRR `0.482` 低于 int3 `0.497`、更低于 int4 `0.529`，
+nDCG@10 `0.526` 低于 int3 `0.532`、int4 `0.568`。Recall@100 `0.866` 比 int3
+`0.843` 高 `0.023`（点估计），但仍低于 int4 `0.893`；说明相关文档在更深处能
+被捞到一些，top-10 排序本身更差。
+
+`R12` 对 int3 的 10k query bootstrap：
+
+- MRR `−0.014474`，CI `[−0.035253, +0.005781]`，候选更好 `8.29%`；
+- Recall@10 `+0.007016`，CI `[−0.016778, +0.030444]`，候选更好 `71.43%`；
+- Recall@100 `+0.023097`，CI `[−0.001667, +0.048333]`，候选更好 `95.87%`；
+- nDCG@10 `−0.006279`，CI `[−0.024015, +0.011341]`，候选更好 `24.40%`；
+- nDCG@100 `−0.002941`，CI `[−0.018624, +0.012491]`，候选更好 `36.13%`。
+
+五个 CI 都跨 0：**top-10 排序（MRR/nDCG@10）点估计为负，Recall@10/100 点估计为
+正但都不显著；不能写“R12 的 STS 增益转到检索”。** 对 int4 更差：MRR `−0.047132`
+`[−0.076319, −0.018868]`、Recall@100 `−0.027297`
+`[−0.049000, −0.007333]`、nDCG@10 `−0.042747`
+`[−0.068165, −0.017325]`、nDCG@100 `−0.043115`
+`[−0.064823, −0.021745]`；Recall@10 `−0.033184`
+`[−0.068556, +0.001111]` 是唯一 CI 跨 0 的。对 f32 五个指标 CI 全部为负：
+MRR `−0.071590` `[−0.100799, −0.043157]`、Recall@10 `−0.049757`
+`[−0.085000, −0.016994]`、Recall@100 `−0.030599`
+`[−0.055000, −0.007992]`、nDCG@10 `−0.064242`
+`[−0.090263, −0.039157]`、nDCG@100 `−0.061650`
+`[−0.084376, −0.039637]`。
+
+#### 11.11.3 L6：STS 最优 rescan-k2 在检索上显著更差
+
+| 配置 | 分布 | 字节 | STS P | STS S | MRR@10 | R@10 | R@100 | nDCG@10 | nDCG@100 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| L6 纯 f32 | — | 42,467,328 | 0.827406 | 0.820325 | 0.534049 | 0.708944 | 0.896000 | 0.571812 | 0.613864 |
+| L6 纯 int3 | 0/36/0 | 5,391,360 | 0.814594 | 0.810425 | 0.510308 | 0.671278 | 0.873333 | 0.541137 | 0.584826 |
+| L6 纯 int4 | 0/0/36 | 6,718,464 | 0.826061 | 0.819355 | 0.534526 | 0.719611 | 0.889333 | 0.573827 | 0.611194 |
+| **L6 rescan-k2** | **6/24/6** | **5,391,360** | **0.831304** | **0.824457** | **0.474242** | **0.661611** | **0.891556** | **0.514939** | **0.564027** |
+
+`rescan-k2` 在 STS 上相对 int3 是 `+0.016710 / +0.014032`，相对 int4 是
+`+0.005243 / +0.005103`，确实是 L6 的 STS 最优点；但检索 MRR `0.474` 低于
+int3 `0.510`、更低于 int4 `0.535`，nDCG@10 `0.515` 低于 int3 `0.541`、int4
+`0.574`，Recall@10 `0.662` 也低于 int3 `0.671`、int4 `0.720`。唯一更高的是
+Recall@100 `0.892`（高于 int3 `0.873`、int4 `0.889`），但 top-10 排序明显更差。
+
+`rescan-k2` 对 int3 的 10k query bootstrap：
+
+- MRR `−0.036272`，CI `[−0.065249, −0.007896]`，候选更好 `0.59%`；
+- Recall@10 `−0.009852`，CI `[−0.042667, +0.022556]`，候选更好 `27.24%`；
+- Recall@100 `+0.018233`，CI `[−0.004000, +0.041667]`，候选更好 `94.48%`；
+- nDCG@10 `−0.026406`，CI `[−0.052461, −0.000934]`，候选更好 `2.10%`；
+- nDCG@100 `−0.020964`，CI `[−0.044046, +0.001554]`，候选更好 `3.38%`。
+
+**MRR 和 nDCG@10 的 CI 整段为负；Recall@10 中性；Recall@100 点估计正但 CI
+跨 0。** 对 int4：MRR `−0.060348` `[−0.092095, −0.030075]`、Recall@10
+`−0.058298` `[−0.094778, −0.023778]`、nDCG@10 `−0.059010`
+`[−0.086957, −0.032024]`、nDCG@100 `−0.047225`
+`[−0.072066, −0.023567]`；Recall@100 `+0.002203`
+`[−0.021111, +0.026667]` 跨 0。对 f32：MRR `−0.059883`
+`[−0.091419, −0.029664]`、Recall@10 `−0.047492`
+`[−0.083889, −0.011442]`、nDCG@10 `−0.056978`
+`[−0.085822, −0.029147]`、nDCG@100 `−0.049905`
+`[−0.074571, −0.026053]`；Recall@100 `−0.004384`
+`[−0.027778, +0.020000]` 跨 0。
+
+#### 11.11.4 结论、机制解释与边界
+
+- **STS 增益没有转到检索。** `R12` 的 STS 对 int3 双正、Spearman 对 int4 也正，
+  L6 `rescan-k2` 的 STS 对 int3/int4 都正；但检索侧 `R12` 对 int3 的 MRR/
+  nDCG 点估计为负、CI 跨 0，对 int4/f32 基本整段为负；`rescan-k2` 对 int3 的
+  MRR、nDCG@10 CI 整段为负。**不能写“块级 STS 最优布局在检索上也更好”。**
+- **`R12` 和 L6 `rescan-k2` 只能保留为 STS in-domain 候选，不能进检索任务头
+  默认；运行时默认仍是 `I10` 外部保守、`K10K11`/`R12` STS in-domain。**
+  任务头在这里起的是“否决门”作用，不是新的调参维度。
+- **一个与读数一致、但本轮没有直接证明的解释**：STS 只看同一对句子的相对分数，
+  块级重排可以在不改变全局近邻结构的情况下改善 pair ordering；检索排序直接依赖
+  corpus 全体的绝对几何，top-10 邻居对局部扰动更敏感。本轮没有做几何诊断
+  （邻域保持率、各向异性、距离秩相关），所以这只是机制假设，不是因果结论。
+- **边界**：只做 SciFact 一个检索集、300 个 qrels query、seq 64 截断、mean
+  pooling、两个 6/12 层 MiniLM；没有检索微调；bootstrap 是 query-level，不是
+  corpus-level；分类头已在 §11.12–§11.21 完成。不能外推到所有检索/分类任务，
+  也不能写“量化 embedding 普遍不适合检索”。本轮负向结论的具体范围是：“在这套 SciFact
+  口径下，`R12` 和 L6 `rescan-k2` 的 STS 增益没有转成检索增益”。
+- **下一步**：分类头路线已做到 §11.21（SST-2 内稳定、跨 CoLA/hate 不复现；
+  M1.17–M1.21 给出伴随结构、非充分性、方向症状、`sep` 的 SST-2 L12
+  伴随读数和低剂量早饱和），不要再调 `R12`。
+  否则接受“BUDGET 只在 STS 相关性上有效”，把 `R12` 留在 STS in-domain，
+  不进运行时默认。
+
+#### 11.11.5 复算
+
+```bash
+# 1) SciFact 导出（L12/L6 各一次；低内存，不加载 transformer）
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/wsp_export_scifact.py \
+  --dataset mteb/scifact --out scifact/data-l12 \
+  --model all-MiniLM-L12-v2 --seq 64 --local-only
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/wsp_export_scifact.py \
+  --dataset mteb/scifact --out scifact/data-l6 \
+  --model all-MiniLM-L6-v2 --seq 64 --local-only
+
+# 2) R12：6 张降 int2、12 张升 int4，字节严格等于纯 int3
+python scripts/wsp_budget_variant.py \
+  --base budget-l12-pure-int3.json \
+  --up 1:k,10:v,8:o,6:o,11:v,9:o,7:o,0:o,5:k,4:v,6:q,0:v \
+  --down 5:f,7:f,7:v,8:v,9:v,6:v \
+  --require-exact --out scifact/r12/swap-r12.json
+
+# 3) 编码：以 L12 int3 为例；纯 f32 由 f32_base 先落为 pure-f32.f32
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=24 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=scifact/emb TRIT_EMBED_TAG=l12-int3 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir scifact/data-l12 --activation-mode f32 \
+  --out scifact/runs/l12-int3.json
+# 纯 int4：TRIT_WEIGHT_BITS=4，不传 TRIT_BUDGET
+# R12：TRIT_WEIGHT_BITS=3 TRIT_BUDGET=scifact/r12/swap-r12.json
+# L6 rescan-k2：TRIT_LAYERS=6 TRIT_BUDGET=l6/l6-rescan-k2.json
+
+# 4) 评测：读 WSPEMB1，10k query bootstrap
+python scripts/wsp_retrieval_eval.py \
+  --texts scifact/data-l12/texts.json --qrels scifact/data-l12/qrels.json \
+  --run f32=scifact/emb/l12-pure-f32.f32 \
+  --run int3=scifact/emb/l12-int3.f32 \
+  --run int4=scifact/emb/l12-int4.f32 \
+  --run R12=scifact/emb/l12-r12.f32 \
+  --baseline f32 --baseline int3 --baseline int4 --bootstrap 10000 \
+  --out scifact/eval-l12-all.json
+```
+
+每次运行都会先落 `pure-f32.f32`；跑下一档前先复制为 `l12-pure-f32.f32` /
+`l6-pure-f32.f32`，避免被覆盖。表见
+`data/wsp-retrieval-scifact-l12.tsv`（4 行）、
+`data/wsp-retrieval-scifact-l6.tsv`（4 行）、
+`data/wsp-retrieval-scifact-bootstrap.tsv`（30 行）。
+
+## 11.12 分类任务头（M1.12，SST-2 / 冻结编码器 + 线性 probe）
+
+### 11.12.1 口径
+
+- 数据集 `SetFit/sst2`：6,920 train / 1,821 test，标签 0/1；test 留出不参与
+  C 选择。没有额外 validation split，test 就是最终评测集。
+- 文本 seq 64、mask mean pooling + L2 normalize，与检索头用同一份 `WSPEMB1`
+  句向量口径；编码器全程冻结，只训练一个 logistic 线性 probe。
+- L12 四档：`f32 / int3 / int4 / R12`；L6 四档：`f32 / int3 / int4 /
+  rescan-k2`。R12 仍是 `6/54/12`、`10,782,720 B`；rescan-k2 仍是 `6/24/6`、
+  `5,391,360 B`。
+- 主口径的 `C` 由 train 内 5 折 `StratifiedKFold` 在
+  `{0.01, 0.1, 1, 10}` 上选出，再用全 train 重训、test 只评一次；不做
+  encoder 微调，不拿 test 选 `C`。另跑固定 `C=1`、`C=10` 和逐维标准化的
+  敏感性，见 §11.12.4。
+- 10k test-level paired bootstrap；同一重采样索引同时用于两档，报告
+  accuracy 差值、95% CI 和 `better_fraction`。
+- 8,741 条文本的 `input.f32` 与 `reference.f32` 各 859 MB，一次性读入会超过
+  本机进程 commit 预算；编码按 1,500 条分块，拼回 `WSPEMB1` 后再评测。
+
+### 11.12.2 主结果（CV 选 C）
+
+L12：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C | train-CV acc | f32-probe transfer acc |
+|---|---:|---:|---:|---:|---:|---:|
+| f32 | 0.800110 | 0.800078 | 0.878938 | 10 | 0.774711 | 0.800110 |
+| int3 | 0.823723 | 0.823662 | 0.905766 | 1 | 0.802457 | 0.753981 |
+| int4 | 0.840198 | 0.840113 | 0.918861 | 10 | 0.828035 | 0.771005 |
+| R12 | 0.814937 | 0.814848 | 0.901555 | 1 | 0.799855 | 0.738605 |
+
+L6：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C | train-CV acc | f32-probe transfer acc |
+|---|---:|---:|---:|---:|---:|---:|
+| f32 | 0.798462 | 0.798427 | 0.882219 | 10 | 0.777168 | 0.798462 |
+| int3 | 0.809445 | 0.809324 | 0.894031 | 10 | 0.797110 | 0.707304 |
+| int4 | 0.804503 | 0.804439 | 0.893376 | 1 | 0.802312 | 0.747392 |
+| rescan-k2 | 0.802306 | 0.802186 | 0.888280 | 1 | 0.792341 | 0.745744 |
+
+“f32-probe transfer” 是只用该模型 f32 档 train 训练 probe，再把它原样投到
+同模型其他档 test 的 accuracy；它不是重新训练后的读数。
+
+### 11.12.3 bootstrap：关键比较
+
+L12，probe 重新训练：
+
+- `R12 − int3 = −0.008842`，95% CI `[−0.021417, +0.003844]`，
+  better `0.9094`（这里 better 指 int3 更好）；R12 点估计更低，CI 跨 0。
+- `R12 − int4 = −0.025402`，CI `[−0.041735, −0.009336]`；整段为负。
+- `R12 − f32 = +0.014632`，CI `[−0.003295, +0.032949]`；R12 点估计更高，
+  但不显著。
+- `int4 − int3 = +0.016560`，CI `[+0.001098, +0.032400]`；int4 显著更高。
+- `f32 − int3 = −0.023474`，CI `[−0.041735, −0.005491]`；
+  `f32 − int4 = −0.040034`，CI `[−0.058759, −0.020868]`。即在这个
+  线性 probe 口径下，L12 的 int3/int4 都显著高于 f32。
+
+L6，probe 重新训练：
+
+- `rescan-k2 − int3 = −0.007209`，CI `[−0.022515, +0.007688]`；CI 跨 0。
+- `rescan-k2 − int4 = −0.002220`，CI `[−0.018122, +0.013180]`；基本打平。
+- `rescan-k2 − f32 = +0.003619`，CI `[−0.013180, +0.020868]`；不显著。
+- `int3 − int4 = +0.004989`，CI `[−0.009885, +0.020319]`；不显著。
+
+f32 probe 直接迁移（不重新训练）：
+
+- L12：int3 `−0.046248` CI `[−0.068094, −0.024163]`；int4 `−0.029229`
+  CI `[−0.050522, −0.008237]`；R12 `−0.061604` CI
+  `[−0.083471, −0.039539]`。三档都显著低于 f32 自评。
+- L6：int3 `−0.091471` CI `[−0.114223, −0.068644]`；int4 `−0.051274`
+  CI `[−0.073586, −0.029654]`；rescan-k2 `−0.052979` CI
+  `[−0.073037, −0.032949]`。同样三档都显著低于 f32 自评。
+
+这说明量化后的表示确实变了：f32 probe 的决策边界不能直接迁到量化档；
+但重新训练 probe 后，L12 的 int3/int4 又能超过 f32。两种读数回答的是不同问题，
+不能混用。
+
+### 11.12.4 C 与标准化敏感性
+
+固定 `C=1` 时，量化档的优势会被放大：L12 f32 只有 `0.777046`，int4 为
+`0.842394`；但 f32 在 `C=10` 升到 `0.800110`，int4 为 `0.840198`。L6 在
+`C=10` 时 f32 `0.798462`、int3 `0.809445`，差距缩到 1.1 个百分点；
+rescan-k2 `0.805601`，与 f32 只差 0.7 个百分点。逐维标准化、固定 `C=1`
+时 L12 f32 `0.789676`、int4 `0.841296`，int4 仍高；L6 f32 `0.800110`，
+int3/int4/rescan 都在 `0.802–0.807`，基本打平。
+
+因此主结论用 CV 选 C 的读数；固定 `C=1` 只能说明“在这个正则强度下量化档
+更可分”，不能当无条件结论。完整网格见
+`data/wsp-classify-sst2-sensitivity.tsv`。
+
+### 11.12.5 结论与边界
+
+- **STS 的块级增益没有转成分类增益。** L12 `R12` 对 int3 点估计低
+  `−0.008842`、CI 跨 0，对 int4 整段为负；L6 `rescan-k2` 对 int3/int4
+  的 CI 都跨 0，点估计也不高于 int3。`R12`/`rescan-k2` 仍然只能留在
+  STS in-domain，不能进分类任务头默认。
+- **一个额外的正向观察，但不属于 BUDGET 的 STS 增益**：L12 的均匀 int4
+  在线性 probe 上比 f32 高 `+0.040088`（0.840198−0.800110；10k bootstrap
+  均值 `+0.040034`，CI 整段为正），int3 也高 `+0.023613`（bootstrap 均值
+  `+0.023474`）。这更像量化把异常维度/尺度压平后改善了线性可分性，而不是
+  `R12` 的块级重排有效；L6 上这个优势缩到不显著。没有做几何诊断，不能把它
+  写成“量化普遍提升分类”。
+- **f32 probe 不能直接迁移**到量化档：L12/L6 三档的 transfer accuracy 都
+  显著低于 f32 自评。任务头比较必须重新训练 probe；把“f32 probe 投到量化”
+  当成量化掉点会高估损失，把“各档重训 probe”当成纯表示差异又会忽略正则化。
+- 边界：单数据集 SST-2（SetFit 6,920/1,821）、单任务二分类、主 probe 家族
+  （logistic regression）、无 encoder 微调、seq 64、两个 MiniLM；没有第二
+  分类集、没有 MLP、没有句子级去重。不能外推到所有分类任务，也不能从 SST-2
+  反推生成任务。第二种线性头（LinearSVC）见 §11.13。
+- 第二种线性头（LinearSVC）的复验见 §11.13：L12 `int4 > f32` 仍成立，
+  `R12` 仍不高于 int3；L6 仍无显著差异。
+
+### 11.12.6 复算
+
+```bash
+# 1) 导出 SST-2（直连 JSONL，避免 HF datasets 的 X-Repo-Commit 头问题）
+python scripts/wsp_export_sst2.py \
+  --train sst2/raw/train.jsonl --test sst2/raw/test.jsonl \
+  --out sst2/data-l12 --model all-MiniLM-L12-v2 --seq 64
+python scripts/wsp_export_sst2.py \
+  --train sst2/raw/train.jsonl --test sst2/raw/test.jsonl \
+  --out sst2/data-l6 --model all-MiniLM-L6-v2 --seq 64
+
+# 2) 8,741 条一次性读入会超 commit 预算，按 1,500 条分块
+python scripts/wsp_chunk_embed_input.py \
+  --src sst2/data-l12 --dst sst2/chunks-l12-1500 --chunk-size 1500
+python scripts/wsp_chunk_embed_input.py \
+  --src sst2/data-l6 --dst sst2/chunks-l6-1500 --chunk-size 1500
+
+# 3) 编码：以 L12 int3 的 chunk-000 为例；其余档按 §11.11.5 的 budget 规则
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=24 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=sst2/emb12 TRIT_EMBED_TAG=l12-int3-c000 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir sst2/chunks-l12-1500/chunk-000 --activation-mode f32 \
+  --out sst2/runs12/l12-int3-c000.json
+
+# 4) 评测：CV 选 C + 10k test bootstrap
+python scripts/wsp_classify_eval.py \
+  --texts sst2/data-l12/texts.json \
+  --run l12-f32='sst2/emb12/l12-pure-f32-c*.f32' \
+  --run l12-int3='sst2/emb12/l12-int3-c*.f32' \
+  --run l12-int4='sst2/emb12/l12-int4-c*.f32' \
+  --run l12-r12='sst2/emb12/l12-r12-c*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --bootstrap 10000 --out sst2/eval-l12-cv.json
+```
+
+表见 `data/wsp-classify-sst2-l12.tsv`（4 行）、
+`data/wsp-classify-sst2-l6.tsv`（4 行）、
+`data/wsp-classify-sst2-bootstrap.tsv`（24 行）、
+`data/wsp-classify-sst2-sensitivity.tsv`（16 行）。
+
+## 11.13 第二种线性 probe 复验（M1.13，SST-2 / LinearSVC）
+
+### 11.13.1 口径
+
+M1.12 的 L12 “均匀 int4 高于 f32”是用 logistic regression 得到的，可能只是
+logistic 损失/正则化的产物。M1.13 不改 embedding、不改 split，只把 probe 换成
+平方 hinge 的 `LinearSVC`（仍是线性头；按用户口径不做 MLP、不做 encoder 微调）。
+`C` 仍由 train 内 5 折 `StratifiedKFold` 在 `{0.01,0.1,1,10}` 中选，test 只评
+一次；10k test-level paired bootstrap，除 `--probe linear_svc` 外其余口径与
+§11.12 相同。
+
+### 11.13.2 主结果
+
+L12：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C | train-CV acc | f32-probe transfer acc |
+|---|---:|---:|---:|---:|---:|---:|
+| f32 | 0.797913 | 0.797896 | 0.878679 | 1 | 0.774133 | 0.797913 |
+| int3 | 0.818781 | 0.818680 | 0.906843 | 10 | 0.803324 | 0.751785 |
+| int4 | 0.841845 | 0.841799 | 0.920562 | 0.1 | 0.826734 | 0.766063 |
+| R12 | 0.814388 | 0.814327 | 0.901651 | 0.1 | 0.799566 | 0.735310 |
+
+L6：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C | train-CV acc | f32-probe transfer acc |
+|---|---:|---:|---:|---:|---:|---:|
+| f32 | 0.802306 | 0.802285 | 0.884427 | 10 | 0.780636 | 0.802306 |
+| int3 | 0.809445 | 0.809344 | 0.893821 | 1 | 0.797110 | 0.650192 |
+| int4 | 0.805052 | 0.805006 | 0.893225 | 0.1 | 0.801301 | 0.683690 |
+| rescan-k2 | 0.802856 | 0.802760 | 0.887944 | 0.1 | 0.792486 | 0.690280 |
+
+与 §11.12 的 logistic probe 对比：L12 int4 `0.841845` vs `0.840198`
+（`+0.001647`），f32 `0.797913` vs `0.800110`（`−0.002197`），所以
+`int4 − f32` 从 `+0.040088` 扩大到 `+0.043932`；R12 `0.814388` vs
+`0.814937`（`−0.000549`），int3 `0.818781` vs `0.823723`（`−0.004942`）。
+L6 两套 probe 除 f32 高 `+0.003844` 外，其余档差 `0.0000–0.0006`，基本同读数。
+完整对照见 `data/wsp-classify-sst2-probe-compare.tsv`。
+
+### 11.13.3 bootstrap：SVM probe
+
+L12：
+
+- `int4 − f32 = +0.043783`，95% CI `[+0.025261,+0.062603]`；
+  即 int4 高于 f32 的结论在 SVM 下仍然成立，且区间比 logistic 更靠上。
+- `int3 − f32 = +0.020769`，CI `[+0.001098,+0.040088]`；显著为正。
+- `R12 − int3 = −0.004502`，CI `[−0.019220,+0.010434]`；不显著。
+- `R12 − int4 = −0.027516`，CI `[−0.042834,−0.012630]`；整段为负。
+- `R12 − f32 = +0.016267`，CI `[−0.001647,+0.034596]`；不显著。
+
+L6：
+
+- `int3 − f32 = +0.006939`，CI `[−0.012095,+0.026359]`；
+  `int4 − f32 = +0.002492`，CI `[−0.017573,+0.023064]`；
+  `rescan-k2 − f32 = +0.000303`，CI `[−0.017573,+0.018122]`。
+  三个 CI 都跨 0，L6 没有 L12 那种量化高于 f32 的现象。
+- int3/int4/rescan-k2 之间的两两 CI 也全部跨 0。
+
+SVM 的 f32 共享 probe 迁移同样掉点，而且比 logistic 更明显：L12 投到
+int3/int4/R12 为 `0.751785 / 0.766063 / 0.735310`（f32 自评 `0.797913`）；
+L6 为 `0.650192 / 0.683690 / 0.690280`（f32 自评 `0.802306`）。这说明
+量化改变的不只是边际尺度，线性决策边界的方向也变了；该结论仍只是观测，
+没有做几何诊断。
+
+### 11.13.4 结论与边界
+
+- **第二种线性头复现了 M1.12 的排序**：L12 `int4 > int3 > f32`，`R12`
+  不高于 int3 且低于 int4；L6 四档基本打平，量化相对 f32 不显著。
+- 因此“L12 均匀 int4 对线性 probe 的正向”不是 logistic 损失特有的；它
+  可能是量化对异常维度/尺度的压缩使线性边界更稳。但它仍然**不是** `R12`
+  的块级重排增益，不能写成“BUDGET 布局提升分类”。
+- 边界：同一批 SST-2 embedding、同一 split、只换线性损失；`LinearSVC` 的
+  `C` 网格在 L12 int3 和 L6 f32 上取到边界 10，但 L12 的核心比较
+  （int4 选 0.1、f32 选 1）不在边界，L6 的结论是“无显著优势”，扩网格也
+  不会把 L6 的布局候选救成正向。仍没有第二分类集、没有 MLP（用户口径明确
+  排除）、没有几何诊断；不能外推到所有分类任务。
+
+表见 `data/wsp-classify-sst2-svc.tsv`（8 行）、
+`data/wsp-classify-sst2-svc-bootstrap.tsv`（24 行）、
+`data/wsp-classify-sst2-probe-compare.tsv`（8 行）。复算时把 §11.12.6 的
+`wsp_classify_eval.py` 命令加上 `--probe linear_svc` 即可。
+
+## 11.14 第二个分类数据集（M1.14，GLUE CoLA / 线性 probe）
+
+### 11.14.1 口径
+
+- 数据集 `GLUE/CoLA`，官方 zip
+  `https://dl.fbaipublicfiles.com/glue/data/CoLA.zip`：8,551 train / 1,043 dev；
+  `test.tsv` 只有 `index/sentence`、没有标签，因此用 `dev.tsv` 作 held-out
+  test，下文所有 “test” 都指 dev。标签 `0 = unacceptable`、`1 = acceptable`；
+  train 为 6,023/2,528，dev 为 721/322。
+- 9,594 条文本（train+dev），seq 64、mask mean pooling + L2 normalize，编码器
+  冻结；L12/L6 各四档，与 §11.12/§11.13 的量化预算相同（L12 `f32/int3/int4/R12`，
+  L6 `f32/int3/int4/rescan-k2`）。
+- CoLA dev 不是平衡集：多数类（acceptable）基线 accuracy `0.691275`，全判
+  acceptable 的 macro-F1 `0.408730`。按 SST-2 的“accuracy 选 C + 无类别权重”
+  口径，四个配置全部塌到多数类（§11.14.4），因此**主口径改为
+  `class_weight="balanced"` + train 内 5 折按 macro-F1 选 C**；仍只训练线性头，
+  不做 MLP、不做 encoder 微调。
+- 两种线性头都跑：logistic regression 与平方 hinge `LinearSVC`；`C` 网格
+  `{0.01,0.1,1,10}`，test 只评一次。10k test-level paired bootstrap 同时对
+  accuracy 与 macro-F1 报差值、95% CI 和 `better_fraction`。另做
+  `{0.01,...,100}` 扩网格与无类别权重敏感性（§11.14.4）。
+- 编码同样按 1,500 条分块（9,594 → 7 块，前 6 块 1,500、尾块 594）；L12/L6
+  每个档位拼回 `WSPEMB1` 后均为 9,594 行。
+
+### 11.14.2 主结果（balanced + macro-F1 选 C）
+
+L12：
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.574305 | 0.549444 | 0.602362 | 10 | 0.569175 |
+| logreg | int3 | 0.558006 | 0.532857 | 0.595448 | 10 | 0.558885 |
+| logreg | int4 | 0.587728 | 0.561518 | 0.603783 | 10 | 0.570000 |
+| logreg | R12 | 0.566635 | 0.543040 | 0.585619 | 10 | 0.563494 |
+| linear_svc | f32 | 0.577181 | 0.550525 | 0.606660 | 10 | 0.572624 |
+| linear_svc | int3 | 0.566635 | 0.539541 | 0.595181 | 10 | 0.559755 |
+| linear_svc | int4 | 0.585810 | 0.559916 | 0.606268 | 10 | 0.569985 |
+| linear_svc | R12 | 0.563758 | 0.538937 | 0.590344 | 10 | 0.563314 |
+
+L6：
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.582934 | 0.558366 | 0.603137 | 1 | 0.548995 |
+| logreg | int3 | 0.574305 | 0.551128 | 0.584844 | 10 | 0.548159 |
+| logreg | int4 | 0.573346 | 0.547339 | 0.595659 | 10 | 0.547077 |
+| logreg | rescan-k2 | 0.570470 | 0.544950 | 0.583474 | 1 | 0.535794 |
+| linear_svc | f32 | 0.573346 | 0.549910 | 0.601565 | 0.1 | 0.550060 |
+| linear_svc | int3 | 0.571429 | 0.548302 | 0.584525 | 1 | 0.549473 |
+| linear_svc | int4 | 0.573346 | 0.548644 | 0.595474 | 1 | 0.546789 |
+| linear_svc | rescan-k2 | 0.574305 | 0.549872 | 0.592735 | 10 | 0.540597 |
+
+CoLA 上线性 probe 本身很弱：balanced accuracy 只有 `0.57–0.59`（随机为 0.50），
+AUC 约 `0.60`。因此这组读数检验的是“在弱线性可分的第二分类集上，int4 的
+SST-2 正向是否还在”，不是“CoLA 状态-of-the-art”。
+
+### 11.14.3 bootstrap：int4 的正向没有复现
+
+L12，probe 重新训练、balanced logistic：
+
+- `int4 − f32 = +0.013341`，95% CI `[−0.006711,+0.033557]`，
+  better `0.9077`；点估计为正，但 CI 跨 0。
+- `int3 − f32 = −0.016517`，CI `[−0.046021,+0.013423]`；点估计转负。
+- `R12 − f32 = −0.007833`，CI `[−0.036433,+0.022052]`；没有分类增益。
+- `int4 − int3 = +0.029858`，accuracy CI `[0.000000,+0.059444]`，
+  better `0.9789`；int4 对 int3 只在 accuracy 上擦边，macro-F1 的
+  `int4 − int3 = +0.028788`，CI `[−0.000054,+0.058031]`，下界擦边为负。
+
+L12，balanced `LinearSVC`：
+
+- `int4 − f32 = +0.008467`，CI `[−0.011505,+0.028763]`，better `0.8091`。
+- `int3 − f32 = −0.010809`，CI `[−0.040268,+0.018217]`。
+- `R12 − f32 = −0.013690`，CI `[−0.042186,+0.015340]`。
+- `int4 − int3 = +0.019276`，CI `[−0.010547,+0.048897]`，不显著。
+
+macro-F1 的读数和 accuracy 同向：L12 logreg `int4 − f32 = +0.012021`
+（CI `[−0.007247,+0.031408]`），SVC `+0.009261`（CI `[−0.009135,+0.027831]`），
+两个 CI 都跨 0。
+
+L6：
+
+- logreg：`int4 − f32 = −0.009679`（CI `[−0.031640,+0.012464]`），
+  `rescan-k2 − f32 = −0.012451`（CI `[−0.040268,+0.016299]`）；量化档点估计
+  反而略低。
+- SVC：`int4 − f32 = −0.000126`（CI `[−0.022052,+0.022052]`），
+  `rescan-k2 − f32 = −0.000950`（CI `[−0.028763,+0.029722]`）；四档基本打平。
+
+**关键判据**：SST-2 上 L12 `int4−f32` 的点估计是 logistic `+0.040088`、
+SVC `+0.043783`；CoLA 的 95% CI 上界分别只有 `+0.033557` / `+0.028763`。
+也就是说，CoLA 这组数据在 95% 置信水平下已经把“SST-2 同量级的 +0.040~+0.044
+增益”排除在区间外。它可以容许一个小的、约 1 个百分点的正向，但不能支持
+“int4 的正向跨数据集稳定存在”。
+
+### 11.14.4 不平衡与 C 边界敏感性
+
+无类别权重的 logistic（accuracy 选 C）在 CoLA 上塌到多数类：
+
+| 配置 | accuracy | macro-F1 | AUC | selected C |
+|---|---:|---:|---:|---:|
+| f32 | 0.687440 | 0.462187 | 0.604240 | 1 |
+| int3 | 0.689358 | 0.443825 | 0.592998 | 1 |
+| int4 | 0.686481 | 0.457052 | 0.603292 | 1 |
+| R12 | 0.691275 | 0.408730 | 0.550015 | 0.01 |
+
+`R12` 这一行正好等于“全判 acceptable”的基线（accuracy `0.691275`、
+macro-F1 `0.408730`），说明无权重 accuracy 口径在 69/31 的 dev 上不可用；
+它不是量化档之间的真实差异。在这个口径下 int4 也没有高于 f32
+（`0.686481 < 0.687440`）。改成 balanced + macro-F1 选 C 后才有
+§11.14.2 的读数。
+
+C 网格也有边界效应：主口径四个 L12 logreg 配置都选到上界 `C=10`。把网格
+扩到 `100` 后，f32/int4 都选 `100`，`int4−f32` 从 `+0.013423` 缩到
+`+0.003836`（0.580058−0.576222）；int3 从 `0.558006` 升到 `0.571429`。
+SVC 的 f32/int4 仍选 `C=10`，差值维持 `+0.008629`；R12 在扩网格后略降。
+因此主表用 `0.01–10` 的协议读数，但 int4 的点估计优势并不稳：换一格 C 就
+从 1.3 个百分点缩到 0.4 个百分点。
+
+### 11.14.5 结论与边界
+
+- **SST-2 的 L12 int4 正向没有跨数据集泛化。** 在 CoLA 上，logreg 点估计
+  `+0.013341`、SVC `+0.008467`，两个 95% CI 都跨 0；L6 的 int4 与 f32
+  打平或略低。把 SST-2 的 `+0.040/+0.044` 当成“量化普遍提升线性分类”的
+  证据是不成立的。
+- **`R12`/`rescan-k2` 在第二个分类集上仍没有任务头增益。** L12 `R12` 对 f32
+  为 `−0.007833`（logreg）/ `−0.013690`（SVC），L6 `rescan-k2` 对 f32 为
+  `−0.012451` / `−0.000950`，全部不显著；STS 的块级重排仍只能留在
+  STS in-domain。
+- **CoLA 的 probe 太弱，不能把“不显著”写成“已证不存在”。** balanced
+  accuracy 只有 0.57–0.59、AUC 0.60，1,043 条 test 对 1–2 个百分点的效应
+  没有足够功效；它能排除 SST-2 同量级（约 4 个百分点）的效应，但不能排除
+  一个更小的、数据集/正则化特定的正向。要判“完全没有”需要更强 probe；
+  第三数据集已在 §11.15 完成，但仍只能排除同量级效应，不能把“不显著”
+  写成“已证不存在”。
+- 边界：第二个数据集只有一个（GLUE CoLA）、dev 作 test、单 split、单 seq 64、
+  两个 MiniLM、只训练线性头、无 MLP、无 encoder 微调；CoLA 的标签分布
+  69/31，主口径必须带类别权重。不能外推到平衡/多分类/NLI/生成任务。
+- 结论只改“泛化”判断，不改 SST-2 的原始读数：SST-2 上 int4 对 f32 的正向
+  仍是该数据集/该 probe 家族的观察，但不再是跨数据集的普遍结论。
+
+### 11.14.6 复算
+
+```bash
+# 1) 下载并解压 GLUE CoLA
+curl -L -o cola-raw/CoLA.zip https://dl.fbaipublicfiles.com/glue/data/CoLA.zip
+unzip -q cola-raw/CoLA.zip -d cola-raw
+
+# 2) 导出：train.tsv -> train，dev.tsv -> test（test.tsv 无标签）
+python scripts/wsp_export_sst2.py \
+  --train cola-raw/CoLA/train.tsv --test cola-raw/CoLA/dev.tsv \
+  --format cola --out cola/data-l12 --model all-MiniLM-L12-v2 --seq 64
+python scripts/wsp_export_sst2.py \
+  --train cola-raw/CoLA/train.tsv --test cola-raw/CoLA/dev.tsv \
+  --format cola --out cola/data-l6 --model all-MiniLM-L6-v2 --seq 64
+
+# 3) 1,500 条分块；编码前先把全量 texts.json 另存为 texts-l12.json/texts-l6.json
+python scripts/wsp_chunk_embed_input.py \
+  --src cola/data-l12 --dst cola/chunks-l12-1500 --chunk-size 1500
+python scripts/wsp_chunk_embed_input.py \
+  --src cola/data-l6 --dst cola/chunks-l6-1500 --chunk-size 1500
+
+# 4) 编码：以 L12 int3 chunk-000 为例；f32 由每次运行的 pure-f32.f32 另存
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=24 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=cola/emb12 TRIT_EMBED_TAG=l12-int3-000 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir cola/chunks-l12-1500/chunk-000 --activation-mode f32 \
+  --out cola/runs12/l12-int3-000.json
+
+# 5) 主评测：balanced + macro-F1 选 C + accuracy/macro-F1 双 bootstrap
+python scripts/wsp_classify_eval.py \
+  --texts cola/texts-l12.json \
+  --run l12-f32='cola/emb12/l12-pure-f32-*.f32' \
+  --run l12-int3='cola/emb12/l12-int3-*.f32' \
+  --run l12-int4='cola/emb12/l12-int4-*.f32' \
+  --run l12-r12='cola/emb12/l12-r12-*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --cv-metric macro_f1 --class-weight balanced \
+  --bootstrap 10000 --bootstrap-metric both \
+  --probe logreg --out cola/eval-l12-balanced-cv.json
+```
+
+L6 把前缀换成 `l6`、budget 换成 `budget-l6-pure-int3.json`/`l6-rescan-k2.json`，
+`--probe` 换成 `linear_svc` 即得另一套。表见
+`data/wsp-classify-cola-l12.tsv`（8 行）、`data/wsp-classify-cola-l6.tsv`
+（8 行）、`data/wsp-classify-cola-l12-bootstrap.tsv`（48 行）、
+`data/wsp-classify-cola-l6-bootstrap.tsv`（48 行）、
+`data/wsp-classify-cola-l12-probe-compare.tsv`（4 行）、
+`data/wsp-classify-cola-l6-probe-compare.tsv`（4 行）、
+`data/wsp-classify-cola-l12-unweighted.tsv`（4 行）、
+`data/wsp-classify-cola-l12-cgrid.tsv`（16 行）。
+
+## 11.15 第三个分类数据集（M1.15，TweetEval/hate / 线性 probe）
+
+### 11.15.1 口径
+
+- 数据集 `tweet_eval/hate`（HuggingFace `tweet_eval` 的 `hate` 配置），原始
+  parquet：
+  `https://huggingface.co/datasets/tweet_eval/resolve/main/hate/train-00000-of-00001.parquet`
+  / `.../test-00000-of-00001.parquet`。单句二分类，标签 `0=non-hate`、`1=hate`。
+- 原始 8,993 train / 2,970 test；清洗规则是去掉空文本、按 stripped text 去重、
+  丢弃同文本标签冲突、移除 test 中与 train 精确重叠的文本。train 去掉 7 条空文本
+  与 1 条标签冲突，test 去掉 232 条 train 重叠及 test 内重复后，得到
+  **8,985 train / 2,734 test**；标签为 train 5,204/3,781、test 1,619/1,115。
+  清洗统计见 `prepare-summary.json`，清洗后的 JSONL 是 `raw/train.jsonl` /
+  `raw/test.jsonl`。
+- test 多数类（全判 non-hate）基线：accuracy `0.592173`、macro-F1 `0.371927`。
+- seq 64，mean pooling + L2 normalize，编码器冻结；L12/L6 各四档，与
+  §11.12–§11.14 的量化预算相同（L12 `f32/int3/int4/R12`，L6
+  `f32/int3/int4/rescan-k2`）。用关闭截断的 tokenizer 统计：train 4.5% 超过
+  64 token（均值 31.8、p95 63），test 12.8% 超过 64 token（均值 36.6、p95 77、
+  max 141）。
+- 评测口径分两套，均只训练线性头，不做 MLP、不做 encoder 微调：
+  1. **无权重口径**，与 SST-2 主口径一致：`class_weight="none"`、train 内
+     5 折按 accuracy 选 C，主指标 accuracy；用于直接回答“SST-2 的 int4 正向
+     是否在第三数据集复现”。
+  2. **balanced 口径**，用于类别不均衡的稳健性：`class_weight="balanced"`、
+     train 内 5 折按 macro-F1 选 C，同时报 accuracy 与 macro-F1。
+- 两种线性头都跑：logistic regression 与平方 hinge `LinearSVC`；`C` 网格
+  `{0.01,0.1,1,10}`，test 只评一次。10k test-level paired bootstrap 报差值、
+  95% CI 与 `better_fraction`；另做 L12 balanced logreg 的 fixed `C=1`
+  敏感性，消除“不同档位选到不同 C”的 confound。
+- 编码按 1,500 条分块（11,719 → 8 块，前 7 块 1,500、尾块 1,219）；
+  L12/L6 每个档位拼回 `WSPEMB1` 后均为 11,719 行。
+
+### 11.15.2 L12 无权重口径（与 SST-2 同口径）
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV accuracy |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.576445 | 0.567921 | 0.686456 | 1 | 0.771842 |
+| logreg | int3 | 0.560717 | 0.549944 | 0.698220 | 1 | 0.777629 |
+| logreg | int4 | 0.572787 | 0.564640 | 0.687451 | 1 | 0.769839 |
+| logreg | R12 | 0.562546 | 0.551344 | 0.700598 | 1 | 0.779410 |
+| linear_svc | f32 | 0.571324 | 0.562138 | 0.688636 | 0.1 | 0.772510 |
+| linear_svc | int3 | 0.553767 | 0.541568 | 0.698113 | 0.1 | 0.777518 |
+| linear_svc | int4 | 0.566569 | 0.557233 | 0.691178 | 1 | 0.770840 |
+| linear_svc | R12 | 0.557791 | 0.545421 | 0.703384 | 0.1 | 0.778408 |
+
+L12，probe 重新训练、10k paired bootstrap（下列均为“候选−f32”）：
+
+- logreg `int4−f32 = −0.003679`，95% CI `[−0.012802,+0.005486]`，
+  better `0.2304`；点估计略负，CI 跨 0。
+- logreg `int3−f32 = −0.015737`，CI `[−0.028164,−0.003292]`；
+  `R12−f32 = −0.013923`，CI `[−0.026701,−0.001463]`；两者都显著为负。
+- SVC `int4−f32 = −0.004826`，CI `[−0.015362,+0.005852]`，better `0.1908`；
+  `int3−f32 = −0.017598`（CI `[−0.029993,−0.004755]`），
+  `R12−f32 = −0.013585`（CI `[−0.025969,−0.001454]`）。
+
+AUC 在四档之间只有 `0.686–0.703` 的小幅差异，且没有做 AUC 的区间估计；
+它不能把 int4 的 accuracy 负号翻成正号。无权重口径下的直接结论是：
+**int4 没有复现 SST-2 的正向，点估计反而略低；`int3`/`R12` 明显低于 f32。**
+
+### 11.15.3 L12 balanced 口径（macro-F1 选 C）
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.547549 | 0.530500 | 0.689610 | 10 | 0.765937 |
+| logreg | int3 | 0.529627 | 0.505323 | 0.695445 | 10 | 0.768920 |
+| logreg | int4 | 0.534748 | 0.513450 | 0.689071 | 1 | 0.765414 |
+| logreg | R12 | 0.532187 | 0.508100 | 0.702542 | 1 | 0.774654 |
+| linear_svc | f32 | 0.545721 | 0.528534 | 0.694737 | 1 | 0.766030 |
+| linear_svc | int3 | 0.526335 | 0.500743 | 0.702604 | 0.1 | 0.768441 |
+| linear_svc | int4 | 0.532553 | 0.510524 | 0.693180 | 0.1 | 0.764588 |
+| linear_svc | R12 | 0.532187 | 0.508267 | 0.708809 | 0.1 | 0.775566 |
+
+balanced 口径下，int4 对 f32 的点估计与 CI 全部转负：
+
+- logreg：accuracy `int4−f32 = −0.012694`，CI `[−0.022677,−0.002917]`；
+  macro-F1 `−0.016905`，CI `[−0.028280,−0.005419]`。
+- SVC：accuracy `−0.013028`，CI `[−0.022312,−0.003292]`；
+  macro-F1 `−0.017835`，CI `[−0.028703,−0.006747]`。
+- `int3−f32` 与 `R12−f32` 也全部为负：logreg accuracy `−0.017922` /
+  `−0.015281`，SVC `−0.019338` / `−0.013453`；对应的 macro-F1 也整段为负。
+
+**选 C 不匹配的对照**：balanced logreg 的 f32/int3 选到上界 `C=10`，
+int4/R12 选 `C=1`。为排除这个 confound，另跑 fixed `C=1`
+（`eval-l12-balanced-c1.json`）：f32 `0.544623 / 0.525344`，int4
+`0.534748 / 0.513450`；`int4−f32` accuracy `−0.009860`
+（CI `[−0.017922,−0.002195]`），macro-F1 `−0.011855`
+（CI `[−0.021066,−0.002938]`）。**负号不是选 C 造成的**；固定 C 后仍是约
+−1 个百分点的显著负向。`int3−f32`（`−0.015424`）与 `R12−f32`
+（`−0.012446`）在 fixed C=1 下也仍为负。
+
+### 11.15.4 L6 balanced 口径
+
+| probe | 配置 | accuracy | macro-F1 | AUC | selected C | CV macro-F1 |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | f32 | 0.516459 | 0.490066 | 0.674528 | 1 | 0.761785 |
+| logreg | int3 | 0.512070 | 0.483218 | 0.693341 | 1 | 0.759251 |
+| logreg | int4 | 0.509876 | 0.482207 | 0.680805 | 1 | 0.757567 |
+| logreg | rescan-k2 | 0.515362 | 0.486043 | 0.709857 | 1 | 0.767368 |
+| linear_svc | f32 | 0.513168 | 0.485776 | 0.677936 | 0.1 | 0.760818 |
+| linear_svc | int3 | 0.506218 | 0.476248 | 0.685253 | 1 | 0.759570 |
+| linear_svc | int4 | 0.504023 | 0.476024 | 0.671679 | 1 | 0.757271 |
+| linear_svc | rescan-k2 | 0.514265 | 0.484592 | 0.710314 | 0.1 | 0.768537 |
+
+L6 的两个 probe 方向不一致，没有一致优势：
+
+- logreg `int4−f32 = +0.006576`，CI `[−0.001463,+0.014265]`；macro-F1
+  `+0.007854`，CI `[−0.001562,+0.017248]`；点估计为正但 CI 跨 0。
+- SVC `int4−f32 = −0.009173`，CI `[−0.018288,−0.000366]`；macro-F1
+  `−0.009786`，CI `[−0.020570,+0.000887]`；accuracy 的负向擦边显著。
+- `rescan-k2−f32` 在 logreg/SVC 都约为 0（`+0.001127` / `+0.001069`），
+  CI 全跨 0；L6 的块级重扫同样没有分类增益。
+
+### 11.15.5 跨数据集对照与结论
+
+L12 `int4−f32` 的跨数据集汇总（候选−基线；SST-2 无权重、CoLA/hate balanced
+为各自主口径，hate 另列无权重同口径）：
+
+| 数据集 / 口径 | test 条数 | logreg | 95% CI | SVC | 95% CI |
+|---|---:|---:|---|---:|---|
+| SST-2，无权重 | 1,821 | +0.040034 | `[+0.020868,+0.058759]` | +0.043783 | `[+0.025261,+0.062603]` |
+| CoLA，balanced | 1,043 | +0.013341 | `[−0.006711,+0.033557]` | +0.008467 | `[−0.011505,+0.028763]` |
+| Hate，无权重 | 2,734 | −0.003679 | `[−0.012802,+0.005486]` | −0.004826 | `[−0.015362,+0.005852]` |
+| Hate，balanced | 2,734 | −0.012694 | `[−0.022677,−0.002917]` | −0.013028 | `[−0.022312,−0.003292]` |
+
+- **SST-2 的 int4 正向没有跨任务/跨数据集复现。** 第三个数据集上，无权重口径
+  点估计略负且 CI 跨 0；balanced 口径（以及 fixed C=1）整段为负。hate 的
+  test 有 2,734 条，无权重口径 CI 上界只有 `+0.005486`，比 CoLA 的
+  `+0.033557` 更严格地把 SST-2 的 `+0.040/+0.044` 排除在外。
+- **结论强度**：三个数据集（SST-2 电影评论、CoLA 语法判断、TweetEval/hate
+  社媒仇恨言论）覆盖不同任务/领域，SST-2 的正向只在 SST-2 出现；因此它应被
+  写成数据集/任务/probe 家族特定的观察，而不是“int4 普遍提升线性分类”。
+- **`R12`/`rescan-k2` 仍无任务头增益。** L12 `R12` 在这个数据集上不仅低于
+  int4，也显著低于 f32；L6 `rescan-k2` 与 f32 打平。STS 上的块级重排收益
+  没有转成分类收益的结论继续成立。
+- **probe 很弱，不能把“没有正向”写成“已证不存在任何正向”。** hate 的
+  raw accuracy 只有 `0.51–0.58`，低于多数类 `0.592173`；macro-F1 `0.48–0.57`
+  高于全判 non-hate 的 `0.371927`；AUC 约 `0.67–0.71`。这说明线性头能分开
+  两类但阈值/间隔很差，绝对 accuracy 不能当任务 SOTA，只能做同一 test 上的
+  配对比较。2,734 条 test 足以排除 +4 个百分点量级的效应，不能排除更小的、
+  数据集/正则化特定的正向。
+- 边界：单 split、单 seq 64（test 12.8% 被截断）、两个 MiniLM、只训练线性头、
+  无 MLP、无 encoder 微调；hate 标签本身噪声/主观性高；清洗后的 test 移除了
+  232 条与 train 重叠的文本，不能直接等同官方榜单读数；结论不能外推到平衡/
+  多分类/NLI/生成任务。
+
+### 11.15.6 复算
+
+```bash
+# 1) 下载原始 parquet
+curl -L -o hate-train.parquet \
+  https://huggingface.co/datasets/tweet_eval/resolve/main/hate/train-00000-of-00001.parquet
+curl -L -o hate-test.parquet \
+  https://huggingface.co/datasets/tweet_eval/resolve/main/hate/test-00000-of-00001.parquet
+
+# 2) 清洗并写 JSONL：去空文本、按 stripped text 去重、丢弃标签冲突、
+#    移除 test 中与 train 重叠的文本；同时输出 prepare-summary.json
+python - <<'PY'
+import json
+from pathlib import Path
+import pandas as pd
+
+out = Path("raw"); out.mkdir(parents=True, exist_ok=True)
+train = pd.read_parquet("hate-train.parquet")[["text", "label"]]
+test = pd.read_parquet("hate-test.parquet")[["text", "label"]]
+for frame in (train, test):
+    frame["text"] = frame["text"].fillna("").astype(str).str.strip()
+train = train[train["text"] != ""]
+test = test[test["text"] != ""]
+
+conflict = train.groupby("text")["label"].nunique()
+conflict = set(conflict[conflict > 1].index)
+train = train[~train["text"].isin(conflict)].drop_duplicates("text")
+test = test.drop_duplicates("text")
+test = test[~test["text"].isin(set(train["text"]))]
+
+for name, frame in (("train", train), ("test", test)):
+    with (out / f"{name}.jsonl").open("w", encoding="utf-8") as handle:
+        for row in frame.itertuples(index=False):
+            handle.write(json.dumps({"text": row.text, "label": int(row.label)},
+                                    ensure_ascii=False) + "\n")
+summary = {
+    "dataset": "tweet_eval/hate",
+    "label_names": {"0": "non-hate", "1": "hate"},
+    "raw": {"train": 8993, "test": 2970},
+    "drop_label_conflicts": {"train": len(conflict), "test": 0},
+    "drop_test_train_overlap": 232,
+    "clean": {"train": len(train), "test": len(test)},
+    "labels": {
+        name: {str(k): int(v) for k, v in frame["label"].value_counts().items()}
+        for name, frame in (("train", train), ("test", test))
+    },
+    "note": "empty text dropped; exact stripped-text duplicates deduped; "
+            "conflicting duplicate labels dropped; test texts present in train removed",
+}
+(out / "prepare-summary.json").write_text(
+    json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+PY
+
+# 3) 导出：manifest 的 dataset/labels 由 --dataset-name/--label-names 覆盖
+python scripts/wsp_export_sst2.py \
+  --format jsonl --train raw/train.jsonl --test raw/test.jsonl \
+  --dataset-name 'TweetEval/hate (dedup/leak-filtered)' \
+  --label-names non-hate,hate \
+  --out data-l12 --model all-MiniLM-L12-v2 --seq 64
+python scripts/wsp_export_sst2.py \
+  --format jsonl --train raw/train.jsonl --test raw/test.jsonl \
+  --dataset-name 'TweetEval/hate (dedup/leak-filtered)' \
+  --label-names non-hate,hate \
+  --out data-l6 --model all-MiniLM-L6-v2 --seq 64
+
+# 4) 1,500 条分块；编码前先把全量 texts.json 另存为 texts-l12.json/texts-l6.json
+python scripts/wsp_chunk_embed_input.py \
+  --src data-l12 --dst chunks-l12-1500 --chunk-size 1500
+python scripts/wsp_chunk_embed_input.py \
+  --src data-l6 --dst chunks-l6-1500 --chunk-size 1500
+
+# 5) 编码：以 L12 int3 chunk-000 为例；f32 由每次运行的 pure-f32.f32 另存
+TRIT_LAYERS=12 TRIT_WEIGHT_BITS=3 TRIT_BUDGET=budget-l12-pure-int3.json \
+TRIT_THREADS=16 TRIT_SKIP_DIAG=1 TRIT_NO_LAYERS=1 \
+TRIT_EMBED_DUMP=emb12 TRIT_EMBED_TAG=l12-int3-000 \
+bert6 --file all-MiniLM-L12-v2.safetensors \
+  --data-dir chunks-l12-1500/chunk-000 --activation-mode f32 \
+  --out runs12/l12-int3-000.json
+
+# 6) 无权重主口径（与 SST-2 一致）
+python scripts/wsp_classify_eval.py \
+  --texts texts-l12.json \
+  --run l12-f32='emb12/l12-pure-f32-*.f32' \
+  --run l12-int3='emb12/l12-int3-*.f32' \
+  --run l12-int4='emb12/l12-int4-*.f32' \
+  --run l12-r12='emb12/l12-r12-*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --bootstrap 10000 --probe logreg --out eval-l12-cv.json
+
+# 7) balanced 口径（macro-F1 选 C，accuracy/macro-F1 双 bootstrap）
+python scripts/wsp_classify_eval.py \
+  --texts texts-l12.json \
+  --run l12-f32='emb12/l12-pure-f32-*.f32' \
+  --run l12-int3='emb12/l12-int3-*.f32' \
+  --run l12-int4='emb12/l12-int4-*.f32' \
+  --run l12-r12='emb12/l12-r12-*.f32' \
+  --group 'l12=l12-f32|l12-int3,l12-int4,l12-r12' \
+  --cv-C --cv-metric macro_f1 --class-weight balanced \
+  --bootstrap 10000 --bootstrap-metric both \
+  --probe logreg --out eval-l12-balanced-cv.json
+```
+
+L6 把前缀换成 `l6`、budget 换成 `budget-l6-pure-int3.json`/`l6-rescan-k2.json`，
+`--probe` 换成 `linear_svc` 即得另一套。表见
+`data/wsp-classify-hate-l12.tsv`（8 行）、
+`data/wsp-classify-hate-l12-bootstrap.tsv`（24 行）、
+`data/wsp-classify-hate-l12-balanced.tsv`（8 行）、
+`data/wsp-classify-hate-l12-balanced-bootstrap.tsv`（48 行）、
+`data/wsp-classify-hate-l12-probe-compare.tsv`（4 行）、
+`data/wsp-classify-hate-l12-c1.tsv`（4 行）、
+`data/wsp-classify-hate-l6-balanced.tsv`（8 行）、
+`data/wsp-classify-hate-l6-balanced-bootstrap.tsv`（48 行）、
+`data/wsp-classify-hate-l6-probe-compare.tsv`（4 行）。
+
+## 11.16 SST-2 内部子样本稳定性（M1.16）
+
+### 11.16.1 口径
+
+- 固定 SST-2 官方 test（1,821 条），只在 train（6,920 条）上重复做
+  **分层 5 折 × 5 个种子**（seed `7–11`），共 **25 次重训**。每次用 4/5
+  的 train（5,536 条）训练线性 probe，在完整 test 上评一次。
+- 为隔离“probe 训练样本变化”，**C 固定为全量 train 选出的值**，不在每个
+  子样本上重新选 C。L12 logreg：`f32=10 / int3=1 / int4=10 / R12=1`；
+  L12 SVC：`1 / 10 / 0.1 / 0.1`；L6 logreg：`10 / 10 / 1 / 1`；
+  L6 SVC：`10 / 1 / 0.1 / 0.1`。
+- 每个 replicate 记录 4 个配置在完整 test 上的 accuracy/macro-F1，并计算
+  `candidate − f32`；汇总 25 个差值的均值、标准差、最小/最大值和正负计数。
+  这里问的是“换一批训练样本，SST-2 上的排序是否还在”，不是新的独立
+  test 估计，也不是对 test 的重采样。
+- 实现：`scripts/wsp_classify_subsample.py`；原始结果
+  `subsample-l12-logreg.json`、`subsample-l12-svc.json`、
+  `subsample-l6-logreg.json`、`subsample-l6-svc.json`。
+
+### 11.16.2 L12：int4 正向在 25/25 次重训中保持
+
+| probe | 候选 | 全量 test Δ | 子样本均值 | sd | min | max | 正/25 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| logreg | int3 | +0.023613 | +0.024997 | 0.005001 | +0.013729 | +0.036244 | 25 |
+| logreg | int4 | +0.040088 | +0.042987 | 0.005372 | +0.028556 | +0.050522 | 25 |
+| logreg | R12 | +0.014827 | +0.019001 | 0.004605 | +0.009336 | +0.030203 | 25 |
+| linear_svc | int3 | +0.020868 | +0.020297 | 0.003529 | +0.013729 | +0.028007 | 25 |
+| linear_svc | int4 | +0.043932 | +0.044437 | 0.004632 | +0.034596 | +0.052718 | 25 |
+| linear_svc | R12 | +0.016474 | +0.020319 | 0.004668 | +0.010983 | +0.034596 | 25 |
+
+- L12 logreg 的 `int4−f32`：全量 test `+0.040088`，25 次子样本均值
+  `+0.042987`，**25/25 为正**，最差一次仍有 `+0.028556`。
+- L12 SVC 的 `int4−f32`：全量 `+0.043932`，子样本均值 `+0.044437`，
+  **25/25 为正**，最差 `+0.034596`。
+- 两种头的子样本均值与全量 test 只差约 `0.003`，方向完全一致；`int3`/`R12`
+  也都在 25/25 次中为正，但幅度小于 int4。**SST-2 的 int4 正向不是某一次
+  train 划分的偶然。**
+
+### 11.16.3 L6：有小幅正向，但不稳定
+
+| probe | 候选 | 全量 test Δ | 子样本均值 | sd | min | max | 正/负/零 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| logreg | int3 | +0.010983 | +0.009665 | 0.004182 | −0.000549 | +0.018671 | 24/1/0 |
+| logreg | int4 | +0.006041 | +0.006304 | 0.004479 | −0.002746 | +0.014827 | 22/2/1 |
+| logreg | rescan-k2 | +0.003844 | +0.002724 | 0.004577 | −0.005491 | +0.011532 | 16/9/0 |
+| linear_svc | int3 | +0.007139 | +0.007249 | 0.004367 | −0.002197 | +0.014827 | 23/2/0 |
+| linear_svc | int4 | +0.002746 | +0.003580 | 0.005268 | −0.010983 | +0.012630 | 19/6/0 |
+| linear_svc | rescan-k2 | +0.000549 | −0.000615 | 0.003865 | −0.008237 | +0.008786 | 10/14/1 |
+
+L6 的 int4 均值只有 `+0.0036–0.0063`，且分别有 2/25、6/25 次为负；
+`rescan-k2` 的 logreg/SVC 均值接近 0，SVC 甚至有 14/25 为负。**L6 的量化
+正向即使存在，也远小于 L12，且不满足“每次重训同号”。**
+
+### 11.16.4 与跨数据集结论的关系
+
+- 这条实验把 SST-2 的观察从“单 split 的点估计”升级为“**训练子样本稳定的
+  L12 表示效应**”：在 25 次不同的 80% train 子样本上，L12 int4 对 f32 的
+  accuracy 差值全部为正，且均值与官方 test 的 `+0.040/+0.044` 一致。
+- 但它仍**不是量化普遍提升线性分类**：同样的 int4 在 CoLA 上只有
+  `+0.013/+0.008`（CI 跨 0），在 TweetEval/hate 上是 `−0.0037/−0.0048`
+  （无权重）或 `−0.0127/−0.0130`（balanced，CI 全负）；L6 上也只有
+  `+0.0036–0.0063` 且不稳定。**“数据集内稳定”与“跨数据集泛化”是两件事，
+  不能用一个替代另一个。**
+- 也可以反过来读：SST-2 的正向既然在训练子样本上稳定，就不能用“训练噪声”
+  解释掉；更合理的描述是 L12 的 int4 表示在 SST-2 这个任务/分布上有一个
+  稳定的线性头优势，但这个优势没有随任务/数据集迁移。
+- 边界：C 固定自全量 train，只测训练样本变化，不测 C 选择或 test 重采样；
+  5 折的训练集重叠，25 个差值不独立，正负计数只作描述，不做二项检验；
+  只做 SST-2、两个 MiniLM、两个线性头，无 MLP、无 encoder 微调。这个实验
+  不能证明机制（例如量化正则化、边界间隔、特征各向异性），只证明稳定性。
+
+### 11.16.5 复算
+
+```bash
+# L12 logreg：固定 test，5 折 × 5 seed = 25 次重训
+python scripts/wsp_classify_subsample.py \
+  --texts sst2/data-l12/texts.json \
+  --run l12-f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run l12-int3='sst2/emb12/l12-int3-*.f32' \
+  --run l12-int4='sst2/emb12/l12-int4-*.f32' \
+  --run l12-r12='sst2/emb12/l12-r12-*.f32' \
+  --baseline l12-f32 \
+  --C l12-f32=10 --C l12-int3=1 --C l12-int4=10 --C l12-r12=1 \
+  --probe logreg --folds 5 --repeats 5 --seed 7 \
+  --out sst2/subsample-l12-logreg.json
+
+# L12 SVC 把 --probe 换成 linear_svc，C 换成 1/10/0.1/0.1
+# L6 把前缀换成 l6、budget 换成 rescan-k2，C 换成上表所列
+```
+
+表见 `data/wsp-classify-sst2-subsample.tsv`（24 行，accuracy/macro-F1 ×
+4 模型-probe × 3 候选）与
+`data/wsp-classify-sst2-subsample-runs.tsv`（16 行，4 配置的均值/极值）。
+
+## 11.17 几何诊断与 PCA 干预（M1.17）
+
+### 11.17.1 问题与口径
+
+M1.16 把 SST-2 的 L12 int4 正向钉成“训练子样本稳定”，但没有回答为什么
+只在 SST-2 发生、CoLA/hate 不复现。这里检查三个候选解释：
+
+1. 样本范数：量化改变了向量的长度，线性头只是被尺度带着走；
+2. 协方差谱/各向异性：量化压平了少数主方向，线性头因此更好切；
+3. 类别方向集中度：量化把类均值差方向挤进少数主成分，任务信号变成低秩。
+
+口径：
+
+- 数据与 §11.12–§11.16 同一批 `WSPEMB1`，seq 64、mask mean pooling + L2
+  normalize；所有 run 的逐行 `mean_norm` 都是 `1.000000`，**样本范数这条
+  在数据层面已经不成立**。
+- 几何量：`sep`（类间距离/类内散度）、`fisher`、`centroid_cos`（两类质心
+  余弦，越低越分开）、`centroid_norm`（质心范数）、`eff_rank`（协方差
+  有效秩）、`top1_share`，以及 `signal_topK`（类均值差方向落在前 K 个
+  主成分的平方能量占比）。train/test 各自算散度和有效秩；test 的
+  `signal_topK` 复用 train 拟合的主成分，不用 test 自己拟合 PCA。
+- PCA 干预：在 train 上拟合 PCA，test 只做 transform；`keepN` 把第 N 个
+  之后的主成分置零，`whiten` 除以 `sqrt(eigenvalue)`；probe 仍是 logistic
+  线性头，train 内 5 折选 C，test 只评一次。SST-2/hate 用无权重 accuracy，
+  CoLA 用 balanced + macro-F1 选 C（无权重会塌到 0.691 的多数类）。
+- 10k test-level paired bootstrap；PCA 是线性变换，叠加线性 probe 仍是线性
+  头，没有 MLP、没有 encoder 微调。
+
+### 11.17.2 几何读数：只有 SST-2 发生类别方向低秩化
+
+L12、train split 的关键读数（完整 48 行见
+`data/wsp-classify-geometry.tsv`）：
+
+| 数据集 | run | sep | centroid_cos | eff_rank | top1_share | signal_top4 |
+|---|---|---:|---:|---:|---:|---:|
+| SST-2 | f32 | 0.154708 | 0.994163 | 77.636 | 0.118231 | 0.404870 |
+| SST-2 | int4 | 0.199277 | 0.942967 | 200.093 | 0.044142 | 0.855378 |
+| CoLA | f32 | 0.046371 | 0.993718 | 187.068 | 0.040238 | 0.166043 |
+| CoLA | int4 | 0.043392 | 0.996032 | 183.190 | 0.042468 | 0.161427 |
+| Hate | f32 | 0.168854 | 0.940824 | 164.700 | 0.093571 | 0.475858 |
+| Hate | int4 | 0.166660 | 0.955907 | 158.151 | 0.097598 | 0.480608 |
+
+- **SST-2**：int4 把 `signal_top4` 从 `0.404870` 提到 `0.855378`，把
+  `centroid_cos` 从 `0.994163` 压到 `0.942967`，`eff_rank` 从 `77.636`
+  提到 `200.093`，`top1_share` 从 `0.118231` 降到 `0.044142`。test 上
+  同向：`signal_top4 0.421652 → 0.820898`，`sep 0.169130 → 0.209133`。
+- **CoLA**：int4 的 `signal_top4 0.166043 → 0.161427`（略降），
+  `eff_rank 187.068 → 183.190`，`sep 0.046371 → 0.043392`。test 上
+  `signal_top4 0.213239 → 0.163653`，也没有集中。
+- **Hate**：int4 的 `signal_top4 0.475858 → 0.480608`（基本不动），
+  `eff_rank 164.700 → 158.151`，`sep 0.168854 → 0.166660`。test 上
+  `signal_top4 0.215673 → 0.217194`。
+- L6 有同向但更小的集中：SST-2 `signal_top4 0.430587 → 0.604095`、
+  `eff_rank 89.097 → 189.811`；CoLA `0.166869 → 0.177379`、`eff_rank`
+  略降；Hate `0.457703 → 0.457597`、`eff_rank` 从 `160.295` 降到
+  `152.871`。L6 的 SST-2 集中度只有 L12 的一半左右，和 M1.16 里 L6
+  正向更弱一致。
+
+一句话：SST-2 的 f32 本身有一个很强的共同方向（`eff_rank` 只有 77.6，
+两类质心几乎同向 `0.994`），int4 把这个共同方向压平，同时把类别方向
+挤进前几个主成分；CoLA/hate 的 int4 没有做这件事，反而略微更各向异性。
+
+### 11.17.3 PCA 干预：SST-2 的增益跟着低秩类别方向走
+
+下表是 `int4−f32` 的 accuracy 差值（L12/L6，完整 60 行含 CI 见
+`data/wsp-classify-pca.tsv`）：
+
+| 数据集 | 模型 | raw | keep4 | keep16 | keep64 | whiten |
+|---|---|---:|---:|---:|---:|---:|
+| SST-2 | L12 | +0.040088 | +0.166392 | +0.125755 | +0.081274 | +0.049423 |
+| SST-2 | L6 | +0.006590 | +0.089511 | +0.070840 | +0.042284 | +0.005491 |
+| CoLA | L12 | +0.011505 | −0.004794 | −0.008629 | +0.010547 | −0.001918 |
+| CoLA | L6 | −0.008629 | +0.006711 | +0.000959 | +0.001918 | −0.005753 |
+| Hate | L12 | −0.003658 | −0.008778 | +0.005852 | −0.009510 | −0.002195 |
+| Hate | L6 | −0.014631 | +0.004389 | +0.009144 | +0.003658 | +0.002926 |
+
+- **SST-2 L12 的 keep4 差值是 `+0.166392`，CI `[+0.138935,+0.194399]`**：
+  f32 只留 4 维时掉到 `0.602965`，int4 还有 `0.769357`；raw 全维只差
+  `+0.040088`。也就是说，int4 的优势在“只给 4 个主成分”时反而放大，
+  因为它的类别信号本来就集中在这几个方向；f32 的类别信号散在更多维，
+  砍到 4 维就崩。
+- `keep16`/`keep64` 同向，差值 `+0.125755` / `+0.081274`，CI 都全正；
+  维数越放开，差值越回到 raw 的 `+0.040`。
+- **白化不消掉差值**：`whiten` 后 f32 `0.789127`、int4 `0.838550`，
+  差值 `+0.049423`，CI `[+0.028556,+0.070291]`。如果只是“协方差谱更平”，
+  白化应该把两档拉平；实际没有，说明二阶谱不是唯一原因，类别方向
+  的集中度才是跟着 probe 增益走的量。
+- **SST-2 L6**：`keep4` 差值 `+0.089511`（CI 全正），但 raw 只有
+  `+0.006590`、CI `[-0.013193,+0.026359]`；`whiten` 也只有 `+0.005491`、
+  CI 跨 0。L6 的类别方向有一些集中，但不足以在全维产生稳定优势。
+- **CoLA**：balanced 口径 raw `+0.011505`、CI 跨 0；`keep4`/`keep16`
+  转负，`keep64` `+0.010547`、CI 仍跨 0。CoLA 的句法标签本来就不在
+  MiniLM 的前几个主成分里，砍维只会掉信息。
+- **Hate**：raw L12 `-0.003658`、L6 `-0.014631`（后者 CI 全负）；
+  `keep4`/`keep16`/`keep64` 的 L12 差值都在 0 附近且 CI 跨 0，L6 的
+  `keep16 +0.009144` 也只是 CI 跨 0 的小点估计。hate 的词汇/主题信号
+  同样不在前几个主成分里。
+
+### 11.17.4 结论与边界
+
+- **SST-2 的 L12 int4 正向可以描述成“数据集特异的类别方向低秩集中”**：
+  int4 把类均值差方向挤进前 4 个主成分（train `0.405 → 0.855`，
+  test `0.422 → 0.821`），同时压平 f32 的共同方向（`eff_rank 77.6 → 200.1`）。
+  这解释了为什么只有 SST-2 的线性 probe 明显受益：它的任务信号在量化后
+  被挤进少数主方差方向（f32 只有 `0.405`，int4 到 `0.855`），而 CoLA/hate
+  的同一比例不随量化改变；这是与读数一致的描述，不是已证的因果链。
+- **这不是样本范数**：所有 WSPEMB1 行都是单位范数；也**不只是协方差谱**：
+  白化后 SST-2 的差值仍在（`+0.049`，CI 全正）。几何诊断把“尺度/各向异性”
+  这两个最容易想到的解释排除掉，留下“类别方向集中度”这条。
+- **但这不是因果证明**。PCA keep/whiten 是对固定 embedding 的线性干预，
+  不是对量化过程本身做消融；没有证明 int4 的哪一步（absmean、scale、
+  per-group）造成了集中，也没有做 MLP 或 encoder 微调（当前口径排除）。
+  结论只能写到“与读数一致的机制描述”，不能写“量化通过压平共同方向
+  普遍提升分类”。
+- 边界：三个单句二分类集、两个 MiniLM、seq 64、一个 logreg、一个 seed、
+  train 内固定 C 网格；CoLA 用 balanced + macro-F1（无权重会塌到多数类），
+  SST-2/hate 用无权重；没有 NLI/MNLI、没有第四数据集、没有 test 重采样。
+  `signal_topK` 用 train 主成分投 test，仍是描述性读数，不是 test 上的
+  模型选择。
+
+### 11.17.5 复算
+
+```bash
+# 几何读数：每个数据集/深度跑一次
+python scripts/wsp_classify_geometry.py \
+  --texts sst2/data-l12/texts.json \
+  --run f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run int3='sst2/emb12/l12-int3-*.f32' \
+  --run int4='sst2/emb12/l12-int4-*.f32' \
+  --run alt='sst2/emb12/l12-r12-*.f32' \
+  --out sst2/geometry-l12.json
+
+# PCA 干预：SST-2 无权重；CoLA 换成 balanced + macro-F1
+python scripts/wsp_classify_pca.py \
+  --texts sst2/data-l12/texts.json \
+  --run f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run int4='sst2/emb12/l12-int4-*.f32' \
+  --baseline f32 --modes raw,keep4,keep16,keep64,whiten \
+  --bootstrap 1 --bootstrap-iters 10000 --out sst2/pca-l12.json
+
+# CoLA：追加 --class-weight balanced --cv-metric macro_f1
+```
+
+表见 `data/wsp-classify-geometry.tsv`（48 行：6 个数据集-深度 × 4 档 ×
+2 个 split）与 `data/wsp-classify-pca.tsv`（60 行：6 个数据集-深度 ×
+5 个 mode × 2 档）。
+
+## 11.18 跨档 PCA 子空间迁移（M1.18）
+
+### 11.18.1 问题与口径
+
+M1.17 的读数是“SST-2 的 int4 把类别方向挤进前几个主成分”。但这只是相关：
+如果正向来自一个更好的低秩子空间，那么把 int4 的主成分基搬到 f32 上，应该
+能复现一部分；如果搬不过去，说明优势在子空间内的坐标/尺度，而不只是基。
+
+`wsp_classify_pca.py` 新增 `--pca-fit NAME`：PCA 在指定 run 的 train split
+上拟合，所有 run 的 train/test 都投影到同一组主成分；probe 仍只在各自
+train 上重训。两个方向：
+
+- `fit=int4`：f32 投到 int4 基，int4 是自投影；
+- `fit=f32`：int4 投到 f32 基，f32 是自投影。
+
+模式 `raw / keep4 / keep8 / keep16 / keep64`；10k test-level paired
+bootstrap 只算 accuracy，macro-F1 只报点估计；CoLA 用 balanced +
+macro-F1 选 C，SST-2/hate 用无权重；仍是冻结编码器、单一 logistic 头、
+seq 64、一个 seed。
+
+### 11.18.2 SST-2 L12：基搬过去了，增益没有搬过去
+
+| fit | mode | f32 acc | f32−raw | int4 acc | int4−f32 | 95% CI |
+|---|---:|---:|---:|---:|---:|---|
+| int4 | raw | 0.800110 | 0 | 0.840198 | +0.040088 | `[+0.020868,+0.058759]` |
+| int4 | keep4 | 0.694124 | −0.106016 | 0.769357 | +0.075233 | `[+0.051620,+0.098298]` |
+| int4 | keep8 | 0.709500 | −0.090650 | 0.775398 | +0.055898 | `[+0.042284,+0.088962]` |
+| int4 | keep16 | 0.722131 | −0.078136 | 0.805601 | +0.083470 | `[+0.062054,+0.104887]` |
+| int4 | keep64 | 0.753981 | −0.046242 | 0.826469 | +0.072488 | `[+0.052169,+0.093355]` |
+| f32 | keep4 | 0.602965 | −0.197481 | 0.636463 | +0.033498 | `[+0.011532,+0.055464]` |
+| f32 | keep8 | 0.628775 | −0.171545 | 0.672707 | +0.043932 | `[+0.021966,+0.066447]` |
+| f32 | keep16 | 0.679846 | −0.120380 | 0.693575 | +0.013729 | `[−0.008237,+0.035146]` |
+| f32 | keep64 | 0.745195 | −0.055016 | 0.792971 | +0.047776 | `[+0.026908,+0.068644]` |
+
+- **int4 的基确实含类别方向**：f32 投到 int4 基后，`keep4` 从 `0.603`
+  回到 `0.694`，`keep16` 从 `0.680` 回到 `0.722`；比自己拟合的 f32 基
+  （`0.603` / `0.680`）好一截。
+- **但 int4 自己没有跟着降**：同一个 `keep4` 下 int4 还有 `0.769`，
+  `int4−f32` 是 `+0.075233`，比 raw 的 `+0.040088` 更大；`keep16`
+  更是 `+0.083470`。也就是说，把两者压到同一个低秩基之后，差距没有被
+  抹平，反而放大了。**低秩基本身不是增益的充分条件。**
+- **反方向也不成立**：把 int4 投到 f32 的基上，`keep4` 仍高 `+0.033498`、
+  `keep8` `+0.043932`、`keep64` `+0.047776`；只有 `keep16` 的
+  `+0.013729` CI 跨 0。int4 的优势也不依赖“自己那套基”。
+- 因此更准确的描述是：**优势跟着 int4 自己的坐标/尺度走**，而不是
+  跟着某个可搬运的主成分基走。M1.17 的低秩集中是伴随读数，不是充分原因；
+  换基只能解释 f32 掉点的一部分，不能解释 int4 为什么更高。M1.19 进一步
+  把这条读数定位到类均值方向本身旋转（§11.19），不是同一方向在不同基里的
+  坐标变化。
+
+### 11.18.3 L6 与 CoLA/hate
+
+- SST-2 L6 raw `int4−f32 = +0.006590`、CI 跨 0；`fit=int4` 下
+  `keep4 +0.028583`、`keep16 +0.038890`、`keep64 +0.042180`，CI 都过 0，
+  但这是“两者都被砍维”后的条件差值；L6 raw 本身仍不是稳定正向，不能
+  把 `keepN` 的条件差值写成 L6 的增益。
+- CoLA balanced：两个 fit 方向、所有 mode 的 `int4−f32` CI 都跨 0；
+  `keep4` 甚至转负（fit int4 `−0.008652`、fit f32 `−0.000947`）。
+- Hate：raw L12 `−0.003679`、L6 `−0.014631`（后者 CI 全负）；两个 fit
+  方向下绝大多数 mode CI 跨 0。`fit=f32` 的 hate L12 `keep8` 出现
+  `+0.009829`、CI `[+0.001463,+0.018288]`，但同一数据 `fit=int4` 的
+  `keep8` 只有 `+0.003939`、CI 跨 0；这是多格子里的单点，不作为稳定正向。
+
+### 11.18.4 结论与边界
+
+- **SST-2 的 L12 int4 正向不能由“更好的低秩子空间”单独解释。** 把 int4
+  的主成分基搬到 f32 能救回 f32 的一部分掉点，但 int4 在同维数下仍明显
+  更高，差距从 raw `+0.040` 扩大到 `+0.075/+0.084`；反向把 int4 投到
+  f32 基也没有消掉优势。低秩集中是描述性伴随现象，真正跟着 probe 增益
+  走的是 int4 自己的坐标/尺度，而不是基的编号；M1.19 进一步表明这个
+  差异主要是类均值方向本身旋转，而不是同一方向在另一组基里的系数。
+- 这仍不是量化过程的因果消融：PCA 是固定 embedding 的线性变换，两个
+  run 的基互相搬运不改变量化算子；没有拆 absmean/scale/per-group 哪一步
+  造成坐标差异，也没有测 SVC、MLP 或 encoder 微调（当前口径排除）。
+- 边界：三个单句二分类集、两个 MiniLM、seq 64、一个 logreg、一个 seed；
+  bootstrap 只算 accuracy（10k），macro-F1 是点估计；CoLA balanced +
+  macro-F1 选 C，SST-2/hate 无权重。不能外推成“换基普遍提升分类”。
+
+### 11.18.5 复算
+
+```bash
+# int4 基投 f32；反方向把 --pca-fit 换成 f32
+python scripts/wsp_classify_pca.py \
+  --texts sst2/data-l12/texts.json \
+  --run f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run int4='sst2/emb12/l12-int4-*.f32' \
+  --baseline f32 --pca-fit int4 \
+  --modes raw,keep4,keep8,keep16,keep64 \
+  --bootstrap 1 --bootstrap-iters 10000 --bootstrap-metrics accuracy \
+  --bootstrap-raw --out sst2/pca-transfer-l12-fitint4.json
+```
+
+完整 120 行在 `data/wsp-classify-pca-transfer.tsv`（6 个数据集-深度 ×
+2 个 fit 方向 × 5 个 mode × 2 个 run）。
+
+## 11.19 跨档类方向旋转（M1.19）
+
+### 11.19.1 问题与口径
+
+M1.18 的负迁移说明“低秩基”不是可搬运机制，但还没有回答：是基选错了，
+还是两档的类别方向根本不同？M1.17 的 `signal_topK` 是各档在**自己**的
+PCA 基里算的，两个百分比不能直接跨档比较；需要把一档的方向投到另一档的
+基里看。
+
+M1.19 直接比较两档的类均值差方向：
+
+```text
+d = mean(embedding | y=1) - mean(embedding | y=0)
+```
+
+`wsp_classify_direction.py` 在每档的 train split 上拟合 PCA 基（test 只
+投影，不重拟合），再算：
+
+- `cos` / `angle`：两档 `d` 的余弦与夹角；
+- `norm_ratio`：`||d_int4|| / ||d_f32||`；
+- `own_topK`：`d` 落在**自己**前 K 个主成分的能量占比；
+- `cross_topK`：`d` 落在**对方**前 K 个主成分的能量占比。
+
+这是纯诊断，不训练 probe、不做 bootstrap、不加数据集；train 和 test
+分开报，test 方向也只用于诊断，不参与任何选参。
+
+### 11.19.2 SST-2 的方向转了，CoLA/hate 没转
+
+| 数据集 | 深度 | cos train/test | 夹角 train/test | `‖d_int4‖/‖d_f32‖` | f32 top4 自基 | f32 top4 在 int4 基 | int4 top4 自基 | int4 top4 在 f32 基 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| SST-2 | L12 | 0.5715 / 0.5891 | 55.14° / 53.90° | 1.938 | 0.4049 | 0.2781 | 0.8554 | 0.0716 |
+| SST-2 | L6 | 0.6201 / 0.6278 | 51.67° / 51.11° | 1.535 | 0.4306 | 0.2148 | 0.6041 | 0.0837 |
+| CoLA | L12 | 0.9701 / 0.9731 | 14.04° / 13.33° | 0.909 | 0.1660 | 0.1493 | 0.1614 | 0.1718 |
+| CoLA | L6 | 0.9730 / 0.9732 | 13.34° / 13.29° | 0.948 | 0.1669 | 0.1611 | 0.1774 | 0.1705 |
+| TweetEval-hate | L12 | 0.9757 / 0.9785 | 12.65° / 11.89° | 0.957 | 0.4759 | 0.4494 | 0.4806 | 0.4591 |
+| TweetEval-hate | L6 | 0.9698 / 0.9747 | 14.12° / 12.92° | 0.982 | 0.4577 | 0.4221 | 0.4576 | 0.4456 |
+
+- **SST-2 的两档类方向明显分离**：L12 夹角 `55.1°`（test
+  `53.9°`），L6 `51.7°`（test `51.1°`）；int4 的方向还更长，
+  `||d_int4||/||d_f32|| = 1.94`（L6 `1.54`）。
+- **CoLA/hate 的两档类方向几乎同向**：cos 都在 `0.970–0.976`，夹角
+  `12.6–14.1°`，范数比 `0.91–0.98`。量化没有把这两个数据集的类方向
+  转走，也没有把它放大。
+- 方向夹角的 train/test 读数很接近，说明这不是某一次划分的偶然；但这是
+  点估计，没有给方向夹角做 bootstrap CI。
+
+### 11.19.3 为什么 M1.18 的基搬不过去
+
+- 在 SST-2 L12，f32 的类方向只有 `27.8%` 落在 int4 的前 4 个主成分里
+  （top16 也只有 `41.1%`），而 int4 自己的方向有 `85.5%` 落在同一组前 4
+  个主成分里（top16 `95.6%`）。反过来，int4 的方向只有 `7.2%` 落在 f32
+  的前 4 个主成分里（top16 `17.7%`），f32 自己的方向是 `40.5%`。
+- 因此 M1.18 的 `fit=int4 keep4` 实际上是把 f32 投到一个**不包含 f32
+  类方向**的低秩基：f32 丢掉了大部分类别信号（`0.603`），int4 却保留了
+  自己方向的大部分（`0.769`）。`fit=f32` 也一样：int4 的方向大部分不在
+  f32 前 4 维里，两个 run 都被砍掉信号，搬基不能把优势“复制”过去。
+- M1.17 的 `signal_top4 0.855` 是 int4 在**自己旋转后的方向**上的集中度，
+  不是“存在一个两档共享的 4 维类别子空间”。低秩集中是 int4 方向的属性，
+  不是可搬运的公共结构；M1.18 的“坐标/尺度”读数应更准确地写成
+  **类方向本身旋转**。
+- CoLA/hate 的 `cross_top4` 与 `own_top4` 很接近（例如 hate L12：
+  f32 `0.449` vs 自基 `0.476`，int4 `0.459` vs 自基 `0.481`），说明两档
+  方向基本共享；这也和它们没有 int4 正向一致。三数据集对照把“方向旋转”
+  与“SST-2 特异正向”对上了，但仍是观测性关联，不是量化算子的因果证明。
+
+### 11.19.4 结论与边界
+
+- **SST-2 的 L12 int4 正向对应的是“类方向旋转 + 方向变长”，不是
+  “更好的共享低秩基”。** f32 的类方向在 int4 基的前 4 维里只剩 `27.8%`，
+  int4 的方向在 f32 基的前 4 维里只剩 `7.2%`；两个基各自低秩，但低秩的
+  不是同一个方向。CoLA/hate 的方向几乎不转（cos `0.97+`），也就没有
+  同量级的 int4 正向。
+- 这把 M1.17/M1.18 的解释收紧了：`signal_top4` 的集中度是**每档自基**
+  的读数；跨档可搬运性要先看方向是否对齐。M1.18 的负迁移因此不能只归因于
+  “基不够好”：基对齐了，方向没对齐。
+- **边界**：只测 f32 vs 均匀 int4、三个单句二分类集、两个 MiniLM、
+  seq 64；没有测 int3/R12、SVC、MLP 或 encoder 微调；方向是类均值差，
+  没有做逐样本方向或置信区间；test 方向只用于诊断，不参与选参。不能
+  外推成“量化都会旋转类方向”，也不能把这套读数写成量化过程的因果消融。
+  下一步若要检验因果，需要做量化算子级的干预，当前没有做。
+- **方向角本身不是充分机制**：正交旋转是可逆线性变换，线性 probe 可以
+  把它吸收。M1.20 的旋转对照把 f32 的类方向转到 int4 后，f32 精度仍是
+  `0.800110`、`int4−f32` 仍是 `+0.040088`；真正随 int4 变化的是
+  `sep/Fisher` 类可分性（§11.20）。
+
+### 11.19.5 复算
+
+```bash
+python scripts/wsp_classify_direction.py \
+  --texts sst2/data-l12/texts.json \
+  --run f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run int4='sst2/emb12/l12-int4-*.f32' \
+  --out sst2/direction-l12.json
+```
+
+完整 6 行在 `data/wsp-classify-direction.tsv`（6 个数据集-深度 ×
+f32/int4 一对方向）；每行的 top1/2/4/8/16/32/64/128/256 在对应 JSON 的
+`pairs[0].train/test.{left,right}_{own,in_other}` 里。
+
+## 11.20 旋转对照与类可分性（M1.20）
+
+### 11.20.1 问题与口径
+
+M1.19 看到 SST-2 两档类方向夹角约 `55°`。但方向角本身不能解释线性 probe
+的精度：正交旋转是可逆线性变换，`w' = R^{-T}w` 可以把旋转后的线性边界
+原样映射回去；如果只旋转类方向、不改类内结构，线性 probe 的假设空间没变，
+精度不应改变。需要把“方向角”和“类可分性”分开：
+
+- **旋转对照**：`wsp_classify_rotate.py` 用 train 上的类均值差方向估计一个
+  Householder 反射，把 f32 的类方向转到 int4 的方向；train/test 都乘同一个
+  正交矩阵，probe 在旋转后的 train 上重训，C 仍按原口径在 train 内选。
+- **类可分性**：直接读 M1.17 的 `sep = sqrt(between/within)`（Fisher 比值
+  的平方根）。它在正交旋转下不变，是“信号相对类内散度”的尺度无关读数。
+  同时报 `fisher = sep²`，以及 `between_sq` / `within_sq` 各自的变化。
+
+旋转对照仍只训练线性 probe，冻结编码器；没有 MLP、没有 encoder 微调，
+没有 MNLI。10k test-level paired bootstrap 只用于 `rotated−raw` 的 accuracy。
+
+### 11.20.2 把 f32 转到 int4 方向，精度不变
+
+| 数据集 | 深度 | cos 前→后 | f32 raw | f32 rotated | rotated−raw [95% CI] | int4 | gap raw→after |
+|---|---|---:|---:|---:|---|---:|---:|
+| SST-2 | L12 | 0.5715→1.0000 | 0.800110 | 0.800110 | `+0.000000` `[0,+0]` | 0.840198 | `+0.040088→+0.040088` |
+| SST-2 | L6 | 0.6201→1.0000 | 0.797913 | 0.797913 | `+0.000000` `[0,+0]` | 0.804503 | `+0.006590→+0.006590` |
+| CoLA | L12 | 0.9701→1.0000 | 0.575264 | 0.574305 | `−0.000952` `[−0.002876,+0]` | 0.586769 | `+0.011505→+0.012464` |
+| CoLA | L6 | 0.9730→1.0000 | 0.582934 | 0.583893 | `+0.000963` `[0,+0.002876]` | 0.574305 | `−0.008629→−0.009588` |
+| TweetEval-hate | L12 | 0.9757→1.0000 | 0.576445 | 0.576445 | `+0.000000` `[0,+0]` | 0.572787 | `−0.003658→−0.003658` |
+| TweetEval-hate | L6 | 0.9698→1.0000 | 0.546818 | 0.546818 | `+0.000000` `[0,+0]` | 0.532187 | `−0.014631→−0.014631` |
+
+- **SST-2 L12/L6 的 f32 精度与 `int4−f32` 差值在旋转后逐位不变**；把
+  int4 反向转到 f32 方向也一样（L12 int4 `0.840198→0.840198`，gap
+  `−0.040088→−0.040088`）。方向角不是能改变线性 probe 精度的量。
+- CoLA 的 `±0.000952` 是 1,043 条 test 上的 1 条样本翻转（L12 C=10、
+  L6 C=1），不是方向效应；hate 也是逐位不变。旋转矩阵的正交误差最大
+  `1.1e-15`，`cos_after = 1.000000`。
+- 因此 M1.19 的“方向旋转”应写成**伴随读数/症状**：它说明两档的类方向
+  不同，但不能单独解释 int4 的精度优势。
+
+### 11.20.3 真正变化的是 sep/Fisher
+
+| 数据集 | 深度 | sep 比 train/test | Fisher 比 train/test | between 比 train | within 比 train |
+|---|---|---:|---:|---:|---:|
+| SST-2 | L12 | 1.288 / 1.236 | 1.659 / 1.529 | 3.757 | 2.264 |
+| SST-2 | L6 | 1.126 / 1.073 | 1.267 / 1.152 | 2.357 | 1.861 |
+| CoLA | L12 | 0.936 / 0.982 | 0.876 / 0.964 | 0.826 | 0.943 |
+| CoLA | L6 | 0.974 / 1.018 | 0.948 / 1.036 | 0.898 | 0.947 |
+| TweetEval-hate | L12 | 0.987 / 0.998 | 0.974 / 0.996 | 0.916 | 0.940 |
+| TweetEval-hate | L6 | 1.008 / 1.004 | 1.016 / 1.007 | 0.964 | 0.949 |
+
+- **SST-2 L12 的 `sep` 在 train 上升 `28.8%`、test 上升 `23.7%`**；Fisher
+  比值是 `1.659× / 1.529×`。L6 也有正向但更弱（`1.126× / 1.073×`，
+  Fisher `1.267× / 1.152×`）。
+- 分解看，SST-2 L12 的 `between_sq` 增加 `3.757×`，`within_sq` 只增加
+  `2.264×`，所以“类间信号”跑得比“类内噪声”快，`sep` 上升。CoLA/hate 的
+  `between` 和 `within` 基本同向下降或持平（比值都在 1 附近），`sep` 不升，
+  也就没有 int4 正向。
+- 这解释了旋转对照为什么不变：旋转保持 `between/within`，所以 `sep` 不变、
+  线性 probe 精度不变；M1.18 搬 PCA 基也只改坐标，不改 `sep`。**M1.19 的
+  方向角、M1.17 的低秩集中都是伴随读数；在 SST-2 L12 上，`sep` 和精度
+  同向（但 M1.21 的剂量-反应显示它不是跨数据集的普遍中介量）。**
+- 但旋转只改方向、保持范数；SST-2 的 `sep` 上升还包含方向变长
+  （`between_sq ×3.757`）和类内散度只增 `×2.264`。旋转对照因此只排除
+  “方向角”，不能排除“方向长度/类内结构”；`sep` 把这些合在一起。
+- 精度差值与 `sep` 只是定性同向：SST-2 L12 `sep 1.288×` 对应 `+0.040`，
+  L6 `1.126×` 对应 `+0.0066`；CoLA/hate 的 `sep≈1` 对应 0 或负值。不能把
+  这 6 个点拟合成“sep 每升 1% 就升多少 accuracy”的定律：类别平衡、probe
+  正则和 C 选择都不同。
+
+### 11.20.4 结论与边界
+
+- **SST-2 的 L12 int4 正向对应的是“类可分性上升”，不是“类方向旋转”。**
+  把 f32 的方向转到 int4 后精度逐位不变，说明方向角可被线性 probe 吸收；
+  `sep`/Fisher 才是随 int4 变化、且在旋转下不变的量。SST-2 L12 的
+  `sep 1.288×`（test `1.236×`）、Fisher `1.659×`（test `1.529×`），
+  CoLA/hate 都在 1 附近。
+- 这把 M1.17–M1.21 的解释链条收口成：低秩集中是伴随结构（M1.17），
+  基不可搬运（M1.18），方向旋转是症状（M1.19），**`sep` 在 SST-2 L12
+  上和精度同向（M1.20），但不是跨数据集的普遍中介量：M1.21 的剂量-反应
+  显示 L6 的精度在 1/8 剂量见顶、`sep` 到 1/2 才见顶；CoLA L12 的 `sep`
+  降到 `0.936×`，精度却升 `+1.15pp`**。仍不是量化算子的因果拆解：没有拆
+  absmean/scale/per-group 哪一步造成 `sep` 变化，也没有噪声/交叉迁移对照。
+- **边界**：只测 f32 vs 均匀 int4、三个单句二分类集、两个 MiniLM、seq 64、
+  一个 logreg、一个 seed；`sep` 是欧氏 `between/within` 的 Fisher-like
+  比值，不是完整协方差 LDA；旋转对照的 CoLA 有 1 条 test 样本的数值翻转；
+  没有 MLP、encoder 微调或 MNLI。不能外推成“量化普遍提升类可分性”。
+
+### 11.20.5 复算
+
+```bash
+python scripts/wsp_classify_rotate.py \
+  --texts sst2/data-l12/texts.json \
+  --run f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run int4='sst2/emb12/l12-int4-*.f32' \
+  --rotate f32 --to int4 \
+  --bootstrap 1 --bootstrap-iters 10000 \
+  --out sst2/rotate-l12.json
+```
+
+`sep/Fisher` 由 `scripts/wsp_classify_geometry.py` 的 `fisher` / `sep` 字段
+给出；完整 6 行在 `data/wsp-classify-rotation.tsv`（f32→int4 旋转、
+`f32_raw`/`f32_rotated`、`gap`、`sep_ratio`、`fisher_ratio`）。
+
+## 11.21 量化误差剂量-反应（M1.21）
+
+### 11.21.1 问题与口径
+
+M1.20 只证明了“方向角可被线性 probe 吸收”，并把 SST-2 L12 的正向和
+`sep` 上升对上；但那是两个端点之间的静态比较，不能说明 `sep` 是不是
+随量化误差连续起作用的量。M1.21 直接在 f32 和 int4 之间插值：
+
+```text
+x(λ) = normalize(f32 + λ * (int4 - f32)),  λ ∈ [0, 1]
+```
+
+- 端点保持原始 embedding（λ=0 是 f32，λ=1 是 int4）；中间点按 WSPEMB1
+  的 mean-pool + L2 口径重新归一化。
+- λ 网格：`0, 1/16, 1/8, 1/4, 1/2, 3/4, 1`，共 7 档。
+- 每个 λ 都重新在 train 内 5 折选 C、重训同一个 logistic 线性 probe，
+  test 只评一次；10k test-level paired bootstrap 只算
+  `accuracy(λ) - accuracy(0)`。
+- 同一个 λ 上同步算 `sep`、`between_sq`、`within_sq`（train/test 各自算），
+  以及类方向对 f32/int4 的 cos。
+- 另对 SST-2 L12/L6、CoLA L12 跑 `LinearSVC` 关键剂量
+  `0, 1/8, 1/4, 1/2, 1` 的复验。
+- 仍只训练线性 probe、冻结编码器；没有 MLP、encoder 微调、MNLI 或新数据集。
+
+### 11.21.2 剂量-反应：SST-2 L12 在低剂量就饱和
+
+下表给 accuracy 和相对 λ=0 的差值；`sep 比` 是 λ=1 时 train/test 的
+`sep(1)/sep(0)`。完整 42 行在 `data/wsp-classify-interpolate.tsv`。
+
+| 数据集/深度 | λ=0 acc | 1/16 Δ | 1/8 Δ | 1/4 Δ | 1/2 Δ | 1 Δ | sep 比 train/test |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SST-2 L12 | 0.800110 | +0.010434 | +0.025261 | +0.038990 | +0.041735 | +0.040088 | 1.288 / 1.237 |
+| SST-2 L6 | 0.797913 | +0.010434 | +0.019769 | +0.018122 | +0.014827 | +0.006590 | 1.126 / 1.073 |
+| CoLA L12 | 0.575264 | −0.000959 | −0.001918 | +0.000959 | +0.005753 | +0.011505 | 0.936 / 0.982 |
+| CoLA L6 | 0.582934 | −0.001918 | −0.003835 | −0.006711 | −0.010547 | −0.008629 | 0.974 / 1.018 |
+| Hate L12 | 0.576445 | −0.001829 | +0.002560 | −0.002195 | −0.002560 | −0.003658 | 0.987 / 0.998 |
+| Hate L6 | 0.546818 | −0.000732 | −0.013168 | +0.001829 | −0.012070 | −0.014631 | 1.008 / 1.004 |
+
+SST-2 L12 的 bootstrap（对 λ=0）：
+
+- 1/16 `+0.010398`，CI `[+0.002197,+0.018671]`；
+- 1/8 `+0.025254`，CI `[+0.013729,+0.036793]`；
+- 1/4 `+0.038952`，CI `[+0.024712,+0.053817]`；
+- 1/2 `+0.041662`，CI `[+0.024163,+0.059308]`；
+- 1 `+0.040034`，CI `[+0.020868,+0.058759]`。
+
+关键不是“λ 越大越好”，而是**增益在低剂量就接近饱和**：1/8 剂量拿到
+最终增益的约 `63%`，1/4 拿到约 `97%`，1/2 已经略高于全剂量；而 `sep`
+到 1/8 只完成总增幅的约 `24%`，到 1/2 才约 `85%`。精度先饱和、`sep`
+后饱和，两者不是同一条曲线。
+
+SST-2 L6 更直接地脱钩：1/8 的 `+0.019769`（CI `[+0.009336,+0.030203]`）
+是峰值，1/4 `+0.018122`，1/2 `+0.014827`（CI 跨 0），1 只剩 `+0.006590`
+（CI 跨 0）；而 `sep` 到 1/2 才见顶 `1.128×`，1 又回到 `1.126×`。
+**L6 的精度峰值比 `sep` 峰值早，且全剂量反而更差。**
+
+CoLA L12 是符号相反的例子：`sep` 从 `1.000×` 单调降到 `0.936×`（train）
+/ `0.982×`（test），accuracy 却从 `0.575264` 升到 `0.586769`（`+0.011505`，
+CI 跨 0）；SVC 也从 `0.577181` 升到 `0.585810`（`+0.008629`，CI 跨 0）。
+CoLA 的正向本身不显著，但它的路径方向足以说明：`sep` 不是线性 probe
+精度变化的普遍中介量。
+
+CoLA L6 的 accuracy 随剂量下降（1/2 `−0.010547`，1 `−0.008629`），
+train `sep` 也降到 `0.974×`，test `sep` 反升到 `1.018×`；hate 两档都没有
+正增益，L6 全剂量 `−0.014631`、CI 整段为负。**三个数据集没有一个统一的
+“sep 升→精度升”关系。**
+
+### 11.21.3 这否证了什么
+
+M1.20 的结论要降级：`sep` 是 SST-2 L12 上的伴随读数，不是跨数据集的
+充分中介量。更准确的表述是：
+
+- **SST-2 L12 的 int4 正向是“低剂量、早饱和”的表示效应**：少量量化误差
+  已经带来大部分增益，继续加剂量主要改变 `sep`，不再提升 accuracy；
+- **L6 的精度峰值出现在 1/8，早于 `sep` 峰值**；
+- **CoLA L12 的 `sep` 下降、accuracy 上升**，符号相反；
+- hate 没有正增益，L6 还有稳定负增益。
+
+这仍然不是量化算子的因果拆解：插值路径是每个 λ 一个固定的非线性映射，
+probe 在每个 λ 重训，C 也重选；它说明“沿这条路径精度怎么变”，不说明
+absmean/scale/per-group 哪一步单独造成变化。一个可检验的假设是：低剂量
+量化误差像噪声/正则化，先改善 SST-2 的泛化，继续加剂量才破坏信息；但
+本轮没有做 train-only 噪声、test-only 噪声或 f32/int4 交叉迁移矩阵，不能
+把“正则化”写成结论。
+
+**边界**：三个单句二分类集、两个 MiniLM、seq 64、一个 seed；主表是
+logreg，SVC 只复验三条关键路径；中间点重新归一化，端点保持原始；
+`sep` 是欧氏 Fisher-like 比值，不是完整协方差 LDA；没有 MLP、encoder
+微调、MNLI。不能外推成“量化误差普遍提升线性分类”。
+
+### 11.21.4 复算
+
+```bash
+python scripts/wsp_classify_interpolate.py \
+  --texts sst2/data-l12/texts.json \
+  --run f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run int4='sst2/emb12/l12-int4-*.f32' \
+  --bootstrap 1 --bootstrap-iters 10000 \
+  --out sst2/interpolate-l12.json
+```
+
+CoLA 加 `--class-weight balanced --cv-metric macro_f1`；SVC 加
+`--probe linear_svc --lams 0,0.125,0.25,0.5,1`。主表
+`data/wsp-classify-interpolate.tsv`（42 行），SVC 复验表
+`data/wsp-classify-interpolate-svc.tsv`（15 行）。
+
+## 11.22 train×test 交叉迁移矩阵（M1.22）
+
+### 11.22.1 问题与口径
+
+M1.21 看到 SST-2 L12 的增益在低剂量就饱和，留下两个不能区分的解释：
+
+- **测试时表示更好**：int4 的 test embedding 本身让分类更容易；
+- **训练时正则化**：在量化表示上训练出的 probe 更稳，即使 test 仍是 f32。
+
+M1.22 用 5×5 交叉矩阵把两者拆开：
+
+```text
+train on x(train_λ), test on x(test_λ)
+λ_train, λ_test ∈ {0, 1/8, 1/4, 1/2, 1}
+```
+
+- 每个 train λ 只训一个 logistic 线性 probe，C 仍在该 train 表示内 5 折选；
+  同一个 probe 在 5 个 test λ 上各评一次，共 25 个格子。
+- `(0,0)` 是 f32→f32 基线；`(0,1)` 是 test-only 量化；`(1,0)` 是
+  train-only 量化（正则化 probe）；`(1,1)` 是 in-domain int4。
+- 每个格子对 `(0,0)` 做 10k test-level paired bootstrap；test `sep` 同步记录。
+- 主表是 logreg；SST-2 L12 / CoLA L12 另跑 `LinearSVC` 的 4×4
+  （λ=`0,1/8,1/2,1`）复验。
+- 仍只训练线性 probe、冻结编码器；没有 MLP、encoder 微调、MNLI 或新数据集。
+
+### 11.22.2 四角与低剂量：SST-2 只在匹配剂量成立
+
+下表每格是 accuracy（括号内为相对 `(0,0)` 的 Δ）；完整 150 行在
+`data/wsp-classify-cross.tsv`，SVC 32 行在 `data/wsp-classify-cross-svc.tsv`。
+
+| 数据集/深度 | (0,0) f32→f32 | (0,1) f32→int4 | (1,0) int4→f32 | (1,1) int4→int4 | (1/8,1/8) | (1/8,0) |
+|---|---:|---:|---:|---:|---:|---:|
+| SST-2 L12 | 0.800110 (+0) | 0.771554 (−0.028556) | 0.567820 (−0.232290) | 0.840198 (+0.040088) | 0.825371 (+0.025261) | 0.795167 (−0.004942) |
+| SST-2 L6 | 0.797913 (+0) | 0.746293 (−0.051620) | 0.702361 (−0.095552) | 0.804503 (+0.006590) | 0.817683 (+0.019769) | 0.798462 (+0.000549) |
+| CoLA L12 | 0.575264 (+0) | 0.522531 (−0.052733) | 0.604027 (+0.028763) | 0.586769 (+0.011505) | 0.573346 (−0.001918) | 0.582934 (+0.007670) |
+| CoLA L6 | 0.582934 (+0) | 0.591563 (+0.008629) | 0.567593 (−0.015340) | 0.574305 (−0.008629) | 0.579099 (−0.003835) | 0.580058 (−0.002876) |
+| Hate L12 | 0.576445 (+0) | 0.595099 (+0.018654) | 0.551207 (−0.025238) | 0.572787 (−0.003658) | 0.579005 (+0.002560) | 0.577176 (+0.000732) |
+| Hate L6 | 0.546818 (+0) | 0.542429 (−0.004389) | 0.531090 (−0.015728) | 0.532187 (−0.014631) | 0.533650 (−0.013168) | 0.535113 (−0.011704) |
+
+SST-2 L12 的三个关键格子的 10k bootstrap：
+
+- `(0,1)` `−0.028681`，CI `[−0.049973,−0.007688]`；
+- `(1,0)` `−0.232229`，CI `[−0.260297,−0.203734]`；
+- `(1,1)` `+0.040034`，CI `[+0.020868,+0.058759]`；
+- `(1/8,1/8)` `+0.025254`，CI `[+0.013729,+0.036793]`；
+- `(1/8,0)` `−0.004985`，CI `[−0.015925,+0.006041]`。
+
+**SST-2 L12 的增益只在 train/test 剂量匹配时成立。** 单独把 test 换成
+int4，f32 probe 掉 `−2.86pp`；单独把 train 换成 int4，probe 在 f32 test
+上掉 `−23.23pp`，比 f32 基线低一大截；两者同时换，才有 `+4.00pp`。
+`(1/8,0)` 是 M1.21 里拿到约 63% 最终增益的低剂量，但它对 f32 test 只有
+`−0.50pp`（CI 跨 0）。**这直接排除“int4 训练把 probe 正则化”作为 SST-2
+L12 的解释：低剂量 train-only 没有把 f32 test 拉起来，全剂量 train-only
+反而灾难性掉点。** int4-trained probe 不是更稳的 f32 probe，而是已经适配
+int4 坐标的 probe。
+
+SST-2 L6 同向但幅度小：`(0,1) −5.16pp`（CI `[−0.074135,−0.030203]`）、
+`(1,0) −9.56pp`（CI `[−0.117518,−0.073586]`）、`(1,1) +0.66pp`（CI 跨 0）；
+`(1/8,0)` 只有 `+0.05pp`、CI 跨 0。**L6 也没有 train-only 正则化；它的
+正向同样只在匹配剂量出现，只是对角本身不显著。**
+
+SVC 复验（4×4，λ=`0,1/8,1/2,1`）给出同一结构：
+
+| 数据集 | (0,0) | (0,1) | (1,0) | (1,1) | (1/8,1/8) | (1/8,0) |
+|---|---:|---:|---:|---:|---:|---:|
+| SST-2 L12 | 0.797913 | 0.766063 (−0.031851) | 0.687534 (−0.110379) | 0.841845 (+0.043783) | 0.823174 (+0.025261) | 0.795167 (−0.002746) |
+| CoLA L12 | 0.577181 | 0.511026 (−0.066155) | 0.605944 (+0.028763) | 0.585810 (+0.008629) | 0.577181 (+0.000000) | 0.586769 (+0.009588) |
+
+SST-2 L12 的 `(1,0)` SVC 是 `−0.110454`、CI `[−0.133992,−0.086766]`，
+`(1,1)` 是 `+0.043783`、CI `[+0.025261,+0.062603]`；
+`(1/8,0)` 是 `−0.002820`、CI 跨 0。**换 probe 不改变“匹配才成立”的结论。**
+
+### 11.22.3 三个数据集把“正向”落在不同格子
+
+交叉矩阵最重要的读数是：三个数据集的“int4 正向”不在同一个格子上。
+
+- **SST-2 L12：对角型。** 两个单边都是负的，只有 `(1,1)` 是 `+4.00pp`；
+  `(0,1) −2.86pp`、`(1,0) −23.23pp`。这是**匹配表示效应**：quantized
+  test 只对 quantized probe 有利，f32 probe 在 int4 test 上反而更差；
+  int4 probe 回到 f32 test 上更差。增益不在“更好的 test 几何”里，也不在
+  “更稳的 probe”里，而在两者的耦合里。
+- **CoLA L12：train-only 型。** `(1,0) +2.88pp`，CI `[+0.008629,+0.049856]`，
+  显著为正；`(0,1) −5.27pp`，CI `[−0.076702,−0.029722]`；对角 `(1,1)`
+  只有 `+1.15pp`、CI 跨 0。SVC 同样：`(1,0) +2.87pp`、CI
+  `[+0.007670,+0.049856]`，`(0,1) −6.62pp`、CI
+  `[−0.090125,−0.043145]`，对角 `+0.86pp`、CI 跨 0。**CoLA 的正向是
+  probe 正则化，不是测试表示；test-only 量化还会伤害它。** 两个单边在
+  in-domain 对角上互相抵消，所以 M1.21 只看到 `+1.15pp`、CI 跨 0。
+  `(1/8,0)` 也已经 `+0.77pp`（logreg CI `[0,+0.015340]`；SVC `+0.96pp`、
+  CI `[+0.000959,+0.018217]`），说明低剂量 train-only 就足以启动这层正则化。
+- **Hate L12：test-only 型。** `(0,1) +1.87pp`，CI
+  `[+0.008413,+0.028895]`；`(1,0) −2.53pp`，CI
+  `[−0.034382,−0.016459]`；对角 `(1,1) −0.37pp`、CI 跨 0。**clean f32
+  probe 在 int4 test 上略好，但在 int4 上训练会掉；对角净效果仍是负的。**
+  这不是 SST-2 式的匹配增益，也不能算“hate 复现了 int4 正向”。
+
+CoLA L6 和 hate L6 没有正格子：CoLA L6 的 `(1,0) −1.53pp`、`(1,1) −0.86pp`，
+CI 都跨 0；hate L6 的 `(1,0) −1.58pp`、`(1,1) −1.47pp`，CI 都为负
+（`[−0.025604,−0.006218]` / `[−0.024150,−0.005121]`）。
+
+**`sep` 不能解释这三种模式。** CoLA 的 `+2.88pp` 在 `(1,0)` 上，test
+特征完全是 f32（test λ=0），test `sep` 没有变化；hate 的 `(0,1)` 正向前
+test `sep` 也基本不动。`sep` 只在 SST-2 L12 的对角上和精度同向，仍只是
+伴随读数；交叉矩阵把“对角差值”拆成 train-side 和 test-side 后，`sep`
+不再是任何一格的解释变量。
+
+### 11.22.4 这改变了什么
+
+M1.21 的未决问题现在有答案：
+
+- **SST-2 L12 的低剂量早饱和不是“更好的 test 表示”，也不是“正则化
+  probe”，而是匹配表示**：train-only 1/8 对 f32 test 只有 `−0.50pp`，
+  test-only 全剂量是 `−2.86pp`；只有两者同时到 1/8 才 `+2.53pp`。
+  增益存在于 int4 坐标里的 probe 与 int4 坐标里的 test 的耦合，不在任一
+  单边。
+- **CoLA L12 的小正向确实是正则化**，但只在 train 侧；部署的均匀 int4
+  是 train/test 同时量化，test-only 的 `−5.27pp` 会把它抵消到 `+1.15pp`
+  （CI 跨 0）。所以不能把 CoLA 的 `(1,0)` 当作“int4 提升 CoLA”。
+- **hate L12 的 `(0,1)` 是 test-only 的局部正向**，train 侧为负；对角仍
+  是 `−0.37pp`。它不构成第三个复现。
+
+因此主线问题的答案要再收紧一层：**SST-2 L12 的正向是数据集/深度特异的
+匹配表示效应；几何结构（`sep` 上升、方向低秩集中）描述的是 int4 这一侧
+的表示，但单独把 f32 投到 int4 基、单独把 f32 probe 放到 int4 test、或
+单独在 int4 上训练 probe，都不能复现它。** 只有 encoder 输出和 probe
+同时处于 int4 几何时才成立。这不是“量化普遍提升线性分类”，也不是
+“int4 训练正则化”能概括的跨数据集机制。
+
+**边界**：3 个数据集 × 2 个深度，主表 logreg，SVC 只复验 SST-2 L12 /
+CoLA L12；一个 seed；C 在每个 train λ 内重选；bootstrap 只重采样 test，
+不覆盖 train 侧方差（train 侧稳定性见 M1.16）。交叉矩阵的 25 个格子共享
+同一个 train fit，格子之间不是独立实验；它适合定位 train/test 哪一侧
+起作用，不适合做多重比较的显著性筛选。仍没有 MLP、encoder 微调、MNLI；
+没有做 per-group/absmean 等量化算子内部的因果拆解。
+
+### 11.22.5 复算
+
+```bash
+python scripts/wsp_classify_cross.py \
+  --texts sst2/data-l12/texts.json \
+  --run f32='sst2/emb12/l12-pure-f32-*.f32' \
+  --run int4='sst2/emb12/l12-int4-*.f32' \
+  --bootstrap 1 --bootstrap-iters 10000 \
+  --out sst2/cross-l12.json
+```
+
+CoLA 加 `--class-weight balanced --cv-metric macro_f1`；SVC 加
+`--probe linear_svc --lams 0,0.125,0.5,1`。主表
+`data/wsp-classify-cross.tsv`（150 行：6 个数据集-深度 × 25 格），SVC
+复验表 `data/wsp-classify-cross-svc.tsv`（32 行：2 个数据集 × 16 格）。
+
 ## 12. 下一步
 
 - **逐块 `3→2`/`3→4` 与第二模型 L6 都已完成（§8/§9/§11）**：不要再重复跑
@@ -1824,6 +3514,62 @@ L3 的表：`data/wsp-budget-l3-perturb.tsv`（36 行）、
   双向检验（L12→L6 正、L6→L12 对 int4 负）；第三模型与同深度对照也已在
   §11.10 做完（L3/par-L6 双负），下一步不是再找模型，而是任务头或接受
   每模型重扫。
+- **检索任务头已做（§11.11），结论是负向**：`R12` 和 L6 `rescan-k2` 的 STS
+  增益没有转到 SciFact 检索；`R12` 对 int3 的 MRR/nDCG@10 点估计为负、CI 跨 0，
+  对 int4/f32 的 MRR/nDCG CI 基本整段为负；L6 `rescan-k2` 对 int3 的 MRR/
+  nDCG@10 CI 整段为负。任务头不是新的调参维度，而是现有 STS 候选的否决门。
+- **分类任务头已做（§11.12–§11.21），结论是“SST-2 内稳定、跨任务不外推”**：
+  SST-2（6,920/1,821，冻结编码器 + 线性 probe，train 内 5 折选 C）上，L12
+  `R12` 对 int3 点估计低 `−0.008842`、CI 跨 0，对 int4 整段为负；L6
+  `rescan-k2` 对 int3/int4 的 CI 都跨 0。分类头没有接住 STS 的块级增益。
+  L12 均匀 int4 在 SST-2 上比 f32 高 `+0.040088`，换 `LinearSVC` 后仍为
+  `+0.043783`；M1.16 固定 test、25 次 80% train 子样本重训后，logreg
+  `int4−f32` 均值 `+0.042987`（25/25 正），SVC `+0.044437`（25/25 正），
+  说明它是 L12 在 SST-2 上的稳定表示效应，不是单次划分偶然。第二分类集
+  GLUE CoLA（balanced + macro-F1 选 C）只得到 `+0.013341` / `+0.008467`，
+  两个 CI 都跨 0；第三分类集 TweetEval/hate 的无权重口径为
+  `−0.003679` / `−0.004826`，balanced 口径为 `−0.012694` / `−0.013028`，
+  后者 CI 整段为负；L6 的 int4 只有 `+0.0063/+0.0036` 且分别 22/25、
+  19/25 为正。M1.17 的几何诊断把这层“SST-2 特异”推进到可描述的结构：
+  int4 在 SST-2 上把类均值差方向挤进前 4 个主成分（train `0.405→0.855`，
+  test `0.422→0.821`），`eff_rank 77.6→200.1`，同时 `centroid_cos`
+  从 `0.994` 降到 `0.943`；CoLA/hate 的 `signal_top4` 基本不动，
+  `eff_rank` 还略降。PCA 干预里 SST-2 L12 `keep4` 的 `int4−f32` 是
+  `+0.166392`、CI `[+0.138935,+0.194399]`，白化后仍有 `+0.049423`、
+  CI 全正；CoLA balanced 的所有 mode CI 都跨 0，hate 除 L6 raw
+  （`−0.014631`、CI 全负）外也都跨 0。M1.18 再把 int4 的主成分基搬到 f32：
+  能救回 f32 的部分掉点（`keep4 0.603→0.694`），但同维数下 int4 仍
+  `0.769`，`int4−f32` 从 raw `+0.040` 扩到 `+0.075`；反方向把 int4 投到
+  f32 基也仍保留优势。M1.19 直接比较两档的类均值差方向：SST-2 L12 的
+  cos 只有 `0.5715`（test `0.5891`），夹角 `55.1°`，`||d_int4||/||d_f32||
+  = 1.94`，f32 的方向只有 `27.8%` 在 int4 前 4 个主成分里、int4 的方向
+  只有 `7.2%` 在 f32 前 4 个主成分里；CoLA/hate 则几乎同向（cos
+  `0.970–0.976`，夹角 `12.6–14.1°`）。M1.20 再做旋转对照：把 f32 的类
+  方向转到 int4 后，f32 精度仍是 `0.800110`、`int4−f32` 仍是 `+0.040088`，
+  说明方向角本身可被线性 probe 吸收；`sep` 在 SST-2 L12 上和精度同向
+  （`sep 1.288×`、Fisher `1.659×`）。但 M1.21 的剂量-反应把 `sep` 的
+  普遍性排掉：SST-2 L12 在 1/8 剂量就拿到 `+0.025261`（约最终增益的
+  63%），1/4 拿到 `+0.038990`（约 97%），而 `sep` 到 1/8 只完成总增幅的
+  约 24%；SST-2 L6 的精度峰值在 1/8（`+0.019769`），`sep` 到 1/2 才见顶；
+  CoLA L12 的 `sep` 降到 `0.936×`，accuracy 反升 `+0.011505`。
+  **SST-2 的正向在数据集内稳定，但没有跨任务/跨数据集泛化；M1.17 的
+  “类别方向低秩集中”是伴随读数，M1.18 证明低秩基本身不足以复现增益，
+  M1.19 的类方向旋转是症状，M1.20 的 `sep` 只是 SST-2 L12 上的伴随
+  读数，M1.21 显示它是低剂量、早饱和的表示效应，不是 `sep` 的普遍
+  中介。** M1.22 的 train×test 交叉矩阵再把它定位成**匹配表示效应**：
+  SST-2 L12 的 `(0,1)` 是 `−2.86pp`、`(1,0)` 是 `−23.23pp`，只有
+  `(1,1)` 是 `+4.00pp`；1/8 train-only 只有 `−0.50pp`（CI 跨 0），
+  说明不是 probe 正则化，也不是更好的 test 表示。同一矩阵里 CoLA L12 的
+  `(1,0)` 是 `+2.88pp`（CI 全正），`(0,1)` 是 `−5.27pp`，对角只剩
+  `+1.15pp`（CI 跨 0）——CoLA 的小正向才是 train-only 正则化；hate L12
+  只有 `(0,1)` 的 `+1.87pp`，train 侧为负、对角仍负。**三个数据集的正向
+  落在不同格子，只有 SST-2 L12 是 train/test 同时匹配才成立；这也解释
+  了为什么只有它在均匀 int4 的 in-domain 设置下有稳定正向。** 这仍不是
+  因果证明，也不能写成量化普遍提升线性分类。
+  分类头这一路的验证已够，不要再继续调 `R12`；接受“BUDGET 只在 STS
+  相关性上有效”，把 `R12` 留在 STS in-domain，不进运行时默认。若以后还要
+  做，应该换更强 probe（但当前用户口径排除 MLP）或新的任务族，而不是重复
+  第三数据集。
 - **重扫选择器已落库，且 5 折交叉拟合已把“选择”留出（§11.6/§11.7）**：
   `wsp_budget_rescan.py` 能从两张表生成严格同字节候选；L6 全量 `6/24/6` 是
   `0.831304 / 0.824457`（高于 int4 点估计），但这是 in-sample。5 折 × 2 种子

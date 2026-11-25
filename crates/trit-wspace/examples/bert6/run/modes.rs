@@ -1,7 +1,7 @@
 use crate::activation::{ActivationMode, LayerScales};
 use crate::model::{Bert, BertConfig, Budget};
 use crate::report::compare;
-use crate::sts::{Pair, metrics, sentence_vectors};
+use crate::sts::Pair;
 use serde_json::{Map, Value, json};
 
 /// `TernaryAll` 的逐层快照（real, random）。
@@ -65,7 +65,7 @@ pub(crate) fn evaluate(request: &Request) -> (Map<String, Value>, Option<Stages>
                 "real_vs_f32": super::diag::vs_f32(&real_out, request.f32_out, request),
                 "real_vs_reference": compare(&real_out, request.reference, request.mask, request.hidden),
                 "random_vs_f32": super::diag::vs_f32(&random_out, request.f32_random, request),
-                "sts": metrics(&sentence_vectors(&real_out, request.mask, request.batch, request.seq, request.hidden), request.pairs),
+                "sts": super::embed_dump::mode_sts(request, &real_out, mode.key()),
             }),
         );
         if mode == ActivationMode::TernaryAll {

@@ -1,0 +1,11 @@
+[
+ {
+  "name": "interpolate: λ 退化为 f32",
+  "file": "scripts/wsp_classify_interpolate.py",
+  "old": "    mixed = f32 + lam * (int4 - f32)",
+  "new": "    mixed = f32 + 0.0 * (int4 - f32)",
+  "pkg": "scripts/wsp_classify_interpolate.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

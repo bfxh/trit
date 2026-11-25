@@ -1,0 +1,29 @@
+[
+ {
+  "name": "chunk-input: 矩阵 magic 不校验",
+  "file": "scripts/wsp_chunk_embed_input.py",
+  "old": "    if len(head) != 16 or head[:8] != magic:",
+  "new": "    if False:",
+  "pkg": "scripts/wsp_chunk_embed_input.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "chunk-input: 尾块越界",
+  "file": "scripts/wsp_chunk_embed_input.py",
+  "old": "        end = min(start + chunk_size, len(texts))",
+  "new": "        end = start + chunk_size",
+  "pkg": "scripts/wsp_chunk_embed_input.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "chunk-input: 文本数与矩阵行数不核对",
+  "file": "scripts/wsp_chunk_embed_input.py",
+  "old": "    if len(texts) != rows / seq:",
+  "new": "    if False:",
+  "pkg": "scripts/wsp_chunk_embed_input.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

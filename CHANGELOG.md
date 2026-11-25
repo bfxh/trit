@@ -858,6 +858,295 @@
     `wsp-budget-parl6-bootstrap.tsv`（8 行）；`wsp-budget-rule-candidates.tsv`
     扩到 6 行。运行时默认不变（`I10` 外部保守、`K10K11`/`R12` STS in-domain）。
 
+- **检索任务头（M1.11）**：`bert6` 新增 `WSPEMB1` 句向量落盘
+  （`TRIT_EMBED_DUMP=<dir>` + `TRIT_EMBED_TAG=<name>`；header
+  `WSPEMB1\0` + rows:u32 + cols:u32 + row-major f32），纯 f32 由 `f32_base`
+  落盘、量化档由 `modes` 落盘；`data.rs` 的矩阵元素上限 `1<<27` 提到 `1<<29`，
+  以支持 SciFact 的 `402,688×384 = 154.6M` 元素。新增
+  `scripts/wsp_export_scifact.py`（低内存 tokenizers+safetensors 只读 BERT
+  embedding 块，流式导出 `WSPACT1/WSPMSK1`）和 `scripts/wsp_retrieval_eval.py`
+  （WSPEMB1 读取、MRR/Recall/nDCG、query bootstrap）。
+  - SciFact：corpus 5,183、queries 1,109、去重后 300 个 qrels query、6,292 条
+    文本，seq 64、mean pooling + L2。
+  - L12 `R12`（6/54/12，10,782,720 B）STS 对 int3 `+0.015231 / +0.022050`，
+    但检索 MRR `0.482` 低于 int3 `0.497`/int4 `0.529`，nDCG@10 `0.526` 低于
+    `0.532`/`0.568`；对 int3 的 MRR/nDCG CI 都跨 0，对 int4/f32 基本整段为负。
+  - L6 `rescan-k2`（6/24/6，5,391,360 B）STS 对 int3 `+0.016710 / +0.014032`，
+    但检索 MRR `0.474` 显著低于 int3 `0.510`（CI `[−0.065,−0.008]`），
+    nDCG@10 `0.515` 显著低于 `0.541`。**STS 增益没有转到检索；R12/rescan-k2
+    只能留在 STS in-domain，不能进检索任务头默认；分类头未开始。**
+  - 表：`wsp-retrieval-scifact-l12.tsv`（4 行）、
+    `wsp-retrieval-scifact-l6.tsv`（4 行）、
+    `wsp-retrieval-scifact-bootstrap.tsv`（30 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.11、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.13、`LESSONS.md` 第 23 条。
+
+- **分类任务头（M1.12）**：新增 `scripts/wsp_export_sst2.py`（直连
+  `SetFit/sst2` JSONL，流式导出 `WSPACT1/WSPMSK1`）、
+  `scripts/wsp_chunk_embed_input.py`（按文本行切 `chunk-XXX`，规避 859 MB×2
+  全量加载的 commit 失败）、`scripts/wsp_classify_eval.py`（`WSPEMB1` 拼接、
+  冻结编码器 logistic probe、train 内 5 折选 `C`、per-config/transfer 两套
+  accuracy/macro-F1/AUC、10k paired bootstrap、固定 `C`/标准化敏感性）。
+  - SST-2：6,920 train / 1,821 test，seq 64、mean pooling + L2；L12/L6 各四档，
+    1,500 条分块编码。
+  - L12 `R12` accuracy `0.814937` 低于 int3 `0.823723`/int4 `0.840198`；
+    `R12−int3 = −0.008842` CI 跨 0，`R12−int4 = −0.025402` CI 整段为负。
+  - L6 `rescan-k2` `0.802306`，对 int3 `−0.007209`、对 int4 `−0.002220`，
+    两个 CI 都跨 0。**STS 的块级增益没有转成分类；`R12`/`rescan-k2`
+    仍只能留在 STS in-domain。**
+  - 独立观察：L12 均匀 int4 比 f32 高 `+0.040088`（bootstrap CI 整段为正），
+    但 f32 probe 直接迁移到量化档掉 `−0.029` 到 `−0.062`；这是量化正则化/
+    表示变化，不是 `R12` 的块级重排。
+  - 表：`wsp-classify-sst2-l12.tsv`（4 行）、`wsp-classify-sst2-l6.tsv`
+    （4 行）、`wsp-classify-sst2-bootstrap.tsv`（24 行）、
+    `wsp-classify-sst2-sensitivity.tsv`（16 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.12、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.14、`LESSONS.md` 第 24 条。
+
+- **分类任务头的第二种线性 probe（M1.13）**：`scripts/wsp_classify_eval.py`
+  新增 `--probe {logreg,linear_svc}`；`LinearSVC` 用平方 hinge、`dual=False`、
+  `max_iter=10000`，仍只训练冻结编码器上的线性头。同一批 SST-2
+  embedding/split、train 内 5 折选 `C`、10k paired bootstrap。
+  - L12：`int4−f32 = +0.043783`（CI `[+0.025261,+0.062603]`），
+    `int3−f32 = +0.020769`（CI 全正）；`R12−int3 = −0.004502`（CI 跨 0），
+    `R12−int4 = −0.027516`（CI 整段为负）。L12 均匀 int4 对 f32 的正向
+    不是 logistic 损失特有，但 `R12` 仍不是块级增益。
+  - L6：`int3−f32 +0.006939`、`int4−f32 +0.002492`、`rescan-k2−f32
+    +0.000303`，三个 CI 都跨 0；档间两两 CI 也全跨 0。
+  - f32 共享 SVM probe 投到量化档掉得更明显：L12 `0.735–0.766`、L6
+    `0.650–0.690`（各自 f32 自评 `0.797913` / `0.802306`），说明线性边界
+    方向也变了；没有几何诊断，不能因果化。
+  - 表：`wsp-classify-sst2-svc.tsv`（8 行）、
+    `wsp-classify-sst2-svc-bootstrap.tsv`（24 行）、
+    `wsp-classify-sst2-probe-compare.tsv`（8 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.13、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.15、`LESSONS.md` 第 25 条。
+
+- **第二分类集 CoLA（M1.14）**：`scripts/wsp_export_sst2.py` 新增
+  `--format cola`（GLUE CoLA 四列 TSV；`dev.tsv` 作 test，`test.tsv` 无标签），
+  `scripts/wsp_classify_eval.py` 新增 `--class-weight {none,balanced}`、
+  `--cv-metric {accuracy,macro_f1}`、`--bootstrap-metric {accuracy,macro_f1,both}`，
+  用于不平衡二分类；默认仍保持 SST-2 的旧口径。
+  - 数据：GLUE/CoLA 官方 zip，8,551 train / 1,043 dev（dev 作 test）；
+    标签 `0=unacceptable`、`1=acceptable`，dev 为 721/322。seq 64、
+    mean pooling + L2、编码器冻结；L12/L6 各四档，1,500 条分块编码。
+  - 口径：CoLA dev 多数类 accuracy `0.691275`、全判 acceptable 的
+    macro-F1 `0.408730`；无类别权重 + accuracy 选 C 会四档全塌到多数类
+    （R12 正好 `0.691275 / 0.408730`），故主口径改为
+    `class_weight=balanced` + train 内 5 折 macro-F1 选 C，10k paired
+    bootstrap 同时报 accuracy/macro-F1。
+  - L12 logreg：`int4−f32 = +0.013341`（CI `[−0.006711,+0.033557]`），
+    `int3−f32 = −0.016517`，`R12−f32 = −0.007833`。L12 SVC：
+    `int4−f32 = +0.008467`（CI `[−0.011505,+0.028763]`），
+    `R12−f32 = −0.013690`。L6：logreg `int4−f32 = −0.009679`、SVC
+    `−0.000126`，CI 都跨 0；`rescan-k2` 也不高于 f32。
+  - **SST-2 的 L12 int4 正向没有跨数据集泛化**：CoLA 上点估计只约
+    +0.8~+1.3 个百分点且 CI 跨 0，SST-2 的 +0.040/+0.044 同量级效应
+    已落在 CoLA 的 95% CI 之外；`R12`/`rescan-k2` 仍无分类增益。
+  - 表：`wsp-classify-cola-l12.tsv`（8 行）、`wsp-classify-cola-l6.tsv`
+    （8 行）、`wsp-classify-cola-l12-bootstrap.tsv`（48 行）、
+    `wsp-classify-cola-l6-bootstrap.tsv`（48 行）、
+    `wsp-classify-cola-l12-probe-compare.tsv`（4 行）、
+    `wsp-classify-cola-l6-probe-compare.tsv`（4 行）、
+    `wsp-classify-cola-l12-unweighted.tsv`（4 行）、
+    `wsp-classify-cola-l12-cgrid.tsv`（16 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.14、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.16、`LESSONS.md` 第 26 条。
+
+- **第三分类集 TweetEval/hate（M1.15）**：`scripts/wsp_export_sst2.py` 新增
+  `--dataset-name` / `--label-names`，让非 SST-2 的 JSONL 数据能写正确的
+  manifest metadata；默认值不变。
+  - 数据：HuggingFace `tweet_eval` 的 `hate` 配置，原始 8,993 train / 2,970
+    test；去空文本、按 stripped text 去重、丢弃标签冲突并移除 test 中与
+    train 精确重叠的 232 条后为 8,985 / 2,734，标签 `0=non-hate`、
+    `1=hate`（test 1,619/1,115）。seq 64、mean pooling + L2、编码器冻结；
+    L12/L6 各四档，1,500 条分块编码，11,719 行全部对齐。
+  - 口径：test 多数类 accuracy `0.592173`、全判 non-hate 的 macro-F1
+    `0.371927`；主口径沿用 SST-2 的无类别权重 + accuracy 选 C，另跑
+    balanced + train 内 5 折 macro-F1 选 C，10k paired bootstrap 同时报
+    accuracy/macro-F1；L12 balanced logreg 另做 fixed C=1 敏感性。
+  - L12 无权重：logreg `int4−f32 = −0.003679`
+    （CI `[−0.012802,+0.005486]`），SVC `−0.004826`
+    （CI `[−0.015362,+0.005852]`）；`int3−f32`/`R12−f32` 都显著为负。
+  - L12 balanced：logreg `int4−f32 = −0.012694`
+    （CI `[−0.022677,−0.002917]`），SVC `−0.013028`
+    （CI `[−0.022312,−0.003292]`）；fixed C=1 仍为 `−0.009860`
+    （CI `[−0.017922,−0.002195]`）。
+  - L6 balanced：logreg `int4−f32 = +0.006576`（CI 跨 0），SVC `−0.009173`
+    （CI `[−0.018288,−0.000366]`）；两 probe 方向不一致，无一致优势。
+  - **SST-2 的 L12 int4 正向没有跨任务/跨数据集泛化**：第三数据集无权重
+    口径点估计略负，balanced 口径显著为负；hate 的 2,734 条 test 把
+    SST-2 的 +0.040/+0.044 同量级效应更严格地排除在 95% CI 之外。
+    `R12`/`rescan-k2` 在第三个分类集上也没有任务头增益。
+  - 表：`wsp-classify-hate-l12.tsv`（8 行）、
+    `wsp-classify-hate-l12-bootstrap.tsv`（24 行）、
+    `wsp-classify-hate-l12-balanced.tsv`（8 行）、
+    `wsp-classify-hate-l12-balanced-bootstrap.tsv`（48 行）、
+    `wsp-classify-hate-l12-probe-compare.tsv`（4 行）、
+    `wsp-classify-hate-l12-c1.tsv`（4 行）、
+    `wsp-classify-hate-l6-balanced.tsv`（8 行）、
+    `wsp-classify-hate-l6-balanced-bootstrap.tsv`（48 行）、
+    `wsp-classify-hate-l6-probe-compare.tsv`（4 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.15、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.17、`LESSONS.md` 第 27 条。
+
+- **SST-2 子样本稳定性（M1.16）**：新增
+  `scripts/wsp_classify_subsample.py`，固定官方 test，只在 train 上做分层
+  5 折 × 5 个种子（25 次重训），每次用 80% train、C 固定为全量 train 的
+  选择，检验 probe 训练样本变化对 `int4−f32` 的影响。该脚本带
+  `--self-test` 和 1 条 mutation 锚点。
+  - L12 logreg `int4−f32`：全量 test `+0.040088`，子样本均值 `+0.042987`
+    （sd `0.005372`，min `+0.028556`，max `+0.050522`），25/25 为正。
+  - L12 SVC `int4−f32`：全量 `+0.043932`，子样本均值 `+0.044437`
+    （sd `0.004632`，min `+0.034596`，max `+0.052718`），25/25 为正。
+  - L12 `int3−f32`/`R12−f32`：两套 probe 也都 25/25 为正，均值约
+    `+0.019–0.025`，幅度小于 int4。
+  - L6 logreg `int4−f32 = +0.006304`（min `−0.002746`，22/25 正），SVC
+    `+0.003580`（min `−0.010983`，19/25 正）；`rescan-k2` 接近 0。
+  - **SST-2 的 L12 int4 正向在训练子样本上稳定，不是单次划分偶然；
+    但 L6 只有小幅且不稳定的正向，CoLA/hate 仍不复现。** 所以结论分两层：
+    数据集内稳定，不等于跨任务/跨数据集泛化；也不是 `R12` 的块级增益。
+  - 表：`wsp-classify-sst2-subsample.tsv`（24 行）、
+    `wsp-classify-sst2-subsample-runs.tsv`（16 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.16、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.18、`LESSONS.md` 第 28 条。
+
+- **SST-2 几何诊断与 PCA 干预（M1.17）**：新增
+  `scripts/wsp_classify_geometry.py` 和 `scripts/wsp_classify_pca.py`，前者算
+  类间/类内散度、质心余弦、有效秩和类别方向的主成分捕获率，后者在 train 上
+  拟合 PCA、test 只 transform，跑 `keep4/keep16/keep64/whiten` 的线性 probe。
+  两个脚本都带 `--self-test` 和 mutation 锚点。
+  - 所有 `WSPEMB1` 行 L2 范数为 1，样本范数先排除；SST-2 L12 f32 有效秩
+    `77.6`、两类质心余弦 `0.994`，int4 有效秩 `200.1`、质心余弦 `0.943`，
+    `signal_top4 0.405→0.855`（test `0.422→0.821`）。CoLA/hate 的
+    `signal_top4` 基本不动（`0.166→0.161`、`0.476→0.481`），有效秩略降。
+  - SST-2 L12 `keep4` 的 `int4−f32 = +0.166392`（CI
+    `[+0.138935,+0.194399]`，f32 `0.603`、int4 `0.769`）；`keep16`
+    `+0.125755`、`keep64` `+0.081274`；白化后 `+0.049423`（CI 全正）。
+    CoLA balanced（`keep4 −0.004794`、`keep16 −0.008629`、
+    `keep64 +0.010547`）和 hate 的所有 mode CI 都跨 0；L6 SST-2 `keep4`
+    `+0.089511`，但 raw `+0.006590`、CI 跨 0。
+  - **结论：SST-2 的 L12 int4 正向对应数据集特异的“类别方向低秩集中”：
+    量化压平 f32 的共同方向，同时把类别信号挤进少数主成分；不是样本范数，
+    也不只是协方差谱。但 PCA 是线性干预，不是量化过程的因果证明。**
+  - 表：`wsp-classify-geometry.tsv`（48 行）、`wsp-classify-pca.tsv`（60 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.17、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.19、`LESSONS.md` 第 29 条。
+
+- **跨档 PCA 子空间迁移（M1.18）**：`scripts/wsp_classify_pca.py` 新增
+  `--pca-fit NAME`（PCA 在指定 run 的 train 上拟合，所有 run 投到同一组
+  主成分）、`--bootstrap-raw`（每个变换后的 run 对自己的 raw 做配对
+  bootstrap）和 `--bootstrap-metrics`。新增 1 条 mutation 锚点。
+  - SST-2 L12：把 int4 基搬到 f32，`keep4` 从 `0.603` 回到 `0.694`、
+    `keep16` 从 `0.680` 到 `0.722`；但同维数下 int4 仍有 `0.769 / 0.806`，
+    `int4−f32` 从 raw `+0.040088` 扩到 `+0.075233 / +0.083470`。
+  - 反方向把 int4 投到 f32 基：`keep4 +0.033498`、`keep8 +0.043932`、
+    `keep64 +0.047776`，优势没有消失；只有 `keep16 +0.013729` CI 跨 0。
+  - CoLA/hate 两个 fit 方向的 `keepN` CI 基本跨 0；hate L12 `fit=f32
+    keep8 +0.009829` 是单个正格子，不构成稳定结论。
+  - **结论：SST-2 的 int4 正向不能由“更好的低秩子空间”单独解释；低秩
+    集中是伴随读数，优势跟着子空间内的坐标/尺度走。仍不是量化过程的
+    因果证明。**
+  - 表：`wsp-classify-pca-transfer.tsv`（120 行：6 个数据集-深度 × 2 个
+    fit 方向 × 5 个 mode × 2 个 run）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.18、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.20、`LESSONS.md` 第 30 条。
+
+- **跨档类方向旋转（M1.19）**：新增 `scripts/wsp_classify_direction.py`，
+  比较两档的类均值差方向（train/test cos、夹角、范数比），以及方向落在
+  自己/对方 train PCA 前 K 个主成分的能量占比；带 `--self-test` 和 1 条
+  mutation 锚点。
+  - SST-2 L12：cos `0.5715`（test `0.5891`），夹角 `55.1°`（test
+    `53.9°`），`||d_int4||/||d_f32|| = 1.94`；f32 方向在 int4 前 4 个主成分
+    里只有 `27.8%`，int4 方向在 f32 前 4 个主成分里只有 `7.2%`。L6 cos
+    `0.620`、夹角 `51.7°`、范数比 `1.54`。
+  - CoLA/hate：cos `0.970–0.976`，夹角 `12.6–14.1°`，范数比 `0.91–0.98`，
+    跨基 top4 与自基 top4 接近。
+  - **结论：M1.18 的负迁移不能只归因于“基不够好”：基对齐了、方向没对齐；
+    M1.17 的 `signal_top4 0.855` 是 int4 自己旋转后方向的集中度，不是
+    两档共享的低秩结构。train/test 一致，但仍是点估计、无 CI，也不是
+    量化算子的因果消融。**
+  - 表：`wsp-classify-direction.tsv`（6 行：6 个数据集-深度 × f32/int4）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.19、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.21、`LESSONS.md` 第 31 条。
+
+- **旋转对照与类可分性（M1.20）**：新增
+  `scripts/wsp_classify_rotate.py`，用 train 类均值差方向估计 Householder
+  反射，把一档的类方向转到另一档；test 只做同一变换，probe 重训；带
+  `--self-test` 和 1 条 mutation 锚点。
+  - SST-2 L12 把 f32 方向转到 int4 后，f32 精度仍是 `0.800110`、
+    `int4−f32` 仍是 `+0.040088`；L6 也逐位不变；反向把 int4 转到 f32
+    方向同样不变。CoLA 只有 1 条 test 样本翻转（`±0.000952`），hate 不变。
+    旋转矩阵正交误差最大 `1.1e-15`。
+  - 真正随 int4 变化的是 `sep = sqrt(between/within)`：SST-2 L12 train
+    `1.288×`、test `1.236×`，Fisher `1.659× / 1.529×`；L6
+    `1.126× / 1.073×`，Fisher `1.267× / 1.152×`；CoLA/hate 都在 1 附近。
+    SST-2 L12 `between_sq` 增 `3.757×`、`within_sq` 只增 `2.264×`。
+  - **结论：方向角可被线性 probe 吸收，是症状；`sep` 在 SST-2 L12 上和
+    正向同向，但 M1.21 的剂量-反应显示它不是普遍中介量（见下）。低秩集中、
+    基迁移失败、方向夹角都是伴随读数。旋转只改方向、保持范数，`sep` 还含
+    方向长度和类内散度，所以旋转对照只排除“方向角”，不排除“长度/类内
+    结构”。仍不是量化算子的因果拆解。**
+  - 表：`wsp-classify-rotation.tsv`（6 行：6 个数据集-深度 ×
+    f32→int4 旋转、gap、sep/Fisher 比）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.20、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.22、`LESSONS.md` 第 32 条。
+
+- **量化误差剂量-反应（M1.21）**：新增
+  `scripts/wsp_classify_interpolate.py`，在 f32 和 int4 之间插值
+  `x(λ)=normalize(f32+λ(int4−f32))`，端点保持原始 embedding，中间点重归一化；
+  λ=`0,1/16,1/8,1/4,1/2,3/4,1`，每个 λ 重训线性 probe、C 在 train 内重选，
+  10k paired bootstrap；同步算 `sep`/`between_sq`/`within_sq`。带
+  `--self-test` 和 1 条 mutation 锚点。
+  - SST-2 L12 的 `int4−f32`：1/16 `+0.010434`、1/8 `+0.025261`（约最终
+    `+0.040088` 的 63%）、1/4 `+0.038990`（约 97%）、1/2 `+0.041735`、
+    1 `+0.040088`；`sep` 到 1/8 只有 `1.068×`、到 1 才 `1.288×`。精度先
+    饱和，`sep` 后饱和。
+  - SST-2 L6：1/8 `+0.019769` 是峰值，1/2 `+0.014827`（CI 跨 0）、1
+    `+0.006590`（CI 跨 0）；`sep` 到 1/2 才见顶 `1.128×`，1 回落到
+    `1.126×`。精度峰值早于 `sep` 峰值。
+  - CoLA L12：`sep` 降到 `0.936×`，accuracy 反升 `+0.011505`（CI 跨 0）；
+    SVC 也升 `+0.008629`（CI 跨 0）。符号相反。hate 没有正增益，L6 全剂量
+    `−0.014631`、CI 整段为负。
+  - **结论：SST-2 L12 的正向是低剂量、早饱和的表示效应，不是 `sep` 的
+    连续函数；`sep` 只是 SST-2 L12 的伴随读数，M1.20 的“类可分性解释”
+    要降级，不能写成跨数据集中介量。** 仍不是量化算子的因果拆解：插值路径
+    每个 λ 是固定非线性映射，probe 重训、C 重选；没有 train-only/test-only
+    噪声对照或 f32/int4 交叉迁移矩阵。
+  - 表：`wsp-classify-interpolate.tsv`（42 行：6 个数据集-深度 × 7 λ）、
+    `wsp-classify-interpolate-svc.tsv`（15 行：3 条关键路径 × 5 λ）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.21、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.23、`LESSONS.md` 第 33 条。
+
+- **train×test 交叉迁移矩阵（M1.22）**：新增
+  `scripts/wsp_classify_cross.py`，每个 train λ 训一个线性 probe（C 在
+  train 内选），在全部 test λ 上评；λ=`0,1/8,1/4,1/2,1`，25 格，逐格对
+  `(0,0)` 做 10k paired bootstrap，同步记录 test `sep`。带 `--self-test`
+  和 2 条 mutation 锚点（忽略 test λ / 忽略 train λ）。
+  - SST-2 L12：`(0,1)` `−0.028556`（CI `[−0.049973,−0.007688]`）、
+    `(1,0)` `−0.232290`（CI `[−0.260297,−0.203734]`）、`(1,1)`
+    `+0.040088`（CI `[+0.020868,+0.058759]`）；`(1/8,0)` `−0.004942`、
+    CI 跨 0。单边量化都掉点，只有匹配剂量保留增益；不是 probe 正则化。
+    SVC 同向：`(0,1) −0.031851`、`(1,0) −0.110379`、`(1,1) +0.043783`。
+  - CoLA L12：`(1,0)` `+0.028763`（CI `[+0.008629,+0.049856]`）、
+    `(0,1)` `−0.052733`（CI `[−0.076702,−0.029722]`）、`(1,1)`
+    `+0.011505`（CI 跨 0）。SVC `(1,0) +0.028763`、`(0,1) −0.066155`、
+    `(1,1) +0.008629`（CI 跨 0）。CoLA 的小正向是 train-only 正则化，
+    不是测试表示。
+  - Hate L12：`(0,1)` `+0.018654`（CI `[+0.008413,+0.028895]`）、
+    `(1,0)` `−0.025238`（CI `[−0.034382,−0.016459]`）、`(1,1)`
+    `−0.003658`（CI 跨 0）。只有 test-only 局部正向，训练侧为负。
+  - SST-2 L6 同匹配模式，但对角 `+0.006590`、CI 跨 0；CoLA L6 / hate L6
+    没有正格子。
+  - **结论：三个数据集的“int4 正向”落在不同格子，只有 SST-2 L12 是
+    train/test 同时匹配才成立的表示效应；CoLA 是 train-only 正则化，
+    hate 是 test-only 小正向。`sep` 仍只是 SST-2 L12 对角的伴随读数。**
+    25 格共享 train fit，bootstrap 只重采样 test，不能当独立多重检验。
+  - 表：`wsp-classify-cross.tsv`（150 行：6 个数据集-深度 × 25 格）、
+    `wsp-classify-cross-svc.tsv`（32 行：2 个数据集 × 16 格）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.22、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.24、`LESSONS.md` 第 34 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

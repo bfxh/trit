@@ -1,0 +1,5 @@
+probe	config	accuracy	macro_f1	auc	selected_C
+logreg	l12-f32	0.544623	0.525344	0.687991	1
+logreg	l12-int3	0.529261	0.504854	0.699964	1
+logreg	l12-int4	0.534748	0.513450	0.689071	1
+logreg	l12-r12	0.532187	0.508100	0.702542	1
