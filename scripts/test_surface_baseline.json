@@ -137,6 +137,8 @@
  "script/wsp_budget_variant.py": 0,
  "script/wsp_chunk_embed_input.py": 1,
  "script/wsp_classify_eval.py": 1,
+ "script/wsp_classify_geometry.py": 1,
+ "script/wsp_classify_pca.py": 1,
  "script/wsp_classify_subsample.py": 1,
  "script/wsp_export_scifact.py": 1,
  "script/wsp_export_sst2.py": 1,

@@ -286,6 +286,21 @@
    `data/wsp-classify-sst2-subsample*.tsv`，正文见
    `WSP-BUDGET-RESULTS.md` §11.16。
 
+29. **“稳定”之后先问“为什么只有这个数据集”，几何干预比再堆一个数据集更省**。
+   M1.17 对同一批 SST-2/CoLA/hate embedding 做几何诊断和 PCA 干预：所有
+   `WSPEMB1` 行都是单位范数，样本范数先排除；SST-2 L12 的 f32 有效秩只有
+   `77.6`、两类质心余弦 `0.994`，int4 把有效秩提到 `200.1`、质心余弦压到
+   `0.943`，类均值差方向落在前 4 个主成分的比例从 `0.405` 提到 `0.855`
+   （test `0.422→0.821`）；CoLA/hate 的 `signal_top4` 基本不动，有效秩还略降。
+   PCA 只保留 4 维时 SST-2 L12 `int4−f32 = +0.166392`（CI
+   `[+0.138935,+0.194399]`），白化后仍 `+0.049423`（CI 全正）；CoLA balanced
+   的所有 mode CI 都跨 0，hate 除 L6 raw（`−0.014631`、CI 全负）外也都跨 0。
+   **SST-2 的正向是数据集特异的类别方向低秩
+   集中，不是样本范数，也不只是协方差谱；但 PCA 是线性干预，不是量化过程的
+   因果证明。** 这条比“再换第四数据集”更能解释“为什么只有 SST-2”，也避免
+   把数据集内稳定误写成普遍提升。表见 `data/wsp-classify-geometry.tsv` /
+   `data/wsp-classify-pca.tsv`，正文见 `WSP-BUDGET-RESULTS.md` §11.17。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter

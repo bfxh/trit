@@ -1,0 +1,11 @@
+[
+ {
+  "name": "geometry: signal_topK 全部改成前 4 个主成分",
+  "file": "scripts/wsp_classify_geometry.py",
+  "old": "        f\"signal_top{k}\": float(projections[:k].sum() / total) if total > 0 else None",
+  "new": "        f\"signal_top{k}\": float(projections[:4].sum() / total) if total > 0 else None",
+  "pkg": "scripts/wsp_classify_geometry.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

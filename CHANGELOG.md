@@ -1011,6 +1011,28 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.16、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.18、`LESSONS.md` 第 28 条。
 
+- **SST-2 几何诊断与 PCA 干预（M1.17）**：新增
+  `scripts/wsp_classify_geometry.py` 和 `scripts/wsp_classify_pca.py`，前者算
+  类间/类内散度、质心余弦、有效秩和类别方向的主成分捕获率，后者在 train 上
+  拟合 PCA、test 只 transform，跑 `keep4/keep16/keep64/whiten` 的线性 probe。
+  两个脚本都带 `--self-test` 和 mutation 锚点。
+  - 所有 `WSPEMB1` 行 L2 范数为 1，样本范数先排除；SST-2 L12 f32 有效秩
+    `77.6`、两类质心余弦 `0.994`，int4 有效秩 `200.1`、质心余弦 `0.943`，
+    `signal_top4 0.405→0.855`（test `0.422→0.821`）。CoLA/hate 的
+    `signal_top4` 基本不动（`0.166→0.161`、`0.476→0.481`），有效秩略降。
+  - SST-2 L12 `keep4` 的 `int4−f32 = +0.166392`（CI
+    `[+0.138935,+0.194399]`，f32 `0.603`、int4 `0.769`）；`keep16`
+    `+0.125755`、`keep64` `+0.081274`；白化后 `+0.049423`（CI 全正）。
+    CoLA balanced（`keep4 −0.004794`、`keep16 −0.008629`、
+    `keep64 +0.010547`）和 hate 的所有 mode CI 都跨 0；L6 SST-2 `keep4`
+    `+0.089511`，但 raw `+0.006590`、CI 跨 0。
+  - **结论：SST-2 的 L12 int4 正向对应数据集特异的“类别方向低秩集中”：
+    量化压平 f32 的共同方向，同时把类别信号挤进少数主成分；不是样本范数，
+    也不只是协方差谱。但 PCA 是线性干预，不是量化过程的因果证明。**
+  - 表：`wsp-classify-geometry.tsv`（48 行）、`wsp-classify-pca.tsv`（60 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.17、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.19、`LESSONS.md` 第 29 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

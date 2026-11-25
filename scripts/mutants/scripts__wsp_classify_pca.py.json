@@ -1,0 +1,11 @@
+[
+ {
+  "name": "pca: keepN 把全部主成分置零",
+  "file": "scripts/wsp_classify_pca.py",
+  "old": "        train_z[:, k:] = 0.0\n        test_z[:, k:] = 0.0",
+  "new": "        train_z[:, :] = 0.0\n        test_z[:, :] = 0.0",
+  "pkg": "scripts/wsp_classify_pca.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
