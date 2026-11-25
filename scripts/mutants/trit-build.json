@@ -17,7 +17,7 @@
  },
  {
   "name": "build: 缓存不比对产物哈希",
-  "file": "crates/trit-build/src/main.rs",
+  "file": "crates/trit-build/src/cache.rs",
   "old": "        if hash64(&bytes) != u64::from_str_radix(info.get(\"hash\")?.as_str()?, 16).ok()? {",
   "new": "        if false {",
   "pkg": "trit-build",
@@ -166,5 +166,29 @@
   "new": "        let rows = width * 64;",
   "pkg": "trit-build",
   "filter": "bitplan::tests::threaded_table_matches_single_thread"
+ },
+ {
+  "name": "netlist: BUF 不再别名输入",
+  "file": "crates/trit-build/src/direct/netlist.rs",
+  "old": "                self.signal(input)?",
+  "new": "                let index = self.signal(input)?;\n                self.push(Op::Not(index))",
+  "pkg": "trit-build",
+  "filter": "direct::netlist::tests::buf_is_an_alias_not_a_statement"
+ },
+ {
+  "name": "netlist: 重复驱动不报错",
+  "file": "crates/trit-build/src/direct/netlist.rs",
+  "old": "        if drivers.insert(name, gate).is_some() {",
+  "new": "        if false {",
+  "pkg": "trit-build",
+  "filter": "direct::netlist::tests::duplicate_driver_is_rejected"
+ },
+ {
+  "name": "netlist: Verilog 异或落成 Ł3 异或",
+  "file": "crates/trit-build/src/direct/netlist.rs",
+  "old": "                self.push(Op::Xor2(left, right))",
+  "new": "                self.push(Op::Xor(left, right))",
+  "pkg": "trit-build",
+  "filter": "direct::netlist::tests::verilog_xor_becomes_classic_xor2"
  }
 ]
