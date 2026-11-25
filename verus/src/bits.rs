@@ -1,23 +1,26 @@
-//! 位平面（`TriBit`）的 Verus 规格与证明：逐位等价于标量 K3/Ł3。
-//!
-//! 结构与主库 `crates/trit-core/src/bits.rs` 一致：`TriBit` = `ones` + `unknowns`
-//! 两个 64 位平面。这里的 `spec fn` 用位运算定义语义，`exec` 是提炼版本；
-//! 证明目标是对每个位 `bit`，批量运算的结果与标量 `Trit` 运算逐位一致。
+//! 位平面 `TriBit` 的 spec/exec；逐位证明在 `bits/proofs.rs`。
 
 use vstd::prelude::*;
 
+#[cfg(verus_only)]
 use crate::k3::Trit;
 #[cfg(verus_only)]
 use crate::k3::{knot, tand, tor};
 
 verus! {
 
+mod proofs;
+
+pub open spec fn bit_at(x: u64, bit: u32) -> bool {
+    (x >> (bit % 64)) & 1 == 1
+}
+
 #[derive(Clone, Copy)]
 pub struct BitPlane(pub u64);
 
 impl BitPlane {
     pub open spec fn bit(self, bit: u32) -> bool {
-        (self.0 >> (bit % 64)) & 1 == 1
+        bit_at(self.0, bit)
     }
 }
 
@@ -50,8 +53,6 @@ impl TriBit {
         self.unknowns.0
     }
 
-    // ---- spec 语义（与主库位平面公式一致） ---------------------------------
-
     pub open spec fn not_spec(self) -> Self {
         TriBit {
             ones: BitPlane(!self.crisp_ones() & !self.unknown_bits()),
@@ -73,7 +74,6 @@ impl TriBit {
         TriBit { ones: BitPlane(res1), unknowns: BitPlane(resx) }
     }
 
-    // ---- exec 提炼（与主库实现体逐字对应） ---------------------------------
 
     // BEGIN BITS OPS
     pub fn crisp_ones_exec(self) -> (r: u64)

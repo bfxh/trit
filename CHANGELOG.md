@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（第三十九轮：TriBit 逐位等价的 Verus 证明）
+
+- `verus/src/bits.rs`：把位平面取位抽成纯 `u64` 的 `bit_at` spec 函数（供
+  `by (bit_vector)` 看见），证明体移到新文件 `verus/src/bits/proofs.rs`。
+- 新增 `verus/src/bits/proofs.rs`：用参数化 lemma（`not_*` / `and_*` / `or_*`，
+  逐条 `by (bit_vector)`）证明 `TriBit::not` / `and_lattice` / `or_lattice` 与
+  标量 `Trit` 逐位等价；`cargo-verus verify` 从 97 升到 120 verified。
+- 位平面的逐位等价从“8×8×64 穷举对拍”升级为机器检查的证明（对拍保留为回归）。
+
 ### Added（第三十八轮：位平面 TriBit 的 spec/exec 与逐位对拍）
 
 - 新增 `verus/src/bits.rs`：位平面 `TriBit` 的 `not`/`and`/`or` spec/exec，
