@@ -6339,12 +6339,24 @@
       "lines": 634
     },
     {
+      "file": "verus/src/b3.rs",
+      "lines": 215
+    },
+    {
+      "file": "verus/src/b4.rs",
+      "lines": 317
+    },
+    {
       "file": "verus/src/k3.rs",
       "lines": 257
     },
     {
+      "file": "verus/src/l3.rs",
+      "lines": 247
+    },
+    {
       "file": "verus/src/lib.rs",
-      "lines": 16
+      "lines": 8
     },
     {
       "file": "verus/src/table.rs",
@@ -6353,6 +6365,10 @@
     {
       "file": "verus/tests/bridge.rs",
       "lines": 67
+    },
+    {
+      "file": "verus/tests/bridge_algebra.rs",
+      "lines": 167
     },
     {
       "file": "verus/tests/common/mod.rs",

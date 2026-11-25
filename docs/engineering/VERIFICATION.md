@@ -1,12 +1,13 @@
 # 形式化验证：主库三值语义（Verus）
 
-> 状态：**M1 锚点**。K3 标量算子已有机器检查的规格与证明；Ł3/B3/Belnap、
-> 位平面/批量实现、并发与 `unsafe` 仍是缺口（见文末）。
+> 状态：**M2 锚点**。K3 / Ł3 / B3 三值与 Belnap 四值的标量算子已有机器检查的
+> 规格与证明；位平面/批量实现、并发与 `unsafe` 仍是缺口（见文末）。
 
 ## 1. 目标与边界
 
 主库的三值语义是所有下游共享的稳定 API。测试只能抽样，Verus 用 SMT 对
-**所有输入**检查规格。当前只覆盖 `trit-core::value::Ternary` 的 K3 标量算子，
+**所有输入**检查规格。当前覆盖 `trit-core::value::Ternary` 的 K3、
+`trit-core::algebra` 的 Ł3/B3，以及 `trit-belnap::B4` 的标量算子，
 不改变运行时依赖、不改变 `cargo test --workspace` 的口径。
 
 验证锚点是 `verus/`（独立 workspace，`publish = false`）：
@@ -15,18 +16,24 @@
 verus/
 ├── Cargo.toml        trit-verified：vstd + trit-core；独立 workspace
 ├── README.md         范围、运行方式、缺口
-├── src/table.rs      NOT/AND/OR/EQ/XOR 编码真值表（单一来源）
-├── src/k3.rs         Verus spec + 代数律证明 + exec 提炼
+├── src/table.rs      K3 编码真值表（单一来源）
+├── src/k3.rs         K3：Verus spec + 代数律 + exec
+├── src/l3.rs         Ł3：双倍刻度 spec + 代数律 + exec
+├── src/b3.rs         B3：毒值吸收 spec + 代数律 + exec
+├── src/b4.rs         Belnap 四值：双轨 bool spec + 代数律 + exec
 ├── src/lib.rs        模块出口
-└── tests/bridge.rs   普通 Rust 穷举对拍 trit-core
+├── tests/bridge.rs   对拍 trit-core 的 K3
+└── tests/bridge_algebra.rs  对拍 algebra 的 Ł3/B3 与 trit-belnap::B4
 ```
 
 ## 2. 信任链
 
 ```text
-trit-core::value::Ternary  ≡  table.rs   （tests/bridge.rs，3×3 完备）
-table.rs                   ≡  spec       （src/k3.rs，Verus 证明）
-⇒ trit-core 的 K3 算子满足 spec
+K3:  trit-core::value::Ternary        ≡  table.rs    （3×3）
+Ł3:  trit-core::algebra::Lukasiewicz  ≡  l3.rs       （3×3）
+B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （3×3）
+B4:  trit-belnap::B4                  ≡  b4.rs       （4×4）
+每行：执行版 ≡ spec（Verus ensures）
 ```
 
 - `bridge.rs` 是穷举而非抽样：三值只有 3×3 组。
@@ -74,17 +81,18 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 
 ## 5. 覆盖范围（已证 / 未证）
 
-已验证（K3）：
+覆盖范围（当前 `scripts/verify.py` 报 85 verified）：
 
-- `!` 对合；
-- `&`/`|` 交换律、De Morgan；
-- `teq` 自反、`teq`/`tne` 互补；
-- `rank`/`index` 单射；
-- `table` 与 spec 逐项一致。
+- K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射、
+  `table` 与 spec 一致；
+- Ł3：格序 `∧/∨`、强加/强合交换、`U⊕U=T`、`U⊗U=F`、`U⇒U=T`、De Morgan、
+  等价自反；
+- B3：毒值吸收、`∧/∨` 交换、De Morgan、`U⇒U=U`；
+- B4：双轨往返、否定对合、De Morgan、结合/分配/吸收、`xor=¬equiv`、
+  consensus/gullibility 交换、conflation 对合与知识序 De Morgan。
 
 未验证（明确缺口）：
 
-- Ł3 / B3 / Belnap 四值（`trit-belnap`）；
 - `trit-core` 的 `bits` / `bulk` / SIMD 路径与标量路径等价；
 - 并发、`unsafe`、内存模型；
 - Verus 自身、z3 模型、Rust 编译器的可信基。
@@ -92,9 +100,9 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 ## 6. 路线图
 
 1. **M1（本文件）**：K3 标量锚点 + bridge + CI。
-2. **M2**：把 `trit-core::Ternary` 的标量实现直接纳入 `verus!` 验证
-   （而不是“table ≡ spec + bridge”两段式），减少一层对拍假设。
-3. **M3**：Ł3/B3/Belnap、位平面与批量路径的等价证明。
+2. **M2（落地）**：Ł3 / B3 / Belnap 四值的 spec、代数律与 bridge。
+3. **M3**：把 `trit-core::Ternary` 的标量实现直接纳入 `verus!` 验证
+   （减少“table ≡ spec + bridge”这层对拍假设），以及位平面/批量路径的等价证明。
 4. **M4**：统一入口 `trit-verify`：Verus / Kani / Creusot / 属性测试共用一套
    报告与门禁。
 5. **M5**（远期）：面向三值/位平面领域更强的验证器（当前不启动）。

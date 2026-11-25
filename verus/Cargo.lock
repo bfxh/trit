@@ -132,6 +132,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-belnap"
+version = "0.12.0"
+dependencies = [
+ "trit-core",
+]
+
+[[package]]
 name = "trit-core"
 version = "0.12.0"
 dependencies = [
@@ -143,6 +150,7 @@ dependencies = [
 name = "trit-verified"
 version = "0.1.0"
 dependencies = [
+ "trit-belnap",
  "trit-core",
  "vstd",
 ]
