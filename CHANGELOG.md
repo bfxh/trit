@@ -1052,6 +1052,24 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.18、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.20、`LESSONS.md` 第 30 条。
 
+- **跨档类方向旋转（M1.19）**：新增 `scripts/wsp_classify_direction.py`，
+  比较两档的类均值差方向（train/test cos、夹角、范数比），以及方向落在
+  自己/对方 train PCA 前 K 个主成分的能量占比；带 `--self-test` 和 1 条
+  mutation 锚点。
+  - SST-2 L12：cos `0.5715`（test `0.5891`），夹角 `55.1°`（test
+    `53.9°`），`||d_int4||/||d_f32|| = 1.94`；f32 方向在 int4 前 4 个主成分
+    里只有 `27.8%`，int4 方向在 f32 前 4 个主成分里只有 `7.2%`。L6 cos
+    `0.620`、夹角 `51.7°`、范数比 `1.54`。
+  - CoLA/hate：cos `0.970–0.976`，夹角 `12.6–14.1°`，范数比 `0.91–0.98`，
+    跨基 top4 与自基 top4 接近。
+  - **结论：M1.18 的负迁移不能只归因于“基不够好”：基对齐了、方向没对齐；
+    M1.17 的 `signal_top4 0.855` 是 int4 自己旋转后方向的集中度，不是
+    两档共享的低秩结构。train/test 一致，但仍是点估计、无 CI，也不是
+    量化算子的因果消融。**
+  - 表：`wsp-classify-direction.tsv`（6 行：6 个数据集-深度 × f32/int4）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.19、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.21、`LESSONS.md` 第 31 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
