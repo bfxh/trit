@@ -6351,12 +6351,16 @@
       "lines": 257
     },
     {
+      "file": "verus/src/k3_impl.rs",
+      "lines": 66
+    },
+    {
       "file": "verus/src/l3.rs",
       "lines": 247
     },
     {
       "file": "verus/src/lib.rs",
-      "lines": 8
+      "lines": 7
     },
     {
       "file": "verus/src/table.rs",

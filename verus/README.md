@@ -8,7 +8,9 @@
 ## 验证链
 
 ```text
-K3:  trit-core::value::Ternary        ≡  table.rs    （tests/bridge.rs，3×3）
+K3:  trit-core::value::Ternary        ≡  k3_impl.rs  （scripts/check_k3_impl.py，函数体逐字）
+     k3_impl.rs                      ≡  spec        （src/k3.rs，Verus ensures）
+     trit-core::value::Ternary        ≡  table.rs    （tests/bridge.rs，3×3，冗余检查）
 Ł3:  trit-core::algebra::Lukasiewicz  ≡  l3.rs       （tests/bridge_algebra.rs，3×3）
 B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （tests/bridge_algebra.rs，3×3）
 B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.rs，4×4）
@@ -20,6 +22,7 @@ B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.r
 - `src/k3.rs`：`spec fn knot/tand/tor/teq/tne/rank`、代数律证明（双重否定、
   交换律、De Morgan、`teq` 自反、`rank` 单射）、`table_*_matches_spec`、
   以及 exec 提炼（`knot_exec` 等带 `ensures`）。
+- `src/k3_impl.rs`：主库 `value.rs` 的 K3 算子实现体（同步门校验，逐字）。
 - `tests/bridge.rs`：对拍 `trit-core` 的 `!`/`&`/`|`/`^` 与 `index()`/`from_index()`。
 - `src/l3.rs`：Ł3 的 spec（双倍刻度 `0/1/2` 精确表达 `0/0.5/1`）、代数律、exec。
 - `src/b3.rs`：B3 的毒值吸收、De Morgan、`U ⇒ U = U`、exec。
@@ -34,7 +37,8 @@ B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.r
 python scripts/verify.py --install          # 下载 Linux/Windows release 到 ~/tools/verus
 
 # 2) 验证
-python scripts/verify.py                    # 检查工具链 + cargo-verus verify + cargo test
+python scripts/verify.py                    # 同步门 + 检查工具链 + cargo-verus verify + cargo test
+python scripts/verify.py --only sync        # 只跑实现体同步门（不需要 Verus）
 python scripts/verify.py --json             # 机器可读报告
 ```
 

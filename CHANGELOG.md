@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（第三十七轮：K3 实现体同步门）
+
+- 主库 `crates/trit-core/src/value.rs` 用 `// BEGIN K3 OPS` / `// END K3 OPS`
+  标出 K3 算子实现；`verus/src/k3_impl.rs` 复制同一段实现体
+  （`not`/`bitand`/`bitor`/`bitxor`），由 `scripts/check_k3_impl.py` 逐字比对
+  （`Self::*` / `self` / `other` 规范化后比较函数体）。
+- Verus 直接验证这份实现体（`ensures` 与 `src/k3.rs` 的 spec 对应），
+  `cargo-verus verify` 从 85 升到 89 verified；`table ≡ spec` 的 bridge 降级为冗余检查。
+- `scripts/verify.py` 默认先跑同步门（`--only sync` 可单独跑，不需要 Verus）。
+
 ### Added（第三十六轮：Verus 覆盖 Ł3 / B3 / Belnap 四值）
 
 - `verus/` 新增 `src/l3.rs`（Ł3，双倍刻度 0/1/2 表达 0/0.5/1）、`src/b3.rs`
