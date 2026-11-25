@@ -6337,6 +6337,30 @@
     {
       "file": "t3/crates/t3-sig/src/rule.rs",
       "lines": 634
+    },
+    {
+      "file": "verus/src/k3.rs",
+      "lines": 257
+    },
+    {
+      "file": "verus/src/lib.rs",
+      "lines": 16
+    },
+    {
+      "file": "verus/src/table.rs",
+      "lines": 61
+    },
+    {
+      "file": "verus/tests/bridge.rs",
+      "lines": 67
+    },
+    {
+      "file": "verus/tests/common/mod.rs",
+      "lines": 42
+    },
+    {
+      "file": "verus/tests/refinement.rs",
+      "lines": 34
     }
   ]
 }

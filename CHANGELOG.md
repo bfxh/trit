@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（第三十五轮：Verus 验证锚点 K3）
+
+- 新增 `verus/` 独立 workspace（`trit-verified`，`publish = false`）：Verus 规格、
+  K3 代数律证明、exec 提炼；`tests/bridge.rs` 对 `trit-core::value::Ternary`
+  的 `!`/`&`/`|`/`^` 与 `index()` 做 3×3 完备穷举对拍。
+- 新增 `scripts/verify.py` 统一入口：固定版本 + SHA-256 下载、rustup/toolchain 检查、
+  `cargo-verus verify` + bridge 测试、JSON 报告；新增
+  `.github/workflows/verus.yml` 与 `docs/engineering/VERIFICATION.md`。
+- 验证链为 `trit-core ≡ table ≡ spec`（桥接穷举 + Verus 证明）；未验证范围
+  （Ł3/B3/Belnap、bits/bulk、并发/unsafe、Verus/z3 可信基）已在文档列明。
+
 ### Changed（第三十四轮：SGD 整步 AVX2 调度外提）
 
 - `forward_step::train_step` 每行都调 `forward_dot_row` 与 `dense::sgd_update_row`，
