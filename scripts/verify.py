@@ -191,7 +191,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="统一验证入口（Verus + 主库对拍）")
     parser.add_argument("--install", action="store_true", help="下载并校验 Verus / Z3")
     parser.add_argument("--json", action="store_true", help="输出机器可读报告")
-    parser.add_argument("--only", choices=["verify", "bridge"], help="只跑其中一步")
+    parser.add_argument("--only", choices=["sync", "verify", "bridge"], help="只跑其中一步")
     args = parser.parse_args()
 
     if args.install:
@@ -206,6 +206,30 @@ def main() -> int:
         "host": host_os(),
         "ok": False,
     }
+
+    # 同步门：verus/src/k3_impl.rs 的函数体必须与主库 value.rs 的 K3 实现一致。
+    if args.only in (None, "sync"):
+        result = run([sys.executable, "scripts/check_k3_impl.py"], env, ROOT)
+        output = result.stdout + result.stderr
+        if not args.json:
+            sys.stdout.write(output)
+        report["sync"] = {
+            "ok": result.returncode == 0,
+            "summary": output.strip().splitlines()[-1] if output.strip() else "",
+        }
+        if result.returncode != 0:
+            report["ok"] = False
+            if args.json:
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 1
+
+    if args.only == "sync":
+        report["ok"] = True
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            print("verify: OK（K3 实现同步门通过）")
+        return 0
 
     version = check_toolchain(env)
     report["verus_cli"] = version

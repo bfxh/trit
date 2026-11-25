@@ -18,6 +18,7 @@ verus/
 ├── README.md         范围、运行方式、缺口
 ├── src/table.rs      K3 编码真值表（单一来源）
 ├── src/k3.rs         K3：Verus spec + 代数律 + exec
+├── src/k3_impl.rs    主库 value.rs 的 K3 实现体（scripts/check_k3_impl.py 同步门）
 ├── src/l3.rs         Ł3：双倍刻度 spec + 代数律 + exec
 ├── src/b3.rs         B3：毒值吸收 spec + 代数律 + exec
 ├── src/b4.rs         Belnap 四值：双轨 bool spec + 代数律 + exec
@@ -29,7 +30,8 @@ verus/
 ## 2. 信任链
 
 ```text
-K3:  trit-core::value::Ternary        ≡  table.rs    （3×3）
+K3:  trit-core::value::Ternary        ≡  k3_impl.rs  （scripts/check_k3_impl.py，函数体逐字）
+     k3_impl.rs                      ≡  spec        （src/k3.rs，Verus ensures）
 Ł3:  trit-core::algebra::Lukasiewicz  ≡  l3.rs       （3×3）
 B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （3×3）
 B4:  trit-belnap::B4                  ≡  b4.rs       （4×4）
@@ -101,8 +103,9 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 
 1. **M1（本文件）**：K3 标量锚点 + bridge + CI。
 2. **M2（落地）**：Ł3 / B3 / Belnap 四值的 spec、代数律与 bridge。
-3. **M3**：把 `trit-core::Ternary` 的标量实现直接纳入 `verus!` 验证
-   （减少“table ≡ spec + bridge”这层对拍假设），以及位平面/批量路径的等价证明。
+3. **M3（落地）**：`verus/src/k3_impl.rs` 复制主库 `value.rs` 的 K3 实现体，
+   由 `scripts/check_k3_impl.py` 逐字比对，再用 Verus 的 `ensures` 验证该实现；
+   `table ≡ spec` 的 bridge 降级为冗余检查。剩余：位平面/批量路径的等价证明。
 4. **M4**：统一入口 `trit-verify`：Verus / Kani / Creusot / 属性测试共用一套
    报告与门禁。
 5. **M5**（远期）：面向三值/位平面领域更强的验证器（当前不启动）。

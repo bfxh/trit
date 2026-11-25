@@ -54,6 +54,7 @@
  "script/bench.sh": 0,
  "script/blender_gt.py": 0,
  "script/branch_update.py": 1,
+ "script/check_k3_impl.py": 0,
  "script/check_obj_blender.py": 0,
  "script/ci_budget.py": 1,
  "script/ci_integrity.py": 1,
