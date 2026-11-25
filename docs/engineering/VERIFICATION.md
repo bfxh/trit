@@ -22,6 +22,7 @@ verus/
 ├── src/l3.rs         Ł3：双倍刻度 spec + 代数律 + exec
 ├── src/b3.rs         B3：毒值吸收 spec + 代数律 + exec
 ├── src/b4.rs         Belnap 四值：双轨 bool spec + 代数律 + exec
+├── src/bits.rs       位平面 TriBit 的 spec/exec（not/and/or）
 ├── src/lib.rs        模块出口
 ├── tests/bridge.rs   对拍 trit-core 的 K3
 └── tests/bridge_algebra.rs  对拍 algebra 的 Ł3/B3 与 trit-belnap::B4
@@ -35,6 +36,7 @@ K3:  trit-core::value::Ternary        ≡  k3_impl.rs  （scripts/check_k3_impl.
 Ł3:  trit-core::algebra::Lukasiewicz  ≡  l3.rs       （3×3）
 B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （3×3）
 B4:  trit-belnap::B4                  ≡  b4.rs       （4×4）
+BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + 8×8×64 穷举）
 每行：执行版 ≡ spec（Verus ensures）
 ```
 
@@ -91,11 +93,13 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
   等价自反；
 - B3：毒值吸收、`∧/∨` 交换、De Morgan、`U⇒U=U`；
 - B4：双轨往返、否定对合、De Morgan、结合/分配/吸收、`xor=¬equiv`、
-  consensus/gullibility 交换、conflation 对合与知识序 De Morgan。
+  consensus/gullibility 交换、conflation 对合与知识序 De Morgan；
+- 位平面 `TriBit`：`not`/`and`/`or` 的 spec/exec 与 8×8×64 逐位对拍。
 
 未验证（明确缺口）：
 
-- `trit-core` 的 `bits` / `bulk` / SIMD 路径与标量路径等价；
+- 位平面 `TriBit` 的 Verus 逐位证明（当前是 spec/exec + 穷举对拍）；
+- `bulk`（`TriVec`）/ SIMD 路径与标量路径等价；
 - 并发、`unsafe`、内存模型；
 - Verus 自身、z3 模型、Rust 编译器的可信基。
 

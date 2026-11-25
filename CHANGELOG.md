@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added（第三十八轮：位平面 TriBit 的 spec/exec 与逐位对拍）
+
+- 新增 `verus/src/bits.rs`：位平面 `TriBit` 的 `not`/`and`/`or` spec/exec，
+  与主库 `crates/trit-core/src/bits.rs` 的位平面公式一致。
+- 新增 `verus/tests/bridge_bits.rs`：8 组边界平面 × 64 位 × 3 种代数，
+  逐位对拍 `TriBit` 与标量 `Ternary`。
+- 未完成：`TriBit` 的 Verus 逐位证明（当前 spec/exec + 穷举对拍）、`bulk`/`TriVec`。
+
 ### Added（第三十七轮：K3 实现体同步门）
 
 - 主库 `crates/trit-core/src/value.rs` 用 `// BEGIN K3 OPS` / `// END K3 OPS`
