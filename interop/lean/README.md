@@ -15,6 +15,7 @@
 | `Trit/K3.lean` | K3 的 NOT/AND/OR、交换律/结合律、位平面 encode/decode、`KGate` 表与 `gate U T ≠ implies U T` |
 | `Trit/Belnap4.lean` | Belnap4 的 NOT/AND/OR、位平面公式、`N∧B=F`、`N∨B=T` 等关键值 |
 | `Trit/Pack5.lean` | 5-trit `pack`/`unpack` 往返、尾部填充、错误语义、`pack < 243` |
+| `Trit/Bulk.lean` | `TriVec`（位切片三值向量）：`view`/`fromTernary`/`get`/`set` 的视图律、`wf` 维持、位平面公式 ≡ 标量（K3 格序与 B3 毒值） |
 | `Main.lean` | `tritLean` 可执行：输出 738 条 conformance JSONL |
 | `openai_math/` | 外置外部语料评测：固定提交、稀疏拉取、目录审计与手动 Comparator 入口 |
 | `Trit.lean` | 汇总导入 |
@@ -32,6 +33,12 @@
 - `Pack5.unpackGroup_packGroup1..5`（尾部 1–4 与完整 5 的往返）
 - `Pack5.unpackGroup_invalidByte`、`Pack5.unpackGroup_shortInput`（错误语义）
 - `Pack5.ofInt_neg_one`、`Pack5.ofInt_two`（`invalid_trit` 的类型外入口）
+- `Bulk`（`Trit/Bulk.lean`，35 条定理，对应主库 `TriVec`）：
+  `fromTernary_wf` / `fromTernary_view`（打包往返）、
+  `set_view_self` / `set_view_other` / `set_wf`（写后读与 frame、不变式维持）、
+  `get?_set?_same` / `get?_set?_other` / `set?_out_of_range`（`try_get`/`try_set` 语义）、
+  `andv_view` / `orv_view` / `notv_view` / `notv_ones_eq_code`（位平面公式 ≡ 标量）、
+  `andvB3_view` / `orvB3_view`（Bochvar 毒值）
 
 > `Pack5` 的有限枚举证明已从 `native_decide` 换成 kernel 检查；`pack`/`unpack` 与 `pack < 243` 用 `decide`，`Except` 等式因核心库无 `DecidableEq` 实例而用 `rfl`；没有 `sorry`。
 
@@ -45,6 +52,11 @@
 
 - 跨进程容器 v0.2、Belnap 5/9 值、SAT/BDD/ATPG：不在本目录范围。
 - Lean runtime FFI（Rust 直接调用 Lean 编译产物）：未做；当前是数据级 conformance 桥。
+- `TriVec` 的 bulk 数据桥：`Main.lean` 还没输出 `TriVec` 向量，
+  `interop/vectors` 还没有 `bulk.json`；模型层已证（`Trit/Bulk.lean`），
+  端到端对拍是下一轮。
+- `u64` 打包 / padding 掩码 / `usize` 溢出：Lean 模型按无限位平面，
+  不建模 64 位窗口，由 `verus/` 锚点与 `tests/bridge_bulk.rs` 覆盖。
 
 ## 与 `openai/math` 的关系
 

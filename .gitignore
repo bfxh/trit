@@ -88,3 +88,6 @@ cognition/corpus/
 
 # 数据管线产物（本地/CI 生成，不入库）
 data-pipeline-out/
+
+# Lean 构建缓存（lake build 生成，不入库；lake-manifest.json 仍入库）
+interop/lean/.lake/
