@@ -1,0 +1,193 @@
+dataset	depth	probe	class_weight	cv_metric	arm	accuracy	macro_f1	selected_C	test_sep	gap_accuracy_vs_f32	gap_accuracy_vs_int4	boot_delta_vs_f32	boot_ci_low_vs_f32	boot_ci_high_vs_f32
+sst2	l12	logreg	none	accuracy	f32	0.800110	0.800078	10.00	0.169130	+0.000000	-0.040088			
+sst2	l12	logreg	none	accuracy	int4	0.840198	0.840113	10.00	0.209133	+0.040088	+0.000000	+0.040034	+0.020868	+0.058759
+sst2	l12	logreg	none	accuracy	hybrid_rest_k4	0.841296	0.841227	10.00	0.205378	+0.041186	+0.001098			
+sst2	l12	logreg	none	accuracy	hybrid_rest_k16	0.839649	0.839618	10.00	0.201308	+0.039539	-0.000549	+0.039450	+0.020319	+0.058759
+sst2	l12	logreg	none	accuracy	hybrid_rest_k64	0.835255	0.835172	1.00	0.179510	+0.035146	-0.004942			
+sst2	l12	logreg	none	accuracy	hybrid_rest_k384	0.800110	0.800078	10.00	0.169130	+0.000000	-0.040088			
+sst2	l12	logreg	none	accuracy	hybrid_top_k4	0.802856	0.802795	10.00	0.172998	+0.002746	-0.037342			
+sst2	l12	logreg	none	accuracy	hybrid_top_k16	0.800110	0.800083	10.00	0.184927	+0.000000	-0.040088	-0.000103	-0.015376	+0.015376
+sst2	l12	logreg	none	accuracy	hybrid_top_k64	0.816584	0.816524	10.00	0.246265	+0.016474	-0.023613			
+sst2	l12	logreg	none	accuracy	hybrid_top_k384	0.840198	0.840113	10.00	0.209133	+0.040088	+0.000000			
+sst2	l12	logreg	none	accuracy	resid_full	0.832510	0.832470	10.00	0.177700	+0.032400	-0.007688	+0.032304	+0.010983	+0.052718
+sst2	l12	logreg	none	accuracy	resid_rest_k4	0.830313	0.830261	10.00	0.000000	+0.030203	-0.009885			
+sst2	l12	logreg	none	accuracy	resid_rest_k16	0.829764	0.829708	10.00	0.000000	+0.029654	-0.010434	+0.029567	+0.008786	+0.049973
+sst2	l12	logreg	none	accuracy	resid_rest_k64	0.830313	0.830205	10.00	0.000000	+0.030203	-0.009885			
+sst2	l12	logreg	none	accuracy	resid_rest_k384	0.499176	0.332967	0.01	0.000000	-0.300934	-0.341021			
+sst2	l12	logreg	none	accuracy	resid_top_k4	0.528830	0.499475	1.00	0.000000	-0.271280	-0.311367			
+sst2	l12	logreg	none	accuracy	resid_top_k16	0.580999	0.579110	10.00	0.000000	-0.219110	-0.259198			
+sst2	l12	logreg	none	accuracy	resid_top_k64	0.715541	0.715262	10.00	0.000000	-0.084569	-0.124657			
+sst2	l12	logreg	none	accuracy	resid_top_k384	0.832510	0.832470	10.00	0.000000	+0.032400	-0.007688			
+sst2	l12	logreg	none	accuracy	resid_row_l2	0.833608	0.833569	10.00	0.000000	+0.033498	-0.006590	+0.033405	+0.012630	+0.054366
+sst2	l12	logreg	none	accuracy	resid_sign	0.788578	0.788378	0.01	0.000000	-0.011532	-0.051620	-0.011654	-0.034047	+0.010434
+sst2	l12	logreg	none	accuracy	resid_norm	0.550247	0.541323	10.00	0.000000	-0.249863	-0.289951	-0.249993	-0.278968	-0.221307
+sst2	l12	logreg	none	accuracy	hybrid_rest_perm	0.718836	0.718520	1.00	0.000000	-0.081274	-0.121362			
+sst2	l12	logreg	none	accuracy	hybrid_rest_perm_class	0.873696	0.873687	1.00	0.000000	+0.073586	+0.033498			
+sst2	l12	logreg	none	accuracy	hybrid_rest_noclassmean	0.807798	0.807785	10.00	0.000000	+0.007688	-0.032400			
+sst2	l12	logreg	none	accuracy	resid_rest_noclassmean	0.499176	0.332967	0.01	0.000000	-0.300934	-0.341021	-0.301111	-0.330038	-0.272378
+sst2	l12	logreg	none	accuracy	hybrid_gauss_0.5	0.750686	0.750506	1.00	0.000000	-0.049423	-0.089511			
+sst2	l12	logreg	none	accuracy	hybrid_gauss_1	0.697968	0.697036	0.10	0.000000	-0.102142	-0.142230			
+sst2	l12	logreg	none	accuracy	hybrid_gauss_2	0.641406	0.640641	0.10	0.000000	-0.158704	-0.198792			
+sst2	l12	logreg	none	accuracy	hybrid_scale_0.5	0.840747	0.840717	10.00	0.000000	+0.040637	+0.000549			
+sst2	l12	logreg	none	accuracy	hybrid_scale_2	0.836903	0.836839	1.00	0.000000	+0.036793	-0.003295			
+sst2	l12	logreg	none	accuracy	hybrid_neg	0.824822	0.824719	10.00	0.000000	+0.024712	-0.015376			
+sst2	l6	logreg	none	accuracy	f32	0.797913	0.797875	10.00	0.168205	+0.000000	-0.006590			
+sst2	l6	logreg	none	accuracy	int4	0.804503	0.804439	1.00	0.180500	+0.006590	+0.000000	+0.006395	-0.013193	+0.026359
+sst2	l6	logreg	none	accuracy	hybrid_rest_k4	0.806150	0.806111	1.00	0.183908	+0.008237	+0.001647			
+sst2	l6	logreg	none	accuracy	hybrid_rest_k16	0.810544	0.810521	1.00	0.177944	+0.012630	+0.006041	+0.012488	-0.006590	+0.031301
+sst2	l6	logreg	none	accuracy	hybrid_rest_k64	0.806150	0.806122	1.00	0.164028	+0.008237	+0.001647			
+sst2	l6	logreg	none	accuracy	hybrid_rest_k384	0.797913	0.797875	10.00	0.168205	+0.000000	-0.006590			
+sst2	l6	logreg	none	accuracy	hybrid_top_k4	0.796815	0.796756	10.00	0.156222	-0.001098	-0.007688			
+sst2	l6	logreg	none	accuracy	hybrid_top_k16	0.787479	0.787344	10.00	0.171688	-0.010434	-0.017024	-0.010526	-0.028007	+0.007139
+sst2	l6	logreg	none	accuracy	hybrid_top_k64	0.800110	0.800072	10.00	0.205675	+0.002197	-0.004393			
+sst2	l6	logreg	none	accuracy	hybrid_top_k384	0.804503	0.804439	1.00	0.180500	+0.006590	+0.000000			
+sst2	l6	logreg	none	accuracy	resid_full	0.796266	0.796218	1.00	0.151493	-0.001647	-0.008237	-0.001781	-0.022515	+0.018685
+sst2	l6	logreg	none	accuracy	resid_rest_k4	0.794069	0.793979	1.00	0.000000	-0.003844	-0.010434			
+sst2	l6	logreg	none	accuracy	resid_rest_k16	0.794069	0.794057	10.00	0.000000	-0.003844	-0.010434	-0.004069	-0.025261	+0.017024
+sst2	l6	logreg	none	accuracy	resid_rest_k64	0.792422	0.792336	10.00	0.000000	-0.005491	-0.012081			
+sst2	l6	logreg	none	accuracy	resid_rest_k384	0.499176	0.332967	0.01	0.000000	-0.298737	-0.305327			
+sst2	l6	logreg	none	accuracy	resid_top_k4	0.572213	0.567897	10.00	0.000000	-0.225700	-0.232290			
+sst2	l6	logreg	none	accuracy	resid_top_k16	0.612850	0.610742	1.00	0.000000	-0.185063	-0.191653			
+sst2	l6	logreg	none	accuracy	resid_top_k64	0.683690	0.683545	1.00	0.000000	-0.114223	-0.120813			
+sst2	l6	logreg	none	accuracy	resid_top_k384	0.796266	0.796218	1.00	0.000000	-0.001647	-0.008237			
+sst2	l6	logreg	none	accuracy	resid_row_l2	0.791873	0.791800	1.00	0.000000	-0.006041	-0.012630	-0.006195	-0.026922	+0.014278
+sst2	l6	logreg	none	accuracy	resid_sign	0.736409	0.736351	0.01	0.000000	-0.061505	-0.068094	-0.061615	-0.085118	-0.037891
+sst2	l6	logreg	none	accuracy	resid_norm	0.499176	0.332967	0.01	0.000000	-0.298737	-0.305327	-0.298954	-0.327842	-0.270181
+sst2	l6	logreg	none	accuracy	hybrid_rest_perm	0.735859	0.735553	10.00	0.000000	-0.062054	-0.068644			
+sst2	l6	logreg	none	accuracy	hybrid_rest_perm_class	0.843493	0.843491	1.00	0.000000	+0.045579	+0.038990			
+sst2	l6	logreg	none	accuracy	hybrid_rest_noclassmean	0.861065	0.861022	10.00	0.000000	+0.063152	+0.056562			
+sst2	l6	logreg	none	accuracy	resid_rest_noclassmean	0.499176	0.332967	0.01	0.000000	-0.298737	-0.305327	-0.298954	-0.327842	-0.270181
+sst2	l6	logreg	none	accuracy	hybrid_gauss_0.5	0.769357	0.769252	1.00	0.000000	-0.028556	-0.035146			
+sst2	l6	logreg	none	accuracy	hybrid_gauss_1	0.716090	0.715893	1.00	0.000000	-0.081823	-0.088413			
+sst2	l6	logreg	none	accuracy	hybrid_gauss_2	0.665019	0.663986	0.10	0.000000	-0.132894	-0.139484			
+sst2	l6	logreg	none	accuracy	hybrid_scale_0.5	0.814388	0.814372	10.00	0.000000	+0.016474	+0.009885			
+sst2	l6	logreg	none	accuracy	hybrid_scale_2	0.803954	0.803893	0.10	0.000000	+0.006041	-0.000549			
+sst2	l6	logreg	none	accuracy	hybrid_neg	0.790225	0.790202	10.00	0.000000	-0.007688	-0.014278			
+cola	l12	logreg	balanced	macro_f1	f32	0.574305	0.549444	10.00	0.076145	+0.000000	-0.012464			
+cola	l12	logreg	balanced	macro_f1	int4	0.586769	0.560717	10.00	0.074756	+0.012464	+0.000000	+0.012354	-0.007670	+0.032598
+cola	l12	logreg	balanced	macro_f1	hybrid_rest_k4	0.585810	0.559478	10.00	0.075573	+0.011505	-0.000959			
+cola	l12	logreg	balanced	macro_f1	hybrid_rest_k16	0.584851	0.558678	10.00	0.075532	+0.010547	-0.001918	+0.010507	-0.009588	+0.030681
+cola	l12	logreg	balanced	macro_f1	hybrid_rest_k64	0.581016	0.553708	10.00	0.076604	+0.006711	-0.005753			
+cola	l12	logreg	balanced	macro_f1	hybrid_rest_k384	0.574305	0.549444	10.00	0.076145	+0.000000	-0.012464			
+cola	l12	logreg	balanced	macro_f1	hybrid_top_k4	0.578140	0.552643	10.00	0.075378	+0.003835	-0.008629			
+cola	l12	logreg	balanced	macro_f1	hybrid_top_k16	0.577181	0.552701	10.00	0.075416	+0.002876	-0.009588	+0.002924	-0.004794	+0.010547
+cola	l12	logreg	balanced	macro_f1	hybrid_top_k64	0.574305	0.549872	10.00	0.074288	+0.000000	-0.012464			
+cola	l12	logreg	balanced	macro_f1	hybrid_top_k384	0.586769	0.560717	10.00	0.074756	+0.012464	+0.000000			
+cola	l12	logreg	balanced	macro_f1	resid_full	0.595398	0.570103	10.00	0.072565	+0.021093	+0.008629	+0.020704	-0.015340	+0.057526
+cola	l12	logreg	balanced	macro_f1	resid_rest_k4	0.598274	0.573369	10.00	0.000000	+0.023969	+0.011505			
+cola	l12	logreg	balanced	macro_f1	resid_rest_k16	0.586769	0.561151	10.00	0.000000	+0.012464	+0.000000	+0.011972	-0.023969	+0.047939
+cola	l12	logreg	balanced	macro_f1	resid_rest_k64	0.591563	0.569326	10.00	0.000000	+0.017258	+0.004794			
+cola	l12	logreg	balanced	macro_f1	resid_rest_k384	0.308725	0.235897	0.01	0.000000	-0.265580	-0.278044			
+cola	l12	logreg	balanced	macro_f1	resid_top_k4	0.476510	0.467044	1.00	0.000000	-0.097795	-0.110259			
+cola	l12	logreg	balanced	macro_f1	resid_top_k16	0.534995	0.519034	10.00	0.000000	-0.039310	-0.051774			
+cola	l12	logreg	balanced	macro_f1	resid_top_k64	0.550336	0.534221	10.00	0.000000	-0.023969	-0.036433			
+cola	l12	logreg	balanced	macro_f1	resid_top_k384	0.595398	0.570103	10.00	0.000000	+0.021093	+0.008629			
+cola	l12	logreg	balanced	macro_f1	resid_row_l2	0.594439	0.570136	10.00	0.000000	+0.020134	+0.007670	+0.019770	-0.015340	+0.055609
+cola	l12	logreg	balanced	macro_f1	resid_sign	0.538830	0.512130	0.01	0.000000	-0.035475	-0.047939	-0.036052	-0.072867	+0.000000
+cola	l12	logreg	balanced	macro_f1	resid_norm	0.544583	0.511350	0.01	0.000000	-0.029722	-0.042186	-0.030217	-0.072867	+0.013423
+cola	l12	logreg	balanced	macro_f1	hybrid_rest_perm	0.565676	0.538750	10.00	0.000000	-0.008629	-0.021093			
+cola	l12	logreg	balanced	macro_f1	hybrid_rest_perm_class	0.567593	0.542122	10.00	0.000000	-0.006711	-0.019175			
+cola	l12	logreg	balanced	macro_f1	hybrid_rest_noclassmean	0.571429	0.550705	10.00	0.000000	-0.002876	-0.015340			
+cola	l12	logreg	balanced	macro_f1	resid_rest_noclassmean	0.308725	0.235897	0.01	0.000000	-0.265580	-0.278044	-0.266150	-0.307766	-0.225312
+cola	l12	logreg	balanced	macro_f1	hybrid_gauss_0.5	0.579099	0.553443	10.00	0.000000	+0.004794	-0.007670			
+cola	l12	logreg	balanced	macro_f1	hybrid_gauss_1	0.572387	0.550330	1.00	0.000000	-0.001918	-0.014382			
+cola	l12	logreg	balanced	macro_f1	hybrid_gauss_2	0.583893	0.562818	0.10	0.000000	+0.009588	-0.002876			
+cola	l12	logreg	balanced	macro_f1	hybrid_scale_0.5	0.581975	0.555841	10.00	0.000000	+0.007670	-0.004794			
+cola	l12	logreg	balanced	macro_f1	hybrid_scale_2	0.580058	0.550608	10.00	0.000000	+0.005753	-0.006711			
+cola	l12	logreg	balanced	macro_f1	hybrid_neg	0.580058	0.552913	10.00	0.000000	+0.005753	-0.006711			
+cola	l6	logreg	balanced	macro_f1	f32	0.583893	0.559170	1.00	0.072369	+0.000000	+0.009588			
+cola	l6	logreg	balanced	macro_f1	int4	0.574305	0.548136	10.00	0.073670	-0.009588	+0.000000	-0.009670	-0.031640	+0.012464
+cola	l6	logreg	balanced	macro_f1	hybrid_rest_k4	0.573346	0.547339	10.00	0.073659	-0.010547	-0.000959			
+cola	l6	logreg	balanced	macro_f1	hybrid_rest_k16	0.567593	0.544260	1.00	0.073140	-0.016299	-0.006711	-0.016310	-0.034516	+0.002876
+cola	l6	logreg	balanced	macro_f1	hybrid_rest_k64	0.568552	0.543789	1.00	0.072469	-0.015340	-0.005753			
+cola	l6	logreg	balanced	macro_f1	hybrid_rest_k384	0.583893	0.559170	1.00	0.072369	+0.000000	+0.009588			
+cola	l6	logreg	balanced	macro_f1	hybrid_top_k4	0.583893	0.558313	1.00	0.072374	+0.000000	+0.009588			
+cola	l6	logreg	balanced	macro_f1	hybrid_top_k16	0.584851	0.559546	1.00	0.072872	+0.000959	+0.010547	+0.000932	-0.005753	+0.007670
+cola	l6	logreg	balanced	macro_f1	hybrid_top_k64	0.585810	0.558591	10.00	0.073549	+0.001918	+0.011505			
+cola	l6	logreg	balanced	macro_f1	hybrid_top_k384	0.574305	0.548136	10.00	0.073670	-0.009588	+0.000000			
+cola	l6	logreg	balanced	macro_f1	resid_full	0.549377	0.528194	10.00	0.069922	-0.034516	-0.024928	-0.034678	-0.069032	-0.001918
+cola	l6	logreg	balanced	macro_f1	resid_rest_k4	0.547459	0.526984	10.00	0.000000	-0.036433	-0.026846			
+cola	l6	logreg	balanced	macro_f1	resid_rest_k16	0.553212	0.532210	10.00	0.000000	-0.030681	-0.021093	-0.030870	-0.064238	+0.002876
+cola	l6	logreg	balanced	macro_f1	resid_rest_k64	0.532119	0.511757	10.00	0.000000	-0.051774	-0.042186			
+cola	l6	logreg	balanced	macro_f1	resid_rest_k384	0.308725	0.235897	0.01	0.000000	-0.275168	-0.265580			
+cola	l6	logreg	balanced	macro_f1	resid_top_k4	0.471716	0.462850	0.10	0.000000	-0.112176	-0.102589			
+cola	l6	logreg	balanced	macro_f1	resid_top_k16	0.491850	0.478149	0.01	0.000000	-0.092042	-0.082454			
+cola	l6	logreg	balanced	macro_f1	resid_top_k64	0.520614	0.506398	0.10	0.000000	-0.063279	-0.053691			
+cola	l6	logreg	balanced	macro_f1	resid_top_k384	0.549377	0.528194	10.00	0.000000	-0.034516	-0.024928			
+cola	l6	logreg	balanced	macro_f1	resid_row_l2	0.564717	0.544641	10.00	0.000000	-0.019175	-0.009588	-0.019363	-0.054650	+0.015340
+cola	l6	logreg	balanced	macro_f1	resid_sign	0.532119	0.505264	10.00	0.000000	-0.051774	-0.042186	-0.051906	-0.091083	-0.013423
+cola	l6	logreg	balanced	macro_f1	resid_norm	0.556088	0.517203	1.00	0.000000	-0.027804	-0.018217	-0.027909	-0.069032	+0.013423
+cola	l6	logreg	balanced	macro_f1	hybrid_rest_perm	0.578140	0.553927	1.00	0.000000	-0.005753	+0.003835			
+cola	l6	logreg	balanced	macro_f1	hybrid_rest_perm_class	0.568552	0.545062	10.00	0.000000	-0.015340	-0.005753			
+cola	l6	logreg	balanced	macro_f1	hybrid_rest_noclassmean	0.574305	0.549013	1.00	0.000000	-0.009588	+0.000000			
+cola	l6	logreg	balanced	macro_f1	resid_rest_noclassmean	0.308725	0.235897	0.01	0.000000	-0.275168	-0.265580	-0.275399	-0.316395	-0.232982
+cola	l6	logreg	balanced	macro_f1	hybrid_gauss_0.5	0.593480	0.568490	1.00	0.000000	+0.009588	+0.019175			
+cola	l6	logreg	balanced	macro_f1	hybrid_gauss_1	0.588686	0.564038	1.00	0.000000	+0.004794	+0.014382			
+cola	l6	logreg	balanced	macro_f1	hybrid_gauss_2	0.554171	0.532613	0.10	0.000000	-0.029722	-0.020134			
+cola	l6	logreg	balanced	macro_f1	hybrid_scale_0.5	0.573346	0.547779	1.00	0.000000	-0.010547	-0.000959			
+cola	l6	logreg	balanced	macro_f1	hybrid_scale_2	0.574305	0.548136	10.00	0.000000	-0.009588	+0.000000			
+cola	l6	logreg	balanced	macro_f1	hybrid_neg	0.602109	0.578266	10.00	0.000000	+0.018217	+0.027804			
+hate	l12	logreg	none	accuracy	f32	0.576445	0.567921	1.00	0.164376	+0.000000	+0.003658			
+hate	l12	logreg	none	accuracy	int4	0.572787	0.564640	1.00	0.164052	-0.003658	+0.000000	-0.003679	-0.012802	+0.005486
+hate	l12	logreg	none	accuracy	hybrid_rest_k4	0.572787	0.564640	1.00	0.165860	-0.003658	+0.000000			
+hate	l12	logreg	none	accuracy	hybrid_rest_k16	0.569495	0.560030	1.00	0.168691	-0.006950	-0.003292	-0.006959	-0.014265	+0.000732
+hate	l12	logreg	none	accuracy	hybrid_rest_k64	0.573153	0.564517	1.00	0.167015	-0.003292	+0.000366			
+hate	l12	logreg	none	accuracy	hybrid_rest_k384	0.576445	0.567921	1.00	0.164376	+0.000000	+0.003658			
+hate	l12	logreg	none	accuracy	hybrid_top_k4	0.575347	0.566937	1.00	0.162619	-0.001097	+0.002560			
+hate	l12	logreg	none	accuracy	hybrid_top_k16	0.581931	0.574679	1.00	0.159666	+0.005486	+0.009144	+0.005497	-0.001463	+0.012802
+hate	l12	logreg	none	accuracy	hybrid_top_k64	0.569129	0.560823	10.00	0.161306	-0.007315	-0.003658			
+hate	l12	logreg	none	accuracy	hybrid_top_k384	0.572787	0.564640	1.00	0.164052	-0.003658	+0.000000			
+hate	l12	logreg	none	accuracy	resid_full	0.557059	0.548474	10.00	0.125552	-0.019386	-0.015728	-0.019289	-0.035113	-0.002926
+hate	l12	logreg	none	accuracy	resid_rest_k4	0.561448	0.553841	10.00	0.000000	-0.014996	-0.011339			
+hate	l12	logreg	none	accuracy	resid_rest_k16	0.555230	0.548974	10.00	0.000000	-0.021214	-0.017557	-0.021235	-0.038040	-0.004023
+hate	l12	logreg	none	accuracy	resid_rest_k64	0.557059	0.551984	10.00	0.000000	-0.019386	-0.015728			
+hate	l12	logreg	none	accuracy	resid_rest_k384	0.592173	0.371927	0.01	0.000000	+0.015728	+0.019386			
+hate	l12	logreg	none	accuracy	resid_top_k4	0.516459	0.508024	10.00	0.000000	-0.059985	-0.056328			
+hate	l12	logreg	none	accuracy	resid_top_k16	0.518654	0.518654	10.00	0.000000	-0.057791	-0.054133			
+hate	l12	logreg	none	accuracy	resid_top_k64	0.517191	0.514848	10.00	0.000000	-0.059254	-0.055596			
+hate	l12	logreg	none	accuracy	resid_top_k384	0.557059	0.548474	10.00	0.000000	-0.019386	-0.015728			
+hate	l12	logreg	none	accuracy	resid_row_l2	0.554499	0.545342	1.00	0.000000	-0.021946	-0.018288	-0.021898	-0.037308	-0.005486
+hate	l12	logreg	none	accuracy	resid_sign	0.554133	0.550158	0.01	0.000000	-0.022312	-0.018654	-0.022223	-0.040966	-0.004014
+hate	l12	logreg	none	accuracy	resid_norm	0.592173	0.371927	0.01	0.000000	+0.015728	+0.019386	+0.015495	-0.016094	+0.046818
+hate	l12	logreg	none	accuracy	hybrid_rest_perm	0.567666	0.558592	1.00	0.000000	-0.008778	-0.005121			
+hate	l12	logreg	none	accuracy	hybrid_rest_perm_class	0.547184	0.527940	10.00	0.000000	-0.029261	-0.025604			
+hate	l12	logreg	none	accuracy	hybrid_rest_noclassmean	0.544989	0.524765	10.00	0.000000	-0.031456	-0.027798			
+hate	l12	logreg	none	accuracy	resid_rest_noclassmean	0.592173	0.371927	0.01	0.000000	+0.015728	+0.019386	+0.015495	-0.016094	+0.046818
+hate	l12	logreg	none	accuracy	hybrid_gauss_0.5	0.576079	0.567862	1.00	0.000000	-0.000366	+0.003292			
+hate	l12	logreg	none	accuracy	hybrid_gauss_1	0.573884	0.566238	1.00	0.000000	-0.002560	+0.001097			
+hate	l12	logreg	none	accuracy	hybrid_gauss_2	0.571324	0.564829	1.00	0.000000	-0.005121	-0.001463			
+hate	l12	logreg	none	accuracy	hybrid_scale_0.5	0.572421	0.563862	1.00	0.000000	-0.004023	-0.000366			
+hate	l12	logreg	none	accuracy	hybrid_scale_2	0.562180	0.551233	1.00	0.000000	-0.014265	-0.010607			
+hate	l12	logreg	none	accuracy	hybrid_neg	0.575713	0.567355	1.00	0.000000	-0.000732	+0.002926			
+hate	l6	logreg	none	accuracy	f32	0.546818	0.534936	1.00	0.162964	+0.000000	+0.014265			
+hate	l6	logreg	none	accuracy	int4	0.532553	0.518193	10.00	0.163539	-0.014265	+0.000000	-0.014333	-0.023775	-0.004755
+hate	l6	logreg	none	accuracy	hybrid_rest_k4	0.532553	0.518193	10.00	0.162580	-0.014265	+0.000000			
+hate	l6	logreg	none	accuracy	hybrid_rest_k16	0.538771	0.525751	1.00	0.164431	-0.008047	+0.006218	-0.008061	-0.014996	-0.001454
+hate	l6	logreg	none	accuracy	hybrid_rest_k64	0.528895	0.514169	10.00	0.166117	-0.017922	-0.003658			
+hate	l6	logreg	none	accuracy	hybrid_rest_k384	0.546818	0.534936	1.00	0.162964	+0.000000	+0.014265			
+hate	l6	logreg	none	accuracy	hybrid_top_k4	0.534016	0.519323	10.00	0.163874	-0.012802	+0.001463			
+hate	l6	logreg	none	accuracy	hybrid_top_k16	0.537674	0.524084	10.00	0.162069	-0.009144	+0.005121	-0.009244	-0.017922	-0.000732
+hate	l6	logreg	none	accuracy	hybrid_top_k64	0.540600	0.526610	10.00	0.160223	-0.006218	+0.008047			
+hate	l6	logreg	none	accuracy	hybrid_top_k384	0.532553	0.518193	10.00	0.163539	-0.014265	+0.000000			
+hate	l6	logreg	none	accuracy	resid_full	0.536576	0.524081	10.00	0.137050	-0.010241	+0.004023	-0.010347	-0.026335	+0.005486
+hate	l6	logreg	none	accuracy	resid_rest_k4	0.534382	0.521711	10.00	0.000000	-0.012436	+0.001829			
+hate	l6	logreg	none	accuracy	resid_rest_k16	0.535113	0.522227	10.00	0.000000	-0.011704	+0.002560	-0.011775	-0.027432	+0.004023
+hate	l6	logreg	none	accuracy	resid_rest_k64	0.531090	0.517307	10.00	0.000000	-0.015728	-0.001463			
+hate	l6	logreg	none	accuracy	resid_rest_k384	0.592173	0.371927	0.01	0.000000	+0.045355	+0.059620			
+hate	l6	logreg	none	accuracy	resid_top_k4	0.580468	0.514013	10.00	0.000000	+0.033650	+0.047915			
+hate	l6	logreg	none	accuracy	resid_top_k16	0.501829	0.498758	10.00	0.000000	-0.044989	-0.030724			
+hate	l6	logreg	none	accuracy	resid_top_k64	0.510241	0.509545	10.00	0.000000	-0.036576	-0.022312			
+hate	l6	logreg	none	accuracy	resid_top_k384	0.536576	0.524081	10.00	0.000000	-0.010241	+0.004023			
+hate	l6	logreg	none	accuracy	resid_row_l2	0.535113	0.521630	1.00	0.000000	-0.011704	+0.002560	-0.011796	-0.027067	+0.003658
+hate	l6	logreg	none	accuracy	resid_sign	0.528895	0.521227	0.01	0.000000	-0.017922	-0.003658	-0.018011	-0.035845	+0.000000
+hate	l6	logreg	none	accuracy	resid_norm	0.592173	0.371927	0.01	0.000000	+0.045355	+0.059620	+0.045051	+0.013168	+0.076811
+hate	l6	logreg	none	accuracy	hybrid_rest_perm	0.532553	0.519891	10.00	0.000000	-0.014265	+0.000000			
+hate	l6	logreg	none	accuracy	hybrid_rest_perm_class	0.525604	0.502514	1.00	0.000000	-0.021214	-0.006950			
+hate	l6	logreg	none	accuracy	hybrid_rest_noclassmean	0.506950	0.474844	10.00	0.000000	-0.039868	-0.025604			
+hate	l6	logreg	none	accuracy	resid_rest_noclassmean	0.592173	0.371927	0.01	0.000000	+0.045355	+0.059620	+0.045051	+0.013168	+0.076811
+hate	l6	logreg	none	accuracy	hybrid_gauss_0.5	0.545355	0.533768	1.00	0.000000	-0.001463	+0.012802			
+hate	l6	logreg	none	accuracy	hybrid_gauss_1	0.547184	0.535589	1.00	0.000000	+0.000366	+0.014631			
+hate	l6	logreg	none	accuracy	hybrid_gauss_2	0.544623	0.533989	1.00	0.000000	-0.002195	+0.012070			
+hate	l6	logreg	none	accuracy	hybrid_scale_0.5	0.545721	0.533977	1.00	0.000000	-0.001097	+0.013168			
+hate	l6	logreg	none	accuracy	hybrid_scale_2	0.535479	0.520322	1.00	0.000000	-0.011339	+0.002926			
+hate	l6	logreg	none	accuracy	hybrid_neg	0.533650	0.517977	10.00	0.000000	-0.013168	+0.001097			
