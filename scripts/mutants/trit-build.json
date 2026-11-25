@@ -238,5 +238,21 @@
   "new": "                    resolve.push(inner);",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
+ },
+ {
+  "name": "simplify: K3/Ł3 与吸收律失效",
+  "file": "crates/trit-build/src/direct/fold/simplify.rs",
+  "old": "                if !matches!(alg, Algebra::Bochvar)\n                    && (consts[left] == Some(Ternary::False)\n                        || consts[right] == Some(Ternary::False))",
+  "new": "                if false",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::absorb::absorption_is_only_for_k3_and_lukasiewicz"
+ },
+ {
+  "name": "simplify: K3/Ł3 或吸收律失效",
+  "file": "crates/trit-build/src/direct/fold/simplify.rs",
+  "old": "                if !matches!(alg, Algebra::Bochvar)\n                    && (consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True))",
+  "new": "                if false",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::absorb::absorption_is_only_for_k3_and_lukasiewicz"
  }
 ]

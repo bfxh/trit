@@ -48,7 +48,7 @@ pub(super) fn fold(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
         kept.push(out);
     }
     let root = kept.len() - 1;
-    simplify::simplify(prune_dead(kept, root))
+    simplify::simplify(prune_dead(kept, root), alg)
 }
 
 #[cfg(test)]
