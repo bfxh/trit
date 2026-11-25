@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed（第三十三轮：`q` 符号阈值复用到前向 / 带梯度 SGD）
+
+- `fused::row`（`forward()` 与 `train_step` 逐行点积）和 `fused::backward_step`
+  （`train_step_with_grad`）的 `q` 同样只用于符号，但每个 8-lane 块仍各付一条
+  `divps`。把 `adam_step::q_sign` 的 `masks` 提到 `pub(crate)`，两个内核按行预计算
+  `half_s` / `-half_s` / `margin`，块内改用阈值掩码；带内或 NaN 仍回退旧 `exact`
+  除法，`dX`/`qdot` 的累加顺序不变。
+- `train-bench` 同轮交替 A/B 7 组（3 步/轮，25 轮取最快，进程高优先级）：
+  `train_step` **0.63→0.58–0.60 ms/step（1.05–1.09×）**，带梯度 SGD
+  **0.59→0.47–0.49 ms/step（1.18–1.25×）**，两组都 7/7 更快。
+  `shape_bench` 4096×576 SGD **0.5319→0.4336 ms（1.227×）**，7/7 更快；
+  Adam **1.6046→1.5966 ms（1.005×）**，6/7，属噪声内。
+- 逐位口径不变：`cargo test -p trit-train --lib` **40/40**；q 符号边界测试继续
+  直接对拍旧 `exact`，新增 `fused/tests/threshold.rs` 覆盖 `fused::row` 的 ±0.5 边界。
+  新增 C095；模块 **1551 files，debt=0**，hazard **0/98**。
+
 ### Changed（第三十二轮：Adam `q` 符号阈值替代量化除法）
 
 - Adam 训练步的 `q` 只用于 `dX`/`qdot` 符号，不需要量化值本身；新增

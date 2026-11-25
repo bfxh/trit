@@ -1,7 +1,7 @@
 {
   "schema": "trit.handoff.bitplane-backward/v1",
   "kind": "curated-snapshot",
-  "generated_at": "2026-11-25T08:03:08+08:00",
+  "generated_at": "2026-11-25T08:41:26+08:00",
   "note": "人工整理的交接快照，不是运行时接口。页面数字以此文件为准；复算命令见 provenance.command。",
   "source": {
     "repo": "https://github.com/bfxh/trit",
@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "d3e041ab78fb354d10db13ed96f4365c80ea6384",
-    "commit_short": "d3e041ab",
+    "commit": "84d4606bc4212ba5f6891f73928d87ef4e768905",
+    "commit_short": "84d4606b",
     "status": "open"
   },
   "platform": {
@@ -74,7 +74,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad + single-pass Adam + Soft gate ordered-mask removal + train_step row fusion + Adam q sign threshold PR #668 (open, d3e041ab)",
+    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad + single-pass Adam + Soft gate ordered-mask removal + train_step row fusion + Adam q sign threshold + q sign reuse in fused row/backward_step PR #668 (open, 84d4606b)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "fused": "crates/trit-train/src/plane/fused.rs",
@@ -90,7 +90,8 @@
       "layer": "crates/trit-train/src/layer.rs",
       "fused_adam_step": "crates/trit-train/src/plane/fused/adam_step.rs",
       "fused_adam_q_sign": "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
-      "fused_adam_q_sign_tests": "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs"
+      "fused_adam_q_sign_tests": "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs",
+      "fused_threshold_test": "crates/trit-train/src/plane/fused/tests/threshold.rs"
     },
     "operation": "train_step: fused::forward_step per row quantizes and dots that row (forward_dot_row), computes y/diff/MSE immediately, then applies STE dW via dense::sgd_update_row and updates scale from the same row qdot; forward(): fused::forward_dot -> scale; train_step_with_grad: fused::backward_step once per row quantizes, accumulates dX/qdot, applies STE dW and updates scale; adam: fused::adam_step once per row quantizes, accumulates dX/qdot, updates latent/m/v; scale update stays in layer/adam.rs; old fused::backward + layer::adam_update is test-only; pack() is public inspection/comparison only",
     "benchmark": {
@@ -429,6 +430,42 @@
         "bit_exact": "6 scales x +/-8 ulp boundary lanes plus 64 random 8-lane blocks match scalar q sign; full Adam step vs old two-pass remains bitwise equal; cargo test 39/39",
         "note": "q magnitude is not needed in Adam (qdot/dX consume only q>0/q<0); m/bias1, v/bias2 and the final division + sqrt are unchanged and remain the dominant cost"
       },
+      "q_sign_reuse": {
+        "kernel": "q sign threshold reused in fused::row and fused::backward_step (AVX2)",
+        "implementation": "row/backward_step precompute half_s=0.5*s, -half_s and a +/-2^-12 relative band per row; per 8-lane block use q_sign::masks; lanes inside the band or NaN fall back to the exact division quantizer; dX/qdot accumulation order unchanged",
+        "reproduce": "train-bench --mtrits 1 --rows 4096 --cols 576 --threads 1 --rounds 25 --ste-steps 1 --train-steps 3",
+        "shape": "4096x576",
+        "ab_groups": 7,
+        "rounds": 25,
+        "selection": "fastest",
+        "ab_context": "same-round alternating; benchmark process high priority; both orderings measured for train/grad",
+        "train_step": {
+          "old_ms_per_step": 0.63,
+          "new_ms_per_step_low": 0.58,
+          "new_ms_per_step_high": 0.60,
+          "speedup": "1.05-1.09",
+          "wins": "7/7 groups faster"
+        },
+        "train_step_with_grad": {
+          "old_ms_per_step": 0.59,
+          "new_ms_per_step_low": 0.47,
+          "new_ms_per_step_high": 0.49,
+          "speedup": "1.18-1.25",
+          "wins": "7/7 groups faster"
+        },
+        "shape_bench": {
+          "sgd_old_ms_per_step": 0.5319,
+          "sgd_new_ms_per_step": 0.4336,
+          "sgd_speedup": 1.227,
+          "sgd_wins": "7/7 groups faster",
+          "adam_old_ms_per_step": 1.6046,
+          "adam_new_ms_per_step": 1.5966,
+          "adam_speedup": 1.005,
+          "adam_wins": "6/7 groups faster; within noise"
+        },
+        "bit_exact": "q sign boundary test compares masks to the old exact quantizer; fused/tests/threshold.rs checks fused::row against pack row_dot at the +/-0.5 boundary; existing 6-shape x 3-STE train/grad bitwise tests continue to pass; cargo test 40/40",
+        "note": "only the q quantization division is removed; forward MSE/STE and Adam m/v divisions are unchanged"
+      },
       "forward_step": {
         "kernel": "TernaryLinear::train_step per-row fusion in plane/fused/forward_step.rs",
         "implementation": "per row: forward_dot_row -> y/diff/loss -> dense::sgd_update_row -> scale update; no qdot/y/dy temporary vectors; forward_dot_row and sgd_update_row live in fused/row.rs and dense/row.rs",
@@ -465,8 +502,8 @@
   },
   "tests": {
     "suite": "cargo test -p trit-train",
-    "passed": 39,
-    "training_step_passed": 39,
+    "passed": 40,
+    "training_step_passed": 40,
     "failed": 0,
     "before": 21,
     "added": 16,
@@ -502,7 +539,7 @@
       "ubuntu-latest",
       "windows-latest"
     ],
-    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at code+test head d3e041ab (train_step row fusion + Soft gate ordered-mask removal + Adam q sign threshold; 39/39 tests; module budget 1550/debt=0; agent checks registry includes C094; mutation changed-crates passed); a later docs-only commit only records this result"
+    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at code+test head 84d4606b (train_step row fusion + Soft gate ordered-mask removal + Adam q sign threshold + q sign reuse in fused row/backward_step; 40/40 tests; module budget 1551/debt=0; agent checks registry includes C095; mutation changed-crates passed); a later docs-only commit only records this result"
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",

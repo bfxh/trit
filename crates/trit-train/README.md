@@ -204,6 +204,21 @@ Soft 门控原写法是 `max(0, 1-ratio²)` 后再用 `cmp(ratio,ratio,ORD)` 清
 同旧路径；对拍覆盖 6 形状 × 3 STE × 3 步，latent/scale/loss 逐位相等，测试
 **38/38**。
 
+第三十三轮把 `q` 符号阈值复用到前向 / 带梯度 SGD（4096×576，单线程，3 步/轮，
+同轮交替 A/B 7 组，25 轮取最快）：
+
+| 路径 | 旧 ms/step | 新 ms/step | 相对 |
+|---|---:|---:|---:|
+| `train_step`（`fused::row`） | 0.63 | 0.58–0.60 | **1.05–1.09×** |
+| `train_step_with_grad`（`fused::backward_step`） | 0.59 | 0.47–0.49 | **1.18–1.25×** |
+
+`fused::row` 与 `backward_step` 的 `q` 同样只用于符号；把 `adam_step::q_sign` 的
+`masks` 提到 `pub(crate)` 后，两条内核按行预计算 `half_s` / `-half_s` / `margin`，
+块内改用阈值掩码，带内或 NaN 仍回退旧 `exact` 除法，`dX`/`qdot` 累加顺序不变。
+`shape_bench` 4096×576 SGD **0.5319→0.4336 ms（1.227×）**，7/7 更快；Adam
+**1.6046→1.5966 ms（1.005×）**，6/7，属噪声内。`fused/tests/threshold.rs` 直接
+对拍 `fused::row` 的 ±0.5 边界；测试 **40/40**。
+
 第三十二轮 Adam `q` 符号阈值（4096×576，单线程，3 步/轮，同轮交替 A/B 7 组，
 进程高优先级，25 轮取最快）：
 

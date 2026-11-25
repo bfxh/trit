@@ -1801,6 +1801,28 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C095",
+      "title": "trit-train 前向/带梯度 SGD 复用 q 符号阈值",
+      "kind": "cmd",
+      "covers": [
+        "L185"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused.rs",
+        "crates/trit-train/src/plane/fused/row.rs",
+        "crates/trit-train/src/plane/fused/backward_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T08:35:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
