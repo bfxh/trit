@@ -139,6 +139,7 @@
  "script/wsp_classify_direction.py": 1,
  "script/wsp_classify_eval.py": 1,
  "script/wsp_classify_geometry.py": 1,
+ "script/wsp_classify_interpolate.py": 1,
  "script/wsp_classify_pca.py": 1,
  "script/wsp_classify_rotate.py": 1,
  "script/wsp_classify_subsample.py": 1,
