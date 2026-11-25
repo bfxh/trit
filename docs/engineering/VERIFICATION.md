@@ -63,7 +63,7 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 
 ## 4. 下游如何继承
 
-- **代码**：下游依赖主库的 `trit-core`，拿到的是同一份已验证实现；
+- **代码**：下游依赖主库的 `trit-core`，拿到的是同一份实现（复核入口 `scripts/verify.py`）；
   验证锚点不进入运行时依赖。
 - **复核**：下游在自己的 CI 里调用 `python /path/to/trit/scripts/verify.py`，
   或在 PR 模板中引用 `verus` workflow 的结论。
@@ -72,7 +72,7 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 “所有依赖主库的都依赖它”在这里的含义是：**验证只做一次，结论随主库版本传播**，
 而不是每个下游各复制一份三值逻辑再各自证明。
 
-## 5. 已验证 / 未验证
+## 5. 覆盖范围（已证 / 未证）
 
 已验证（K3）：
 
