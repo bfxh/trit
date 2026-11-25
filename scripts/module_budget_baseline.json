@@ -6347,6 +6347,10 @@
       "lines": 317
     },
     {
+      "file": "verus/src/bits.rs",
+      "lines": 140
+    },
+    {
       "file": "verus/src/k3.rs",
       "lines": 257
     },
@@ -6373,6 +6377,10 @@
     {
       "file": "verus/tests/bridge_algebra.rs",
       "lines": 167
+    },
+    {
+      "file": "verus/tests/bridge_bits.rs",
+      "lines": 87
     },
     {
       "file": "verus/tests/common/mod.rs",

@@ -14,6 +14,7 @@ K3:  trit-core::value::Ternary        ≡  k3_impl.rs  （scripts/check_k3_impl.
 Ł3:  trit-core::algebra::Lukasiewicz  ≡  l3.rs       （tests/bridge_algebra.rs，3×3）
 B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （tests/bridge_algebra.rs，3×3）
 B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.rs，4×4）
+BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + tests/bridge_bits.rs，8×8×64 穷举）
 每行：执行版 ≡ spec（src/*.rs 的 Verus ensures）
 ```
 
@@ -29,6 +30,8 @@ B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.r
 - `src/b4.rs`：Belnap 四值的双轨 `bool` 表示、De Morgan/结合/分配/吸收、
   `xor = ¬equiv`、知识序共识/轻信/共轭与 exec。
 - `tests/bridge_algebra.rs`：对拍 `Algebra::{Lukasiewicz, Bochvar}` 与 `trit_belnap::B4`。
+- `src/bits.rs`：位平面 `TriBit` 的 spec/exec（`not` / `and` / `or`），与主库位平面公式一致。
+- `tests/bridge_bits.rs`：8 组边界平面 × 64 位 × 3 种代数，逐位对拍 `TriBit` 与标量 `Ternary`。
 
 ## 本地运行
 
@@ -60,7 +63,8 @@ python scripts/verify.py --json             # 机器可读报告
 
 **未验证**（明确缺口，不当作已完成）：
 
-- `trit-core` 的位平面/批量实现（`bits`、`bulk`）与标量实现的等价；
+- 位平面 `TriBit` 的 **Verus 逐位证明**（当前是 spec/exec + 穷举对拍）；
+- `bulk`（`TriVec`）与标量实现的等价；
 - 任何并发或 `unsafe` 代码；
 - Verus 本身的可靠性、z3 模型与 Rust 编译器的可信基。
 
