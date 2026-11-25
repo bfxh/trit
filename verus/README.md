@@ -14,7 +14,7 @@ K3:  trit-core::value::Ternary        ≡  k3_impl.rs  （scripts/check_k3_impl.
 Ł3:  trit-core::algebra::Lukasiewicz  ≡  l3.rs       （tests/bridge_algebra.rs，3×3）
 B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （tests/bridge_algebra.rs，3×3）
 B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.rs，4×4）
-BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + tests/bridge_bits.rs，8×8×64 穷举）
+BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + Verus 逐位证明 + 8×8×64 对拍）
 每行：执行版 ≡ spec（src/*.rs 的 Verus ensures）
 ```
 
@@ -30,7 +30,8 @@ BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + tests/bri
 - `src/b4.rs`：Belnap 四值的双轨 `bool` 表示、De Morgan/结合/分配/吸收、
   `xor = ¬equiv`、知识序共识/轻信/共轭与 exec。
 - `tests/bridge_algebra.rs`：对拍 `Algebra::{Lukasiewicz, Bochvar}` 与 `trit_belnap::B4`。
-- `src/bits.rs`：位平面 `TriBit` 的 spec/exec（`not` / `and` / `or`），与主库位平面公式一致。
+- `src/bits.rs`：位平面 `TriBit` 的 spec/exec（`not` / `and` / `or`），与主库位平面公式一致；
+- `src/bits/proofs.rs`：位级参数化 lemma 与 `not` / `and` / `or` 的逐位等价证明。
 - `tests/bridge_bits.rs`：8 组边界平面 × 64 位 × 3 种代数，逐位对拍 `TriBit` 与标量 `Ternary`。
 
 ## 本地运行
@@ -53,17 +54,17 @@ python scripts/verify.py --json             # 机器可读报告
 
 ## 范围与限制
 
-已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 85 verified）：
+已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 120 verified）：
 
 - K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射；
 - Ł3：格序 `∧/∨`、强加/强合交换、`U⊕U=T`、`U⊗U=F`、`U⇒U=T`、De Morgan、等价自反；
 - B3：毒值吸收（任一 `U` → `U`）、`∧/∨` 交换、De Morgan、`U⇒U=U`；
 - B4：双轨往返、否定对合、De Morgan、结合/分配/吸收、`xor=¬equiv`、
-  consensus/gullibility 交换、conflation 对合与知识序 De Morgan。
+  consensus/gullibility 交换、conflation 对合与知识序 De Morgan；
+- 位平面 `TriBit`：`not` / `and` / `or` 的 Verus 逐位等价（8×8×64 对拍保留为回归）。
 
 **未验证**（明确缺口，不当作已完成）：
 
-- 位平面 `TriBit` 的 **Verus 逐位证明**（当前是 spec/exec + 穷举对拍）；
 - `bulk`（`TriVec`）与标量实现的等价；
 - 任何并发或 `unsafe` 代码；
 - Verus 本身的可靠性、z3 模型与 Rust 编译器的可信基。
