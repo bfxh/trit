@@ -224,27 +224,55 @@
     },
     {
       "file": "crates/trit-build/src/artifacts.rs",
-      "lines": 192
+      "lines": 174
+    },
+    {
+      "file": "crates/trit-build/src/artifacts/lookup.rs",
+      "lines": 46
     },
     {
       "file": "crates/trit-build/src/bitplan.rs",
       "lines": 435
     },
     {
+      "file": "crates/trit-build/src/cache.rs",
+      "lines": 25
+    },
+    {
       "file": "crates/trit-build/src/direct.rs",
-      "lines": 294
+      "lines": 216
+    },
+    {
+      "file": "crates/trit-build/src/direct/ir.rs",
+      "lines": 21
     },
     {
       "file": "crates/trit-build/src/direct/lower.rs",
-      "lines": 172
+      "lines": 164
     },
     {
       "file": "crates/trit-build/src/direct/lower/tests.rs",
       "lines": 93
     },
     {
+      "file": "crates/trit-build/src/direct/netlist.rs",
+      "lines": 148
+    },
+    {
+      "file": "crates/trit-build/src/direct/netlist/tests.rs",
+      "lines": 81
+    },
+    {
       "file": "crates/trit-build/src/direct/tests.rs",
-      "lines": 158
+      "lines": 143
+    },
+    {
+      "file": "crates/trit-build/src/direct/tests/eval.rs",
+      "lines": 35
+    },
+    {
+      "file": "crates/trit-build/src/direct/verify.rs",
+      "lines": 124
     },
     {
       "file": "crates/trit-build/src/egraph.rs",
@@ -276,7 +304,7 @@
     },
     {
       "file": "crates/trit-build/src/main.rs",
-      "lines": 733
+      "lines": 728
     },
     {
       "file": "crates/trit-build/src/parallel.rs",
@@ -296,7 +324,7 @@
     },
     {
       "file": "crates/trit-build/src/verilog.rs",
-      "lines": 138
+      "lines": 137
     },
     {
       "file": "crates/trit-build/tests/build.rs",
@@ -304,7 +332,11 @@
     },
     {
       "file": "crates/trit-build/tests/direct_c.rs",
-      "lines": 176
+      "lines": 139
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_verilog.rs",
+      "lines": 92
     },
     {
       "file": "crates/trit-build/tests/egraph_equiv.rs",

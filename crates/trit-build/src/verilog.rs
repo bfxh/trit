@@ -1,28 +1,26 @@
 //! M1：Verilog 子集前端（复用 `trit-circuit`）+ 双链路真值表对拍。
 //!
-//! 这里不自己写 Verilog 解析器：`trit-circuit::parse_verilog` 已经处理
-//! 声明/assign/位选/预算，且与 BLIF/AIGER 等其它入口共用同一套门模型。
-//! 本模块只负责：
-//! 1. 选主输出（单输出默认，多输出必须 `--output`）；
-//! 2. 对 3^n 组输入跑 `propagate`（K3/Ł3/B3 语义）；
-//! 3. 与 `.tri` 表达式链路逐行对拍——不一致即构建失败。
+//! 解析交给 `trit-circuit::parse_verilog`（与 BLIF/AIGER 共用门模型）；
+//! 本模块只负责：选主输出、跑 `propagate`（K3/Ł3/B3）、与 `.tri` 链路逐行对拍。
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use trit_circuit::{parse_verilog, propagate};
+use trit_circuit::{Circuit, parse_verilog, propagate};
 use trit_core::Algebra;
 use trit_core::value::Ternary;
 use trit_eval::eval::{Assignment, eval};
 
-/// 一个 Verilog 设计在 3^n 组输入下的输出序列。
+/// 一个 Verilog 设计在 3^n 组输入下的输出序列，外加原网表（`direct` 后端用）。
 pub struct Design {
     pub name: String,
     pub inputs: Vec<String>,
     pub output: String,
     pub table: Vec<Ternary>,
+    /// 原样保留的组合网表；`--backend direct|both` 从这里降 `direct.c`。
+    pub circuit: Circuit,
 }
 
 fn digit_value(code: &mut u64) -> Ternary {
@@ -97,6 +95,7 @@ pub fn load(path: &Path, output: Option<&str>, alg: Algebra, max_vars: u32) -> R
         inputs,
         output,
         table,
+        circuit,
     })
 }
 

@@ -72,7 +72,7 @@ fn dead_nodes_are_pruned_and_indices_remapped() {
         Op::Const(Ternary::True),
         Op::Not(2),
     ];
-    let kept = prune_dead(ops);
+    let kept = prune_dead(ops, 4);
     assert_eq!(kept.len(), 4, "{kept:?}");
     assert_eq!(kept[3], Op::Not(2), "{kept:?}");
     assert!(
@@ -88,6 +88,6 @@ fn lowering_has_no_dead_nodes() {
         let expr = Parser::parse(source).expect("解析");
         let vars = expr.variables();
         let ops = lower(&expr, &vars).expect("降级");
-        assert_eq!(prune_dead(ops.clone()), ops, "{source}");
+        assert_eq!(prune_dead(ops.clone(), ops.len() - 1), ops, "{source}");
     }
 }

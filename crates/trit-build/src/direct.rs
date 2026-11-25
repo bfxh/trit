@@ -2,7 +2,7 @@
 //!
 //! 和 `lookup.c` 是同一条边界上的两种产物：
 //! - `lookup.c` 把 3^n 真值表整块塞进 C，运行时一次索引；
-//! - `direct.c` 把表达式**降成线性 IR**（每个节点一条 `int8_t tN = ...;`），
+//! - `direct.c` 把表达式或 Verilog 组合网表**降成线性 IR**（每个节点一条 `int8_t tN = ...;`），
 //!   交换律规范化后再做 CSE，出口过一遍死代码消除；运行时按节点顺序算，不展开 3^n 表。
 //!
 //! 语义不靠手写 C 算子保证：六张 3×3/3 表由 [`Algebra`] 现算，测试再拿
@@ -13,19 +13,21 @@
 //! `int8_t trit_direct(const int8_t *vars, unsigned nvars)`。
 //! 入参不足（`nvars < 变量数`）一律返回 `0`（X），fail-closed，不读越界内存。
 
-use std::fs;
-use std::path::Path;
-use std::process::Command;
-
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
+use trit_circuit::{Circuit, GateKind};
 use trit_core::value::Ternary;
 use trit_core::{Algebra, Expr};
 
 /// 三值枚举顺序 = C 侧 `-1/0/1` 的顺序，也是表的下标顺序。
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
 
+mod ir;
 mod lower;
-use lower::{Op, lower};
+mod netlist;
+mod verify;
+use ir::Op;
+use lower::lower;
+pub(crate) use verify::verify;
 
 fn code(value: Ternary) -> i8 {
     match value {
@@ -53,21 +55,49 @@ fn binary_table(alg: Algebra, function: fn(Algebra, Ternary, Ternary) -> Ternary
     table
 }
 
+/// 网表门型的 3×3 表：直接用 `trit-circuit` 的 `GateKind::eval`，与仿真同一口径。
+fn gate_table(alg: Algebra, kind: GateKind) -> [i8; 9] {
+    let mut table = [0i8; 9];
+    for (row, left) in VALUES.iter().enumerate() {
+        for (column, right) in VALUES.iter().enumerate() {
+            table[row * 3 + column] = code(kind.eval(&[*left, *right], alg));
+        }
+    }
+    table
+}
+
 /// 表达式 → `direct.c` 全文。
 pub(crate) fn emit(expr: &Expr, vars: &[String], alg: Algebra) -> Result<String> {
     let ops = lower(expr, vars)?;
+    Ok(render(&ops, vars, alg))
+}
+
+/// Verilog 组合网表 → `direct.c` 全文（只降选中输出的扇入锥）。
+pub(crate) fn emit_netlist(
+    circuit: &Circuit,
+    output: &str,
+    vars: &[String],
+    alg: Algebra,
+) -> Result<String> {
+    let ops = netlist::lower(circuit, output, vars)?;
+    Ok(render(&ops, vars, alg))
+}
+
+fn render(ops: &[Op], vars: &[String], alg: Algebra) -> String {
     let mut uses_not = false;
     let mut uses_and = false;
     let mut uses_or = false;
     let mut uses_xor = false;
+    let mut uses_xor2 = false;
     let mut uses_implies = false;
     let mut uses_equiv = false;
-    for op in &ops {
+    for op in ops {
         match op {
             Op::Not(_) => uses_not = true,
             Op::And(_, _) => uses_and = true,
             Op::Or(_, _) => uses_or = true,
             Op::Xor(_, _) => uses_xor = true,
+            Op::Xor2(_, _) => uses_xor2 = true,
             Op::Implies(_, _) => uses_implies = true,
             Op::Equiv(_, _) => uses_equiv = true,
             Op::Const(_) | Op::Var(_) => {}
@@ -98,6 +128,9 @@ pub(crate) fn emit(expr: &Expr, vars: &[String], alg: Algebra) -> Result<String>
     }
     if uses_xor {
         binary_tables.push(("T_XOR", binary_table(alg, Algebra::strong_add)));
+    }
+    if uses_xor2 {
+        binary_tables.push(("T_XOR2", gate_table(alg, GateKind::XorClassic)));
     }
     if uses_implies {
         binary_tables.push(("T_IMPL", binary_table(alg, Algebra::implies)));
@@ -139,6 +172,9 @@ pub(crate) fn emit(expr: &Expr, vars: &[String], alg: Algebra) -> Result<String>
             Op::Xor(left, right) => {
                 format!("    int8_t t{index} = trit_bin(T_XOR, t{left}, t{right});\n")
             }
+            Op::Xor2(left, right) => {
+                format!("    int8_t t{index} = trit_bin(T_XOR2, t{left}, t{right});\n")
+            }
             Op::Implies(left, right) => {
                 format!("    int8_t t{index} = trit_bin(T_IMPL, t{left}, t{right});\n")
             }
@@ -151,7 +187,7 @@ pub(crate) fn emit(expr: &Expr, vars: &[String], alg: Algebra) -> Result<String>
     text.push_str("    return t");
     text.push_str(&(ops.len() - 1).to_string());
     text.push_str(";\n}\n");
-    Ok(text)
+    text
 }
 
 fn push_table(text: &mut String, name: &str, table: &[i8]) {
@@ -174,120 +210,6 @@ fn alg_name(alg: Algebra) -> &'static str {
         Algebra::Lukasiewicz => "lukasiewicz",
         Algebra::Bochvar => "bochvar",
     }
-}
-
-/// 生成 C 驱动器，用 `cc` 编译 `direct.c` + 驱动器，逐行读 `truth.csv` 对拍。
-/// 需要 C 编译器（`CC` / `cc` / `gcc` / `clang` 任一）；没有就明确报错，不静默跳过。
-pub(crate) fn verify(out_dir: &Path, vars: &[String], expected_rows: usize) -> Result<String> {
-    let driver_path = out_dir.join("direct_check.c");
-    fs::write(&driver_path, driver_source(vars.len()))
-        .with_context(|| format!("写 {} 失败", driver_path.display()))?;
-    let exe = out_dir.join(if cfg!(windows) {
-        "direct_check.exe"
-    } else {
-        "direct_check"
-    });
-    let exe_name = exe
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("可执行文件名非法")?;
-    let compiler = find_compiler()?;
-    let output = Command::new(&compiler)
-        .current_dir(out_dir)
-        .args([
-            "-O2",
-            "-std=c99",
-            "-o",
-            exe_name,
-            "direct.c",
-            "direct_check.c",
-        ])
-        .output()
-        .with_context(|| format!("调用 C 编译器 {compiler} 失败"))?;
-    if !output.status.success() {
-        bail!(
-            "C 编译失败（{compiler}）：{}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let run = Command::new(&exe)
-        .current_dir(out_dir)
-        .arg("truth.csv")
-        .output()
-        .with_context(|| format!("运行 {} 失败", exe.display()))?;
-    if !run.status.success() {
-        bail!(
-            "直算对拍失败：{}",
-            String::from_utf8_lossy(&run.stderr).trim()
-        );
-    }
-    let stdout = String::from_utf8_lossy(&run.stdout).trim().to_string();
-    let rows: usize = stdout
-        .strip_prefix("ok rows=")
-        .and_then(|value| value.parse().ok())
-        .with_context(|| format!("驱动器输出格式不符：{stdout:?}"))?;
-    if rows != expected_rows {
-        bail!("对拍行数 {rows} 与真值表行数 {expected_rows} 不一致");
-    }
-    Ok(format!("{stdout}（{compiler}）"))
-}
-
-fn find_compiler() -> Result<String> {
-    if let Ok(cc) = std::env::var("CC")
-        && !cc.trim().is_empty()
-    {
-        return Ok(cc);
-    }
-    for name in ["cc", "gcc", "clang"] {
-        if Command::new(name)
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-        {
-            return Ok(name.to_string());
-        }
-    }
-    bail!("没有可用的 C 编译器（试过 CC / cc / gcc / clang）")
-}
-
-fn driver_source(nvars: usize) -> String {
-    let slots = nvars.max(1);
-    format!(
-        "#include <stdint.h>\n\
-         #include <stdio.h>\n\
-         #include <stdlib.h>\n\n\
-         int8_t trit_direct(const int8_t *vars, unsigned nvars);\n\n\
-         int main(int argc, char **argv) {{\n\
-         \x20   if (argc != 2) {{ fprintf(stderr, \"usage: %s truth.csv\\n\", argv[0]); return 2; }}\n\
-         \x20   FILE *file = fopen(argv[1], \"r\");\n\
-         \x20   if (!file) {{ perror(\"open\"); return 2; }}\n\
-         \x20   const unsigned NV = {nvars}u;\n\
-         \x20   char line[4096];\n\
-         \x20   if (!fgets(line, sizeof line, file)) {{ return 2; }}\n\
-         \x20   unsigned long rows = 0, bad = 0;\n\
-         \x20   int8_t vars[{slots}];\n\
-         \x20   while (fgets(line, sizeof line, file)) {{\n\
-         \x20       char *cursor = line;\n\
-         \x20       long code = strtol(cursor, &cursor, 10); (void)code;\n\
-         \x20       if (*cursor == ',') cursor++;\n\
-         \x20       for (unsigned i = 0; i < NV; i++) {{\n\
-         \x20           vars[i] = (int8_t)strtol(cursor, &cursor, 10);\n\
-         \x20           if (*cursor == ',') cursor++;\n\
-         \x20       }}\n\
-         \x20       const int want = (int)strtol(cursor, &cursor, 10);\n\
-         \x20       const int got = (int)trit_direct(vars, NV);\n\
-         \x20       if (got != want) {{\n\
-         \x20           if (bad < 5) fprintf(stderr, \"row %lu: got %d want %d\\n\", rows, got, want);\n\
-         \x20           bad++;\n\
-         \x20       }}\n\
-         \x20       rows++;\n\
-         \x20   }}\n\
-         \x20   fclose(file);\n\
-         \x20   if (bad) {{ printf(\"FAIL rows=%lu bad=%lu\\n\", rows, bad); return 1; }}\n\
-         \x20   printf(\"ok rows=%lu\\n\", rows);\n\
-         \x20   return 0;\n\
-         }}\n"
-    )
 }
 
 #[cfg(test)]

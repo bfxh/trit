@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（第四十一轮：direct 后端支持 Verilog 网表）
+
+- `direct.c` 不再只接 `.tri` 表达式：`.v` 组合网表也能 `--backend direct|both`。
+  新链路从选中输出反向 DFS，只降扇入锥（未选中的输出与不可达门不进 IR）；
+  同名信号只降一次（网表扇出 → 一个临时变量）。
+- 门型落到已有算子：`NAND/NOR` = `Not(And/Or)`、`BUF` 直接别名到输入、
+  `XOR2`（Verilog `^` / `xnor` 的经典异或）单独成 `Op::Xor2`，
+  表由 `GateKind::eval` 现算，和 `trit-circuit` 仿真同一口径。
+- 线性 IR 拆到 `direct/ir.rs`（两条 lowering 共用）；`direct.rs` 只留渲染与表，
+  `--verify-c` 的宿主编译器调用拆到 `direct/verify.rs`；网表 lowering 在
+  `direct/netlist.rs`，产物分发在 `artifacts/`（`lookup.c` 独立成 `artifacts/lookup.rs`）。
+- 测试：`direct_c_verilog.rs` 钉产物形状；Unix 上 K3/Ł3/B3 三种代数各
+  **27/27 行**用 cc 编译 `direct.c` 与 `truth.csv` 逐行对拍；网表单测 5 条
+  （Buf 别名、`Xor2` 形状、只降选中输出、重复驱动/未驱动报错）。`trit-build` 单测 48 条全绿。
+- `BUILD_VERSION` 6 → 7：`direct.c` 的产物面变了（新增 Verilog 链路），旧缓存失效。
+- 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算行与未验证清单。
+
+诚实边界：仍只覆盖组合逻辑与单一选中输出；没有综合、时序/面积收敛与门级优化。
+
 ### Added（第四十轮：TriVec 整向量等价的 Verus 证明）
 
 - 新增 `verus/src/bulk.rs`：位切片向量 `TriVec` 的 spec/exec。`view(len, ones, unknowns)`
