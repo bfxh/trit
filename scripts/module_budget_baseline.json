@@ -6356,7 +6356,7 @@
     },
     {
       "file": "verus/tests/common/mod.rs",
-      "lines": 42
+      "lines": 41
     },
     {
       "file": "verus/tests/refinement.rs",

@@ -1,9 +1,6 @@
 #![allow(dead_code)]
 
-//! 集成测试共用的 K3 编码/解码辅助。
-//!
-//! `tests/common/mod.rs` 是子目录模块，不会像 `tests/*.rs` 那样被 cargo 当成
-//! 独立测试目标；`bridge.rs` 与 `refinement.rs` 各自 `mod common;` 复用。
+//! 集成测试共用的 K3 编码/解码辅助；`bridge.rs` 与 `refinement.rs` 各自 `mod common;`。
 
 use trit_core::value::Ternary;
 use trit_verified::k3::Trit;
