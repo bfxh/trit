@@ -21,13 +21,13 @@ pub(crate) fn sgd_update_row(
     }
     update_row_scalar(row, x, coeff, lr, scale, ste);
 }
-
 fn update_row_scalar(row: &mut [f32], x: &[f32], coeff: f32, lr: f32, scale: f32, ste: Ste) {
     for (w, &xc) in row.iter_mut().zip(x) {
         *w -= lr * ste.backward(*w, scale, coeff * xc);
     }
 }
-
+#[cfg(target_arch = "x86_64")]
+pub(crate) use simd::update_row as sgd_update_row_avx2;
 #[cfg(target_arch = "x86_64")]
 mod simd {
     #![allow(unsafe_op_in_unsafe_fn)]

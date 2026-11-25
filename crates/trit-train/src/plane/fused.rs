@@ -21,7 +21,6 @@ pub fn forward_dot(latent: &[f32], scale: &[f32], rows: usize, cols: usize, x: &
     }
     forward_dot_scalar(latent, scale, rows, cols, x)
 }
-
 fn forward_dot_scalar(
     latent: &[f32],
     scale: &[f32],
@@ -52,6 +51,7 @@ mod simd {
         _mm_cvtss_f32(s)
     }
 
+    #[inline]
     #[target_feature(enable = "avx2")]
     pub(super) unsafe fn row(latent: &[f32], s: f32, x: &[f32], cols: usize) -> f32 {
         let full = cols / 8;

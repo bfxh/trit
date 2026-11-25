@@ -37,10 +37,10 @@ pub(crate) fn sgd_update(
         );
     }
 }
-
 mod row;
 pub(crate) use row::sgd_update_row;
-
+#[cfg(target_arch = "x86_64")]
+pub(crate) use row::sgd_update_row_avx2;
 #[cfg(target_arch = "x86_64")]
 fn has_avx2() -> bool {
     std::arch::is_x86_feature_detected!("avx2")

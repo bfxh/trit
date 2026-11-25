@@ -5012,7 +5012,11 @@
     },
     {
       "file": "crates/trit-train/src/plane/fused/forward_step.rs",
-      "lines": 40
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/forward_step/step.rs",
+      "lines": 56
     },
     {
       "file": "crates/trit-train/src/plane/fused/forward_step/tests.rs",
