@@ -1226,6 +1226,32 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
   - 文档：`WSP-BUDGET-RESULTS.md` §11.22、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.24、`LESSONS.md` 第 34 条。
 
+- **量化残差探针与类别条件偏置（M1.23）**：新增
+  `scripts/wsp_classify_residual.py`，把 `r=x_int4−x_f32` 当特征：
+  残差单独探针、PCA top/rest 子空间 hybrid、行归一化/符号/范数、整体与
+  类别内行置换、逐维 std 匹配高斯噪声、残差缩放/取负；输出类均值差、
+  `cos` 和残差在 f32 probe 上的 margin。带 `--self-test` 和 2 条 mutation
+  锚点（top-k=0 不置零 / 置换退化为恒等）。
+  - SST-2 L12：残差单独 `0.832510`（f32 `0.800110`、int4 `0.840198`），
+    比 f32 高 `+3.23pp`；行归一化 `0.833608`、逐行范数 `0.550247`。
+    `f32+int4 rest(k=16)` `0.839649`，对 int4 `−0.000585`、CI 跨 0；
+    `int4 top16+f32 rest` 退回 `0.800110`。**增益在低方差残差，不在
+    前 16 个主成分里。**
+  - 几何：SST-2 L12 残差类均值是 f32 的 `1.59×`、与 f32 类均值近正交
+    （cos `+0.068`），但在 f32 probe 上的投影 `+2.665`，是 f32 margin
+    `+2.206` 的 `1.21×`；CoLA/hate 只有 `0.22–0.25×` 且投影为负，
+    SST-2 L6 同向但只有 `0.33×`。**这是类别条件量化偏置，不是各向同性
+    噪声，也不是 probe 正则化。**
+  - 控制：高斯噪声 `−14.17pp`、整体行置换 `−12.08pp`、残差 ×0.5/×2
+    基本不掉；类别内置换 `+3.41pp`、去类均值 `−3.19pp`（均为使用 test
+    标签的 oracle 诊断，不可部署）。
+  - 表：`wsp-classify-residual.tsv`（192 行：6 个数据集-深度 × 32 arm）、
+    `wsp-classify-residual-geometry.tsv`（12 行：6 组 × train/test）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.23、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.25、`LESSONS.md` 第 35 条。
+  - 边界：主表 logreg，M1.23 未重跑 SVC；一个 seed；bootstrap 只重采样
+    test；残差是量化算子的确定性函数，本文是观测性拆解，不是因果证明。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

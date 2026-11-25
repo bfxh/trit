@@ -1,0 +1,20 @@
+[
+ {
+  "name": "resid: top-k=0 不置零（rest 不再是完整 int4 残差）",
+  "file": "scripts/wsp_classify_residual.py",
+  "old": "    if k <= 0:\n        return np.zeros_like(r)",
+  "new": "    if k <= 0:\n        return r",
+  "pkg": "scripts/wsp_classify_residual.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "resid: 行置换控制退化为恒等排列",
+  "file": "scripts/wsp_classify_residual.py",
+  "old": "    perm = rng.permutation(len(y_train))\n    perm_test = rng.permutation(len(y_test))",
+  "new": "    perm = np.arange(len(y_train))\n    perm_test = np.arange(len(y_test))",
+  "pkg": "scripts/wsp_classify_residual.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
