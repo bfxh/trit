@@ -628,7 +628,7 @@
     },
     {
       "file": "crates/trit-cli/src/commands/equiv.rs",
-      "lines": 277
+      "lines": 275
     },
     {
       "file": "crates/trit-cli/src/commands/eval.rs",
@@ -960,7 +960,7 @@
     },
     {
       "file": "crates/trit-count/src/main.rs",
-      "lines": 435
+      "lines": 433
     },
     {
       "file": "crates/trit-count/src/oracle.rs",
@@ -2387,6 +2387,10 @@
       "lines": 149
     },
     {
+      "file": "crates/trit-log/src/lib.rs",
+      "lines": 476
+    },
+    {
       "file": "crates/trit-lsp/src/analysis.rs",
       "lines": 364
     },
@@ -2588,7 +2592,7 @@
     },
     {
       "file": "crates/trit-net/src/netsec_cli.rs",
-      "lines": 169
+      "lines": 167
     },
     {
       "file": "crates/trit-net/src/train.rs",
@@ -3716,7 +3720,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train.rs",
-      "lines": 554
+      "lines": 552
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train/args.rs",

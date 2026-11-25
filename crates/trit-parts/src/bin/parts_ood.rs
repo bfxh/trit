@@ -116,7 +116,7 @@ fn collect(
             let (w, h, pix) = match read_rgb(&p) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("跳过 {}: {e}", p.display());
+                    trit_log::warn!("跳过 {}: {e}", p.display());
                     continue;
                 }
             };
@@ -179,7 +179,7 @@ fn train(argv: &[String]) {
     let cfg = Cfg { aug: true, v2: mlp };
     let xs_pos = collect(&net, &gpu, k, &pos, false, per_dir, &cfg);
     let xs_neg = collect(&net, &gpu, k, &neg, true, usize::MAX, &cfg);
-    println!("训练样本：域内 {} / 域外 {}", xs_pos.len(), xs_neg.len());
+    trit_log::info!("训练样本：域内 {} / 域外 {}", xs_pos.len(), xs_neg.len());
 
     let mut xs: Vec<Vec<f32>> = Vec::new();
     let mut ys: Vec<f32> = Vec::new();
@@ -416,7 +416,7 @@ fn fit_framing(argv: &[String]) {
         band.frac.0, band.frac.1, band.n_parts.0, band.n_parts.1, band.border.0, band.border.1
     );
     band.save(&out).unwrap_or_else(|e| panic!("{e}"));
-    println!("已存 {}", out.display());
+    trit_log::info!("已存 {}", out.display());
 }
 
 /// 逐帧按取景带判别，打印每个目录的拒绝率。

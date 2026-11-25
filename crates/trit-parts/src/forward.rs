@@ -28,7 +28,7 @@ pub fn forward(
                 bytes.extend_from_slice(&f.to_le_bytes());
             }
             std::fs::write(d.join(format!("mid_{name}.bin")), bytes).ok();
-            println!("  转储 mid_{name} ({n} 元素)");
+            trit_log::debug!("  转储 mid_{name} ({n} 元素)");
         }
     };
     // 前向统一走「有效权重 E」：mode=0 取折叠后的稠密权重，mode=1 取 q·scale。

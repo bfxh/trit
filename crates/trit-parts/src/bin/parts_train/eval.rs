@@ -26,14 +26,15 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
         std::process::exit(2);
     });
     let m = PartList::load(manifest_path).unwrap_or_else(|e| {
-        eprintln!("清单读取失败: {e}");
+        trit_log::error!("清单读取失败: {e}");
         std::process::exit(1);
     });
     let k = args.k;
     if m.k != k {
-        eprintln!(
+        trit_log::error!(
             "注意：清单 k={} 与模型 k={} 不一致；解码按模型 k，清单只用于允许 id 集",
-            m.k, k
+            m.k,
+            k
         );
     }
     println!("清单 k={k}，部件 {} 个", m.parts.len());
@@ -49,7 +50,7 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
         },
     }
     .unwrap_or_else(|e| {
-        eprintln!("模型加载失败: {e}");
+        trit_log::error!("模型加载失败: {e}");
         std::process::exit(1);
     });
     net.upload_all(gpu);
@@ -57,7 +58,6 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
 
     let res = args.res;
     let hw = trit_parts::dims::pixels(res as usize, res as usize);
-
     let mut plane_sum = vec![0f64; k];
     // [无约束, 约束]：帧级累加（id 一致按帧取均值，IoU 按 (帧,部件) 对取均值，清单外按帧取均值）
     let mut frames_n = 0usize;
@@ -83,7 +83,7 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
         paths.truncate(cap);
         for (n, file) in paths.iter().enumerate() {
             let s = load_frame_sub(scene, file, k, &args.seg_sub).unwrap_or_else(|e| {
-                eprintln!("读帧失败: {e}");
+                trit_log::error!("读帧失败: {e}");
                 std::process::exit(1);
             });
             let xb = gpu.buf(&s.rgb, "x");
@@ -106,7 +106,7 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
                 let (dep, _) =
                     trit_parts::geo::read_npy_f32(&scene.join("depth").join(format!("{stem}.npy")))
                         .unwrap_or_else(|e| {
-                            eprintln!("读深度失败: {e}");
+                            trit_log::error!("读深度失败: {e}");
                             std::process::exit(1);
                         });
                 for (p, &gd) in dep.iter().enumerate().take(hw) {
@@ -140,7 +140,7 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
             }
             if let Some(dir) = &args.dump {
                 std::fs::create_dir_all(dir).unwrap_or_else(|e| {
-                    eprintln!("{}: {e}", dir.display());
+                    trit_log::error!("{}: {e}", dir.display());
                     std::process::exit(1);
                 });
                 // 真实 stride = logits.len()/hw（含末尾 valid 通道），不是 k*3
@@ -161,7 +161,7 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
                     res as usize,
                     res as usize,
                 ) {
-                    eprintln!("写预测失败: {e}");
+                    trit_log::error!("写预测失败: {e}");
                     std::process::exit(1);
                 }
             }

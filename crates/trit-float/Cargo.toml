@@ -9,6 +9,7 @@ description = "平衡三进制浮点实验层：尾数/指数/舍入与同比特
 publish = false
 
 [dependencies]
+trit-log.workspace = true
 serde_json = "1.0.154"
 
 [dev-dependencies]

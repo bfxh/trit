@@ -197,7 +197,7 @@ fn hash(p: &Path) -> String {
 
 fn read(p: &Path) -> Json {
     trit_learn::json::read_json(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {e}");
+        trit_log::error!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -220,7 +220,7 @@ fn main() {
     let scene = PathBuf::from(data.get_str("scene").unwrap_or_else(|| usage()));
     let frames = list_usize(cfg, "frames");
     if frames.is_empty() {
-        eprintln!("清单缺 frames");
+        trit_log::error!("清单缺 frames");
         std::process::exit(2);
     }
     let cell = num(cfg, "cell").unwrap_or(0.01) as f32;
@@ -237,7 +237,7 @@ fn main() {
     let want_objects = objects(&manifest);
 
     let fp = fingerprint_scene_frames_rgb(&scene, &frames).unwrap_or_else(|e| {
-        eprintln!("语料指纹失败: {e}");
+        trit_log::error!("语料指纹失败: {e}");
         std::process::exit(2);
     });
     let want_hash = format!("sha256:{}", fp.hash);
@@ -288,7 +288,7 @@ fn main() {
     for o in &want_objects {
         let p = base.join(&o.path);
         let got = read_ply_3dgs(&p).unwrap_or_else(|e| {
-            eprintln!("读 PLY 失败: {e}");
+            trit_log::error!("读 PLY 失败: {e}");
             std::process::exit(2);
         });
         let mut want = build_filtered(&views, &rgbs, cell, scale_k, |v| v == o.id);

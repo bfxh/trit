@@ -178,7 +178,7 @@ fn main() {
     }
     if let Some(p) = &out {
         net.save(p).unwrap_or_else(|e| panic!("{e}"));
-        println!("已存 {}", p.display());
+        trit_log::info!("已存 {}", p.display());
     }
     if !held.is_empty() {
         let es: Vec<EvalSample> = held

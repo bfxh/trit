@@ -35,7 +35,7 @@ fn main() -> ExitCode {
     let opts = match args::parse(&argv) {
         Ok(opts) => opts,
         Err(message) => {
-            eprintln!("{message}");
+            trit_log::error!("{message}");
             return ExitCode::from(64);
         }
     };
@@ -55,7 +55,7 @@ fn main() -> ExitCode {
     if let Some(dir) = &opts.corpus
         && let Err(message) = external::run(&mut report, dir)
     {
-        eprintln!("{message}");
+        trit_log::error!("{message}");
         return ExitCode::from(64);
     }
 

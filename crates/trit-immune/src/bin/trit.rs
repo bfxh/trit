@@ -34,7 +34,7 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
         Err(CliError::Runtime(msg)) => {
-            eprintln!("错误：{msg}");
+            trit_log::error!("错误：{msg}");
             ExitCode::FAILURE
         }
     }

@@ -9,6 +9,7 @@ description = "三值推理算子库：双导轨/tryte 打包、无乘法点积�
 publish = false
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 
 [[bin]]

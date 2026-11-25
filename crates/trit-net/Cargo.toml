@@ -9,6 +9,7 @@ description = "三值权重网络实验层：{-1,0,+1} 权重 + X 输入 + 确�
 publish = false
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"

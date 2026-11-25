@@ -16,7 +16,7 @@ use trit_parts::weights::Tensors;
 
 fn read_f32(path: &std::path::Path) -> Vec<f32> {
     let raw = std::fs::read(path).unwrap_or_else(|e| {
-        eprintln!("{}: {e}", path.display());
+        trit_log::error!("{}: {e}", path.display());
         std::process::exit(1);
     });
     raw.as_chunks::<4>()
@@ -76,7 +76,7 @@ fn main() {
     }
 
     let t = Tensors::load(&dir).unwrap_or_else(|e| {
-        eprintln!("权重读取失败: {e}");
+        trit_log::error!("权重读取失败: {e}");
         std::process::exit(1);
     });
     let x = read_f32(&dir.join("input.bin"));
@@ -90,7 +90,7 @@ fn main() {
         let out = match name {
             "refcpu" => {
                 let m = TriModel::from_tensors(&t).unwrap_or_else(|e| {
-                    eprintln!("建模型失败: {e}");
+                    trit_log::error!("建模型失败: {e}");
                     std::process::exit(1);
                 });
                 let mut b = RefCpu::new(m);
@@ -115,7 +115,7 @@ fn main() {
                 );
                 outs.push((name.to_string(), v, ms));
             }
-            Err(e) => eprintln!("[{name}] 跳过：{e}"),
+            Err(e) => trit_log::warn!("[{name}] 跳过：{e}"),
         }
     }
 
@@ -126,7 +126,7 @@ fn main() {
             let (agree, maxd) = compare_nhwc(v1, v0, res);
             println!("[{n0} ↔ {n1}] 平面 argmax {agree:.6}  max|Δ| {maxd:.3e}");
             if agree < 0.995 {
-                eprintln!("G2 判红：{n0} 与 {n1} 的 argmax 一致率 {agree:.6} < 0.995");
+                trit_log::error!("G2 判红：{n0} 与 {n1} 的 argmax 一致率 {agree:.6} < 0.995");
                 std::process::exit(1);
             }
         }
@@ -154,7 +154,7 @@ fn export(argv: &[String]) {
             }
             "--channels" => {
                 channels = Some(argv[i + 1].parse().unwrap_or_else(|_| {
-                    eprintln!("--channels 非整数");
+                    trit_log::error!("--channels 非整数");
                     std::process::exit(2);
                 }));
                 i += 2;
@@ -173,7 +173,7 @@ fn export(argv: &[String]) {
         }
     };
     let (net, step, _) = trit_parts::state::load(&state).unwrap_or_else(|e| {
-        eprintln!("读存档失败: {e}");
+        trit_log::error!("读存档失败: {e}");
         std::process::exit(1);
     });
     let mut m = trit_parts::tpm::from_net(&net);
@@ -181,7 +181,7 @@ fn export(argv: &[String]) {
         m = m.truncate_head(c);
     }
     m.save(&out).unwrap_or_else(|e| {
-        eprintln!("写部署包失败: {e}");
+        trit_log::error!("写部署包失败: {e}");
         std::process::exit(1);
     });
     let n: usize = m.layers.iter().map(|l| l.q.len()).sum();
@@ -195,7 +195,7 @@ fn export(argv: &[String]) {
 
 #[cfg(not(feature = "gpu"))]
 fn export(_argv: &[String]) {
-    eprintln!("本构建未启用 gpu feature，无法读训练存档；请在带 gpu 的构建里导出");
+    trit_log::warn!("本构建未启用 gpu feature，无法读训练存档；请在带 gpu 的构建里导出");
     std::process::exit(2);
 }
 
@@ -257,16 +257,16 @@ fn run(argv: &[String]) {
         }
     };
     let tpm = TpmModel::load(&model).unwrap_or_else(|e| {
-        eprintln!("读部署包失败: {e}");
+        trit_log::error!("读部署包失败: {e}");
         std::process::exit(1);
     });
     let pl = PartList::load(&manifest).unwrap_or_else(|e| {
-        eprintln!("读清单失败: {e}");
+        trit_log::error!("读清单失败: {e}");
         std::process::exit(1);
     });
     // 推理只吃 RGB：不要求 seg 标签（用户给的图必然没有）
     let (w, _h, rgb) = read_rgb(&image).unwrap_or_else(|e| {
-        eprintln!("读图失败: {e}");
+        trit_log::error!("读图失败: {e}");
         std::process::exit(1);
     });
     let res = w as u32;
@@ -284,7 +284,7 @@ fn run(argv: &[String]) {
         }
     }
     .unwrap_or_else(|e| {
-        eprintln!("推理失败: {e}");
+        trit_log::error!("推理失败: {e}");
         std::process::exit(1);
     });
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -320,9 +320,9 @@ fn run(argv: &[String]) {
     }
     let frac = parts as f64 / hw as f64;
     if frac > max_part || frac < min_part {
-        eprintln!(
-            "⚠️ 域外嫌疑：部件像素占比 {:.3} 不在 [{:.3}, {:.3}] —— 这张图很可能不是训练过的装配体；输出仍写出，但勿直接下游使用",
-            frac, min_part, max_part
+        let (f, lo, hi) = (frac, min_part, max_part);
+        trit_log::error!(
+            "⚠️ 域外嫌疑：部件占比 {f:.3} 不在 [{lo:.3}, {hi:.3}]；输出仍写出，勿直接下游使用"
         );
     }
     std::fs::create_dir_all(&outdir).ok();
@@ -360,7 +360,7 @@ fn run(argv: &[String]) {
 
 #[cfg(not(feature = "gpu"))]
 fn run(_argv: &[String]) {
-    eprintln!("本构建未启用 gpu feature；请用带 gpu 的构建，或 --backend refcpu");
+    trit_log::warn!("本构建未启用 gpu feature；请用带 gpu 的构建，或 --backend refcpu");
     std::process::exit(2);
 }
 
@@ -408,11 +408,11 @@ fn batch(argv: &[String]) {
         }
     };
     let tpm = TpmModel::load(&model).unwrap_or_else(|e| {
-        eprintln!("读部署包失败: {e}");
+        trit_log::error!("读部署包失败: {e}");
         std::process::exit(1);
     });
     let parts = PartList::load(&manifest).unwrap_or_else(|e| {
-        eprintln!("读清单失败: {e}");
+        trit_log::error!("读清单失败: {e}");
         std::process::exit(1);
     });
     let mut b = wgpu_from_tpm(&tpm).unwrap_or_else(|e| panic!("wgpu 后端不可用: {e}"));
@@ -432,14 +432,14 @@ fn batch(argv: &[String]) {
         let (w, _h, rgb) = match read_rgb(p) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("跳过 {}: {e}", p.display());
+                trit_log::warn!("跳过 {}: {e}", p.display());
                 continue;
             }
         };
         let ids = match infer_ids(&mut b, &rgb, w as u32, &parts) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("推理失败 {}: {e}", p.display());
+                trit_log::error!("推理失败 {}: {e}", p.display());
                 continue;
             }
         };
@@ -463,7 +463,7 @@ fn batch(argv: &[String]) {
 
 #[cfg(not(feature = "gpu"))]
 fn batch(_argv: &[String]) {
-    eprintln!("本构建未启用 gpu feature");
+    trit_log::warn!("本构建未启用 gpu feature");
     std::process::exit(2);
 }
 
@@ -555,15 +555,15 @@ fn pipeline(argv: &[String]) {
     };
 
     let tpm = TpmModel::load(&model).unwrap_or_else(|e| {
-        eprintln!("读部署包失败: {e}");
+        trit_log::error!("读部署包失败: {e}");
         std::process::exit(1);
     });
     let pl = PartList::load(&manifest).unwrap_or_else(|e| {
-        eprintln!("读清单失败: {e}");
+        trit_log::error!("读清单失败: {e}");
         std::process::exit(1);
     });
     let (w0, h0, pix) = read_rgb(&image).unwrap_or_else(|e| {
-        eprintln!("读图失败: {e}");
+        trit_log::error!("读图失败: {e}");
         std::process::exit(1);
     });
     let res = 384usize;
@@ -579,7 +579,7 @@ fn pipeline(argv: &[String]) {
 
     if let Some(bp) = &bank_p {
         let bank = Bank::load(bp).unwrap_or_else(|e| {
-            eprintln!("读闸门失败: {e}");
+            trit_log::error!("读闸门失败: {e}");
             std::process::exit(1);
         });
         let feats = if bank.needs_v2() {
@@ -590,7 +590,7 @@ fn pipeline(argv: &[String]) {
         let score = bank.score(&feats);
         println!("域内概率 {score:.4}（阈值 {threshold:.3}）");
         if score < threshold && !force {
-            eprintln!("⇒ 拒绝（域外）：不写输出。加 --force 可强制继续。");
+            trit_log::error!("⇒ 拒绝（域外）：不写输出。加 --force 可强制继续。");
             std::process::exit(4);
         }
     }
@@ -608,7 +608,7 @@ fn pipeline(argv: &[String]) {
 
     if let Some(fp) = &framing_p {
         let band = FramingBand::load(fp).unwrap_or_else(|e| {
-            eprintln!("读取景带失败: {e}");
+            trit_log::error!("读取景带失败: {e}");
             std::process::exit(1);
         });
         let st = framing_stats(&ids, res, pl.parts.len());
@@ -625,25 +625,25 @@ fn pipeline(argv: &[String]) {
             }
         );
         if !bad.is_empty() && !force {
-            eprintln!("⇒ 拒绝（取景不可用）：不写输出。--force 可强制。");
+            trit_log::warn!("⇒ 拒绝（取景不可用）：不写输出。--force 可强制。");
             std::process::exit(5);
         }
     }
 
     if let (Some(dp), Some(mp)) = (&depth_p, &meta_p) {
         let (dep, shape) = trit_parts::geo::read_npy_f32(dp).unwrap_or_else(|e| {
-            eprintln!("读深度失败: {e}");
+            trit_log::error!("读深度失败: {e}");
             std::process::exit(1);
         });
         let cam = Camera::load(mp).unwrap_or_else(|e| {
-            eprintln!("读相机失败: {e}");
+            trit_log::error!("读相机失败: {e}");
             std::process::exit(1);
         });
         let (h, w) = (shape[0], shape[1]);
         let clouds = clouds(&ids, &dep, &cam, w, h);
         let ply = outdir.join("parts.ply");
         write_ply(&ply, &clouds).unwrap_or_else(|e| {
-            eprintln!("写 PLY 失败: {e}");
+            trit_log::error!("写 PLY 失败: {e}");
             std::process::exit(1);
         });
         let n: usize = clouds.values().map(Vec::len).sum();
@@ -653,7 +653,7 @@ fn pipeline(argv: &[String]) {
             use trit_parts::mesh::{boundary_edges, fill_solid, non_manifold_edges, surface_nets};
             let pts: Vec<[f32; 3]> = clouds.values().flatten().copied().collect();
             let mut g = trit_parts::mesh::Grid::from_points(&pts, cell, 2).unwrap_or_else(|| {
-                eprintln!("点云为空，无法建网格");
+                trit_log::error!("点云为空，无法建网格");
                 std::process::exit(1);
             });
             fill_solid(&mut g);
@@ -689,7 +689,7 @@ fn pipeline(argv: &[String]) {
             }
             let mpth = outdir.join("mesh.ply");
             trit_parts::mesh::write_ply_rgb(&mpth, &m, &colors).unwrap_or_else(|e| {
-                eprintln!("写网格失败: {e}");
+                trit_log::error!("写网格失败: {e}");
                 std::process::exit(1);
             });
             println!(
@@ -708,6 +708,6 @@ fn pipeline(argv: &[String]) {
 
 #[cfg(not(feature = "gpu"))]
 fn pipeline(_argv: &[String]) {
-    eprintln!("本构建未启用 gpu feature");
+    trit_log::warn!("本构建未启用 gpu feature");
     std::process::exit(2);
 }

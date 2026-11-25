@@ -235,15 +235,13 @@ pub(crate) fn cmd_equiv(
         }
         _ => {
             if let Some(size) = &stats_value {
-                eprintln!(
-                    "编码：variables={} clauses={}",
-                    size.variables, size.clauses
-                );
+                let (variables, clauses) = (size.variables, size.clauses);
+                trit_log::error!("编码：variables={variables} clauses={clauses}");
             }
             if let (Some(nodes), true) = (bdd_nodes, stats) {
                 match bdd_order_used {
-                    Some(order) => eprintln!("BDD：nodes={nodes} order={order}"),
-                    None => eprintln!("BDD：nodes={nodes}"),
+                    Some(order) => trit_log::error!("BDD：nodes={nodes} order={order}"),
+                    None => trit_log::error!("BDD：nodes={nodes}"),
                 }
             }
             if result.equivalent {

@@ -28,6 +28,7 @@ name = "trace_bench"
 harness = false
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 trit-ops.workspace = true
 trit-schedule.workspace = true

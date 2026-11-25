@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn fuzz_finds_no_disagreement_on_a_real_blob() {
         if compiler().is_none() {
-            eprintln!("跳过：本机没有 C 编译器");
+            trit_log::warn!("跳过：本机没有 C 编译器");
             return;
         }
         let (report, finding) = run(&fixture(), 200, 1).unwrap();

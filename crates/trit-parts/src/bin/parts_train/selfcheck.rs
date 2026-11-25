@@ -9,16 +9,16 @@ pub(crate) fn selfcheck(dir: &std::path::Path) {
     let gpu = match Gpu::new() {
         Some(g) => g,
         None => {
-            eprintln!("没有可用的 GPU 适配器");
+            trit_log::warn!("没有可用的 GPU 适配器");
             std::process::exit(2);
         }
     };
     let t = Tensors::load(dir).unwrap_or_else(|e| {
-        eprintln!("权重读取失败: {e}");
+        trit_log::error!("权重读取失败: {e}");
         std::process::exit(1);
     });
     let mut net = Net::from_tensors(&t).unwrap_or_else(|e| {
-        eprintln!("建网失败: {e}");
+        trit_log::error!("建网失败: {e}");
         std::process::exit(1);
     });
     net.upload_all(&gpu);
@@ -71,14 +71,14 @@ pub(crate) fn expand_scenes(root: &std::path::Path) -> Vec<PathBuf> {
     let single = root.join("rgb").is_dir();
     let subs = trit_parts::partsrun::expand_scenes(root);
     if !single && std::env::var("PARTSTRAIN_DEBUG").is_ok() {
-        eprintln!(
+        trit_log::error!(
             "[debug] expand_scenes {} → {} 个子场景",
             root.display(),
             subs.len()
         );
     }
     if subs.is_empty() {
-        eprintln!(
+        trit_log::error!(
             "{}: 既不是场景（无 rgb/），也没有含 rgb/ 的子目录",
             root.display()
         );
@@ -88,7 +88,7 @@ pub(crate) fn expand_scenes(root: &std::path::Path) -> Vec<PathBuf> {
 
 pub(crate) fn read_f32(path: &std::path::Path) -> Vec<f32> {
     let raw = std::fs::read(path).unwrap_or_else(|e| {
-        eprintln!("{}: {e}", path.display());
+        trit_log::error!("{}: {e}", path.display());
         std::process::exit(1);
     });
     raw.as_chunks::<4>()

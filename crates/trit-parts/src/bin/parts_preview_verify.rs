@@ -26,7 +26,7 @@ fn usage() -> ! {
     die("用法: parts-preview-verify --preview <目录>".into(), 2)
 }
 fn die(msg: String, code: i32) -> ! {
-    eprintln!("{msg}");
+    trit_log::error!("{msg}");
     std::process::exit(code)
 }
 

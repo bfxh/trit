@@ -44,6 +44,6 @@ pub(crate) fn usage() -> ! {
 }
 
 pub(crate) fn fail(msg: &str) -> ! {
-    eprintln!("{msg}");
+    trit_log::error!("{msg}");
     std::process::exit(1);
 }

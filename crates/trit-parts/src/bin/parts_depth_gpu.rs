@@ -139,14 +139,14 @@ fn main() {
         }
         None => Gpu::new().expect("没有可用 GPU"),
     };
-    println!("使用适配器：{}", gpu.adapter);
+    trit_log::info!("使用适配器：{}", gpu.adapter);
     println!(
         "卷积深度头（GPU）：{} 权重，dil {dil}（补零核 {}），输出层补齐到 4 通道",
         if ternary { "三值" } else { "f32" },
         2 * dil + 1
     );
     if accum > 1 {
-        println!("--accum {accum}：mini-batch SGD（每 {accum} 个样本更新一次，梯度块内平均）");
+        trit_log::info!("--accum {accum}：mini-batch SGD，每 {accum} 样本更新（块内平均）");
     }
     let mut gnet = DepthGpu::from_depthnet(&net, size as u32).with_slots(accum);
     gnet.upload(&gpu);
@@ -237,7 +237,7 @@ fn main() {
         // 判据只看 **1 步**：Adam 每步步长 ≈ lr，多步后近零梯度翻符号会让参数差到 1e-3 量级
         //（三值层还有 |w|≈0.5 的整格翻转），那是指令级噪声，不是实现错。
         if first.iter().any(|(_, d)| *d > 1e-4) {
-            eprintln!("对拍失败：1 步后参数偏差 > 1e-4");
+            trit_log::error!("对拍失败：1 步后参数偏差 > 1e-4");
             std::process::exit(1);
         }
         // 对拍后回到同一起点继续正式训练
@@ -282,7 +282,7 @@ fn main() {
         gnet.to_depthnet()
             .save(&p)
             .unwrap_or_else(|e| panic!("{e}"));
-        println!("已存 {}", p.display());
+        trit_log::info!("已存 {}", p.display());
         write_manifest(
             &p,
             &argv,
