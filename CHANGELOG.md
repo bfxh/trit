@@ -1070,6 +1070,27 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.19、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.21、`LESSONS.md` 第 31 条。
 
+- **旋转对照与类可分性（M1.20）**：新增
+  `scripts/wsp_classify_rotate.py`，用 train 类均值差方向估计 Householder
+  反射，把一档的类方向转到另一档；test 只做同一变换，probe 重训；带
+  `--self-test` 和 1 条 mutation 锚点。
+  - SST-2 L12 把 f32 方向转到 int4 后，f32 精度仍是 `0.800110`、
+    `int4−f32` 仍是 `+0.040088`；L6 也逐位不变；反向把 int4 转到 f32
+    方向同样不变。CoLA 只有 1 条 test 样本翻转（`±0.000952`），hate 不变。
+    旋转矩阵正交误差最大 `1.1e-15`。
+  - 真正随 int4 变化的是 `sep = sqrt(between/within)`：SST-2 L12 train
+    `1.288×`、test `1.236×`，Fisher `1.659× / 1.529×`；L6
+    `1.126× / 1.073×`，Fisher `1.267× / 1.152×`；CoLA/hate 都在 1 附近。
+    SST-2 L12 `between_sq` 增 `3.757×`、`within_sq` 只增 `2.264×`。
+  - **结论：方向角可被线性 probe 吸收，是症状；SST-2 的正向对应类可分性
+    上升，不是类方向旋转。低秩集中、基迁移失败、方向夹角都是伴随读数。
+    旋转只改方向、保持范数，`sep` 还含方向长度和类内散度，所以旋转对照
+    只排除“方向角”，不排除“长度/类内结构”。仍不是量化算子的因果拆解。**
+  - 表：`wsp-classify-rotation.tsv`（6 行：6 个数据集-深度 ×
+    f32→int4 旋转、gap、sep/Fisher 比）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.20、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.22、`LESSONS.md` 第 32 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
