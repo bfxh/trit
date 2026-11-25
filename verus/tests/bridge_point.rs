@@ -30,11 +30,7 @@ fn tri_vec_get_matches_scalar() {
         let v = TriVec::from_ternary(&values);
         for i in 0..len {
             assert_eq!(v.get(i), values[i], "get 在 len={len} i={i} 不一致");
-            assert_eq!(
-                v.try_get(i).unwrap(),
-                values[i],
-                "try_get 在 len={len} i={i}"
-            );
+            assert_eq!(v.try_get(i).unwrap(), values[i], "try_get {i}");
         }
         assert!(v.try_get(len).is_err(), "len={len} 的越界读未报错");
     }
@@ -68,10 +64,7 @@ fn tri_vec_set_matches_scalar() {
             }
         }
         let mut v = TriVec::from_ternary(&values);
-        assert!(
-            v.try_set(len, Ternary::True).is_err(),
-            "len={len} 的越界写未报错"
-        );
+        assert!(v.try_set(len, Ternary::True).is_err(), "越界写 len={len}");
     }
 }
 
@@ -82,11 +75,7 @@ fn tri_vec_from_ternary_roundtrip() {
         let values = sample(len, 19);
         let v = TriVec::from_ternary(&values);
         for i in 0..len {
-            assert_eq!(
-                v.get(i),
-                values[i],
-                "from_ternary 在 len={len} i={i} 不一致"
-            );
+            assert_eq!(v.get(i), values[i], "from_ternary {i}");
         }
         assert_eq!(
             v.unknowns().is_some(),
