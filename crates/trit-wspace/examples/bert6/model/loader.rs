@@ -3,13 +3,15 @@ use crate::activation::NormKind;
 use crate::linear::{F32Linear, Linear, QuantLinear};
 use crate::model::{Bert, BertConfig, BertLayer};
 use trit_wspace::safetensors;
+mod h;
 
 pub(crate) fn load(file: &str, config: BertConfig) -> Bert {
     let (layers, hidden) = (config.layers, config.hidden);
     let (heads, eps) = (config.heads, config.eps);
     let (quantize, activation, sidecar_rank) =
         (config.quantize, config.activation, config.sidecar_rank);
-    let (gptq_dir, gptq_group) = (config.gptq_dir, config.gptq_group);
+    let (sidecar_svd, gptq_dir, gptq_group) =
+        (config.sidecar_svd, config.gptq_dir, config.gptq_group);
     let tensor = |name: &str| -> F32Linear {
         let weight =
             safetensors::read_tensor(file, name).unwrap_or_else(|e| panic!("读 {name} 失败：{e}"));
@@ -29,20 +31,14 @@ pub(crate) fn load(file: &str, config: BertConfig) -> Bert {
         let bias = safetensors::read_vector(file, &format!("{prefix}.bias")).expect("LN bias");
         NormKind::new(activation, weight, bias, eps)
     };
-    let load_h = |short: &str| -> Option<Vec<f32>> {
-        let dir = gptq_dir.as_ref()?;
-        let path = format!("{dir}/{short}.f32");
-        trit_wspace::activations::read_matrix(&path)
-            .ok()
-            .map(|(_, _, values)| values)
-    };
     let wrap = |name: &str, short: &str| {
         let linear = tensor(name);
         if quantize {
             Linear::Quant(QuantLinear::from(
                 &linear,
                 sidecar_rank,
-                load_h(short).as_deref(),
+                sidecar_svd,
+                h::load(gptq_dir.as_deref(), short).as_deref(),
                 gptq_group,
             ))
         } else {

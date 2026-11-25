@@ -801,6 +801,24 @@
   `python scripts/module_budget.py`、`python scripts/test_surface.py`。
 - 未接（不宣称）：500 条人工/LLM judge 标注语料未提供，软门 vs judge 的 Cohen's κ 与硬门一致率无对拍读数；
   `compare` 已就绪，低于 κ≥0.6 不得宣称有效。见 `docs/reference/AGENT-DATA.md` §8。
+### Added（trit-wspace：低秩残差侧车——全量 rank 16 回收 55%，字节 ×2）
+
+- `crates/trit-wspace/src/residual.rs`：`LowRankResidual` 把三值化误差 `R = W − s·T` 的
+  top-r 奇异三元组留成 f32 侧车，修正 `y += U_r Σ_r V_rᵀ x`；分解走 `RᵀR` / `R Rᵀ` 的
+  Jacobi 全分解（维度 `min(rows, cols)`，36 个矩阵约 100 s），`set_rank` 只按前缀收缩，
+  权重误差关于 rank 单调；满秩行为等价 f32 线性层（8 句 `rel_l2 = 2.6e-7`）。
+- `examples/bert6`：新增 `--sidecar-svd 0,16,32,64,128`，报告加 `sidecar_svd`
+  （rank、侧车参数、占 dense 比例、构建毫秒、`rel_l2` / `cosine` / Pearson / Spearman）。
+  为守住模块预算，`linear/quant`、`model/config`、`model/loader`、`run/args`、`run`
+  拆成子模块，主文件只留接线、行数不增；`docs/research/WSP-BERT6-RESULTS.md` §3.15
+  记读数、非单调现象与未证项。
+- 全量 1379 对（f32 激活 + GPTQ g32）：Pearson 0.7143 → rank16 **0.7769**（回收 55%
+  权重差距）→ rank32 0.7752（54%）→ rank64 0.7677 → rank128 **0.7995**（回收 75%，
+  f32 基线 0.8274）。rank16 侧车字节 = 2-bit 三值主干（总权重字节 ×2、dense f32 的
+  12.5%），rank32 ×2（总 ×3），rank64 ×4，rank128 ×8。
+- rank32/64 的 `rel_l2` 都比 rank16 低，Pearson 却分别低 0.0017 / 0.009（0.2 / 0.9 SE）：
+  16/32/64 在噪声内不可区分，中间档翻倍字节不涨点；只有 rank128（8×）升到 0.7995。
+  STS 不随权重误差单调，侧车读数必须同时给 `rel_l2` 与 STS，不能拿前者代理后者。
 
 ### Security（trit-orch 完成闸、轨迹链与兼容性）
 
