@@ -1,4 +1,4 @@
-//! `BertConfig` 的接线（定义在 `opts.rs`，扩展构造器在 `builders.rs`）。
+mod budget;
 mod builders;
 mod opts;
-pub(crate) use opts::BertConfig;
+pub(crate) use opts::{BertConfig, Budget};

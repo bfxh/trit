@@ -74,6 +74,22 @@
    不变。代价是 `f32_vs_reference` / `real_vs_f32` / `random_vs_f32` 变 null；
    `activation=all` 或带 sidecar 时必须禁用缓存。JSON 缓存必须开
    `serde_json` 的 `float_roundtrip`，否则重解析 preds 会差 1 ULP。见 §3.16.7。
+12. **校准必须先跳 padding，再谈层内重建**。旧 `quant_compare_exact.py` 每 172 行抽
+   token、不读 mask；176,512 行里只有 39,031 个有效 token，padding 行带共同偏移，
+   全行均值 RMS 0.396，mask-aware 只有 0.103。用前者算 bias 修正，层输出误差假降
+   37–40%；用后者只有 0.4–0.8%。接到 `bert6` 全模型后，1379 对 STS 只动
+   +0.000041（int3）/ +0.000070（int4）Pearson，与 0.4–0.8% 一致。更关键的是
+   L12 int4 全量 `0.837505` 已经和 f32 `0.837595` 统计平手，4-bit 没有可买的
+   Pearson。复算：`TRIT_CALIB_BIAS=1 TRIT_CALIB_SCALE=1 TRIT_WEIGHT_BITS=4`
+   跑 `miniLM-l12-sts-full`；结果在 `WSP-ALT.md` §3.5。
+13. **同字节预算先问块的位置，再问权重误差**。L12 上把层 11 的
+   `attention.output.dense` 的 int2 降级换成层 9 的同类矩阵，形状、字节、
+   `proxy_err_ratio`（0.91552）都不变，全量 Spearman 却从 `0.816255` 到
+   `0.818137`（+0.001882）；纯 int3 是 `0.813362`。权重 MSE 代理看不见块在残差流
+   里的位置，也看不见它离最终句向量多远。另一个反例：规划器 v1 在 128 对低于
+   int3（0.885716 vs 0.897582），全量却高于 int3（0.819473 vs 0.818440）；
+   **128 子集能测反，预算变体至少跑全量**。严格同字节结果见
+   `WSP-BUDGET-RESULTS.md`。
 
 ## 4. 工程经验
 

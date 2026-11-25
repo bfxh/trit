@@ -5171,12 +5171,16 @@
       "lines": 4
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/model/config/budget.rs",
+      "lines": 49
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/model/config/builders.rs",
       "lines": 23
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config/opts.rs",
-      "lines": 50
+      "lines": 48
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config/opts/env.rs",
@@ -5200,7 +5204,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/loader/wrap/uniform.rs",
-      "lines": 26
+      "lines": 25
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/parallel.rs",
