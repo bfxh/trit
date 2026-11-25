@@ -6380,11 +6380,19 @@
     },
     {
       "file": "verus/src/point.rs",
-      "lines": 438
+      "lines": 340
+    },
+    {
+      "file": "verus/src/point/from_ternary.rs",
+      "lines": 170
     },
     {
       "file": "verus/src/point/proofs.rs",
       "lines": 221
+    },
+    {
+      "file": "verus/src/point/wf_lemmas.rs",
+      "lines": 66
     },
     {
       "file": "verus/src/table.rs",

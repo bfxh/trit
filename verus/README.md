@@ -39,8 +39,10 @@ POINT: trit-core::bulk::TriVec 单点     ≡  point.rs    （get/set/from_terna
   以及结构不变式 `wf`（两个平面在 `len` 位内互斥）；
 - `src/bulk/proofs.rs`：整向量等价证明——结果视图逐位等于标量 `knot` / `tand` / `tor` /
   `poison_and` / `poison_or`；
-- `src/point.rs`：单点 `get_at` / `set_planes` / `from_ternary_planes` 的 spec/exec
-  （视图口径 `set_at_spec` / `prefix`，掩码 `mask_word` 显式参数化）；
+- `src/point.rs`：单点 `get_at` / `set_planes` 的 spec/exec 与视图口径
+  `set_at_spec`（掩码 `mask_word` 显式参数化）；
+- `src/point/from_ternary.rs`：`from_ternary_planes` 逐点打包 + `prefix` 循环不变式；
+- `src/point/wf_lemmas.rs`：`wf` 保持性 lemma（`set_word_wf` / `wf_none`）；
 - `src/point/proofs.rs`：单点写的位级 lemma（`mask_bit_at` / `bit_self` /
   `tri_of_word_ext` / 命中与未命中的三值形式）与 `set_view_equiv`；
 - `tests/bridge_bulk.rs`：边界长度（0/1/63/64/65/130）× 三种代数，对拍主库 `tri_core::TriVec`
@@ -68,7 +70,7 @@ python scripts/verify.py --json             # 机器可读报告
 
 ## 范围与限制
 
-已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 182 verified）：
+已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 188 verified）：
 
 - K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射；
 - Ł3：格序 `∧/∨`、强加/强合交换、`U⊕U=T`、`U⊗U=F`、`U⇒U=T`、De Morgan、等价自反；
@@ -80,12 +82,12 @@ python scripts/verify.py --json             # 机器可读报告
   即 `view(len, out_planes, unknowns) == Seq::new(len, |i| scalar_op(a[i], b[i]))`；
 - 位切片向量单点操作：`get_at`（读一位 == `tri_at`）、`set_planes`（写一位后视图 ==
   `set_at_spec`，含「清空最后一个 `Unknown` 后归一为 `None`」的分支）、
-  `from_ternary_planes`（逐位写 == 标量序列），并由 `tests/bridge_point.rs`
+  `from_ternary_planes`（逐位写 == 标量序列），且三条 exec 都保持结构不变式
+  `wf`（两平面在 `len` 位内互斥；`point/wf_lemmas.rs::set_word_wf` / `wf_none`），由 `tests/bridge_point.rs`
   与主库对拍（含越界错误与 `unknowns()` 归一化）。
 
 **未验证**（明确缺口，不当作已完成）：
 
-- `TriVec` 的 `wf` 保持性（单点写后平面互斥）：`set` / `from_ternary` 只证了视图等价，未证结构不变式；
 - 批量运算的 padding 掩码：`bulk.rs` 的 exec 省略了 `len` 之外的掩码写入（`view` 不读 padding），
   padding 清零由 `tests/bridge_point.rs` / `tests/bridge_bulk.rs` 对拍主库覆盖；
 - 任何并发或 `unsafe` 代码；

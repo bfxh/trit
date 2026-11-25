@@ -93,7 +93,8 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 |------|----------|----------|
 | `get_at(len, ones, unknowns, i)` | 第 `i` 位 == `tri_at(ones@, unknowns_view, i)` | `point.rs`（`bit_at_extract` 对齐 `(w >> b) & 1`） |
 | `set_planes(len, ones, unknowns, i, v)` | 结果视图 == `set_at_spec`：第 `i` 位换成 `v`、其余不变 | `point/proofs.rs::set_view_equiv` |
-| `from_ternary_planes(values)` | 结果视图 == `values@` | 逐点调用 `set_planes` + `prefix` 循环不变式 |
+| `from_ternary_planes(values)` | 结果视图 == `values@` | `point/from_ternary.rs`：逐点调用 `set_planes` + `prefix` 循环不变式 |
+| （结构不变式） | `wf` 保持：两个平面在 `len` 位内互斥 | `point/wf_lemmas.rs::set_word_wf` + `wf_none` |
 
 关键设计：把「第 `i` 位的掩码」显式写成参数
 `mask_word(w, word, bit) = if w == word { bit } else { 0u64 }`，
@@ -101,7 +102,9 @@ Verus（校验 SHA-256），跑 `scripts/verify.py --json` 并上传报告。
 `mask_bit_at` 证 `bit_at(mask_word(...), b) == (w == word && bit_at(bit, b))`，
 `bit_self` 证 `bit == 1 << s` 时 `bit_at(bit, b) == (b == s)`。
 
-诚实边界：`wf`（两平面互斥）未随单点写一起证；`from_ternary` 的 exec 用逐点调用
+结构不变式：`wf`（两平面互斥）已随单点写一起证——`set_word_wf`（单字写互斥）与
+`wf_none`（全零平面 + `None`）支撑 `set_planes` / `from_ternary_planes` 的
+`wf` ensures；`from_ternary` 的 exec 用逐点调用
 `set_planes` 代替主库的惰性 `get_or_insert_with`（语义一致，验证工作区不追性能）；
 padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆盖。
 单点操作同时补了运行时对拍：`get`/`try_get` 逐位与标量一致、越界报错；
@@ -109,7 +112,7 @@ padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆
 
 ## 5. 覆盖范围（已证 / 未证）
 
-覆盖范围（当前 `scripts/verify.py --only verify` 报 182 verified）：
+覆盖范围（当前 `scripts/verify.py --only verify` 报 188 verified）：
 
 - K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射、
   `table` 与 spec 一致；
@@ -120,7 +123,7 @@ padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆
   consensus/gullibility 交换、conflation 对合与知识序 De Morgan；
 - 位平面 `TriBit`：`not`/`and`/`or` 的 Verus 逐位等价（`bits/proofs.rs`）；
 - 位切片向量 `TriVec`：`not`/`and`/`or`（K3·Ł3 格序与 B3 毒值）的整向量等价
-  （`bulk/proofs.rs` + `point/proofs.rs`，累计 182 verified）与 `tests/bridge_bulk.rs`
+  （`bulk/proofs.rs` + `point/proofs.rs`，累计 188 verified）与 `tests/bridge_bulk.rs`
   `tests/bridge_point.rs` 对拍；
 - 位切片向量单点操作：`get`/`set`/`from_ternary` 的视图等价（`point.rs` 的
   `set_at_spec` / `prefix`），以及 `tests/bridge_point.rs` 中 get/set/from_ternary
@@ -129,8 +132,6 @@ padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆
 未验证（明确缺口）：
 
 - SIMD 路径与标量路径等价（见 §7 的分层口径）；
-- `TriVec` 单点写的 `wf` 保持性：`set`/`get`/`from_ternary` 已证视图等价（见 §4.2），
-  但「两平面互斥」的结构不变式未证；
 - 并发、`unsafe`、内存模型；
 - Verus 自身、z3 模型、Rust 编译器的可信基。
 
@@ -141,8 +142,8 @@ padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆
 3. **M3（落地）**：`verus/src/k3_impl.rs` 复制主库 `value.rs` 的 K3 实现体，
    由 `scripts/check_k3_impl.py` 逐字比对，再用 Verus 的 `ensures` 验证该实现；
    `table ≡ spec` 的 bridge 降级为冗余检查。位平面/批量路径与单点操作
-   已完成（182 verified，`python3 scripts/verify.py --only verify` 复算）；
-   剩余：单点写的 `wf` 保持、padding 掩码、SIMD 口径（见 §7）。
+   已完成（188 verified，`python3 scripts/verify.py --only verify` 复算）；
+   剩余：padding 掩码、SIMD 口径（见 §7）。
 4. **M4**：统一入口 `trit-verify`：Verus / Kani / Creusot / 属性测试共用一套
    报告与门禁。
 5. **M5**（远期）：面向三值/位平面领域更强的验证器（当前不启动）。

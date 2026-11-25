@@ -1,11 +1,12 @@
-//! `TriVec`（位切片三值向量）的单点操作：`get` / `set` / `from_ternary`。
+//! `TriVec`（位切片三值向量）的单点操作：`get` / `set`（`from_ternary` 在
+//! `point/from_ternary.rs`）。
 //!
-//! 语义口径：证「结果视图」与标量语义一致（`set_at_spec` / `prefix`），不逐字复刻
-//! 主库的分支与惰性分配。位级推理统一落在 `u64` 上：掩码由 `mask_word(w, word, bit)`
-//! 显式参数化，避免 `int` 位移进入 bit-vector 求解；相关 lemma 在 `point/proofs.rs`。
+//! 语义口径：证「结果视图」与标量语义一致（`set_at_spec` / `prefix`），并保持
+//! 结构不变式 `wf`（两平面互斥）；不逐字复刻主库的分支与惰性分配。位级推理统一
+//! 落在 `u64` 上：掩码由 `mask_word(w, word, bit)` 显式参数化，避免 `int` 位移
+//! 进入 bit-vector 求解；相关 lemma 在 `point/proofs.rs` 与 `point/wf_lemmas.rs`。
 //!
-//! 诚实边界：`wf`（两平面互斥）未随单点写证明；padding 位不在 `view` 语义内，
-//! 由 `tests/bridge_point.rs` 对拍主库覆盖。
+//! 诚实边界：padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆盖。
 
 use vstd::prelude::*;
 
@@ -17,7 +18,9 @@ use crate::k3::Trit;
 
 verus! {
 
+mod from_ternary;
 mod proofs;
+mod wf_lemmas;
 
 /// 位提取 `(w >> b) & 1` 与 `bit_at` 对齐（`b < 64`）。
 pub proof fn bit_at_extract(w: u64, b: u32)
@@ -163,18 +166,15 @@ pub fn set_planes(
     value: Trit,
 ) -> (r: (Vec<u64>, Option<Vec<u64>>))
     requires
-        ones@.len() == words_for(len as nat),
-        match unknowns {
-            Some(p) => p@.len() == words_for(len as nat),
-            None => true,
-        },
+        wf(len as nat, ones@, unknowns_view(unknowns)),
+        forall|k: int|
+            0 <= k < words_for(len as nat) ==> #[trigger] (ones@[k] & unknown_word(
+                unknowns_view(unknowns),
+                k,
+            )) == 0u64,
         i < len,
     ensures
-        r.0@.len() == words_for(len as nat),
-        match r.1 {
-            Some(p) => p@.len() == words_for(len as nat),
-            None => true,
-        },
+        wf(len as nat, r.0@, unknowns_view(&r.1)),
         view(len as nat, r.0@, unknowns_view(&r.1)) == set_at_spec(
             len as nat,
             ones@,
@@ -191,6 +191,12 @@ pub fn set_planes(
     let mut out_unknowns: Vec<u64> = Vec::new();
     for w in 0..n
         invariant
+            i < len,
+            forall|k: int|
+                0 <= k < words_for(len as nat) ==> #[trigger] (ones@[k] & unknown_word(
+                    unknowns_view(unknowns),
+                    k,
+                )) == 0u64,
             ones@.len() == n,
             n as nat == words_for(len as nat),
             word as int == i as int / 64,
@@ -202,6 +208,9 @@ pub fn set_planes(
             },
             out_ones@.len() == w,
             out_unknowns@.len() == w,
+            0 <= w <= n,
+            forall|k: int|
+                0 <= k < w ==> #[trigger] (out_ones@[k] & out_unknowns@[k]) == 0u64,
             forall|k: int|
                 0 <= k < w ==> #[trigger] out_ones@[k] == set_ones_word(
                     ones@[k],
@@ -236,6 +245,25 @@ pub fn set_planes(
         };
         out_ones.push(o2);
         out_unknowns.push(x2);
+        proof {
+            let wi: int = w as int;
+            assert(0 <= wi);
+            assert(wi < words_for(len as nat));
+            assert((ones@[wi] & unknown_word(unknowns_view(unknowns), wi)) == 0u64);
+            assert(unknown_word(unknowns_view(unknowns), wi) == x);
+            assert((o & x) == 0u64);
+            wf_lemmas::set_word_wf(o, x, m, value);
+            assert((o2 & x2) == 0u64);
+            assert forall|k: int|
+                0 <= k < w + 1 implies #[trigger] (out_ones@[k] & out_unknowns@[k]) == 0u64 by {
+                if k < w {
+                } else {
+                    assert(k == w);
+                    assert(out_ones@[k] == o2);
+                    assert(out_unknowns@[k] == x2);
+                }
+            }
+        }
     }
     let mut any: bool = false;
     let mut idx: usize = 0;
@@ -294,145 +322,19 @@ pub fn set_planes(
             out_ones@,
             unknowns_view(&r1),
         );
+        assert forall|k: int|
+            0 <= k < words_for(len as nat) implies #[trigger] (out_ones@[k] & unknown_word(
+                unknowns_view(&r1),
+                k,
+            )) == 0u64 by {
+            if any {
+                assert(unknown_word(unknowns_view(&r1), k) == out_unknowns@[k]);
+            } else {
+                assert(unknown_word(unknowns_view(&r1), k) == 0u64);
+                assert(out_unknowns@[k] == 0u64);
+            }
+        }
     }
     (out_ones, r1)
-}
-/// 前 `k` 位取 `values`、其余为 `F` 的视图（`from_ternary` 的循环不变式用）。
-pub open spec fn prefix(n: nat, values: Seq<Trit>, k: int) -> Seq<Trit> {
-    Seq::new(n, |j: int| if j < k { values[j] } else { Trit::F })
-}
-
-/// 从标量三值序列打包（主库 `from_ternary`；未知平面按需归一）。
-///
-/// 主库用惰性 `get_or_insert_with` 逐位写平面；这里为复用已证的 `set_planes`
-/// 单点等价，写成「逐点调用」的形式（验证工作区不追性能，语义一致）。
-pub fn from_ternary_planes(values: &Vec<Trit>) -> (r: (Vec<u64>, Option<Vec<u64>>))
-    ensures
-        view(values@.len(), r.0@, unknowns_view(&r.1)) == values@,
-{
-    let n = values.len();
-    let words: usize = n / 64 + (if n % 64 == 0 { 0usize } else { 1usize });
-    let mut ones: Vec<u64> = Vec::new();
-    let mut unk: Option<Vec<u64>> = None;
-    let mut i: usize = 0;
-    while i < words
-        invariant
-            ones@.len() == i,
-            forall|k: int| 0 <= k < i as int ==> #[trigger] ones@[k] == 0u64,
-            0 <= i <= words,
-            words == n / 64 + (if n % 64 == 0 { 0usize } else { 1usize }),
-        decreases words - i,
-    {
-        ones.push(0u64);
-        i = i + 1;
-    }
-    proof {
-        assert(words as nat == words_for(n as nat));
-        assert(ones@.len() == words);
-        assert(unknowns_view(&unk) == None);
-        assert forall|w: int| 0 <= w < words as nat implies #[trigger] ones@[w] == 0u64 by {
-            assert(ones@[w] == 0u64);
-        }
-        assert forall|j: int| 0 <= j < n as nat implies tri_at(
-            ones@,
-            None,
-            j,
-        ) == Trit::F by {
-            assert(ones@[j / 64] == 0u64);
-            bit_at_zero((j % 64) as u32);
-            assert(tri_of_word(0u64, 0u64, (j % 64) as u32) == Trit::F);
-        }
-        assert(view(n as nat, ones@, unknowns_view(&unk)) == prefix(
-            n as nat,
-            values@,
-            0,
-        ));
-    }
-    let mut k: usize = 0;
-    while k < n
-        invariant
-            n == values@.len(),
-            ones@.len() == words,
-            match unk {
-                Some(p) => p@.len() == words,
-                None => true,
-            },
-            words as nat == words_for(n as nat),
-            view(n as nat, ones@, unknowns_view(&unk)) == prefix(n as nat, values@, k as int),
-            0 <= k <= n,
-        decreases n - k,
-    {
-        let value = match &values[k] {
-            Trit::F => Trit::F,
-            Trit::T => Trit::T,
-            Trit::U => Trit::U,
-        };
-        let r = set_planes(n, &ones, &unk, k, value);
-        proof {
-            assert(value == values@[k as int]);
-            assert(view(n as nat, r.0@, unknowns_view(&r.1)) == set_at_spec(
-                n as nat,
-                ones@,
-                unknowns_view(&unk),
-                k as int,
-                values@[k as int],
-            ));
-
-            assert(view(n as nat, r.0@, unknowns_view(&r.1)) == prefix(
-                n as nat,
-                values@,
-                k as int + 1,
-            )) by {
-                assert forall|j: int| 0 <= j < n as nat implies set_at_spec(
-                    n as nat,
-                    ones@,
-                    unknowns_view(&unk),
-                    k as int,
-                    values@[k as int],
-                )[j] == prefix(
-                    n as nat,
-                    values@,
-                    k as int + 1,
-                )[j] by {
-                    if j < k {
-                        assert(prefix(n as nat, values@, k as int)[j] == values@[j]);
-                        assert(prefix(
-                            n as nat,
-                            values@,
-                            k as int + 1,
-                        )[j] == values@[j]);
-                    } else if j == k {
-                        assert(prefix(
-                            n as nat,
-                            values@,
-                            k as int + 1,
-                        )[j] == values@[j]);
-                    } else {
-                        assert(prefix(n as nat, values@, k as int)[j] == Trit::F);
-                        assert(prefix(
-                            n as nat,
-                            values@,
-                            k as int + 1,
-                        )[j] == Trit::F);
-                    }
-                }
-            }
-        }
-        ones = r.0;
-        unk = r.1;
-        k = k + 1;
-    }
-    proof {
-        assert(view(n as nat, ones@, unknowns_view(&unk)) == prefix(n as nat, values@, n as int));
-        assert(prefix(n as nat, values@, n as int) == values@) by {
-            assert forall|j: int| 0 <= j < n as nat implies prefix(
-                n as nat,
-                values@,
-                n as int,
-            )[j] == values@[j] by {
-            }
-        }
-    }
-    (ones, unk)
 }
 }
