@@ -694,6 +694,7 @@
 ### Added（WSP 均匀位宽对照：4-bit 同字节、5-bit 全量越过 f32）
 ### Added（WSP-BUDGET：同字节预算分配，L12 STS Spearman +0.0048）
 ### Added（WSP-BUDGET：同字节预算分配 + 块交换，L12 STS I10 +0.0032/+0.0055）
+### Added（WSP-BUDGET：同字节预算分配 + 块交换，L12 STS K10K11 +0.0050/+0.0072）
 
 - 新增离线预算规划器 `scripts/wsp_budget.py`：从 safetensors 读 12 层 6 类线性矩阵，
   按含 per-group f32 scale/per-row bias 的真实字节，用权重重建代理 + 拉格朗日/贪心
@@ -714,13 +715,24 @@
   `+0.003180 / +0.005536`；10k CI `[+0.000157, +0.006370]` /
   `[+0.002192, +0.009004]`，两个下界都过 0。I10 对 v6e `+0.000934 / +0.000761`，
   CI 跨 0，只能算点估计更好；距纯 int4 Spearman 仍差 `0.013149`，不是“3-bit 追平 int4”。
+- **严格同字节 K10K11**：在 I10 上把 Q3、K4 两个 int4 升级移到 K10、K11，总字节仍
+  `10,782,720 B`。全量 Pearson `0.823479`、Spearman `0.820549`，相对纯 int3
+  `+0.005039 / +0.007187`；10k CI `[+0.001919, +0.008219]` /
+  `[+0.003737, +0.010819]`，两个下界都过 0。对 I10 `+0.001858 / +0.001651`，
+  50k CI `[+0.000591, +0.003120]` / `[+0.000048, +0.003272]`，Spearman 是薄优势；
+  对 v6e Spearman CI 跨 0；距纯 int4 Pearson `−0.014026`、Spearman `−0.011498`。
+- **运行时字节账**：`weight_format` 在 `TRIT_BUDGET` 下按每块 `rows/cols/bits` 与
+  `group` 复算实际总字节，输出 `accounting="actual_bytes_with_metadata"`、
+  `budget_actual_bytes`、`budget_weight_bytes`、`budget_metadata_bytes`、
+  `mixed_bits`、`budget_group`；`weight_bytes` 改为实际总字节，不再按全局
+  `TRIT_WEIGHT_BITS` 报账。L12/K10K11 smoke：`10,782,720 / 7,962,624 / 2,820,096`。
 - 失败记录：规划器第一版按权重 MSE 选块，128 对低于 int3（0.885716 vs 0.897582），
   全量却为正（0.819473 vs 0.818440）；`v6e` 与 v1 的 `proxy_err_ratio` 同为
   `0.91552`，只把层 11 o 的 int2 降级换到层 9 o，全量 Spearman 就差 `+0.001882`。
   权重代理看不见块在残差流中的位置；128 子集能测反。块交换的 128 排名也会高估：
-  F3 在 128 双指标为正，全量 Spearman 转负。
+  F3 在 128 双指标为正，全量 Spearman 转负；K10K11 在 128 反而低估全量。
 - 文档：`docs/research/WSP-BUDGET-RESULTS.md`（完整字节账/读数/边界/复算），
-  `docs/research/WSP-ALT.md` §5.5，`docs/results/LESSONS.md` 第 13–14 条。
+  `docs/research/WSP-ALT.md` §5.5，`docs/results/LESSONS.md` 第 13–15 条。
   新增 `scripts/wsp_budget_bootstrap.py` 做配对 bootstrap。
 
 ### Added（WSP 均匀位宽与 12 层容量：int4 在 1/4 字节稳定越过 f32）

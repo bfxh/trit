@@ -733,8 +733,11 @@ Q/K 的 bias 主要改 attention logits 的常数/低秩项，softmax 对一部�
 要继续压字节，BUDGET M1 已在严格同字节 `10,782,720 B` 上跑完：`v6e` Spearman
 `0.813362→0.818137`（10k CI 下界 `+0.002017`），Pearson 仍跨 0；M1.1 的 `I10`
 块交换把全量推到 `0.821621 / 0.818898`，相对纯 int3 两个 10k CI 下界都过 0。
-详见 `WSP-BUDGET-RESULTS.md`。它不是“3-bit 追平 int4”，下一步应补位置
-敏感度，而不是继续修 4-bit 的偏差。
+M1.2 的 `K10K11` 再把 Q3/K4 的 int4 升级移到 K10/K11，全量 `0.823479 / 0.820549`，
+相对纯 int3 `+0.005039 / +0.007187`，两个 10k CI 下界都过 0；对 I10 是薄优势
+（50k Spearman 下界 `+0.000048`），对 v6e 的 Spearman CI 仍跨 0。
+详见 `WSP-BUDGET-RESULTS.md`。它不是“3-bit 追平 int4”（距 int4 Pearson
+`−0.014026`、Spearman `−0.011498`），下一步应补位置敏感度，而不是继续修 4-bit 的偏差。
 
 ## 4. 未证栏
 
