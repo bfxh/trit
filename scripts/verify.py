@@ -151,7 +151,8 @@ def tool_env() -> dict[str, str]:
 
 
 def find_tool(name: str) -> str:
-    candidate = shutil.which(name)
+    # 以 tool_env 的 PATH 为准：CI 里 verus/z3 刚解压到 ~/tools，当前进程 PATH 还没有它们。
+    candidate = shutil.which(name, path=tool_env()["PATH"])
     if candidate:
         return candidate
     raise SystemExit(f"verify: 找不到 {name}；先跑 python scripts/verify.py --install")
