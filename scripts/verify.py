@@ -130,6 +130,10 @@ def install() -> None:
         print(f"verify: {archive.name} SHA-256 校验通过")
         with zipfile.ZipFile(archive) as bundle:
             bundle.extractall(out_dir)
+        # zipfile 不保留 Unix 执行位；不补的话 shutil.which 会认为 verus/z3 不可执行。
+        for name in ("verus", "cargo-verus", "rust_verify", "z3"):
+            for binary in out_dir.rglob(name):
+                binary.chmod(binary.stat().st_mode | 0o111)
     print("verify: 安装完成；再跑一次 python scripts/verify.py 执行验证")
 
 
