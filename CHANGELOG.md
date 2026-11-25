@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（第四十轮：TriVec 整向量等价的 Verus 证明）
+
+- 新增 `verus/src/bulk.rs`：位切片向量 `TriVec` 的 spec/exec。`view(len, ones, unknowns)`
+  把两个位平面投影成 `Seq<Trit>`；结构不变式 `wf` 约束字数与「两平面在 `len` 位内互斥」。
+  exec 覆盖 `not` 与 `and` / `or` 的 K3·Ł3 格序分支、B3 毒值分支，循环不变式证明
+  「已处理字 == 逐字 spec」。
+- 新增 `verus/src/bulk/proofs.rs`：整向量等价证明。`not_view_equiv` / `and_view_equiv` /
+  `or_view_equiv` / `and_view_equiv_b3` / `or_view_equiv_b3` 证明
+  `view(len, out_planes, unknowns) == Seq::new(len, |i| 标量运算(a[i], b[i]))`，
+  逐词复用的是 `TriBit` 的 `not_get` / `and_lattice_get` / `or_lattice_get`。
+- 新增 `verus/tests/bridge_bulk.rs`：边界长度（0/1/63/64/65/130）× 三种代数，
+  对拍主库 `trit_core::TriVec` 与标量 `Ternary`，并覆盖 padding 掩码与二值/未知混合。
+- `cargo-verus verify` 从 120 升到 **152 verified**；`TriVec` 从「未验证」清单移入已验证。
+
+诚实边界：本轮覆盖批量运算（`not` / `and` / `or`），不含 `set`/`get`/构造器等单点操作；
+exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），padding 清零由 bridge 对拍覆盖。
+
+
 ### Added（第三十九轮：TriBit 逐位等价的 Verus 证明）
 
 - `verus/src/bits.rs`：把位平面取位抽成纯 `u64` 的 `bit_at` spec 函数（供
