@@ -37,7 +37,11 @@
 > `train_step` **0.63→0.58–0.60 ms/step（1.05–1.09×）**，带梯度 SGD
 > **0.59→0.47–0.49（1.18–1.25×）**；`shape_bench` 4096×576 SGD **0.5319→0.4336
 > （1.227×）**，Adam 保持 **1.005×**；测试 40/40。
-> 当前融合步读数 **0.58–0.70 ms/step（A/B 与 shape_bench；第二十四轮
+> 第三十四轮把 SGD 整步的 AVX2 探测提到行循环外（`fused/forward_step/step.rs`）：
+> `train_step` 中位 **0.57→0.56 ms/step（约 1.8%）**，9 组 5 快 4 平 0 慢；
+> `shape_bench` 4096×576 SGD 中位 **0.4252→0.4230 ms**（4/7 略快、3/7 略慢，
+> 噪声内，不作为加速结论）；测试 40/40，模块 **1552**，hazard **99**。
+> 当前融合步读数 **0.55–0.60 ms/step（A/B 与 shape_bench；第二十四轮
 > 旧口径 1.16–1.22 / 23.9–25.0×）**，`pack()` **0.46 ms**（不参与任何训练步，仅参考），
 > Adam **1.59–1.85 ms/step（约 1.3–1.45×，逐元素参考 8.0–8.2 ms）**。
 > **不能**写成 dX 内核的倍数；本文 §1 的 39.25× 仍是 dX 单测口径。
@@ -55,7 +59,7 @@ MUST:        基线可见；单位/形状/线程/平台/口径齐全；边界与
 MUST NOT:    不把 dX 内核读数写成训练步加速；不声称三进制算术加法；不声称浏览器可执行内核
 DEFERRED:    实时 JSON 接口、WASM 运行、端到端多形状吞吐、dW 的位平面化（当前是融合外积，不是位平面）
 HANDOFF:     后端 owner 交内核、读数、证据；前端 owner 交页面、截图/录像与文案复核
-EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b/a62dd419/cd5e9a00/ba217795/f00d9dcc/be4cb3fe/0309c4ba/f83e83a1/005c2e37/aca268cb/91536a99/d3e041ab/84d4606b、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、L181/C091、L182/C092、L183/C093、L184/C094、L185/C095、40/40、40.96× 峰值复跑
+EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121/d55bbbd3/156e487f/c4cf4e11/0c858924/906fd507/3d74f747/d1dc26d1/09452903/9d1b947e/c64fe0c7/aa92dd1b/a62dd419/cd5e9a00/ba217795/f00d9dcc/be4cb3fe/0309c4ba/f83e83a1/005c2e37/aca268cb/91536a99/d3e041ab/84d4606b/6f168cd1、dX 21/21、训练步 L172/C082、L173/C083、L174/C084、L175/C085、L176/C086、L177/C087、L178/C088、L179/C089、L180/C090、L181/C091、L182/C092、L183/C093、L184/C094、L185/C095、L186/C096、40/40、40.96× 峰值复跑
 ```
 
 ## 0. 先读什么
@@ -116,8 +120,8 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 | 层接入 | `crates/trit-train/src/layer/grad.rs`、`layer/adam.rs` | 本轮分支 | 读 §4 的反向语义 |
 | 反向基准 | `crates/trit-train/src/bin/bench.rs` | 已合并（#666；本轮加 Adam 输出） | 读 §8 的复现口径 |
 | 人类说明 | `crates/trit-train/README.md` | 已合并（#666；本轮更新） | 可直接摘写 |
-| 缺陷台账 | `docs/ERRORS.md` L171–L185 | L171/#664、L172/#666 已合并；L173–L185 本轮 | 只读结论与读数 |
-| 回归门 | `.agent/checks/registry.json` C081–C095 | C081/#664、C082/#666 已合并；C083–C095 本轮 | 只读命令 |
+| 缺陷台账 | `docs/ERRORS.md` L171–L186 | L171/#664、L172/#666 已合并；L173–L186 本轮 | 只读结论与读数 |
+| 回归门 | `.agent/checks/registry.json` C081–C096 | C081/#664、C082/#666 已合并；C083–C096 本轮 | 只读命令 |
 | 数据快照 | `docs/handoff/bitplane-backward-metrics.json` | 本次交接新增 | **要读**，dX 页面数字以它为准 |
 | PR / commit | `PR #664/#666/#667/#668` / `6b910bc9`、`9d1f0cc6`、`365a39d5`、`797ad121`、`d55bbbd3`、`c64fe0c7`、`cd5e9a00`、`ba217795` | #664/#666/#667 已合并；#668 open | 页面证据链接 |
 
@@ -125,13 +129,13 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
 
 - `cargo test -p trit-train`：dX 交付时 **21 passed / 0 failed**；训练步、Adam 单遍、反向单遍、带梯度单遍与整步对拍 **40 passed / 0 failed**。
 - `cargo clippy -p trit-train --all-targets -- -D warnings`：通过。
-- `python scripts/hazard_gate.py`：0 findings / **98 allow**。
-- `python scripts/module_budget.py`：dX 交付时 1513 files；第三十轮 **1544 files**；第三十一轮 **1548**；第三十二轮 **1550**；第三十三轮 **1551 files，debt=0**。
-- `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090,C091,C092,C093,C094,C095`：C081 已合并；C082–C095 随分支跑。
-- PR CI：代码+测试 head `84d4606b` 上 **32 pass / 2 skip / 0 fail，mergeState CLEAN**
-  （`train_step` 逐行融合、Soft 门控、Adam `q` 符号阈值与 row/backward 复用四条
-  AVX2 路径；Ubuntu / Windows / macOS 三端测试全过，module budget 1551/debt=0，
-  `agent checks (registry)` 含 C095，mutation changed-crates 通过）；docs-only 提交只记录该结果。
+- `python scripts/hazard_gate.py`：0 findings / **99 allow**。
+- `python scripts/module_budget.py`：dX 交付时 1513 files；第三十轮 **1544 files**；第三十一轮 **1548**；第三十二轮 **1550**；第三十三轮 **1551**；第三十四轮 **1552 files，debt=0**。
+- `python tools/checks.py -Only C081,C082,C083,C084,C085,C086,C087,C088,C089,C090,C091,C092,C093,C094,C095,C096`：C081 已合并；C082–C096 随分支跑。
+- PR CI：第三十四轮代码 head `6f168cd1` 上 **32 pass / 2 skip / 0 fail，mergeStateStatus CLEAN**
+  （Ubuntu / Windows / macOS 三端测试全过，module budget 1552/debt=0，
+  `agent checks (registry)` 含 C096，mutation changed-crates 通过）；第三十三轮代码+测试
+  head `84d4606b` 同样是 32/2 CLEAN（module 1551、含 C095）。docs-only 提交只记录该结果。
 
 ## 3. 页面结构（按人类面板顺序）
 
@@ -251,12 +255,17 @@ EVIDENCE:    PR #664/#666/#667/#668、commit 6b910bc9/9d1f0cc6/365a39d5/797ad121
   0.47–0.49（1.18–1.25×）**；`shape_bench` 4096×576 SGD **0.5319→0.4336
   （1.227×）**，7/7 更快；Adam **1.6046→1.5966（1.005×）**，属噪声内。
   两条内核只在阈值带内/NaN 回退 `exact`，`fused/tests/threshold.rs` 对拍 ±0.5 边界。
+- 整步 AVX2 调度外提（第三十四轮，同轮交替 A/B 9 组，25 轮取最快，高优先级）：
+  `train_step` 中位 **0.57→0.56 ms/step（约 1.8%）**，5/9 更快、4/9 持平、0/9 更慢；
+  `shape_bench` 4096×576 SGD 中位 **0.4252→0.4230**（4/7 略快、3/7 略慢），
+  噪声内，不作为加速结论。`forward_step/step.rs` 只探测一次 AVX2，
+  `train_step_with_grad` 与 Adam 不走该内核，读数不变。
 - 边界：这是单层单样本的端到端口径，不含层构造/输入生成；`forward()`、SGD
   `train_step`、`train_step_with_grad`、Adam 四条路径都不再调用 `pack()`，`pack()`
   只保留为公开检查/对拍入口；`train_step_with_grad_adam_scalar` 仍走 `pack()` 作为
   逐元素参考。页面若显示 `q` 内存，必须按“首次访问后才分配”解释。
-- 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176/L177/L178/L179/L180/L181/L182/L183/L184/L185、`.agent/checks/registry.json`
-  C082/C083/C084/C085/C086/C087/C088/C089/C090/C091/C092/C093/C094/C095、`cargo test -p trit-train` **40/40**。
+- 证据：`docs/ERRORS.md` L172/L173/L174/L175/L176/L177/L178/L179/L180/L181/L182/L183/L184/L185/L186、`.agent/checks/registry.json`
+  C082/C083/C084/C085/C086/C087/C088/C089/C090/C091/C092/C093/C094/C095/C096、`cargo test -p trit-train` **40/40**。
 
 ### 3.5 第五屏：录像
 
@@ -600,11 +609,13 @@ NOTES:          只复核数字与边界，不改前端版式
 | `crates/trit-train/src/plane/backward.rs` | `PlaneMatrix`、`input_grad`、`input_grad_scalar`、AVX2 内核（对拍/公开 API） |
 | `crates/trit-train/src/plane/fused/backward.rs` | 训练实际走的量化 + `dX`/`qdot` 单遍（Adam） |
 | `crates/trit-train/src/plane/fused/backward_step.rs` | 带梯度 SGD 的 `dX`/`qdot`/STE `dW`/scale 单遍 |
+| `crates/trit-train/src/plane/fused/forward_step.rs` | SGD 整步入口：长度断言 + 一次 AVX2 探测/dispatch |
+| `crates/trit-train/src/plane/fused/forward_step/step.rs` | SGD 标量与 AVX2 整步内核（前向/`dW`/scale 共用一行） |
 | `crates/trit-train/src/plane.rs` | `pub use backward::PlaneMatrix`；位平面 ALU 边界 |
 | `crates/trit-train/src/layer.rs` | `pack()`（公开检查/对拍）；`fused_backward` 适配 |
 | `crates/trit-train/src/layer/grad.rs` | `train_step_with_grad` 与 Adam 标量参考 |
 | `crates/trit-train/src/bin/bench.rs` | `bench_backward`；读数输出 |
 | `crates/trit-train/README.md` | 人类说明、读数表、边界 |
-| `docs/ERRORS.md` L171–L185 | 缺陷台账与读数结论 |
-| `.agent/checks/registry.json` C081–C095 | 回归门 |
+| `docs/ERRORS.md` L171–L186 | 缺陷台账与读数结论 |
+| `.agent/checks/registry.json` C081–C096 | 回归门 |
 | `docs/handoff/bitplane-backward-metrics.json` | 前端数据快照 |

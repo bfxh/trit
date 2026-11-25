@@ -204,6 +204,19 @@ Soft 门控原写法是 `max(0, 1-ratio²)` 后再用 `cmp(ratio,ratio,ORD)` 清
 同旧路径；对拍覆盖 6 形状 × 3 STE × 3 步，latent/scale/loss 逐位相等，测试
 **38/38**。
 
+第三十四轮把 SGD 整步的 AVX2 探测提到行循环外（4096×576，单线程，3 步/轮，
+同轮交替 A/B 9 组，25 轮取最快，进程高优先级）：
+
+| 路径 | 旧 ms/step | 新 ms/step | 相对 |
+|---|---:|---:|---:|
+| `train_step`（`fused::forward_step`） | 0.57（0.56–0.58） | 0.56（0.55–0.58） | **约 1.8%** |
+
+9 组里 5 组更快、4 组持平、0 组更慢。旧路径每行都重新 `has_avx2()` 并跨
+`target_feature` 调用 `forward_dot_row` / `sgd_update_row`；新路径在
+`forward_step/step.rs` 里只探测一次，整步 AVX2 内核直接调用 `dense` 暴露的
+`sgd_update_row_avx2`。`shape_bench` 4096×576 SGD 中位 0.4252→0.4230 ms
+（4/7 略快、3/7 略慢），属噪声内，不写成加速结论。测试 **40/40**。
+
 第三十三轮把 `q` 符号阈值复用到前向 / 带梯度 SGD（4096×576，单线程，3 步/轮，
 同轮交替 A/B 7 组，25 轮取最快）：
 

@@ -1823,6 +1823,29 @@
       "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C096",
+      "title": "trit-train SGD 整步 AVX2 调度外提",
+      "kind": "cmd",
+      "covers": [
+        "L186"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/forward_step.rs",
+        "crates/trit-train/src/plane/fused/forward_step/step.rs",
+        "crates/trit-train/src/dense.rs",
+        "crates/trit-train/src/dense/row.rs",
+        "crates/trit-train/src/plane/fused.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T09:37:31+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

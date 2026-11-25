@@ -13,8 +13,8 @@
   },
   "training_step_source": {
     "pr": 668,
-    "commit": "84d4606bc4212ba5f6891f73928d87ef4e768905",
-    "commit_short": "84d4606b",
+    "commit": "6f168cd174496a4b4bdc7c40c0eedbf7b258c46e",
+    "commit_short": "6f168cd1",
     "status": "open"
   },
   "platform": {
@@ -74,7 +74,7 @@
     }
   },
   "training_step": {
-    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad + single-pass Adam + Soft gate ordered-mask removal + train_step row fusion + Adam q sign threshold + q sign reuse in fused row/backward_step PR #668 (open, 84d4606b)",
+    "status": "training_step merged at 9d1f0cc6 (#666); fused forward + adam_dw + lazy q + qdot + fused backward + single-pass grad + single-pass Adam + Soft gate ordered-mask removal + train_step row fusion + Adam q sign threshold + q sign reuse in fused row/backward_step PR #668 (open, 84d4606b) + AVX2 dispatch hoist in forward_step (34th round, 6f168cd1)",
     "paths": {
       "pack": "crates/trit-train/src/plane/pack.rs",
       "fused": "crates/trit-train/src/plane/fused.rs",
@@ -91,9 +91,10 @@
       "fused_adam_step": "crates/trit-train/src/plane/fused/adam_step.rs",
       "fused_adam_q_sign": "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
       "fused_adam_q_sign_tests": "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs",
-      "fused_threshold_test": "crates/trit-train/src/plane/fused/tests/threshold.rs"
+      "fused_threshold_test": "crates/trit-train/src/plane/fused/tests/threshold.rs",
+      "fused_forward_step_impl": "crates/trit-train/src/plane/fused/forward_step/step.rs"
     },
-    "operation": "train_step: fused::forward_step per row quantizes and dots that row (forward_dot_row), computes y/diff/MSE immediately, then applies STE dW via dense::sgd_update_row and updates scale from the same row qdot; forward(): fused::forward_dot -> scale; train_step_with_grad: fused::backward_step once per row quantizes, accumulates dX/qdot, applies STE dW and updates scale; adam: fused::adam_step once per row quantizes, accumulates dX/qdot, updates latent/m/v; scale update stays in layer/adam.rs; old fused::backward + layer::adam_update is test-only; pack() is public inspection/comparison only",
+    "operation": "train_step: fused::forward_step per row quantizes and dots that row (forward_dot_row), computes y/diff/MSE immediately, then applies STE dW via dense::sgd_update_row and updates scale from the same row qdot; forward(): fused::forward_dot -> scale; train_step_with_grad: fused::backward_step once per row quantizes, accumulates dX/qdot, applies STE dW and updates scale; adam: fused::adam_step once per row quantizes, accumulates dX/qdot, updates latent/m/v; scale update stays in layer/adam.rs; old fused::backward + layer::adam_update is test-only; pack() is public inspection/comparison only; 34th round: forward_step detects AVX2 once at the whole-step entry, then step.rs runs the scalar or AVX2 row loop and calls dense::sgd_update_row_avx2 directly; no per-row has_avx2/target_feature dispatch",
     "benchmark": {
       "shape": {
         "rows": 4096,
@@ -377,7 +378,7 @@
         "selection": "fastest",
         "ab_context": "same-round alternating; benchmark process high priority to avoid background load stealing cores",
         "train_step": {
-          "old_ms_per_step": 0.80,
+          "old_ms_per_step": 0.8,
           "new_ms_per_step": 0.77,
           "speedup": 1.04
         },
@@ -442,7 +443,7 @@
         "train_step": {
           "old_ms_per_step": 0.63,
           "new_ms_per_step_low": 0.58,
-          "new_ms_per_step_high": 0.60,
+          "new_ms_per_step_high": 0.6,
           "speedup": "1.05-1.09",
           "wins": "7/7 groups faster"
         },
@@ -498,7 +499,36 @@
       "bit-plane dW (dW is fused outer-product, not dual-rail)",
       "bit-plane Adam update (Adam dW is row-fused, not dual-rail)",
       "multi-layer end-to-end throughput (single-layer multi-shape matrix exists)"
-    ]
+    ],
+    "dispatch_hoist": {
+      "round": 34,
+      "commit": "6f168cd1",
+      "change": "hoist has_avx2 out of the per-row forward_dot_row/sgd_update_row calls into forward_step/step.rs",
+      "benchmark_groups": 9,
+      "old_ms_per_step_median": 0.57,
+      "new_ms_per_step_median": 0.56,
+      "old_range": [
+        0.56,
+        0.58
+      ],
+      "new_range": [
+        0.55,
+        0.58
+      ],
+      "faster_groups": 5,
+      "equal_groups": 4,
+      "slower_groups": 0,
+      "relative": 1.018,
+      "shape_4096x576_sgd_median_ms": [
+        0.4252,
+        0.423
+      ],
+      "shape_note": "4/7 slightly faster, 3/7 slightly slower; within noise, not claimed as speedup",
+      "bit_exact_tests": "forward_step 6 shapes x 3 STE x 3 steps; 40/40",
+      "module_files": 1552,
+      "hazard_allow": 99,
+      "check": "C096"
+    }
   },
   "tests": {
     "suite": "cargo test -p trit-train",
@@ -539,7 +569,7 @@
       "ubuntu-latest",
       "windows-latest"
     ],
-    "note": "32 pass / 2 skip / 0 fail, mergeState CLEAN at code+test head 84d4606b (train_step row fusion + Soft gate ordered-mask removal + Adam q sign threshold + q sign reuse in fused row/backward_step; 40/40 tests; module budget 1551/debt=0; agent checks registry includes C095; mutation changed-crates passed); a later docs-only commit only records this result"
+    "note": "32 pass / 2 skip / 0 fail, mergeStateStatus CLEAN at code head 6f168cd1 (SGD whole-step AVX2 dispatch hoist + earlier train_step/Soft gate/Adam q sign/q sign reuse; 40/40 tests; module budget 1552/debt=0; agent checks registry includes C096; mutation changed-crates passed); a later docs-only commit only records this result"
   },
   "limits": [
     "本快照的 benchmark 只覆盖 dX = Wᵀdy；训练步读数见 training_step，两者不能互相替代。",
@@ -551,7 +581,8 @@
     "非 x86_64 或 cols < 8 自动回退标量；没有跨平台性能结论。",
     "q() 首次调用才从双导轨解码并缓存；SGD train_step 不读 q，因此 q 内存只在消费者访问后出现。",
     "没有多形状曲线、GPU/WASM 读数或实验录像；SGD/forward/with_grad/Adam 都不再 pack，pack() 仅公开参考。",
-    "浏览器 playground/WASM 不能执行该内核；前端只消费静态快照。"
+    "浏览器 playground/WASM 不能执行该内核；前端只消费静态快照。",
+    "第三十四轮只把 AVX2 探测提到 SGD 整步入口，train_step 约 1.8%（5/9 快、4/9 平、0/9 慢）；shape_bench 中位差属噪声，不能写成 shape 加速；train_step_with_grad/Adam 不走该内核。"
   ],
   "provenance": {
     "command": "cargo run -p trit-train --release --bin train-bench -- --mtrits 1 --rounds 7 --rows 4096 --cols 576 --threads 1 --ste-steps 1",

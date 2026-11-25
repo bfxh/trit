@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed（第三十四轮：SGD 整步 AVX2 调度外提）
+
+- `forward_step::train_step` 每行都调 `forward_dot_row` 与 `dense::sgd_update_row`，
+  两次都重新跑 `has_avx2` 并跨 `target_feature` 调用；4096 行就是约 8192 次行级
+  调度。把 AVX2 检测提到整步入口：新增 `forward_step/step.rs` 放标量与 AVX2
+  整步内核，`forward_step.rs` 只做一次 dispatch；`dense` 从 `row.rs` 暴露
+  `sgd_update_row_avx2`，AVX2 内核直接调用该入口，不再逐行探测。
+- `train-bench` 同轮交替 A/B 9 组（3 步/轮，25 轮取最快，进程高优先级）：
+  `train_step` 中位 **0.57→0.56 ms/step（约 1.8%）**，5/9 更快、4/9 持平、0/9 更慢；
+  新码区间 0.55–0.58，旧码 0.56–0.58。`shape_bench` 4096×576 SGD 中位
+  **0.4252→0.4230 ms**（4/7 略快、3/7 略慢），属噪声内，不作为加速结论。
+- 逐位口径不变：`forward_step` 现有 6 形状 × 3 STE × 3 步对拍继续通过，
+  `cargo test -p trit-train --lib` **40/40**。模块 **1552 files，debt=0**（新增
+  `forward_step/step.rs` 56 行），hazard **0/99**（新增该 AVX2 入口的探测登记），
+  新增 C096。`train_step_with_grad` 与 Adam 不走该内核，读数不变。
+
 ### Changed（第三十三轮：`q` 符号阈值复用到前向 / 带梯度 SGD）
 
 - `fused::row`（`forward()` 与 `train_step` 逐行点积）和 `fused::backward_step`
