@@ -691,6 +691,52 @@
   `load_override=3.0` 的容量扣减断言；`capacity_lease.py --self-test` 21/21。
   CI 的 C047 不再因为 GitHub 共享 runner 的真实 load1 是 5/6 而误报，容量
   准入逻辑本身不变。
+### Added（WSP 均匀位宽对照：4-bit 同字节、5-bit 全量越过 f32）
+### Added（WSP 均匀位宽与 12 层容量：int4 在 1/4 字节稳定越过 f32）
+
+- `bert6` 实验新增均匀对称 per-group 量化：`TRIT_WEIGHT_BITS=2..8`（2 仍是三值，
+  3..8 为 int3–int8）、`TRIT_UNIFORM_GPTQ=1`（复用 `gptq/` Hessian 做 OBS 补偿）、
+  `TRIT_F32_LAYERS`（整层保 f32 的敏感度诊断）、`TRIT_LAYERS=6|12`（层数，默认 6）。
+  新 `src/gptq/bits.rs`、`examples/bert6/linear/uniform/gptq.rs`、
+  `model/loader/wrap/uniform.rs`、`model/config/opts/env.rs`、`tests/gptq_bits.rs`；
+  `run/weight_format.rs` 报位宽/字节账。模块预算 1482 files，debt 0。
+- **1379 对全量**：int5 g128 Pearson **0.829203** / Spearman **0.821784**，
+  f32 基线 **0.827406** / **0.820325**；总字节 7,050,240 B（含 scale/bias，
+  f32 的 16.57%，6.03× 压缩），高 +0.00180 / +0.00146。
+  int5 g64 也越过（0.828356 / 0.820752，7,382,016 B）；int5 g32 反而低于 f32
+  （0.826859 / 0.819054，8,045,568 B），group 不能从小样本单调外推。
+  int4 g32 为 0.826061 / 0.819354（6,718,464 B，仅低 0.00135，同字节 rank16 0.776944）；
+  4-bit GPTQ g32 `rel_l2` 从 0.2750 降到 0.2271，Pearson 只涨 0.000068 到 0.826129，
+  仍低 f32 0.00128，误差补偿补不回同字节的 STS 差距。
+  按单相关系数 1 SE ≈ 0.011 r，+0.00180 只有约 0.16 SE；1251 对留出集 Δ 仍为
+  +0.001785，但 10k 配对 bootstrap 95% CI 含 0、单侧 p=0.075，
+  **只算方向稳定、不作显著结论**。
+- **留出集/bootstrap**：`TRIT_DUMP_PREDS=1` 导出逐对余弦；后 1251 对 f32 0.813994 /
+  g128 0.815779（Δ +0.001785），选档泄漏不是符号来源，但幅度仍不显著。
+- **128 对**：int4 g32 0.9191 vs 同字节 rank16 0.8378（均 6,718,464 B）；
+  int5 g32 0.9254、g64 0.9259、g128 0.9248；int6 0.9232、int8 0.9233；
+  int4 GPTQ 0.9214；int3 0.8906。位宽/group/权重误差都不单调。
+- **逐层 f32 回退（三值主干）**：末层 f32 0.9023，第 0 层 0.8232、第 2 层 0.8178，
+  其余接近 0.7893；9.29 MB 的末层 f32 仍低于 5.31 MB 的 int4 全层 0.9191。
+- **12 层全量（修正 embedding）**：先导复用 L6 第 0 层输入是错的（L12 与 L6 的
+  `word_embeddings` `rel_l2` 0.376）；用 L12 自己的 embedding 重导第 0 层后，
+  1379 对上 L12 f32 0.837595 / 0.830894，L12 int4 g32 **0.837505 / 0.832047**
+  （线性权重 10,616,832 B，6 层 f32 的 **25.0%**），L12 int5 g32 0.836540 / 0.830579。
+  L12 int4 对 6 层 f32 高 **+0.010099 / +0.011723**，10k 配对 bootstrap 95% CI
+  (+0.003183, +0.017247)，单侧 p=0.0026；1251 对留出集 p=0.0029，**稳定越过**。
+  L12 int4 对 L12 f32 为 −0.000089 Pearson（统计平手），比 int5 高 0.000965 且字节更少。
+- **评测加速**：`TRIT_THREADS=24|auto` 按句并行（每句独立，逐位一致）；`TRIT_SKIP_DIAG=1`
+  跳过两次 random 诊断前向。1379 对 L12 int5 从 99 分 22 秒降到 171.7 s（34.7×），
+  int4 174.0 s；128 对从约 10 分钟降到 17 s。全量 f32/int5 的 Pearson、Spearman 与
+  1379 个 preds 均与旧路径逐位相同（maxdiff 0）。默认仍 1 线程 + 全诊断，CI 不受影响。
+  新 `model/forward.rs`、`model/parallel.rs`、`run/diag.rs`。
+- **f32 基线缓存**：`TRIT_F32_CACHE=<json>` 跨趟复用同模型/同 `data_dir`/同 layers 的
+  `f32_sts`，命中后只跑量化前向。1379 对 173.1 s → 88.6 s（1.95×），128 对
+  16.3 s → 8.0 s；f32/int4/int5 的 `f32_sts`、`modes.f32.sts` 与 preds 逐位不变。
+  命中时 `f32_vs_reference` / `real_vs_f32` / `random_vs_f32` 记 null，`activation=all`
+  或带 sidecar 时禁用。新 `run/f32_base.rs`；`serde_json` 开 `float_roundtrip` 防
+  重解析 1 ULP 漂移。模块预算 1483 files，debt 0。
+- 文档：`docs/research/WSP-BERT6-RESULTS.md` §3.16、`docs/results/LESSONS.md` 第 9–11 条。
 
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 

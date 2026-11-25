@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""导出 MiniLM 6 层的序列输入、mask、PyTorch f32 参照（对齐基线，不参与交付）。
+"""导出 MiniLM 第 0 层输入、mask、PyTorch f32 参照（对齐基线，不参与交付）。
 
+模型由 `TRIT_MODEL_ID` 指定（默认 6 层；12 层设
+`sentence-transformers/all-MiniLM-L12-v2`）。
 产物（默认 `$TRIT_DATA/miniLM-bert6/`）：
 - `input.f32`：第 0 层输入 hidden states（`WSPACT1`，batch*seq × hidden）
 - `mask.u8`：`WSPMSK1`（batch × seq）
@@ -25,7 +27,9 @@ import torch
 from datasets import load_dataset
 from transformers import AutoModel, AutoTokenizer
 
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_ID = os.environ.get(
+    "TRIT_MODEL_ID", "sentence-transformers/all-MiniLM-L6-v2"
+)
 DEFAULT_OUT = os.path.join(
     os.environ.get("TRIT_DATA", "trit-data"), "miniLM-bert6"
 )
