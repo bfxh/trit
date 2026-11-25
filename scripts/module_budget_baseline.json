@@ -6379,6 +6379,14 @@
       "lines": 7
     },
     {
+      "file": "verus/src/point.rs",
+      "lines": 438
+    },
+    {
+      "file": "verus/src/point/proofs.rs",
+      "lines": 221
+    },
+    {
       "file": "verus/src/table.rs",
       "lines": 61
     },
@@ -6397,6 +6405,10 @@
     {
       "file": "verus/tests/bridge_bulk.rs",
       "lines": 106
+    },
+    {
+      "file": "verus/tests/bridge_point.rs",
+      "lines": 86
     },
     {
       "file": "verus/tests/common/mod.rs",
