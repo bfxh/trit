@@ -679,7 +679,7 @@ fn cooccurrence_ordered_discriminates_address_order() {
         (0x1080, &["exec"]),
     ]);
     assert_eq!(interleaved.cooccurrence_ordered(trio, true), Ternary::True);
-
     // 边界不精确 → Unknown（与无序同口径）
     assert_eq!(ok.cooccurrence_ordered(trio, false), Ternary::Unknown);
 }
+mod checked;

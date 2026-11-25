@@ -848,7 +848,7 @@
     },
     {
       "id": "C049",
-      "title": "workspace 沙盒自测（37/37，含宿主写/链接/超时/忽略文件）",
+      "title": "workspace 沙盒自测（43/43，含宿主写/链接/超时/忽略文件/.git 指纹）",
       "kind": "cmd",
       "covers": [
         "L128",
@@ -863,7 +863,8 @@
         "L148",
         "L152",
         "L155",
-        "L156"
+        "L156",
+        "L166"
       ],
       "scope": [
         "tools/sandbox_run.py"
@@ -1352,6 +1353,497 @@
       "tier": "fast",
       "added": "2026-11-22T14:00:00+08:00",
       "run": "grep -q 'MAX_LEN' crates/trit-dot/src/cli.rs && grep -q 'MAX_PAIRS' crates/trit-attn/src/limits.rs && grep -q 'MAX_HIDDEN' crates/trit-attn/src/limits.rs && grep -q 'MAX_CELLS' crates/trit-ops/src/shape.rs && grep -q 'MAX_ITERATIONS' crates/trit-redteam/src/fuzz_cli.rs",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C074",
+      "title": "1M/850K/700K 上下文压缩：锚点、抽取摘要与 fail-closed",
+      "kind": "cmd",
+      "covers": [
+        "L163"
+      ],
+      "scope": [
+        "tools/context_window.py",
+        "tools/agent_settings.py"
+      ],
+      "since": "2026-11-23",
+      "tier": "fast",
+      "added": "2026-11-23T18:00:00+08:00",
+      "run": "python3 tools/context_window.py self-test && python3 tools/context_window.py stress --cases 100",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C075",
+      "title": "搜索结果相关性/安全/权威/新鲜度/去重/token 预算与自动推理强度",
+      "kind": "cmd",
+      "covers": [
+        "L164"
+      ],
+      "scope": [
+        "tools/search_policy.py",
+        "tools/agent_settings.py"
+      ],
+      "since": "2026-11-23",
+      "tier": "fast",
+      "added": "2026-11-23T18:00:00+08:00",
+      "run": "python3 tools/search_policy.py self-test && python3 tools/search_policy.py stress --cases 100",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C076",
+      "title": "上下文预算 × 搜索策略接缝：证据保留、同一项目设置、溢出 fail-closed",
+      "kind": "cmd",
+      "covers": [
+        "L165"
+      ],
+      "scope": [
+        "tools/context_window.py",
+        "tools/search_policy.py",
+        "tools/context_search_cross.py"
+      ],
+      "since": "2026-11-23",
+      "tier": "fast",
+      "added": "2026-11-23T18:00:00+08:00",
+      "run": "python3 tools/context_search_cross.py",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C077",
+      "title": "目标/需求/产物/证据/变更对齐门：单根目标树（v2/v3）、每个 goal 必须被需求父链覆盖、父链、悬空引用、哈希/locator、未挂变更、声明变更必须实际发生、non-goal 路径/对象级排除/声明范围、矛盾、scaffold 空骨架、run 后漂移复核、v3 证据绑定实际 run 命令",
+      "kind": "cmd",
+      "covers": [
+        "L167"
+      ],
+      "scope": [
+        "tools/alignment_gate.py",
+        "tools/agent_settings.py",
+        "tools/agent_verify.py"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T03:00:00+08:00",
+      "run": "python3 tools/alignment_gate.py self-test && python3 tools/alignment_gate.py stress --cases 100 && python3 tools/agent_settings.py --self-test",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C078",
+      "title": "稳定性/抖动探针：重复执行项目命令，按退出码混判、输出指纹和耗时比分出 flaky、nondeterministic、jittery、稳定失败与 unknown；warmup 预热排除冷启动但保留预热失败；接进 agent_verify 时清单命令先过 policy，unknown 不放行",
+      "kind": "cmd",
+      "covers": [
+        "L168"
+      ],
+      "scope": [
+        "tools/stability_probe.py",
+        "tools/agent_verify.py",
+        "tools/agent_settings.py",
+        "docs/engineering/AGENT-STABILITY.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T09:20:00+08:00",
+      "run": "python3 tools/stability_probe.py self-test",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C079",
+      "title": "交接包 DeliveryReceipt 四态账本（Rust）：sent/delivered/read/acted 顺序、actor、acted 证据、包哈希绑定、gate 只 attach 到 delivered、check 只读预检",
+      "kind": "cmd",
+      "covers": [
+        "L169"
+      ],
+      "scope": [
+        "crates/trit-orch/src/delivery.rs",
+        "crates/trit-orch/src/delivery/check.rs",
+        "crates/trit-orch/src/bin/cli_delivery/mod.rs",
+        "crates/trit-orch/tests/delivery.rs",
+        "crates/trit-orch/tests/delivery_cli.rs",
+        "crates/trit-orch/tests/delivery_check.rs",
+        "docs/engineering/AGENT-DELIVERY.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T04:30:00+08:00",
+      "run": "cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C080",
+      "title": "Windows 跨进程台账锁：delete-pending 的 PermissionDenied 按争用重试，真实 ACL 拒绝 fail-closed",
+      "kind": "cmd",
+      "covers": [
+        "L170"
+      ],
+      "scope": [
+        "crates/trit-orch/src/trace_store/lock.rs"
+      ],
+      "since": "2026-11-24",
+      "tier": "heavy",
+      "added": "2026-11-24T05:30:00+08:00",
+      "run": "cargo test -p trit-orch --test ledger_cross_process",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C081",
+      "title": "trit-train 位平面反向 dX = Wᵀdy：双导轨掩码内核、标量对拍与 AVX2 尾列回退",
+      "kind": "cmd",
+      "covers": [
+        "L171"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/backward.rs",
+        "crates/trit-train/src/plane.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/bin/bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T10:30:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C082",
+      "title": "trit-train 位平面训练步：一次 pack、前向 row_dot、dW 融合更新与标量对拍",
+      "kind": "cmd",
+      "covers": [
+        "L172"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/dense.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/layer/scalar.rs",
+        "crates/trit-train/src/layer/packed_tests.rs",
+        "crates/trit-train/src/bin/bench.rs",
+        "crates/trit-train/src/bin/bench/train_step.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T18:45:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C083",
+      "title": "trit-train Adam 行级 dW 融合与 pack q 字节写回",
+      "kind": "cmd",
+      "covers": [
+        "L173"
+      ],
+      "scope": [
+        "crates/trit-train/src/layer/adam.rs",
+        "crates/trit-train/src/layer/adam/tests.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/plane/pack/tests.rs",
+        "crates/trit-train/src/bin/bench/adam_step.rs",
+        "crates/trit-train/src/bin/bench/adam_setup.rs",
+        "crates/trit-train/src/bin/bench.rs",
+        "crates/trit-train/src/bin/shape_bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T19:44:20+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C084",
+      "title": "trit-train 惰性 q 缓存：训练步只写双导轨，q() 首次解码",
+      "kind": "cmd",
+      "covers": [
+        "L174"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/backward.rs",
+        "crates/trit-train/src/plane/q.rs",
+        "crates/trit-train/src/plane/q/tests.rs",
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/plane.rs",
+        "crates/trit-train/src/bin/bench/train_step.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T22:05:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C085",
+      "title": "trit-train SGD 训练步复用前向 qdot",
+      "kind": "cmd",
+      "covers": [
+        "L175"
+      ],
+      "scope": [
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-24",
+      "tier": "fast",
+      "added": "2026-11-24T23:33:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C086",
+      "title": "trit-train pack 按 64 列 word 写合并",
+      "kind": "cmd",
+      "covers": [
+        "L176"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/pack.rs",
+        "crates/trit-train/src/plane/pack/tests.rs",
+        "crates/trit-train/src/bin/shape_bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T00:27:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C087",
+      "title": "trit-train row_dot 固定累加器展开",
+      "kind": "cmd",
+      "covers": [
+        "L177"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/backward.rs",
+        "crates/trit-train/README.md",
+        "docs/ERRORS.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T01:42:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C088",
+      "title": "trit-train SGD 前向量化点积融合",
+      "kind": "cmd",
+      "covers": [
+        "L178"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused.rs",
+        "crates/trit-train/src/plane/fused/tests.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/bin/bench/train_step.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T02:05:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C089",
+      "title": "trit-train 反向 dX+qdot 量化单遍",
+      "kind": "cmd",
+      "covers": [
+        "L179"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/backward.rs",
+        "crates/trit-train/src/plane/fused/backward/tests.rs",
+        "crates/trit-train/src/layer/grad.rs",
+        "crates/trit-train/src/layer/adam.rs",
+        "crates/trit-train/examples/fused_backward_probe.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T03:05:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C090",
+      "title": "trit-train 带梯度 SGD dX/qdot/dW 单遍",
+      "kind": "cmd",
+      "covers": [
+        "L180"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/backward_step.rs",
+        "crates/trit-train/src/plane/fused/backward_step/tests.rs",
+        "crates/trit-train/src/plane/fused/backward_step/tests/scalar.rs",
+        "crates/trit-train/src/layer/grad.rs",
+        "crates/trit-train/src/bin/bench/grad_step.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T04:15:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C091",
+      "title": "trit-train Adam 训练步量化/dX/qdot/dW 单遍",
+      "kind": "cmd",
+      "covers": [
+        "L181"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/adam_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/tests.rs",
+        "crates/trit-train/src/layer/adam.rs",
+        "crates/trit-train/src/layer/adam/support.rs",
+        "crates/trit-train/src/layer/adam/tests.rs",
+        "crates/trit-train/src/layer/adam/tests/fused.rs",
+        "crates/trit-train/src/layer/adam/tests/closed_form.rs",
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/bin/bench/adam_step.rs",
+        "crates/trit-train/src/bin/shape_bench.rs",
+        "crates/trit-train/README.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T05:23:51+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C092",
+      "title": "trit-train Soft STE 门控去掉 ordered 掩码",
+      "kind": "cmd",
+      "covers": [
+        "L182"
+      ],
+      "scope": [
+        "crates/trit-train/src/dense/row.rs",
+        "crates/trit-train/src/plane/fused/backward_step.rs",
+        "crates/trit-train/src/plane/fused/backward_step/tests.rs",
+        "crates/trit-train/src/plane/fused/adam_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/tests.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T06:24:25+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C093",
+      "title": "trit-train train_step 前向/MSE/dW/scale 逐行融合",
+      "kind": "cmd",
+      "covers": [
+        "L183"
+      ],
+      "scope": [
+        "crates/trit-train/src/layer.rs",
+        "crates/trit-train/src/plane/fused.rs",
+        "crates/trit-train/src/plane/fused/row.rs",
+        "crates/trit-train/src/plane/fused/forward_step.rs",
+        "crates/trit-train/src/plane/fused/forward_step/tests.rs",
+        "crates/trit-train/src/dense.rs",
+        "crates/trit-train/src/dense/row.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T06:51:41+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C094",
+      "title": "trit-train Adam q 符号阈值替代量化除法",
+      "kind": "cmd",
+      "covers": [
+        "L184"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/adam_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
+        "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T07:58:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C095",
+      "title": "trit-train 前向/带梯度 SGD 复用 q 符号阈值",
+      "kind": "cmd",
+      "covers": [
+        "L185"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused.rs",
+        "crates/trit-train/src/plane/fused/row.rs",
+        "crates/trit-train/src/plane/fused/backward_step.rs",
+        "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T08:35:00+08:00",
+      "run": "cargo test -p trit-train",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C096",
+      "title": "trit-train SGD 整步 AVX2 调度外提",
+      "kind": "cmd",
+      "covers": [
+        "L186"
+      ],
+      "scope": [
+        "crates/trit-train/src/plane/fused/forward_step.rs",
+        "crates/trit-train/src/plane/fused/forward_step/step.rs",
+        "crates/trit-train/src/dense.rs",
+        "crates/trit-train/src/dense/row.rs",
+        "crates/trit-train/src/plane/fused.rs",
+        "crates/trit-train/README.md",
+        "CHANGELOG.md"
+      ],
+      "since": "2026-11-25",
+      "tier": "fast",
+      "added": "2026-11-25T09:37:31+08:00",
+      "run": "cargo test -p trit-train",
       "shell": "bash",
       "expect_exit": 0
     }

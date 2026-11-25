@@ -220,8 +220,7 @@ impl Lifecycle {
             );
         }
         for (from, to) in &self.edges {
-            let _ =
-                std::fmt::Write::write_fmt(&mut out, format_args!("  #{:02} → #{:02}\n", from, to));
+            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("  #{from:02} → #{to:02}\n"));
         }
         out
     }

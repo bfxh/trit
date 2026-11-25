@@ -44,8 +44,8 @@ pub(crate) fn fit_plane(src: &[f32], w: usize, h: usize) -> [[f32; 3]; 3] {
     let mut out = [[0.0f32; 3]; 3];
     for c in 0..3 {
         let b = [sy[c], suy[c], svy[c]];
-        for row in 0..3 {
-            out[c][row] = (inv[row][0] * b[0] + inv[row][1] * b[1] + inv[row][2] * b[2]) as f32;
+        for (out_cell, &inv_row) in out[c].iter_mut().zip(inv.iter()) {
+            *out_cell = (inv_row[0] * b[0] + inv_row[1] * b[1] + inv_row[2] * b[2]) as f32;
         }
     }
     out

@@ -2,6 +2,696 @@
 
 ## [Unreleased]
 
+### Changed（第三十四轮：SGD 整步 AVX2 调度外提）
+
+- `forward_step::train_step` 每行都调 `forward_dot_row` 与 `dense::sgd_update_row`，
+  两次都重新跑 `has_avx2` 并跨 `target_feature` 调用；4096 行就是约 8192 次行级
+  调度。把 AVX2 检测提到整步入口：新增 `forward_step/step.rs` 放标量与 AVX2
+  整步内核，`forward_step.rs` 只做一次 dispatch；`dense` 从 `row.rs` 暴露
+  `sgd_update_row_avx2`，AVX2 内核直接调用该入口，不再逐行探测。
+- `train-bench` 同轮交替 A/B 9 组（3 步/轮，25 轮取最快，进程高优先级）：
+  `train_step` 中位 **0.57→0.56 ms/step（约 1.8%）**，5/9 更快、4/9 持平、0/9 更慢；
+  新码区间 0.55–0.58，旧码 0.56–0.58。`shape_bench` 4096×576 SGD 中位
+  **0.4252→0.4230 ms**（4/7 略快、3/7 略慢），属噪声内，不作为加速结论。
+- 逐位口径不变：`forward_step` 现有 6 形状 × 3 STE × 3 步对拍继续通过，
+  `cargo test -p trit-train --lib` **40/40**。模块 **1552 files，debt=0**（新增
+  `forward_step/step.rs` 56 行），hazard **0/99**（新增该 AVX2 入口的探测登记），
+  新增 C096。`train_step_with_grad` 与 Adam 不走该内核，读数不变。
+
+### Changed（第三十三轮：`q` 符号阈值复用到前向 / 带梯度 SGD）
+
+- `fused::row`（`forward()` 与 `train_step` 逐行点积）和 `fused::backward_step`
+  （`train_step_with_grad`）的 `q` 同样只用于符号，但每个 8-lane 块仍各付一条
+  `divps`。把 `adam_step::q_sign` 的 `masks` 提到 `pub(crate)`，两个内核按行预计算
+  `half_s` / `-half_s` / `margin`，块内改用阈值掩码；带内或 NaN 仍回退旧 `exact`
+  除法，`dX`/`qdot` 的累加顺序不变。
+- `train-bench` 同轮交替 A/B 7 组（3 步/轮，25 轮取最快，进程高优先级）：
+  `train_step` **0.63→0.58–0.60 ms/step（1.05–1.09×）**，带梯度 SGD
+  **0.59→0.47–0.49 ms/step（1.18–1.25×）**，两组都 7/7 更快。
+  `shape_bench` 4096×576 SGD **0.5319→0.4336 ms（1.227×）**，7/7 更快；
+  Adam **1.6046→1.5966 ms（1.005×）**，6/7，属噪声内。
+- 逐位口径不变：`cargo test -p trit-train --lib` **40/40**；q 符号边界测试继续
+  直接对拍旧 `exact`，新增 `fused/tests/threshold.rs` 覆盖 `fused::row` 的 ±0.5 边界。
+  新增 C095；模块 **1551 files，debt=0**，hazard **0/98**。
+
+### Changed（第三十二轮：Adam `q` 符号阈值替代量化除法）
+
+- Adam 训练步的 `q` 只用于 `dX`/`qdot` 符号，不需要量化值本身；新增
+  `plane/fused/adam_step/q_sign.rs`，把每 8 列一次 `w/s` 除法换成
+  `w >= 0.5·s` / `w <= -0.5·s` 的阈值比较。只有落在阈值 ±2^-12 相对带内或 NaN
+  的 lane 才回退原来的除法量化，保证 `q` 的符号与旧路径逐位一致。
+- 4096×576 同轮交替 A/B 7 组（3 步/轮，25 轮取最快，进程高优先级）：
+  Adam 融合 dW **1.72→1.61 ms/step（约 1.07×）**，6/7 组更快。`shape_bench`
+  4096×576 交替 7 组 **1.7023→1.5682 ms（约 1.09×）**，7/7 组更快。
+- 逐位口径不变：新增 `q_sign_masks_match_exact_near_threshold`，覆盖 6 个 scale
+  的 ±8 ulp 边界和 64 组随机 8-lane 块，直接以旧量化 `exact` 为预期；不能拿
+  `round(w/s)` 当标量预期——旧量化是 `trunc(scaled+0.5)`，加法舍入会在半 ulp
+  处把 `q` 推到 1（CI Linux 首次跑红即此）。完整 Adam 整步对旧两遍仍逐位相等，
+  `cargo test -p trit-train --lib` **39/39**。
+- m/v 的 `m/bias1`、`v/bias2` 与最终除法 + `sqrt` 未改，仍是 Adam 剩余主成本。
+  模块台账 **1550 files，debt=0**；hazard allow **98**；新增 C094。
+
+### Changed（第三十一轮：`train_step` 前向/MSE/`dW`/scale 逐行融合）
+
+- `TernaryLinear::train_step` 不再走 `forward_dot` → `dense::sgd_update` 两遍；新增
+  `plane/fused/forward_step.rs`，逐行先算 `qdot`，立即得到 `y`/`diff`/loss，再用同一行
+  做 STE `dW` 与 scale 更新。每步不再分配 `qdot`/`y`/`dy` 三个临时向量，行数据留在
+  缓存里。
+- 逐位口径不变：6 形状 × 3 STE × 3 步的 latent、scale、loss 与旧两遍逐位相等；
+  `cargo test -p trit-train --lib` **38/38**（新增 `forward_step` 对拍）。
+- 4096×576 同轮交替 A/B 7 组（3 步/轮，9 轮取最快，进程高优先级）：
+  `train_step` **0.83→0.67 ms/step（约 1.24×）**；拆分 `dense/row.rs`、`fused/row.rs`
+  后再测 5 组 **0.88→0.69（约 1.27×）**。`shape_bench` 4096×576
+  **0.7925→0.7007 ms（约 1.13×）**。
+- 为守 module budget，`dense` 的单行 `dW` 更新移到 `dense/row.rs`，`forward_dot_row`
+  移到 `plane/fused/row.rs`；`dense::sgd_update` 只在测试对拍编译。模块台账
+  **1548 files，debt=0**；hazard allow 96；新增 C093。
+
+### Changed（第三十轮：Soft STE 门控去掉 `ordered` 掩码）
+
+- `dense::sgd_update`、`fused::backward_step`、`fused::adam_step` 的 Soft 门控从
+  `max(0, 1-ratio²)` 改为 `max(1-ratio², 0)`：把 `0` 放在第二个操作数后，Intel
+  `maxps` 遇 NaN 返回第二个操作数，与 Rust 标量 `(1 - NaN).max(0.0)` 的 0 一致；
+  因此删掉 `cmp(ratio, ratio, ORD)` + `and` 两步。
+- 逐位口径不变（有限输入）：交换 `max` 操作数结果相同；`ratio` 为 NaN 时新写法
+  的 gate 返回 0，旧写法则在该 lane 用 `ordered` 掩码清零。`cargo test -p trit-train --lib`
+  **37/37**，三条路径的 Soft 对拍继续通过。
+- 4096×576 同轮交替 A/B 7 组（3 步/轮，9 轮取最快；进程高优先级，避免后台负载
+  抢核）：`train_step` **0.80→0.77 ms/step（约 1.04×）**；`train_step_with_grad`
+  **0.62→0.58（约 1.05–1.07×）**；Adam `train_step_with_grad_adam`
+  **1.73→1.69（约 1.02–1.03×）**。Soft 门控在 SGD 内核算术占比更高；Adam 仍由
+  m/v 更新里的 3 次除法 + `sqrt` 主导，收益较小。
+- 同轮负结果（未采用）：`q` 转浮点复用省掩码、STE 常量泛型特化、SIMD scale 更新、
+  Markstein 倒数修正除法，分别无可测收益、比 `divps` 慢或无法保持逐位；详见 L182。
+- 模块预算 **1544 files，debt=0** 不变；测试 37，hazard allow 96；新增 C092。
+
+### Changed（第二十九轮：Adam 训练步量化/`dX`/`qdot`/`dW` 单遍）
+
+- `train_step_with_grad_adam` 不再走 `fused::backward` → `layer::adam_update` 两遍：
+  新增 `plane/fused/adam_step.rs`，每行量化一次 `q`，同一遍同时算 `dX`、`qdot`、
+  latent/m/v 的 Adam 更新；`scale` 仍在 `layer/adam.rs` 的行外更新。
+- SIMD 路径逐位复刻旧两遍：量化用 `w / s`（同 `fused::backward`），STE 门控用
+  `w * (1/s)`（同旧 `adam_update`），`dX` 按 `r & 3`、`qdot` 按 `j mod 4` 分组；
+  m/v、bias 校正、sqrt/eps 与参数更新公式逐行对齐旧 `simd::update_row`。
+- 标量路径用 `Ste::backward` + 逐元素 m/v/w 算术，匹配旧标量顺序；旧
+  `adam_update`/SIMD 参考内核移到 `layer/adam/support.rs`，只在 `#[cfg(test)]`
+  编译；`TernaryLinear::fused_backward` 删除，`plane::fused::backward` 留给探针与
+  旧路径测试。
+- 对拍：`full_adam_step_matches_old_two_pass_bitwise` 覆盖 6 形状 × 3 STE × 3 步，
+  `dX`、latent、scale、m、v 全部 `assert_eq!`；另加
+  `scalar_adam_step_matches_old_path` 纯标量对拍。测试 **35→37**。
+- 4096×576 同轮交替 A/B 5 组（3 步/轮，9 轮取最快）：旧两遍
+  **2.12–2.48 ms/step** → 新单遍 **1.70–1.85 ms/step（中位 2.33→1.76，约
+  1.32×）**。精确旧 shape 基线交替 3 组：中位 **2.2746→1.8348 ms（约 1.24×）**；
+  新 `shape_bench` 单次矩阵 4096×576 **1.9953 ms**，逐元素 8.1575 ms（**4.09×**）。
+- 模块预算：新增 5 个文件后 **1539→1544 files，debt=0**；`layer/adam.rs` 拆出
+  `adam/support.rs`、测试拆出 `adam/tests/fused.rs` 与 `adam/tests/closed_form.rs`，
+  避免抬 cap。
+- CI `mutation (changed crates)` 在 `cd5e9a00` 上抓到旧 `Adam::apply` 的偏置校正
+  变异存活：latent 改走单遍后，该变异只影响 `lr=0` 的 scale。把闭合形式断言移到
+  `layer/adam/tests/closed_form.rs` 并直接钉 `Adam::apply`，本地 9/9 变异全
+  caught；`hazard gate` 登记 `adam_step.rs` / `adam/support.rs` 的 AVX2 探测理由。
+- Adam 旧行级融合的第二十一轮口径 **2.4–2.8 ms/step** 仍保留为历史读数；本轮
+  A/B 的旧基线是同一提交 `8b846d4a` 的 **2.12–2.48**。缺陷台账新增 L181/C091。
+
+### Changed（第二十八轮：带梯度 SGD 的 `dX`/`qdot`/`dW` 单遍）
+
+- `train_step_with_grad` 不再走 `fused::backward` → `dense::sgd_update` 两遍：
+  新增 `plane/fused/backward_step.rs`，每行量化一次，同一遍同时算 `dX`、`qdot`、
+  STE 更新 latent，并在行末更新 scale。STE 门控与 `dense::sgd_update` 的 8-lane
+  路径相同（`w/s` 正数除法、短行/尾部走 `Ste::backward`），`dX`/`qdot` 的累加
+  分组和顺序也与 `fused::backward` 相同。
+- 对拍：`(1,1)/(4,7)/(5,9)/(6,63)/(8,130)/(3,9 零/负 scale)/(4,576)` ×
+  `Identity/Clipped/Soft`，`dX`、latent、scale 与旧路径逐位相等；另加标量回退
+  对拍，防止非 AVX2 平台走错累加顺序；测试 **33→35**。
+- macOS aarch64 CI 暴露标量回退的 `dX` 用 `r & 3` 四累加器，和旧
+  `input_grad_scalar` 的逐行顺序累加差 1 ULP；标量路径改为单个 `dx[c]` 顺序累加，
+  并补 `input_grad_scalar` / `row_dot_scalar` / `update_row_scalar` 的纯标量对拍。
+- 4096×576 同轮交替 A/B 5 组（3 步/轮，9 轮取最快）：旧两遍
+  **0.92–1.32 ms/step** → 新单遍 **0.68–0.76 ms/step**（中位 **0.98→0.71**，
+  约 **1.38×**）。`train-bench` 增加「带梯度 SGD」段，默认输出
+  `train_step_with_grad` 读数。
+- Adam 的 `fused::backward` → `layer::adam_update` 仍是两遍，本轮未改；`pack()`
+  仍只在公开检查/对拍与标量参考路径出现。缺陷台账新增 L180/C090，
+  `fused/backward_step.rs` 加入 hazard allowlist。
+
+### Changed（第二十七轮：反向 `dX`+`qdot` 单遍，训练彻底去掉 `pack`）
+
+- 新增 `plane/fused/backward.rs`：每行量化一次，同时算 `dX` 与 `qdot`，不再为
+  反向构造 `PlaneMatrix`。`train_step_with_grad` 与 `train_step_with_grad_adam`
+  改为 `fused::backward` → `sgd_update`/`adam_update` → 用 `qdot` 更新 scale；
+  `pack()` 在训练/前向生产路径上不再被调用，只保留为公开检查/对拍入口。
+- 对拍：`(1,1)/(4,7)/(5,9)/(6,63)/(8,130)/(3,9 零/负 scale)/(4,576)` 与
+  `pack()+input_grad+row_dot` 的 `dX`、`qdot` 逐位相等；4096×576 探针
+  **0.747–0.759 ms → 0.430–0.441 ms（1.72–1.74×）**，`dX 576/576`、`qdot 4096/4096`。
+- Adam 同轮 A/B：旧 `pack()+input_grad+row_dot` **3.32–3.55 ms/step** → 新
+  **2.4–2.8 ms/step（约 1.3×；逐元素参考 8.0–8.2，2.9–3.4×）**。`shape_bench`
+  4096×576 **2.9966→2.4907 ms**，17×576 **0.0066→0.0050 ms**，11×130
+  **0.0014→0.0011 ms**，9×65 **0.0009→0.0008 ms**；SGD 路径不变（4096×576
+  0.71–0.73 ms）。
+- 为守 module budget，把带梯度 SGD 与 Adam 标量参考从 `layer.rs` 拆到
+  `layer/grad.rs`；`layer.rs` **571→525**，`layer/adam.rs` **218→216**，
+  `plane/fused.rs` 保持 **133**。测试 **32→33**；缺陷台账新增 L179/C089；
+  `fused/backward.rs` 加入 hazard allowlist。PR #668 在 `c50a3e12` 上 **32 pass /
+  2 skip / 0 fail，CLEAN**。
+
+### Changed（第二十六轮：SGD 前向量化点积融合）
+
+- `train_step` 不再为前向构造 `PlaneMatrix`：新增 `plane/fused.rs`，每 8 列直接做
+  `clamp(round(w / scale), -1, 1)`，用符号掩码乘 `x` 并累加。它省掉 589 KB 的
+  `pos`/`neg` 分配与写回，以及 `row_dot` 对同一份 bit 的第二遍读；累加分组和
+  `hsum` 与 `row_dot` 相同，1×1/4×7/5×9/6×63/8×130/3×9/4×576 均逐位对拍
+  （3×9 覆盖零/负 scale）。
+- `forward()` 也复用 `fused::forward_dot`，不再为推理前向 `pack()` 双导轨。
+  `forward_probe`：旧 `pack()+row_dot` **0.62 ms** → **0.36 ms（1.71×）**，
+  4096/4096 位相等。
+- 读数（4096×576）：复算 example `pack()+row_dot` **0.62–0.68 ms** → `fused` **0.35–0.37
+  ms（1.7–1.9×）**；`train_step` **0.81–1.14 ms/step（27–35×；旧 1.16–1.22 /
+  23.9–25.0×）**。`shape_bench` 4096×576 **0.90–1.00 ms（25.9–27.1×）**，17×576
+  **27–30×**，11×130 **19–20×**，9×65 **14.5–15.3×**。
+- `pack()` 当时仍服务 `train_step_with_grad` 的 `dX` 和 Adam `dX`（第二十七轮已由
+  `fused::backward` 取代）；`train-bench` 的 `pack()` 行改为不参与融合步的参考读数。测试 **31→32**；
+  缺陷台账新增 L178/C088。
+
+### Changed（第二十五轮：`row_dot` 固定累加器展开）
+
+- `simd::row_dot` 的 4 个累加器从 `acc[j & 3]` 动态索引改成 4 个固定累加器 +
+  内联单块闭包：主循环一次推进 4 个 8-lane 块，余块单路收尾。累加分组仍是
+  `j mod 4`，逐位结果不变；`backward.rs` **428 行**（cap 429）。
+- 独立探针（4096 行）：dynamic **0.2444 ms** → 固定累加器 **0.1428 ms（1.71×）**。
+  整步同轮交替 A/B 的安静样本 **1.27→1.22 ms**、**1.42→1.14 ms**；负载高时
+  整步会抖到 1.6–1.9 ms，不把单次读数当稳定值。README 的训练步表保留拆分前
+  25 轮读数作保守基线。
+- `pack()` 倒数乘法已试并判负：`w*(1/s)` 表面快 4–6%，但 f32 半边界不保证与
+  `w/s` 逐位一致；加“距半整数 1e-4 内回退精确除法”后 `pack()` 慢 10–15%，
+  未提交。
+- `cargo test -p trit-train` 保持 **31/31**；缺陷台账新增 L177/C087。
+
+### Changed（第二十四轮：`pack()` 写合并 + SGD 多形状矩阵）
+
+- `PlaneMatrix::from_latent` 的 AVX2 打包改为按 64 列 word 累加：每个 word 的
+  8 个 8-lane 结果先落在局部 `u64`，最后各写一次 `pos`/`neg`。4096×576 每行
+  从 72 个块 × 2 次读改写（144 次）降到 9 个字 × 2 次写（18 次），尾列仍在
+  word 内标量补齐；`4×576` 加入对拍用例。
+- 读数（4096×576，单线程，25 轮取最快）：`pack()` **0.47→0.46 ms**；
+  `train_step` **1.16–1.22 ms/step（23.9–25.0×；上一轮 1.2–1.3）**；
+  Adam 行级融合 **2.9–3.1 ms/step（2.6–2.8×）**，基本持平。
+- `shape_bench` 增加 SGD `train_step` 多形状表：4096×576 **0.93–1.03 ms
+  / 22–24×**，17×576 **17.0–17.5×**，11×130 **12.5×**，9×65 **9.5×**，
+  5×9 **2.9×**；`2×7` 仍是标量路径，只有 1.3× 的计时噪声。
+- `cargo test -p trit-train` 保持 **31/31**；缺陷台账新增 L176/C086。
+
+### Changed（第二十三轮：SGD 训练步复用 `qdot`）
+
+- `train_step` 现在只算一次 `planes.row_dot(r, x)`：前向把原始 `q·x` 留在
+  `qdot`，`y[r] = scale[r] * qdot[r]`；`dW` 更新后，scale 梯度直接用
+  `dy[r] * qdot[r]`，不再为 4096 行重扫一遍双导轨。`train_step_with_grad`
+  仍是单次 `row_dot`，没有重复计算可省。
+- 读数（4096×576，单线程，3 步/轮，25 轮取最快）：`train_step`
+  **1.2–1.3 ms/step（22–24×；上一轮 1.5–1.6）**，`pack()` 仍 **0.47–0.49 ms**；
+  Adam 行级融合 **2.9–3.1 ms/step（2.6–2.8×，逐元素 8.0–8.2 ms）**。
+- `cargo test -p trit-train` 保持 **31/31**；`layer.rs` 仍是 576 行上限，
+  没有新增模块或测试文件。缺陷台账新增 L175/C085。
+- 边界：这是 SGD `train_step` 的收益；Adam 路径没有前向，不存在同一份
+  `qdot` 可复用。
+
+### Changed（第二十二轮：惰性 `q` 缓存）
+
+- `PlaneMatrix` 的 `q` 从每步全量写回的 `Vec<i8>` 改成 `OnceLock<Vec<i8>>`：
+  `from_latent` 只写 `pos`/`neg` 双导轨，训练步和 Adam 步都不读 `q`，不再为
+  2.36 M 个 `i8` 做零初始化与逐字节写回；只有调用方首次 `q()` 时才从导轨解码并缓存。
+  新增 `plane/q.rs` 承载惰性展开与 `q_is_lazy_and_cached` 回归测试。
+- `PartialEq` 改为比较双导轨内容，不比较惰性缓存状态；`q()` 语义与行主序不变。
+- `train-bench` 的 `pack()` 行改为只计双导轨构造（`black_box` 整个 `PlaneMatrix`），
+  不再隐式调用 `q()`；`q()` 首次解码成本单独存在于调用方，不计入训练步。
+- 读数（4096×576，单线程，3 步/轮，9 轮取最快）：`train_step` **1.5–1.6 ms/step
+  （18–19.5×；上一轮 1.8–1.9）**，`pack()` **0.47–0.49 ms/step（上一轮 0.73–0.76）**；
+  Adam 逐元素 **8.0–8.2 ms/step**，行级融合 **2.7–2.9 ms/step（2.8–3.0×）**。
+  `shape_bench` 的 4096×576 融合降到 **2.5–3.1 ms/step（2.6–3.2×；3 步/轮，噪声较大）**。
+- `cargo test -p trit-train` **30→31**；模块预算新增 `plane/q.rs`（24 行 + 测试），
+  `plane/backward.rs` 收紧到 429，`plane/pack.rs` 保持 139。
+- 边界：`q()` 的惰性解码不是免费；需要 `q` 的调用方在首次访问时付一次解码。
+  训练步不读 `q`，所以本轮的收益不适用于 `q()` 消费者。
+
+### Changed（第二十一轮：Adam `dW` 融合与打包字节写回）
+
+- 新增 `crates/trit-train/src/layer/adam.rs`：`train_step_with_grad_adam` 与 SGD 版
+  共享一次 `pack()` 和 `dX`，latent 更新走行级 `adam_update`——每 8 lane 一次算
+  STE 门、一阶/二阶矩、偏置校正和参数更新；短行、尾部或非 AVX2 走标量。
+  `train_step_with_grad_adam_scalar` 保留旧的逐元素 Adam 路径，用于对拍与基准。
+- `plane/pack.rs` 的 `q` 改为预分配后由 `_mm_packs_epi32` + `_mm_packs_epi16`
+  一次写 8 个字节，不再逐个 `push`/`extend`；测试拆到 `plane/pack/tests.rs`。
+- `train-bench` 新增 Adam 训练步输出；默认跑融合路径，`--adam-scalar` 复算逐元素基线。
+  新增 `shape_bench` 多形状矩阵（短行、尾列、小矩阵、4096×576）：`2×7` 与逐元素
+  持平，`5×9` 1.14×，`9×65` 2.41×，`17×576` 4.09×，`4096×576` 2.63×；`1×1`
+  太短，计时分辨率不足，不作为倍数证据。不能用一个形状的倍数覆盖所有形状。
+  读数（4096×576，单线程，3 步/轮，9 轮取最快，直接运行 release 可执行文件）：逐元素
+  Adam **8.2–9.2 ms/step**，行级融合 **3.1–3.7 ms/step（2.3–2.8×）**；同轮
+  `train_step` **1.8–1.9 ms/step（13.8–17.1×）**，其中 `pack()` **0.73–0.76 ms/step**
+  （上一轮 1.9–2.1 / 0.85–0.89）。
+- `cargo test -p trit-train` **27→30**（新增 Adam 行级内核的三种 STE × 四形状 ×
+  连续三步对拍、`lr=0`，以及 `pack + dX + dW + scale` 整步 × 三种 STE × 五形状 ×
+  连续三步对拍）。测试拆到 `layer/adam/tests.rs`。模块预算新增 `layer/adam.rs`、
+  `layer/adam/tests.rs`、`plane/pack/tests.rs`、`bin/bench/adam_step.rs`、
+  `bin/bench/adam_setup.rs`；`layer.rs` 与 `plane/pack.rs` 收紧；hazard gate
+  登记 `layer/adam.rs` 的 AVX2 运行时探测理由。
+- 边界：Adam 只融合 `dW` 的逐元素更新，`pack()` 仍是每步一次全量量化；
+  没有多形状曲线、GPU/WASM 读数或多层端到端吞吐。
+
+### Changed（第二十轮：位平面训练步与 `dW` 融合更新）
+
+- 新增 `crates/trit-train/src/plane/pack.rs`：`PlaneMatrix::from_latent(latent, scale,
+  rows, cols)` 从 latent + per-row scale 一步量化打包，不再分配每行临时 `q`。AVX2
+  每 8 列做一次除法、round、clamp，用 `movemask` 直接写 `pos`/`neg` 字节；列数 <8
+  或非 x86_64 走标量。Rust `round()` 是半远离零，SIMD 用
+  `trunc(x + copysign(0.5, x))` 复刻，并补半边界对拍测试。
+- `TernaryLinear::forward` 改为 `pack()` 一次 + `PlaneMatrix::row_dot`，不再逐行
+  `quantize_with_scale` 后做标量点积；`forward_scalar` 保留为标量参考。
+- 新增 `crates/trit-train/src/dense.rs`：`sgd_update` 做整层 `dW` 融合外积更新，
+  AVX2 按 8 lane 计算 Identity / Clipped / Soft 三种 STE 门控，尾部标量补齐。
+  修正 `_mm256_cmp_ps` 全 1 掩码（作为 f32 是 NaN）不能直接乘 1.0 的问题。
+- `train_step` 每步只 `pack()` 一次，前向、`dW`、scale 梯度共用同一份 planes；
+  `train_step_scalar` 保留旧逐行量化 + 逐元素 STE 路径作为对拍/基准。`train_step_with_grad`
+  同步改走 `dense::sgd_update`；`train_step_with_grad_adam` 的 latent 更新仍是逐元素
+  Adam，是明确未覆盖项。
+- `train-bench` 新增 `--train-steps`，输出标量参考 vs 位平面步与单独 `pack()` 成本。
+  读数（4096×576，单线程，3 步/轮，7 轮取最快）：标量 **27.2–27.6 ms/step**，
+  位平面步 **1.9–2.1 ms/step（13.4–14.1×；偶发 2.4 ms）**，其中 `pack()` **0.85–0.89 ms/step**。
+  同轮 `dX` 8.0–9.5 GMAC/s（33–41×）。
+- `cargo test -p trit-train` **21→27**（新增 `from_latent` 2、`dense` 2、`layer` 对拍 2）。
+  模块预算新增 `plane/pack.rs`、`dense.rs`、`layer/scalar.rs`、`layer/packed_tests.rs`、
+  `bin/bench/{args,train_step}.rs`，当前 1519 个 `.rs` 全部 capped；hazard gate 登记
+  两处 AVX2 的运行时探测理由。
+- 边界：训练步只做「打包 + 位平面 `row_dot` + 融合 `dW`」，**不是三进制算术加法**；
+  `pack()` 仍是每步一次全量量化；Adam 路径未融合 `dW`。
+
+### Changed（第十九轮：位平面反向 `dX`）
+
+- 新增 `crates/trit-train/src/plane/backward.rs`：`PlaneMatrix` 把三值权重按行打成
+  `pos`/`neg` 双导轨（1 trit = 2 bit），反向 `dX = Wᵀdy` 不再逐列读 `q[c]`，而是每
+  8 列取一个字节掩码、用 AVX2 把 `dy[r] * scale[r]` 加减到 `dX` lane；4 个行累加器
+  打散依赖链，尾部按标量补齐。标量参考 `input_grad_scalar` 保留，逐尺寸对拍。
+- `TernaryLinear::pack()` 每步只量化一次；`train_step_with_grad` 与
+  `train_step_with_grad_adam` 复用同一份 `PlaneMatrix` 算 `dX`、scale 梯度
+  （`row_dot`）与 latent 更新，不再二次量化。
+- 读数（4096×576，单线程，7 轮取最快，多次复跑）：标量 `dX` **0.23–0.24 GMAC/s**，
+  双导轨掩码 **8.8–9.8 GMAC/s**，**37–41×**。`train-bench` 新增反向读数；
+  `cargo test -p trit-train` **14→21**，覆盖非 64 倍列、AVX2/标量对拍、SGD 与 Adam 接入。
+- 边界：反向只做「双导轨选符号 + f32 累加」，**不是三进制算术加法**；非 x86_64 或
+  列数 <8 回退标量；`dW` 仍按元素走 STE，前向点积仍是标量参考。台账新增 C081
+  （`docs/ERRORS.md` L171），登记 `plane/backward.rs`（430 行），当前 1513 个 `.rs`
+  全部 capped。
+
+### Changed（第十八轮：DeliveryReceipt 改为纯 Rust 持久化）
+
+- 新增 `crates/trit-orch/src/delivery.rs`：把 `receipt::DeliveryReceipt` 的内存四态
+  扩成可审计的落盘账本。账本 `trit-delivery/1` 绑定 `packet_id + packet_sha256 +
+  from/to`；每条记录带 `at/actor/evidence/note`；顺序不可跳，`sent` 只能由 `from`
+  登记，后三态只能由 `to` 登记，`acted` 必须带仓库相对证据，时间倒退与包字节改写
+  一律拒绝。
+- 新增 `trit-orch delivery` CLI（`sent/attach/deliver/read/act/advance/verify/check/show/gate`）：
+  stdin 一份 JSON，账本默认写 `<root>/.agent/delivery/<packet-id>.json`；`gate` 只在
+  交接门为 `True` 时补 `sent+delivered`，**绝不自动写 read/acted**；`verify` 输出
+  `complete/incomplete/missing/invalid` 并可用包文件复核 SHA-256；`check` 是只读预检，
+  一次返回 `gate/ready/receipt`，不落账。
+- 删除 `tools/delivery_receipt.py` 与 `tools/selftest.ps1` 的 AW1–AW3：不再维护
+  Python DeliveryReceipt 或 Python attach 路径；相关宿主集成与文档统一指向 Rust
+  `trit-orch delivery`。Python 全仓自测由 **719→716**（去掉 AW 3 项），Rust 侧
+  `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` **9/9**。
+- 台账：C079 改为 `cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check`；
+  `docs/engineering/AGENT-DELIVERY.md` 重写为 Rust 用法/边界；`docs/ERRORS.md` L169、
+  `AGENT-COORDINATION.md`、`docs/README.md` 索引同步。
+
+### Changed（第十七轮：直算 IR 的交换律规范化与死代码消除）
+
+- `direct` 的 lowering 拆到 `crates/trit-build/src/direct/lower.rs`；`&` / `|` / `^` / `<=>`
+  先按 IR 下标做交换律规范化再查 CSE，镜像子式共用一个节点：`(a & b) | (b & a)`
+  的 IR 从 5 条降到 4 条；`=>` 不可交换，不参与重排。
+- 新增 IR 级死代码消除 `prune_dead`：从根反向标记可达节点，再按原顺序压缩、重编号；
+  `lower` 出口统一过这一遍。当前 lowering 不产生孤儿节点，这一遍是给后续重写/常量折叠留的兜底，
+  行为用合成 IR 测试钉住。
+- 语义不变：三种代数下四个可交换算子的 3×3 表逐格对称性有测试；`--verify-c` 12 变量复跑
+  **531,441/531,441** 行通过，`direct.c` 仍 **1,628 B**。
+- `BUILD_VERSION` 5 → 6：`direct.c` 的语句顺序可能变化，旧缓存必须失效。
+- 测试：新增 `direct/lower/tests.rs` 5 条（表对称性、镜像子式共用、操作数定序、孤儿压缩、
+  真实表达式无孤儿），单测 38 → 43。
+### Added（第十六轮：TTIR → C 直算后端）
+
+- `trit-build` 新增 `--backend table|direct|both`（默认 `table`，旧产物逐字节不变）：
+  `direct` 产出 `direct.c` —— 表达式降成**线性 IR**（每个节点一条 `int8_t tN = ...;`），
+  再做同构子式 CSE；运行时按节点顺序算，不展开 3ⁿ 表。12 变量实测 `direct.c` **1,628 B**，
+  同一表达的 `lookup.c` 是 **2,303,277 B**。
+- 语义表不手写：`&` / `|` / `^` / `=>` / `<=>` 的 3×3 表与 `!` 的 3 表全部由
+  `trit-core::Algebra` 现算（K3 / Ł3 / B3 各一套），测试再拿 `trit_eval::eval` 逐赋值对拍。
+  生成函数 `int8_t trit_direct(const int8_t *vars, unsigned nvars)`；`nvars` 不足按 X 返回 0，
+  fail-closed，不读越界内存。
+- 新增 `--verify-c`：生成驱动器，用 `CC`/`cc`/`gcc`/`clang` 编译 `direct.c` 并**逐行读 `truth.csv` 对拍**；
+  12 变量 **531,441/531,441 行**通过（本机 0.9 s，含 19.6 MB CSV 读写与编译）。
+- 边界与 `lookup.c` 一致：只出 C 源码，执行仍交给 C/Rust 工具链；Verilog 读入的设计没有表达式，
+  `--backend direct|both` 明确报错（不静默少产物）。
+- 为守住模块预算，把产物层（`truth_csv` / `lookup.c` / `emit_artifacts` / `write_artifact`）
+  从 `main.rs` 拆到 `crates/trit-build/src/artifacts.rs`；`direct.rs` 独立成模块。
+- 测试：`direct/tests.rs` 4 条（六张表逐格对拍 `eval`、IR 全赋值对拍、CSE、渲染形状），
+  `tests/direct_c.rs` 6 条（direct 产物/默认 table 不变/both 与 table 的 `truth.csv`+`tritbin`
+  逐字节相同/缓存键含后端/Verilog 边界/`--verify-c` 27 行；最后一条只在 Unix 跑）。
+### Added（第十五轮：交接包 DeliveryReceipt 四态账本）
+
+- 新增 `tools/delivery_receipt.py`：`sent → delivered → read → acted` 四态账本，
+  每个状态记录 `at/actor/evidence/note`；`sent` 绑定交接包字节 SHA-256，
+  `delivered/read/acted` 的 actor 必须是包里的 `to`，顺序不可跳，`acted` 必须带
+  仓库相对证据；包字节改写后拒绝续账，`verify --packet` 判红。
+- 账本默认 `.agent/delivery/<packet-id>.json`；`.gitignore` 与
+  `tools/handoff.py` 的 `SKIP_UNTRACKED` 同步跳过它，登记 `sent` 后同一棵树的
+  `handoff gate` 仍是 `True`，不会把本机账本当成源码变更。
+- `verify` 三态：四态齐全 exit 0；只到中间态 exit 1；坏账本/坏 id exit 2；
+  `--json` 输出 ASCII 单行，`show` 保留中文可读账本。
+- `tools/delivery_receipt.py --self-test` **19/19**：sent 幂等、顺序不可跳、
+  actor 不匹配、acted 缺证据、机器路径拒绝、包字节改写、只到 sent 的 incomplete、
+  坏账本 shape。
+- `tools/selftest.ps1` 新增 AW1-AW3：工具自测 19/19；`handoff create → sent →
+  deliver → read → act → verify complete` 且 `sent` 后 handoff gate 仍为 True；
+  只登记 sent 的账本 verify=incomplete（exit 1）。全仓 **716→719 passed**。
+- 文档/台账：新增 `docs/engineering/AGENT-DELIVERY.md`；`AGENT-COORDINATION.md`
+  补四态边界与 `.agent/delivery` 跳过项；`docs/ERRORS.md` L169；C079；
+  `docs/README.md` 索引同步。
+
+### Fixed（Windows 跨进程台账锁：delete-pending 的 Access Denied 重试）
+
+- `crates/trit-orch/src/trace_store/lock.rs`：Windows 在锁文件刚关闭、目录项仍处于
+  delete-pending 时，`create_new` 可能返回 `PermissionDenied` 而不是 `AlreadyExists`；
+  旧实现只重试 `AlreadyExists`，跨进程台账测试偶发 `ledger.lock: Access is denied. (os error 5)`。
+  现在把 Windows 的瞬时 `PermissionDenied` 按争用重试：路径可见时等到 `LOCK_TIMEOUT`，
+  路径不可见时只给 2 秒 grace，真实 ACL 拒绝仍 fail-closed；`Drop` 的删除也做 20 次
+  10ms 短重试，避免析构里只删一次就放弃。
+- 回归：`cargo test -p trit-orch --test ledger_cross_process` 本机连跑 10 次全过；
+  `cargo fmt --check`、`cargo clippy -p trit-orch --all-targets -- -D warnings` 通过。
+
+### Fixed（e-graph 提取：合并后的旧子 id 让根退化成 X）
+
+- `crates/trit-build/src/egraph.rs`：`union` 之后 `classes` 里仍存着指向被并掉 class 的
+  旧子 id，而 `extract` 的代价表只按根 id 建键——旧 id 查不到代价，整个根就退化成常量
+  `X`，CLI 报「化简/重写结果与原文不等价（内部错误）」。修法：`rebuild` 里把存活 class
+  的 kind 子节点改写到根 id 并去重（`canonicalize_kinds`），`kind_stats` 查代价前也按根
+  解析；提取逻辑拆到 `egraph/extract.rs`，在模块预算内（台账只收紧，未抬高）。
+- 回归：`((a => b) <=> (!a | b)) ^ c` 此前在默认饱和下无法构建（只有 `--egraph-rounds 0`
+  能过），现在退出 0、`truth.csv` 与不饱和路径**逐字节相同**。新增
+  `egraph::tests_regression::equiv_xor_chain_does_not_degrade_to_unknown`、
+  `equiv_forms_keep_semantics_in_every_algebra` 与 `tests/egraph_equiv.rs` 端到端各一条；
+  `cargo test -p trit-build` 全绿。
+### Added（第十四轮：稳定性/抖动探针）
+
+- 新增 `tools/stability_probe.py` 与 `stability/1` 清单：按命令重复执行，记录每次
+  `exit`、耗时、stdout+stderr 的 SHA-256 与字节数，不保存原始输出。
+- 分类拆开：`stable-pass`（全过、输出一致、耗时比在阈值内）、`stable-fail`
+  （全失败且输出一致，确定性失败不是 flaky）、`flaky`（退出码混判）、
+  `nondeterministic`（全过但输出指纹不同）、`jittery`（全过但 max/min 耗时超阈值）、
+  `unstable-fail`（全失败但退出码/输出还在变）、`unknown`（超时/启动失败）。
+- `stability/1` 支持顶层与逐命令覆盖 `repeat`（2..50）、`warmup`（0..5）、`timeout_s`、
+  `max_duration_ratio`、`require_identical_output`；CLI 支持 `--repeat` / `--warmup` /
+  `--timeout-s` / `--max-duration-ratio` / `--lenient-output` / `--json` / `--out`。
+- 实跑 `cargo test -p trit-orch --test ledger_cross_process` 5 次暴露冷启动问题：
+  首跑 35.9s、后续 2.2–9.4s，不预热会把编译时间误判成 `jittery`。`warmup` 预热
+  运行只把耗时/输出指纹排除在测量外，退出码仍参与 flaky 判定，首次失败不能被
+  “洗掉”；预热超时/启动失败仍按 `unknown` fail-closed。
+- 退出码：`0` stable、`1` failed/unstable、`2` 坏调用、`3` unknown；清单缺失/坏 JSON/
+  schema 不对/逃逸 root/命令超时/启动失败都 fail-closed，`unknown` 不当通过。
+- 超时杀进程树（Windows `taskkill /T /F`，POSIX 新 session + `killpg`），避免 shell
+  退出后子进程继续跑、占住临时目录。
+- 探针接进 `agent_verify` 默认链（有 `.agent/stability.json` 才自动启用）：
+  `alignment` 之后、`journal-begin` 之前运行；`--stability` 强制清单，
+  `--no-stability` 关闭自动发现；只有 `exit 0 + status=stable` 放行，
+  `flaky` / `nondeterministic` / `jittery` / `stable-fail` / `unknown` 全部在
+  `run` 前拒绝。清单命令先按同一 profile 过 `policy.py`，不能绕过命令策略。
+  回执新增 `stability` 段（状态/分类计数/失败命令/报告路径+哈希），完整报告在
+  `target/agent-stability/stability-gate.json`。
+- `tools/agent_settings.py` 新增 `stability` 设置（默认 `enabled=true`，
+  清单 `.agent/stability.json`，外层 watchdog `timeout_s=1800`）；清单路径必须
+  留在项目内，坏 shape 直接报错。
+- `tools/selftest.ps1` 新增 ST2-ST6：稳定通过进入 run、确定性失败拒绝、
+  flaky 拒绝、`--no-stability` 跳过、清单命令被 policy 拒绝时不执行探针；
+  全仓 **711→716 passed / 0 failed / 0 skipped**。
+- `tools/stability_probe.py self-test` **38/38**（新增 warmup 去冷启动、warmup
+  失败不洗白、warmup 越界分支）；ST1 自测改为直接喂 `_classify` 构造样本，
+  不再用真实 sleep 计时，避免满载机器把测试自身判成 jittery。
+  `tools/selftest.ps1` 的 ST1 先把探针自测接进
+  全仓（710→711），ST2-ST6 再覆盖链集成。
+- 文档/台账：新增 `docs/engineering/AGENT-STABILITY.md`；`docs/ERRORS.md` L168；
+  C078；`docs/README.md` 索引同步。
+
+### Added（第十三轮：每个 goal 必须被需求覆盖）
+
+- `alignment_gate.py` 不再把“树里存在任意需求”当成目标覆盖：遍历每条 requirement
+  的父链，要求每个 goal 至少被一条父链经过，否则 `goal-uncovered`、状态
+  `unaligned`、run 不启动。需求挂在子目标上时，它和祖先 goal 都算覆盖。
+- `coverage.goals_covered` 从布尔“有需求=1”改为**实际覆盖的 goal 数**；2 个 goal
+  只有 1 个有需求时记 `1/2`。`--lenient` 不降级空挂目标，结构断链永远拒绝。
+- `agent_verify` 的 `alignment` / `alignment.post` 回执增加 `coverage` 块，
+  `goals_covered` 在预检和 post-run 都可审计，不再只存在于 CLI 文本。
+- `tools/selftest.ps1` 新增 AL40：G1 根 + G2 空挂子目标、需求只挂 G1→preflight
+  `refused by alignment`，`counts.goals=2`、`coverage.goals_covered=1`，run 不启动；
+  `$alTotal` 39→40。
+- `alignment_gate.py self-test` 98→**101/101**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **710 passed / 0 failed / 0 skipped**（含 AL27–AL40）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补“每个 goal 必须被需求覆盖”与回执 coverage；
+  `docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
+### Added（第十二轮：声明变更必须实际发生）
+
+- `alignment_gate.py` 新增“声明变更兑现”检查：实际变更集已知时，每条
+  requirement 的每条 `changes` 都必须有见证——字面路径精确出现、glob 至少命中
+  一条实际路径；缺失记 `declared-change-missing`，`must` 永远拒绝，`strict` 下
+  `should` 拒绝、`--lenient` 下只警告。
+- 新增 `--changed-set`：显式标记实际变更集已知且完整；空集也必须兑现声明，关闭
+  “no-op run 仍 aligned”的洞。单独 `--changed` 仍只是覆盖子集，不强制所有声明兑现；
+  `counts.changed_known` 区分“完整已知”（1）和“预检/子集”（0）。
+- `agent_verify` 的 `alignment-post` 始终传 `--changed-set`；`alignment.post.counts`
+  增加 `changed_known`。`coverage` 增加 `requirements_with_changes` /
+  `requirements_changes_realized`。
+- `tools/selftest.ps1` 新增 AL39：声明 `pkg/core.py` 但 plan 只跑 `true`→post
+  `unaligned after run`（changed_known=1, changed=0）；AL27/AL30/AL31/AL32 改用
+  会实际写 `pkg/core.py` 的 plan。`$alTotal` 38→39。
+- `alignment_gate.py self-test` 90→**98/98**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **709 passed / 0 failed / 0 skipped**（含 AL27–AL39）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补声明变更兑现与 `changed_known` 口径；
+  `docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
+### Added（第十一轮：non-goal 对象级排除与声明范围）
+
+- `tools/alignment_gate.py` 的 `non_goals` 新增 `artifacts`/`evidence` 显式排除列表：
+  引用必须存在；requirement 引用被排除的 artifact/evidence 直接拒绝，未被引用的
+  排除对象不误报。
+- 预检新增声明范围重叠：产物路径命中 `non_goals.paths`、requirement 的 `changes`
+  或 `allow_unlinked` 与 non_goal 字面路径有交集（字面/glob）或 glob 完全相同，
+  都在 run 前拒绝（`non-goal-artifact-path` / `non-goal-scope`）。不同 glob 的
+  相交不猜，实际 run 后的 `alignment-post` 仍用真实路径兜底。
+- `tools/selftest.ps1` 新增 AL38：non_goal 对象级排除被 requirement 引用时
+  preflight 拒绝、run 不启动；`$alTotal` 37→38。
+- `alignment_gate.py self-test` 79→**90/90**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **708 passed / 0 failed / 0 skipped**（含 AL27–AL38）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补 non-goal 对象级排除与 glob 相交边界；
+  `docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
+### Added（第十轮：证据绑定实际 run 命令）
+
+- `tools/alignment_gate.py` 新增 `alignment/3`：沿用 `alignment/2` 的单根目标树，
+  evidence 增加 `kind`（`file`/`run`）与 `command`；`kind=run` 必须点名证据文件。
+  `must` 需求至少一条 run-bound 证据，strict 下 should 同，lenient 只降 should，
+  may 只警告。预检记 `counts.provenance`（声明），不冒充已执行。
+- `alignment_gate.py` 新增 `--run-command`：post-run 可把本次成功命令传入；命令按
+  空白/路径分隔符/大小写归一后精确匹配，匹配成功才记 `provenance_verified`。
+- `tools/agent_verify.py` 的 post-run `alignment-post` 自动传入本次 `run[]` 中
+  exit=0 的命令；v3 证据命令没有实际跑过时 `evidence-not-executed`，最终 verdict
+  `unaligned after run`，journal/成本/记忆仍保留。
+- `tools/selftest.ps1` 新增 AL36–AL37：v3 声明命令实际跑过→post 升级 provenance；
+  声明命令没跑→post 拒绝且 `provenance_verified=0`。`$alTotal` 35→37。
+- `alignment_gate.py self-test` 65→**79/79**；stress 仍 200 用例、0 errors；
+  全仓 `tools/selftest.ps1` **707 passed / 0 failed / 0 skipped**（含 AL27–AL37）。
+- 文档/台账：`AGENT-ALIGNMENT.md` 补 v3 schema、命令绑定、declared/verified 区别、
+  诚实边界；`docs/ERRORS.md` L167、C077、`docs/README.md` 同步。
+
+### Added（第九轮：run 后对齐复核）
+
+- `tools/agent_verify.py`：新增 post-run `alignment-post`。`journal-end` 拿到
+  `journal: added/deleted/modified` 的实际仓库相对路径后，用同一份清单和同一
+  套 gate 重新检查产物/证据哈希与 locator、未挂变更、non-goal、需求链；不再是
+  “开工前声明自洽就算通过”。漂移时 verdict `unaligned after run`、exit 1，
+  journal/成本/记忆仍记录，不提前丢弃已发生的写入。
+- `journal-end` 本身失败（退出码非 0/1）时，post 记为 `unknown` 并 fail-closed；
+  显式放在 root 内的 `-Store` 会被过滤出“产品变更”，避免 journal 自己的快照
+  被误判为漂移。
+- 回执 `alignment.post` 记录 `manifest/status/score/must_score/counts/failures/warnings`，
+  保持嵌套在既有 `alignment` 稳定字段内。
+- `tools/selftest.ps1` 新增 AL33–AL35：run 写未挂文件拒绝、只改声明路径仍 aligned、
+  改带 `sha256` 产物后哈希漂移拒绝；`$alTotal` 32→35。
+- 文档/台账：`docs/engineering/AGENT-ALIGNMENT.md` 补 run 后复核与诚实边界；
+  `docs/ERRORS.md` L167、`.agent/checks/registry.json` C077、`docs/README.md`
+  同步；全仓 `tools/selftest.ps1` **705 passed / 0 failed / 0 skipped**（含 AL27–AL35）。
+
+### Added（第八轮：对齐清单目标层级与骨架生成）
+
+- `tools/alignment_gate.py` 新增 `alignment/2`：`goals` 单根目标树，goal 可带
+  `parent` 形成子目标；必须有且只有一个 `parent=null` 的根，每个子目标的父链
+  必须落到该根，断链/成环/多根/未知父目标都 fail-closed。需求可挂到子目标，
+  但需求父链最终仍须落到根；旧 `alignment/1` 与 `goal` 单对象保持兼容，混用
+  `goal`/`goals` 直接拒绝。`counts` 新增 `goals`，`agent_verify` 回执同步保留。
+- `tools/alignment_gate.py` 新增 `scaffold`：从 `--goal` 与重复的
+  `--requirement` 生成 `alignment/2` 骨架；`artifacts/evidence/changes` 故意
+  留空，gate 仍会拒绝，避免“生成清单=对齐”。已有清单默认不覆盖，`--force`
+  才重写；输出路径必须留在 root 内。
+- `tools/agent_verify.py` 的 alignment 回执 `counts` 增加 `goals`；`tools/selftest.ps1`
+  新增 AL32（v2 子目标链经 `agent_verify` 通过并记录 `goals=2`），`$alTotal`
+  31→32。
+- `tools/alignment_gate.py self-test` 47→**65/65**；`stress --cases 100` 仍为
+  200 用例、0 errors；`agent_settings --self-test` **30/30**；全仓
+  `tools/selftest.ps1` **702 passed / 0 failed / 0 skipped**（含 AL27–AL32）。
+- 文档/台账：`docs/engineering/AGENT-ALIGNMENT.md` 补 v2 schema、scaffold、
+  检查表与诚实边界；`docs/ERRORS.md` L167、`.agent/checks/registry.json` C077
+  同步覆盖；`docs/README.md` 更新索引。
+
+### Added（第七轮：智能体目标/需求/产物/证据/变更对齐门）
+
+- `tools/alignment_gate.py`：新增 `alignment/1` 清单与 fail-closed 门。
+  单一 goal；每条 requirement 必须显式 `parent` 且父链终止在 goal（断链/成环拒绝）；
+  `artifacts/evidence` 引用必须存在且指向仓库内真实文件，支持 `sha256` 与
+  `Lx`/`Lx-Ly`/`text:<片段>` locator；`must` 必须有有效产物+证据，`strict`
+  下 `should` 同，`--lenient` 只降为 warning；本次 `changed` 每个路径必须挂到
+  requirement 的 `changes` 或 artifact 路径；落进 `non_goals` 路径直接拒绝；
+  requirement 间 `contradicts` 直接拒绝；绝对路径、`..` 逃逸、符号链接逃出
+  root 拒绝；清单缺失/坏 JSON/schema 不符返回 `unknown`（退出码 3），不当作
+  通过。自测 **47/47**；`stress --cases 100` 生成 **200 用例**，valid
+  100 aligned、mutated 100 rejected、0 errors。
+- `tools/agent_settings.py`：新增 `alignment.enabled/manifest/strict` 默认与
+  校验；`manifest` 必须是非空项目内相对路径；回执只回显 `enabled/strict`，
+  不暴露路径。自测 **30/30**。
+- `tools/agent_verify.py`：新增 `--alignment <manifest>`、`--alignment-lenient`；
+  alignment 步骤位于 `constraints` 之后、`claim-audit`/`journal-begin` 之前，
+  非 aligned 时 verdict `refused by alignment`、exit 1、不启动 `run`；回执新增
+  `alignment` 稳定字段（manifest/status/score/must_score/counts/failures/warnings）。
+- `tools/selftest.ps1`：AL 组新增 AL27–AL31（有效清单继续 run、must 缺证据拒绝、
+  清单缺失 unknown、lenient 只警告、不传 `--alignment` 自动发现），`$alTotal` 26→31。
+- `.agent/checks/registry.json` 新增 C077（fast tier，覆盖 L167）；
+  `docs/ERRORS.md` 新增 L167；`docs/engineering/AGENT-ALIGNMENT.md` 记录 schema、
+  检查表、接入方式、测试读数与诚实边界；`docs/README.md` 增索引行。
+- 全仓 `tools/selftest.ps1`：**701 passed / 0 failed / 0 skipped**（含 AL27–AL31）。
+
+### Added（第六轮：上下文预算 + 搜索评分 + 自动推理强度）
+
+- `tools/context_window.py`：1M 窗口 / 850K 触发 / 700K 目标的确定性预算规划器。
+  保 system、首末 user、pinned、tool evidence；中间低优先级消息按序丢弃，并把
+  索引/角色/关键行写成 `compressed_summary`。锚点 + 摘要仍超目标时
+  `status=refused`、退出码 3，不返回半截 transcript；摘要超出证据行上限也拒绝。23/23 自测。
+- `tools/search_policy.py`：搜索结果 relevance（覆盖率+BM25+短语）、
+  `context_guard` 安全门、权威/新鲜度、MMR 去重、token 硬预算和
+  `max_results` 双帽；每条落选带原因。`choose_effort` 按对比/因果/多跳/
+  高 stakes/时效/歧义/冲突信号自动选 low/medium/high，并给
+  `search_depth/max_results/verify`。22/22 自测。
+- `agent_settings.py` 默认档新增 `context/search/reasoning` 三段，校验非法
+  envelope、搜索预算/阈值/effort；`receipt_echo` 只回显数值/模式，不带绝对
+  路径。设置自测 23/23。
+- 注册表新增 C074/C075/C076（fast tier），`selftest.ps1` 新增 AV9/AV10/AV11；
+  两个模块各有 `stress --cases 100` 随机不变量测试，`context_search_cross.py`
+  14/14 验搜索证据在压缩后仍保留、项目设置两侧共用、溢出退出 3 不返回半截；
+  文档 `docs/engineering/AGENT-CONTEXT-SEARCH.md` 与 `docs/ERRORS.md`
+  L163/L164/L165 记录机制、阈值和诚实边界。
+
+### Fixed（第六轮补：AN3 并发沙盒宿主指纹）
+
+- `tools/sandbox_run.py`：宿主指纹不再把 `.git` 目录 mtime 和瞬时
+  `.git/index.lock` 当作写入；`handoff.state` 在 `git status` 被并发锁挡住时
+  重试 3 次。`--self-test` **43/43**（新增“git dir mtime alone is not
+  host-mutated”“file write under .git is host-mutated”两条断言）；
+  `sandbox_matrix --cases 40 --parallel 8` 连续 **4 次 40/40**。
+- `tools/selftest.ps1`：Python 解释器解析器改为解析 PowerShell alias 的
+  `Definition`。此前 `python` 是 alias 时 `Get-Command().Source` 为空，循环
+  落到 `py`（另一个解释器，没有 `openpyxl`），导致 AT1/AT2/AU2 假失败；现在
+  11 个选择点统一走 `Resolve-Python`。
+- `tools/cmd_driver.py`：新增 `${PYTHON}` 变量（= 正在运行 driver 的
+  `sys.executable`）；`testdata/work-bench/ptc-plan.json` 用它代替 PATH
+  `python`，避免宿主 PATH 指向另一个缺失 `openpyxl` 的解释器。PTC 计划
+  4 步全过、quality-gates 13/13、retries 0。
+- 本轮收口后全仓 `tools/selftest.ps1`：**696 passed / 0 failed / 0 skipped**。
+
+### Added（第五轮：多用户设置 + 一次性审计 + 静态/动态/运行时安全门 + 100+ LSP 注册表）
+
+- `tools/agent_settings.py`：用户级 `%APPDATA%\trit\agent\settings.json`（POSIX
+  `$XDG_CONFIG_HOME/trit/agent/settings.json`）、项目 `.agent/settings.json`、
+  `--settings` 文件与 CLI 参数四级覆盖；默认档 `deepseek-strict`（完整审计回执
+  保留、模型读 compact 视图）。设置回执不含本机绝对路径。自测 16/16。
+- `tools/agent_audit.py`：把多个 full receipt 和多个 `security-gate` 报告折叠成
+  一个 `agent-audit/1` PASS/FAIL；compact/delta/篡改/root 失配/高危扫描均判红；
+  `--receipt` 可直接从回执 `security.report` 自动拉扫描报告并校验 sha256。
+  自测 14/14。
+- `tools/security_gate.py`：统一静态/依赖/lint/unsafe/SAST/动态 fuzz/运行时 MCP
+  adapter，输出 `security-gate/1`；必需扫描器缺口 fail-closed，可选缺口只可见；
+  用户 `security.commands` 只走 argv，不经过 shell。自测 19/19。真实 `quick` 扫描
+  本仓发现并修复 `libsqlite3-sys 0.37.0`（RUSTSEC-2026-0459）与
+  `rustix 1.1.5`（RUSTSEC-2026-0486）两个 high；`rusqlite` 升到 `=0.41.0`、
+  `rustix` 升到 `1.1.6` 后 `cargo audit` 为 0 vulnerabilities，剩 2 条 medium
+  unmaintained（`fxhash`、`rustls-pemfile`）。`rusqlite 0.41` 需要 rustc 1.89，
+  本仓 MSRV 由 1.88 上调到 1.89（CI 与 `required-checks.txt` 同步）。
+- `tools/lsp_registry.json` + `tools/lsp_registry.py`：138 条 LSP 注册表，覆盖
+  Rust/C/C++/Go/Python/TS/JS/Java/C#/Ruby/PHP/Kotlin/Scala/Clojure/Elixir/Haskell/
+  OCaml/F#/Terraform/Ansible/Docker/GraphQL/Prisma/Zig/Nim/R/Julia 等；命令
+  `list|detect|plan|install|probe`，`probe` 发真实 LSP `initialize` 帧；
+  `install --apply` 只允许 allowlist 包管理器与已审核配方。自测 13/13。
+- `agent_verify`：新增 `--settings`、`--security`、`--security-mode`；安全门在
+  preflight 之后、handoff 之前执行，高危拒绝时 `run` 永不开始；回执写报告相对路径
+  与 sha256。默认 `security.enabled=false`，显式 `--security` 或项目设置才跑，
+  避免旧链每条命令都付扫描成本。
+- `.github/workflows/ci.yml`：新增 `security gate (quick, fail-closed)` job，
+  self-test + secrets/privacy/deps，artifact 保留 7 天；`.github/required-checks.txt`
+  同步加入该检查。
+- `docs/security/SECURITY-SCAN.md`、`AGENT-GUARDRAILS.md`：安全 adapter 矩阵、
+  fail-closed/gap 语义、一次性审计和 LSP 注册表边界；明确"注册表覆盖 100+"不等于
+  "自动安装 100+"。
+- `tools/selftest.ps1`：新增 AV1–AV8，覆盖四个新模块自测、设置/审计/安全门真实
+  夹具、`refused by security gate` 不落盘、full receipt + clean scan 一次审计 PASS、
+  LSP plan、外部项目扫描；全仓 **693 passed / 0 failed / 0 skipped**。真实
+  `security_gate --mode static` 本仓 PASS（clippy/unsafe 0 findings，2 条 medium
+  依赖 unmaintained）；`agent_verify` 夹具 full 8,285 B / compact 1,151 B。
+- POSIX 修正：`tools/signal.py` 会遮蔽标准库 `signal`，新安全门在 Ubuntu 的
+  `subprocess` 超时/kill 路径曾崩在 `signal.SIGKILL`；`security_gate` /
+  `agent_verify` 现在在导入 `subprocess` 前临时移开 `tools/`，WSL 复跑安全门
+  自测 19/19。`docs/security/SECURITY-SCAN.md` 已补进 `docs/README.md` 索引。
+
+### Added（第四轮：work-bench + PTC + CI/CD）
+
+- `work-bench`：20 个真实工作任务、15 类、81 条确定性检查、20 个负例；参考
+  81/81、负例 20/20，`-SelfTest` 182/182，支持 `-Candidates` 只读实际产物。
+- `cmd_driver.py`：PTC 风格命令驱动，plan 预检、argv 不经过 shell、逐步 verify、
+  不盲重试、错误分类，摘要与本地 receipt 分离；自测 34/34，work-bench 计划
+  4/4 步、质量门 13/13、零重试。
+- `scripts/agent_quality_gate.py`：CI/发布共用质量门，包装
+  `cmd_driver -SelfTest` + `cmd_driver -Plan testdata/work-bench/ptc-plan.json`，
+  输出 `trit-agent-quality-gate/v1`，断言 34/34、81/81、20/20、4/4、13/13。
+- `.github/workflows/agent-quality.yml`：PR 触及 work-bench / cmd-driver / 夹具时
+  在 Ubuntu + Windows 运行质量门，artifact 保留 7 天，不进入 release assets。
+- `release.yml`：新增 `agent-quality` 前置门，`build` 依赖它；发布下载 artifact
+  限定 `pattern: trit-*`，`agent-quality-evidence` 与 receipt 不暴露给用户；
+  `release` job 只在 tag 上发布，手动 dispatch 不会误发。
+- `docs/engineering/CI-CD.md`：开发内部（命令、自测、错误分类、receipt、CI job）
+  与用户交付（二进制、SHA256SUMS、release notes）分层，CI 预算与排障口径。
+- `agent_verify` 回执降 token（不丢判定）：新增 `--model-receipt <path>`，完整审计
+  回执照旧保留，另写 compact 路由视图供模型/父代理读取；allow 的通用两行政策文案
+  不再逐命令重复，逐条仍保留 `command + exit`，无特殊证据时省略空 `output`；
+  新增 `--brief`，成功 stdout 只打命令汇总与 `changes: N`，失败命令才逐条列出。
+  同路径保护：`--model-receipt` 与 `-Receipt` 指向同一路径直接拒绝。
+  自测新增 AF14b–AF14e（500 条 policy 去重、WARN 保留、模型视图与审计分离、
+  brief stdout），全量 selftest **685 passed / 0 failed / 0 skipped**。
+  实测（20 命令、2 轮中位、`true`）：full receipt **5,738 B**（原 8,558 B，降 33.0%），
+  compact **1,541 B**（full 的 26.9%，省 73.1%），policy 字段 **561 B**（原约 2,860 B
+  compact JSON）；bytes/4 仅为上下文代理，不是模型侧 token 实测。
+- `cmd_driver.py`：Linux 下 `tools/signal.py` 会遮蔽 stdlib `signal`，使
+  `subprocess` 超时后的 `SIGKILL` 路径崩溃；脚本入口在导入 `subprocess` 前移除
+  自身目录，`-SelfTest` 在 Linux/WSL 与 Windows 均 **34/34**。这是 CI 的 Ubuntu
+  `agent-quality` 门从 0/0 失败恢复为可用的必要修复。
+### Fixed（C047 CI 确定性：负载注入不再让容量自测随共享 runner 抖动）
+
+- `capacity_lease.probe` 新增 `load_override`，自测固定 `load1=0.0`，并新增
+  `load_override=3.0` 的容量扣减断言；`capacity_lease.py --self-test` 21/21。
+  CI 的 C047 不再因为 GitHub 共享 runner 的真实 load1 是 5/6 而误报，容量
+  准入逻辑本身不变。
+
 ### Added（第三轮：轨迹级 `pipeline --trajectories` + GGUF 模型级复验）
 
 - `pipeline --trajectories <轨迹.jsonl|目录> [--cmd <重写器>] [--rewrite-timeout 30]
@@ -193,7 +883,7 @@
   回执 `capacity` 段记录租约与契约。
 - `C047` 钉住 `capacity_lease.py --self-test`：20/20（含 8 进程抢 4 个租约、过期/坏租约、
   GPU/磁盘/IO 预留与拒绝、heartbeat 不移动硬 deadline、dispatch 契约注入、占满时
-  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 41/41 未回退，全量
+  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 43/43 未回退，全量
   `selftest` 仍 675/675。
 - 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
   `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。

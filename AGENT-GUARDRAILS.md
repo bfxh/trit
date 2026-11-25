@@ -28,6 +28,7 @@
 | 0 | `memory-brief` | tools/memory.py | 只读，不拒绝（未初始化则 skipped，跳过也留痕） |
 | 1 | `timeline-due` | tools/timeline.py | 只读，到期问题打印出来（rc=1 但不拦路） |
 | 2 | `preflight` | tools/refactor_guard.py | 判红 ⇒ 整体拒绝，坏代码不落盘 |
+| 2.1 | `security-gate`（可选） | tools/security_gate.py | 高危/关键发现或必需扫描器缺口 ⇒ run 前拒绝；报告路径+哈希进回执 |
 | 2.5 | 预算闸（声明制） | agent-verify 内置 | 声明额度 ≤0 ⇒ run 前挂起，见协议三 |
 | 3 | `checks` | tools/checks.py（fast 层） | 已固化检查判红 ⇒ 整体拒绝 |
 | 4 | `affected` | tools/affected.py | 出测试计划；没有证明就回退全量（不拒绝，如实标注 unproven） |
@@ -48,6 +49,60 @@
 
 回执**纯 ASCII**（`ensure_ascii=True`）写在最后：机器产物必须能在任何解码器下活下来。
 退出码：0 全部通过；1 有闸拒绝或命令失败；2 调用错误。**闸门步骤任一拒绝 ⇒ 整体拒绝**。
+
+## 多用户设置：默认强，用户可调，证据不丢
+
+`tools/agent_settings.py` 把回执、审计、安全门、LSP、上下文预算、搜索与推理强度
+策略做成可配置层，优先级是
+**内置默认 < 用户设置 < 项目 `.agent/settings.json` < 显式 `--settings` 文件 < 显式 CLI 参数**。
+默认档叫 `deepseek-strict`：完整审计回执照旧落盘，模型只读 compact 视图；安全门默认
+关闭（避免每条命令都付扫描成本），但 `--security` 或项目设置打开后，高危/关键发现
+在 run 之前就拒绝。上下文默认 **1M 窗口 / 850K 触发 / 700K 目标**，压缩只做抽取
+摘要且锚点溢出时 fail-closed；搜索默认带安全/权威/新鲜度/去重/token 预算评分，
+推理强度默认 auto。用户设置路径：Windows `%APPDATA%\trit\agent\settings.json`，
+POSIX `$XDG_CONFIG_HOME/trit/agent/settings.json`（无则 `~/.config/...`）。设置回执里
+只写 `name/source/sources/policy_profile` 与数值/模式，不写本机绝对路径。
+
+一次性审计不是"把证据删到能一次看完"，而是把**完整回执 + 扫描报告 + 哈希**交给
+`tools/agent_audit.py` 折叠成一个 PASS/FAIL。回执里的 `security.report` 会被自动
+拉取并校验 `security.sha256`；compact 视图、delta 信封、被篡改的回执、root 失配、
+高危扫描都会判红；审计原件永远保留。这样用户不必逐份读回执，但审计员仍然能回到
+原件核对。
+
+## 安全扫描：静态 / 动态 / 运行时，一个门
+
+`tools/security_gate.py` 统一输出 `security-gate/1`：scanner 状态、findings、gaps、
+verdict、exit。内置顺序是"先用本仓自己的引擎，再接存在且可信的外部工具"：
+
+| 类别 | 适配器 | 触发条件 / 边界 |
+|---|---|---|
+| 静态 | `scripts/secret_scan.py`、`scripts/privacy_scan.py` | 必需；privacy 只把 baseline 里的 `new` 判红，旧 `details` 不重复报警 |
+| 依赖 | `cargo audit` | 有 `Cargo.lock`；漏洞 high，unmaintained/unsound 分别 medium/high |
+| 静态 lint | `cargo clippy -D warnings` | 有 `Cargo.toml`；medium，不单独阻断 high 门 |
+| 静态 unsafe | `trit-unsafe scan --strict` | 有 `trit-unsafe` crate；full/static 模式 |
+| 静态 SAST | `semgrep`、`bandit` | 命令存在才跑；不自动安装 |
+| 依赖/容器 | `trivy fs`、`govulncheck`、`npm audit` | 命令存在/项目形态匹配才跑 |
+| 动态 | `cargo fuzz run <target> -- -runs=1000` | 有 `fuzz/Cargo.toml`；无 target 记 not_applicable，不伪造通过 |
+| 运行时 | `trit-procscan mcp <config> --strict` | 仓内 `.mcp.json`/`mcp.json`/`.qoder/mcp.json`；只做 stdio 握手/上下文成本 |
+| 用户自定义 | `security.commands` | argv 列表、超时、severity/required 可配；绝不经过 shell |
+
+缺少必需扫描器是 **gap = fail-closed**；缺少可选扫描器是可见 gap，不会静默变成 pass。
+`security.enabled=false` 时只在显式 `--security`/CI job 里跑，避免把每条 agent 命令
+都拖进全量扫描。CI 的 `security gate (quick, fail-closed)` 跑 secrets/privacy/deps；
+全量静态/动态/运行时留给 `--mode all` 或 `quality.yml` 的 fuzz-smoke。
+
+## LSP：100+ 注册表，不等于 100+ 已装插件
+
+`tools/lsp_registry.json`（128+ 条）把语言服务器当**数据**：id、命令、filetypes、
+上游源、tier、安装配方。`tools/lsp_registry.py` 提供 `list/detect/plan/install/probe`：
+- `detect` 只看命令是否在 PATH，不启动；
+- `plan --lang python` 给出可用/缺失候选；
+- `install --apply` 只允许 `install_allowlist` 里的包管理器配方，默认只打印命令；
+- `probe` 发真实 LSP `initialize` 帧并读回 capabilities，不是 `--version` 冒充。
+
+"100 多个"是注册表覆盖，不承诺第一次就把 100+ 个 server 装进用户机器。MCP/插件同理：
+先审核来源、只接可信命令、按需启用；不把第三方 schema 全量塞进上下文。
+
 
 ## 协议一：删除协议（绝不裸删）
 
@@ -639,6 +694,9 @@ python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --compact -Receipt .agent/last-receipt.json        # 单行机读回执（子代理协作）
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
+  --brief --model-receipt .agent/last-model.json \
+  -Receipt .agent/last-receipt.json                  # 审计原文 + 模型视图（成功只打失败命令）
+python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --parallel-gates -Receipt .agent/last-receipt.json # 三个只读门并发（写面仍串行）
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --spent-token <本次实测 token> --agent-id <id> -Receipt .agent/last-receipt.json
@@ -738,7 +796,7 @@ AP1–AP3） 36 组：
 A–Z 26 组 + AA/AB/AC/AD/AE/AF/AH/AN/AO/AP 十组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
 AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条、
-AF 组编排链稳定性 46 条、AH 组术语契约 26 条、AN 组 3 条（模型路由 16/16、沙盒 41/41、
+AF 组编排链稳定性 46 条、AH 组术语契约 26 条、AN 组 3 条（模型路由 16/16、沙盒 43/43、
 40 沙盒矩阵 40/40）、AO 组 1 条（派发器 25/25）、AP 组 4 条（文字门 59/59、
 90 例 stress 90/90、malicious CLI 隔离/良性不误杀、81 例红队 0 攻击漏检），是新增的十个观测、审批、稳定性、
 概念契约与入口污染面）。护栏的断言全部
@@ -798,3 +856,17 @@ agent-verify 的回执（`-Receipt` 指定的 JSON，或 stdout 尾部）按三�
    （verdict/exit/proven/wall_s）、每步 `{step,verdict,exit,seconds}`、每条 run 命令
    `{command,exit,seconds}`、budget 数字、cost、agent_id、changes 计数；砍掉自由文本
    证据。实测见 `python tools/bench_orchestration.py`。
+6. **`--model-receipt <path>`**（模型视图，不替代审计）——`-Receipt` 仍写完整审计回执，
+   同时另写一份 compact 路由视图。模型/父代理优先读这份，不要 `cat` 整份 full receipt；
+   需要核对拒绝原因、WARN 或原始输出时再回审计原文。
+7. **`--brief`**——stdout 成功时只打一行命令汇总，失败命令才逐条列出；变更只打
+   `changes: N`，完整路径仍在回执 `changes[]`。它只减少模型看到的成功行，不改判定。
+8. **policy 回执去重**——allow 的两行通用文案不再逐命令重复；WARN/DENY 和特殊
+   allow 说明仍保留。逐条判定仍是 `command + exit`；没有特殊说明时 `policy[]`
+   省略 `output` 键，原始 policy 输出可由 `policy.py` 重放取得。
+
+读数口径（`bench_orchestration.py -Commands 20 -Rounds 2`，两轮中位，命令为
+`true`；bytes/4 只是上下文代理，不是模型侧 token 实测）：full receipt **5,738 B**
+（改动前 8,558 B，降 **33.0%**），compact **1,541 B**（为 full 的 **26.9%**，
+省 **73.1%**），其中 20 条 policy 字段 **561 B**（改动前约 2,860 B compact JSON）。
+delta 为 full 的 **0.341×**；`--brief` 进一步把成功命令的 stdout 收敛为一行汇总。

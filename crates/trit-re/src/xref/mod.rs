@@ -24,7 +24,10 @@ use crate::elf;
 use crate::pe;
 
 mod aarch64;
+mod pc;
+mod report;
 mod x86;
+pub(super) use report::build_elf_report;
 
 /// 单次扫描的字节上限，防止超大文件把 CLI 拖死。
 pub const MAX_SCAN_BYTES: usize = 64 * 1024 * 1024;
@@ -197,6 +200,12 @@ pub(super) fn slice_at(bytes: &[u8], start: usize, len: usize) -> Option<&[u8]> 
         return Some(&[]);
     }
     bytes.get(start..start.checked_add(len)?)
+}
+
+/// 节虚拟地址 + 指令下标：checked 求和；溢出（恶意近上限节地址）返回 `None`，
+/// 调用方跳过该指令并把扫描降级为不完整，不回绕出假调用点。
+fn insn_addr(section_addr: u64, index: usize) -> Option<u64> {
+    section_addr.checked_add(index as u64)
 }
 
 /// 扫描 PE 的 IAT 交叉引用。
@@ -492,6 +501,7 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
     }
 
     let mut complete = true;
+    let mut address_overflow = false;
     let mut scanned = 0usize;
     let executable: Vec<&elf::ElfSection> = info
         .sections
@@ -532,12 +542,15 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
                     data[index + 4],
                     data[index + 5],
                 ]);
-                let target = section
-                    .addr
-                    .wrapping_add(index as u64 + 6)
-                    .wrapping_add(disp as i64 as u64);
+                // checked：节地址近上限时不得回绕出假 GOT 目标；地址不可表示则
+                // 跳过该指令并把扫描降级为不完整（不据此判 False）。
+                let Some(instruction) = insn_addr(section.addr, index) else {
+                    address_overflow = true;
+                    index += 1;
+                    continue;
+                };
+                let target = instruction.wrapping_add(6).wrapping_add(disp as i64 as u64);
                 if let Some(symbol) = symbol_of_got.get(&target) {
-                    let instruction = section.addr + index as u64;
                     stub_to_symbol.entry(instruction & !0xF).or_insert(*symbol);
                     stub_instructions.insert(instruction);
                 }
@@ -551,7 +564,11 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
     for (section, data) in &exec_data {
         let mut index = 0usize;
         while index + 5 <= data.len() {
-            let here = section.addr + index as u64;
+            let Some(here) = insn_addr(section.addr, index) else {
+                address_overflow = true;
+                index += 1;
+                continue;
+            };
             if stub_instructions.contains(&here) {
                 index += 1;
                 continue;
@@ -596,71 +613,14 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
         }
     }
 
-    build_elf_report(arch, &symbols, &jump_slots, &sites, complete, scanned)
-}
-
-/// 各架构 ELF 扫描共用的报告构造。
-pub(super) fn build_elf_report(
-    arch: &str,
-    symbols: &[elf::DynamicSymbol],
-    jump_slots: &[(u64, usize)],
-    sites: &BTreeMap<usize, BTreeSet<RawSite>>,
-    complete: bool,
-    scanned: usize,
-) -> XrefReport {
-    let mut rows = Vec::new();
-    let mut seen: BTreeSet<usize> = BTreeSet::new();
-    for (got, symbol) in jump_slots {
-        let Some(symbol_info) = symbols.iter().find(|entry| entry.index == *symbol) else {
-            continue;
-        };
-        // 只保留"外部导入"：本文件已定义的符号（如 libc 自己的 malloc/free）虽有 JUMP_SLOT，
-        // 那是内部 PLT 调用，不是导入。
-        if symbol_info.defined || !matches!(symbol_info.kind, 0 | 2 | 10) {
-            continue;
-        }
-        if !seen.insert(*symbol) {
-            continue;
-        }
-        let mut row = ImportXref {
-            import: symbol_info.name.clone(),
-            slot: *got,
-            sites: sites.get(symbol).map(to_sites).unwrap_or_default(),
-            status: Ternary::Unknown,
-            note: String::new(),
-        };
-        finalize(&mut row, complete);
-        rows.push(row);
-    }
-    for symbol in symbols
-        .iter()
-        .filter(|entry| !entry.defined && matches!(entry.kind, 0 | 2 | 10))
-    {
-        if !seen.contains(&symbol.index) {
-            rows.push(ImportXref {
-                import: symbol.name.clone(),
-                slot: 0,
-                sites: Vec::new(),
-                // 没有槽位就没有证据："没有重定位"不等于"没有调用点"。
-                status: Ternary::Unknown,
-                note: "没有 GOT 槽位（可能是动态解析或弱符号）".to_string(),
-            });
-        }
-    }
-
-    let mut report = XrefReport {
-        arch: arch.to_string(),
-        scanned_bytes: scanned,
-        complete,
-        imports: rows,
-        notes: Vec::new(),
-    };
-    if !complete {
-        report
-            .notes
-            .push("有可执行节读不出或超过扫描上限，交叉引用不完整".to_string());
-    }
-    report
+    build_elf_report(
+        arch,
+        &symbols,
+        &jump_slots,
+        &sites,
+        complete && !address_overflow,
+        scanned,
+    )
 }
 
 /// 解析 ELF 的 GOT 槽位：`JUMP_SLOT` 与 `GLOB_DAT`，得到 `(GOT 虚拟地址, 符号下标)`。

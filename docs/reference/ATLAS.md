@@ -30,7 +30,7 @@
 
 | 组件 | 证据 | 说明 |
 |---|---|---|
-| `trit-build` | 产出 `truth.tritbin` / `lookup.c` / `design.v` | 化简 + 精确复核 + 多目标产物 |
+| `trit-build` | 产出 `truth.tritbin` / `lookup.c` / `direct.c` / `design.v` | 化简 + 精确复核 + 多目标产物 |
 | `trit-circuit` | Verilog 导出模块 | 网表级：X 传播、ATPG、技术映射 |
 
 ### 执行后端（数据/产物的运行内核）

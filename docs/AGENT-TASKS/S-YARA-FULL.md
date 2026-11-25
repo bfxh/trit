@@ -8,7 +8,7 @@
 ## 1. 起点
 
 - 仓库：`bfxh/trit`；分支：`feat/pe-sections`（含 PR #457 的前置工作）。
-- 环境：Rust 1.88+；`yara-python 4.5.4`（`uv` 或 pip）；N1 四象限样本目录。
+- 环境：Rust 1.89+；`yara-python 4.5.4`（`uv` 或 pip）；N1 四象限样本目录。
 - 基线：`cargo test -p trit-re` = 194 通过（以起点 SHA 实测为准）。
 
 ## 2. 必读

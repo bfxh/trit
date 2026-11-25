@@ -1,0 +1,1179 @@
+{
+  "schema": 1,
+  "suite": "work-bench",
+  "tasks": [
+    {
+      "id": "doc-project-brief",
+      "title": "把项目笔记整理成可执行的项目简报",
+      "category": "document",
+      "source": "OfficeBench-style",
+      "prompt": "根据 notes.md 写一份 Q4 数据迁移项目简报，必须包含目标、范围、里程碑、预算、风险、负责人；预算和风险不能留空。",
+      "inputs": {
+        "notes.md": "# Q4 数据迁移项目笔记\n项目：Q4 数据迁移\n预算：120 万元\n负责人：林晨\n风险：供应商交付延迟\n里程碑：10/15 方案冻结；11/10 灰度；12/05 全量\n范围：订单库、用户画像、账单附件\n"
+      },
+      "artifacts": {
+        "brief.md": "# 项目简报：Q4 数据迁移\n\n## 目标\n在 2026 年 12 月 5 日前完成订单库、用户画像和账单附件的迁移，灰度期间保持双写，确保数据可回滚。\n\n## 范围\n本次覆盖订单库、用户画像、账单附件三块；历史归档数据和外部合作方接口不在本次范围内。\n\n## 里程碑\n- 10 月 15 日：方案冻结，完成迁移脚本评审。\n- 11 月 10 日：灰度 10% 流量，核对日终账。\n- 12 月 5 日：全量切换，旧库只读保留两周。\n\n## 预算\n预算：120 万元，包含迁移工具、两周驻场支持和回滚演练。\n\n## 风险\n风险：供应商交付延迟；如果 10 月 25 日仍未交付，启用自研脚本并顺延灰度一周。\n\n## 负责人\n负责人：林晨；技术负责人：周野；业务验收：王敏。\n"
+      },
+      "negative": {
+        "brief.md": "# 项目简报：Q4 数据迁移\n\n## 目标\n待定。\n\n## 范围\n订单库。\n\n## 预算\n120 万元。\n"
+      },
+      "checks": [
+        {
+          "artifact": "brief.md",
+          "type": "md_sections",
+          "values": [
+            "# 项目简报：Q4 数据迁移",
+            "## 目标",
+            "## 范围",
+            "## 里程碑",
+            "## 预算",
+            "## 风险",
+            "## 负责人"
+          ]
+        },
+        {
+          "artifact": "brief.md",
+          "type": "md_phrases",
+          "values": [
+            "预算：120 万元",
+            "供应商交付延迟",
+            "林晨"
+          ]
+        },
+        {
+          "artifact": "brief.md",
+          "type": "md_min_chars",
+          "value": 280
+        },
+        {
+          "artifact": "brief.md",
+          "type": "md_forbidden",
+          "values": [
+            "待定",
+            "TODO"
+          ]
+        }
+      ],
+      "tags": [
+        "document",
+        "brief",
+        "office"
+      ],
+      "order": 1
+    },
+    {
+      "id": "doc-meeting-notes",
+      "title": "从会议记录提取结论、决策与行动项",
+      "category": "document",
+      "source": "WorkBench-style",
+      "prompt": "把 transcript.md 整理成会议纪要，必须有结论、决策、行动项；行动项要写负责人和截止日期。",
+      "inputs": {
+        "transcript.md": "评审会记录：\n结论：采用方案 B，不做全量双写。\n决策：本周冻结 API，不再新增字段。\n行动项：王敏 10/20 前完成接口清单；赵磊 10/22 前完成压测；林晨 10/24 前确认预算。\n风险：供应商交付延迟会影响灰度。\n"
+      },
+      "artifacts": {
+        "meeting.md": "# 会议纪要：Q4 迁移评审\n\n## 结论\n采用方案 B，不做全量双写；灰度期间保留旧库只读。\n\n## 决策\n- 本周冻结 API，不再新增字段。\n- 压测通过后再安排灰度，未通过不进入下一阶段。\n\n## 行动项\n| 负责人 | 事项 | 截止 |\n|---|---|---|\n| 王敏 | 完成接口清单 | 10/20 |\n| 赵磊 | 完成压测 | 10/22 |\n| 林晨 | 确认预算 | 10/24 |\n\n## 背景\n当前迁移已覆盖 10% 灰度，日终账对齐；本次评审只讨论是否进入下一阶段，不改变已冻结的 API。\n\n## 风险\n供应商交付延迟会影响灰度，10 月 25 日仍未交付则启用自研脚本；如果自研脚本未通过验收，灰度暂停，不回滚已迁移数据。\n"
+      },
+      "negative": {
+        "meeting.md": "# 会议纪要：Q4 迁移评审\n## 结论\n采用方案 B。\n## 决策\n本周冻结 API。\n## 行动项\n王敏负责接口清单。\n"
+      },
+      "checks": [
+        {
+          "artifact": "meeting.md",
+          "type": "md_sections",
+          "values": [
+            "# 会议纪要：Q4 迁移评审",
+            "## 结论",
+            "## 决策",
+            "## 行动项"
+          ]
+        },
+        {
+          "artifact": "meeting.md",
+          "type": "md_phrases",
+          "values": [
+            "方案 B",
+            "王敏",
+            "赵磊",
+            "林晨",
+            "10/20",
+            "10/22",
+            "10/24",
+            "|"
+          ]
+        },
+        {
+          "artifact": "meeting.md",
+          "type": "md_min_chars",
+          "value": 220
+        },
+        {
+          "artifact": "meeting.md",
+          "type": "md_forbidden",
+          "values": [
+            "待定",
+            "TODO"
+          ]
+        }
+      ],
+      "tags": [
+        "document",
+        "meeting",
+        "actions"
+      ],
+      "order": 2
+    },
+    {
+      "id": "doc-research-brief",
+      "title": "把三份来源整理成带引用的调研简报",
+      "category": "research",
+      "source": "APEX-Agents-style",
+      "prompt": "阅读 a.md、b.md、c.md，写一份调研简报；结论必须能追到来源，至少引用三份来源，不能写无出处的绝对化结论。",
+      "inputs": {
+        "a.md": "来源 A（source-a.md）：迁移工具在 10% 灰度下平均延迟增加 18 ms；回滚耗时 6 分钟。\n",
+        "b.md": "来源 B（source-b.md）：双写方案延迟增加 31 ms；回滚耗时 3 分钟，但需要额外存储 20%。\n",
+        "c.md": "来源 C（source-c.md）：单写加只读旧库延迟增加 9 ms；故障恢复依赖快照，RPO 约 5 分钟。\n"
+      },
+      "artifacts": {
+        "research.md": "# 调研简报：Q4 迁移方案对比\n\n## 结论\n采用单写加只读旧库：延迟增加 9 ms，低于双写的 31 ms；代价是故障恢复 RPO 约 5 分钟，需要把快照演练纳入上线门槛。\n\n## 证据\n- source-a.md：10% 灰度下延迟增加 18 ms，回滚 6 分钟。\n- source-b.md：双写延迟增加 31 ms，回滚 3 分钟，额外存储 20%。\n- source-c.md：单写加只读旧库延迟增加 9 ms，RPO 约 5 分钟。\n\n## 对比\n| 方案 | 延迟增量 | 回滚耗时 | 额外成本 |\n|---|---|---|---|\n| 单写 + 只读旧库 | 9 ms | 依赖快照 | 快照存储 |\n| 双写 | 31 ms | 3 分钟 | 额外 20% 存储 |\n| 迁移工具灰度 | 18 ms | 6 分钟 | 工具许可 |\n\n## 建议\n先做快照恢复演练，再按 10% 灰度；若 RPO 不能接受，回退双写方案。以上结论只覆盖这三份来源；上线后前两周每天核对一次 RPO 指标，并把快照恢复演练结果附在发布记录中。\n"
+      },
+      "negative": {
+        "research.md": "# 调研简报：Q4 迁移方案对比\n## 结论\n双写方案保证 100% 准确，建议直接全量。\n## 证据\n- source-a.md：延迟增加 18 ms。\n## 建议\n立即全量切换。\n"
+      },
+      "checks": [
+        {
+          "artifact": "research.md",
+          "type": "md_sections",
+          "values": [
+            "# 调研简报：Q4 迁移方案对比",
+            "## 结论",
+            "## 证据",
+            "## 对比",
+            "## 建议"
+          ]
+        },
+        {
+          "artifact": "research.md",
+          "type": "md_phrases",
+          "values": [
+            "source-a.md",
+            "source-b.md",
+            "source-c.md",
+            "RPO",
+            "9 ms"
+          ]
+        },
+        {
+          "artifact": "research.md",
+          "type": "md_min_chars",
+          "value": 360
+        },
+        {
+          "artifact": "research.md",
+          "type": "md_forbidden",
+          "values": [
+            "100% 准确",
+            "保证零风险"
+          ]
+        }
+      ],
+      "tags": [
+        "research",
+        "citations",
+        "office"
+      ],
+      "order": 3
+    },
+    {
+      "id": "doc-release-notes",
+      "title": "从变更清单写 v1.4.0 发布说明",
+      "category": "document",
+      "source": "OfficeEditBench-style",
+      "prompt": "根据 changes.md 写 v1.4.0 发布说明，必须包含新增、修复、风险三节，并写清两个工单号。",
+      "inputs": {
+        "changes.md": "T-104：新增批量导出；\nT-112：修复灰度开关在重启后丢失；\n风险：旧版客户端不兼容新的分页参数。\n"
+      },
+      "artifacts": {
+        "release.md": "# v1.4.0 发布说明\n\n## 新增\n- T-104：批量导出支持按日期范围筛选，导出任务可重试。\n\n## 修复\n- T-112：修复灰度开关在进程重启后丢失的问题；启动时从配置中心恢复开关状态。\n\n## 兼容性\n- 新分页参数默认关闭，服务端保持旧响应字段一个版本。\n- 批量导出任务增加幂等键，重复提交不会生成重复文件。\n\n## 风险\n旧版客户端不兼容新的分页参数；发布前需要确认 2.3 以下客户端的升级窗口。若升级窗口不足，先关闭新分页开关，仅发布修复项。\n"
+      },
+      "negative": {
+        "release.md": "# v1.3.0 发布说明\n## 新增\n批量导出。\n## 修复\n灰度开关。\n"
+      },
+      "checks": [
+        {
+          "artifact": "release.md",
+          "type": "md_sections",
+          "values": [
+            "# v1.4.0 发布说明",
+            "## 新增",
+            "## 修复",
+            "## 风险"
+          ]
+        },
+        {
+          "artifact": "release.md",
+          "type": "md_phrases",
+          "values": [
+            "v1.4.0",
+            "T-104",
+            "T-112",
+            "旧版客户端"
+          ]
+        },
+        {
+          "artifact": "release.md",
+          "type": "md_min_chars",
+          "value": 180
+        }
+      ],
+      "tags": [
+        "document",
+        "release",
+        "office"
+      ],
+      "order": 4
+    },
+    {
+      "id": "doc-handoff",
+      "title": "写一份可接手的交接文档",
+      "category": "handoff",
+      "source": "TheAgentCompany-style",
+      "prompt": "根据 notes.md 写交接文档，必须包含当前状态、已变更、下一步、阻塞，并点名工单和接手人。",
+      "inputs": {
+        "notes.md": "T-104 批量导出已合并；T-112 灰度开关已修复但未回归。\n下一步：回归 T-112、更新客户端兼容说明。\n阻塞：测试环境账号未开通。\n接手人：周野。\n"
+      },
+      "artifacts": {
+        "handoff.md": "# 交接：Q4 迁移批次 2\n\n## 当前状态\nT-104 已合并；T-112 已修复但未回归，当前不能宣布完成。\n\n## 已变更\n- T-104：批量导出与重试逻辑。\n- T-112：灰度开关启动恢复。\n\n## 下一步\n1. 回归 T-112，覆盖重启和配置中心不可用两条路径。\n2. 更新 2.3 以下客户端兼容说明。\n\n## 阻塞\n测试环境账号未开通；接手人周野需要先拿到 staging 权限。\n\n## 验证记录\n- 单元测试已覆盖重启恢复和配置中心超时。\n- 尚未在 staging 执行端到端回归，因此不能标记为已完成。\n\n## 接手人\n周野。\n"
+      },
+      "negative": {
+        "handoff.md": "# 交接\n## 当前状态\n已完成。\n## 已变更\nT-104。\n## 下一步\n无。\n"
+      },
+      "checks": [
+        {
+          "artifact": "handoff.md",
+          "type": "md_sections",
+          "values": [
+            "# 交接：Q4 迁移批次 2",
+            "## 当前状态",
+            "## 已变更",
+            "## 下一步",
+            "## 阻塞"
+          ]
+        },
+        {
+          "artifact": "handoff.md",
+          "type": "md_phrases",
+          "values": [
+            "T-104",
+            "T-112",
+            "周野",
+            "staging"
+          ]
+        },
+        {
+          "artifact": "handoff.md",
+          "type": "md_min_chars",
+          "value": 220
+        }
+      ],
+      "tags": [
+        "handoff",
+        "document",
+        "office"
+      ],
+      "order": 5
+    },
+    {
+      "id": "data-clean-csv",
+      "title": "清洗重复和缺失分数的 CSV",
+      "category": "data",
+      "source": "WorkBench-style",
+      "prompt": "清洗 raw.csv：删除 score 为空的行，按 id 去重，输出 clean.csv；保留 id,name,score 三列。",
+      "inputs": {
+        "raw.csv": "id,name,score\n1,Ada,10\n2,Bob,\n3,Ada,10\n4,Cy,30\n5,Di,20\n6,Eve,20\n"
+      },
+      "artifacts": {
+        "clean.csv": "id,name,score\n1,Ada,10\n4,Cy,30\n5,Di,20\n6,Eve,20\n"
+      },
+      "negative": {
+        "clean.csv": "id,name,score\n1,Ada,10\n2,Bob,\n3,Ada,10\n4,Cy,30\n5,Di,20\n6,Eve,20\n"
+      },
+      "checks": [
+        {
+          "artifact": "clean.csv",
+          "type": "csv_columns",
+          "values": [
+            "id",
+            "name",
+            "score"
+          ]
+        },
+        {
+          "artifact": "clean.csv",
+          "type": "csv_row_count",
+          "equals": 4
+        },
+        {
+          "artifact": "clean.csv",
+          "type": "csv_no_nulls",
+          "values": [
+            "id",
+            "name",
+            "score"
+          ]
+        },
+        {
+          "artifact": "clean.csv",
+          "type": "csv_lookup",
+          "key": "id",
+          "key_value": "4",
+          "column": "score",
+          "equals": "30"
+        }
+      ],
+      "tags": [
+        "data",
+        "csv",
+        "cleaning"
+      ],
+      "order": 6
+    },
+    {
+      "id": "data-weekly-metrics",
+      "title": "从周表计算订单、收入、AOV 和环比",
+      "category": "data",
+      "source": "GDPval-style",
+      "prompt": "根据 weekly.csv 计算 2026-W41 的 orders、revenue、aov 和相对 W40 的 growth，输出 metrics.json。",
+      "inputs": {
+        "weekly.csv": "week,orders,revenue\n2026-W40,120,24000\n2026-W41,150,31500\n"
+      },
+      "artifacts": {
+        "metrics.json": "{\"week\": \"2026-W41\", \"orders\": 150, \"revenue\": 31500, \"aov\": 210.0, \"growth\": 0.25}\n"
+      },
+      "negative": {
+        "metrics.json": "{\"week\": \"2026-W41\", \"orders\": 145, \"revenue\": 30000, \"aov\": 206.9, \"growth\": 0.2}\n"
+      },
+      "checks": [
+        {
+          "artifact": "metrics.json",
+          "type": "json_keys",
+          "values": [
+            "week",
+            "orders",
+            "revenue",
+            "aov",
+            "growth"
+          ]
+        },
+        {
+          "artifact": "metrics.json",
+          "type": "json_value",
+          "path": "week",
+          "equals": "2026-W41"
+        },
+        {
+          "artifact": "metrics.json",
+          "type": "json_value",
+          "path": "orders",
+          "equals": 150
+        },
+        {
+          "artifact": "metrics.json",
+          "type": "json_value",
+          "path": "revenue",
+          "equals": 31500
+        },
+        {
+          "artifact": "metrics.json",
+          "type": "json_value",
+          "path": "aov",
+          "equals": 210.0
+        },
+        {
+          "artifact": "metrics.json",
+          "type": "json_value",
+          "path": "growth",
+          "equals": 0.25
+        }
+      ],
+      "tags": [
+        "data",
+        "metrics",
+        "arithmetic"
+      ],
+      "order": 7
+    },
+    {
+      "id": "data-budget-xlsx",
+      "title": "用原生 XLSX 写预算和差异",
+      "category": "finance",
+      "source": "OfficeEditBench-style",
+      "prompt": "根据 budget.csv 生成 budget.xlsx：Budget 表包含 Item/Plan/Actual，Total 行必须用 SUM 公式，不能写死。",
+      "inputs": {
+        "budget.csv": "item,plan,actual\nHosting,12000,13500\nLabor,50000,48000\n"
+      },
+      "artifacts": {
+        "budget.xlsx": {
+          "format": "xlsx",
+          "sheets": {
+            "Budget": [
+              [
+                "Item",
+                "Plan",
+                "Actual"
+              ],
+              [
+                "Hosting",
+                12000,
+                13500
+              ],
+              [
+                "Labor",
+                50000,
+                48000
+              ],
+              [
+                "Total",
+                "=SUM(B2:B3)",
+                "=SUM(C2:C3)"
+              ]
+            ]
+          }
+        }
+      },
+      "negative": {
+        "budget.xlsx": {
+          "format": "xlsx",
+          "sheets": {
+            "Budget": [
+              [
+                "Item",
+                "Plan",
+                "Actual"
+              ],
+              [
+                "Hosting",
+                12000,
+                13500
+              ],
+              [
+                "Labor",
+                50000,
+                48000
+              ],
+              [
+                "Total",
+                61000,
+                62000
+              ]
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "artifact": "budget.xlsx",
+          "type": "xlsx_sheet",
+          "values": [
+            "Budget"
+          ]
+        },
+        {
+          "artifact": "budget.xlsx",
+          "type": "xlsx_cell",
+          "sheet": "Budget",
+          "cell": "A4",
+          "equals": "Total"
+        },
+        {
+          "artifact": "budget.xlsx",
+          "type": "xlsx_cell",
+          "sheet": "Budget",
+          "cell": "B2",
+          "equals": 12000
+        },
+        {
+          "artifact": "budget.xlsx",
+          "type": "xlsx_formula",
+          "sheet": "Budget",
+          "cell": "B4",
+          "equals": "=SUM(B2:B3)"
+        },
+        {
+          "artifact": "budget.xlsx",
+          "type": "xlsx_formula",
+          "sheet": "Budget",
+          "cell": "C4",
+          "equals": "=SUM(C2:C3)"
+        }
+      ],
+      "tags": [
+        "finance",
+        "xlsx",
+        "formula"
+      ],
+      "order": 8
+    },
+    {
+      "id": "data-variance",
+      "title": "计算 plan vs actual 的差异表",
+      "category": "data",
+      "source": "WorkBench-style",
+      "prompt": "根据 plan.csv 和 actual.csv 生成 variance.csv，列 item,plan,actual,variance；variance=actual-plan。",
+      "inputs": {
+        "plan.csv": "item,plan\nHosting,12000\nLabor,50000\nTotal,62000\n",
+        "actual.csv": "item,actual\nHosting,13500\nLabor,48000\nTotal,61500\n"
+      },
+      "artifacts": {
+        "variance.csv": "item,plan,actual,variance\nHosting,12000,13500,1500\nLabor,50000,48000,-2000\nTotal,62000,61500,-500\n"
+      },
+      "negative": {
+        "variance.csv": "item,plan,actual,variance\nHosting,12000,13500,-1500\nLabor,50000,48000,2000\nTotal,62000,61500,500\n"
+      },
+      "checks": [
+        {
+          "artifact": "variance.csv",
+          "type": "csv_columns",
+          "values": [
+            "item",
+            "plan",
+            "actual",
+            "variance"
+          ]
+        },
+        {
+          "artifact": "variance.csv",
+          "type": "csv_row_count",
+          "equals": 3
+        },
+        {
+          "artifact": "variance.csv",
+          "type": "csv_lookup",
+          "key": "item",
+          "key_value": "Hosting",
+          "column": "variance",
+          "equals": "1500"
+        },
+        {
+          "artifact": "variance.csv",
+          "type": "csv_lookup",
+          "key": "item",
+          "key_value": "Labor",
+          "column": "variance",
+          "equals": "-2000"
+        }
+      ],
+      "tags": [
+        "data",
+        "csv",
+        "variance"
+      ],
+      "order": 9
+    },
+    {
+      "id": "email-status",
+      "title": "写一封 Q4 迁移状态邮件",
+      "category": "email",
+      "source": "WorkBench-style",
+      "prompt": "根据 status.md 生成 email.json，字段 to/subject/body；收件人必须是 lin.chen@example.com，正文至少 120 字并包含三项事实。",
+      "inputs": {
+        "status.md": "林晨：灰度 10% 已完成；延迟增加 18 ms；供应商交付延迟仍未解除。\n下一步：11/10 全量，前提是压测通过。\n"
+      },
+      "artifacts": {
+        "email.json": "{\n  \"to\": \"lin.chen@example.com\",\n  \"subject\": \"Q4 迁移状态：灰度完成，供应商风险未解除\",\n  \"body\": \"林晨，你好：\\n\\n本周灰度 10% 已完成，日终账对齐，延迟增加 18 ms，在可接受范围内。供应商交付延迟仍未解除，已准备自研脚本作为备选。下一步是 11/10 全量切换，前提是压测通过。\\n\\n请确认预算和回滚窗口，并在本周五前回复；如果没有异议，我按 11/10 全量切换准备。\\n\\n周野\"\n}\n"
+      },
+      "negative": {
+        "email.json": "{\"to\": \"wrong@example.com\", \"subject\": \"更新\", \"body\": \"TODO：稍后补充。\"}\n"
+      },
+      "checks": [
+        {
+          "artifact": "email.json",
+          "type": "json_keys",
+          "values": [
+            "to",
+            "subject",
+            "body"
+          ]
+        },
+        {
+          "artifact": "email.json",
+          "type": "json_value",
+          "path": "to",
+          "equals": "lin.chen@example.com"
+        },
+        {
+          "artifact": "email.json",
+          "type": "json_value",
+          "path": "subject",
+          "equals": "Q4 迁移状态：灰度完成，供应商风险未解除"
+        },
+        {
+          "artifact": "email.json",
+          "type": "json_min_chars",
+          "path": "body",
+          "value": 120
+        },
+        {
+          "artifact": "email.json",
+          "type": "json_contains",
+          "values": [
+            "灰度 10%",
+            "18 ms",
+            "供应商交付延迟"
+          ]
+        },
+        {
+          "artifact": "email.json",
+          "type": "json_forbidden",
+          "values": [
+            "TODO",
+            "待定"
+          ]
+        }
+      ],
+      "tags": [
+        "email",
+        "json",
+        "office"
+      ],
+      "order": 10
+    },
+    {
+      "id": "slides-outline",
+      "title": "把项目简报压成 7 页汇报大纲",
+      "category": "slides",
+      "source": "OfficeBench-style",
+      "prompt": "根据 brief.md 生成 outline.json，7 页，每页至少 2 个 bullet，必须包含风险和下一步。",
+      "inputs": {
+        "brief.md": "Q4 迁移：方案冻结、灰度 10%、全量 12/05；风险是供应商交付延迟；下一步压测。\n"
+      },
+      "artifacts": {
+        "outline.json": "{\n  \"title\": \"Q4 迁移评审\",\n  \"slides\": [\n    {\"title\": \"目标\", \"bullets\": [\"12/05 全量\", \"灰度期间双写可回滚\"]},\n    {\"title\": \"范围\", \"bullets\": [\"订单库\", \"用户画像\", \"账单附件\"]},\n    {\"title\": \"里程碑\", \"bullets\": [\"10/15 方案冻结\", \"11/10 灰度\", \"12/05 全量\"]},\n    {\"title\": \"当前进展\", \"bullets\": [\"灰度 10% 完成\", \"延迟增加 18 ms\"]},\n    {\"title\": \"预算\", \"bullets\": [\"120 万元\", \"包含回滚演练\"]},\n    {\"title\": \"风险\", \"bullets\": [\"供应商交付延迟\", \"10/25 未交付启用自研脚本\"]},\n    {\"title\": \"下一步\", \"bullets\": [\"完成压测\", \"确认预算和回滚窗口\"]}\n  ]\n}\n"
+      },
+      "negative": {
+        "outline.json": "{\"title\": \"Q4 迁移评审\", \"slides\": [{\"title\": \"目标\", \"bullets\": [\"12/05 全量\"]}, {\"title\": \"进展\", \"bullets\": [\"灰度完成\"]}]}\n"
+      },
+      "checks": [
+        {
+          "artifact": "outline.json",
+          "type": "json_keys",
+          "values": [
+            "title",
+            "slides"
+          ]
+        },
+        {
+          "artifact": "outline.json",
+          "type": "json_list_len",
+          "path": "slides",
+          "equals": 7
+        },
+        {
+          "artifact": "outline.json",
+          "type": "json_contains",
+          "values": [
+            "风险",
+            "下一步"
+          ]
+        },
+        {
+          "artifact": "outline.json",
+          "type": "json_list_field_min",
+          "path": "slides",
+          "field": "bullets",
+          "min": 2
+        }
+      ],
+      "tags": [
+        "slides",
+        "json",
+        "office"
+      ],
+      "order": 11
+    },
+    {
+      "id": "calendar-plan",
+      "title": "把任务排成无冲突的日历",
+      "category": "calendar",
+      "source": "WorkBench-style",
+      "prompt": "根据 tasks.md 生成 schedule.json，四个时间块，ISO 时间，不能重叠。",
+      "inputs": {
+        "tasks.md": "方案评审 2026-11-24 09:00-10:00\n压测准备 2026-11-24 10:30-11:30\n预算确认 2026-11-24 14:00-14:30\n供应商同步 2026-11-25 09:00-09:30\n"
+      },
+      "artifacts": {
+        "schedule.json": "[\n  {\"task\": \"方案评审\", \"start\": \"2026-11-24T09:00:00+08:00\", \"end\": \"2026-11-24T10:00:00+08:00\"},\n  {\"task\": \"压测准备\", \"start\": \"2026-11-24T10:30:00+08:00\", \"end\": \"2026-11-24T11:30:00+08:00\"},\n  {\"task\": \"预算确认\", \"start\": \"2026-11-24T14:00:00+08:00\", \"end\": \"2026-11-24T14:30:00+08:00\"},\n  {\"task\": \"供应商同步\", \"start\": \"2026-11-25T09:00:00+08:00\", \"end\": \"2026-11-25T09:30:00+08:00\"}\n]\n"
+      },
+      "negative": {
+        "schedule.json": "[\n  {\"task\": \"方案评审\", \"start\": \"2026-11-24T09:00:00+08:00\", \"end\": \"2026-11-24T10:30:00+08:00\"},\n  {\"task\": \"压测准备\", \"start\": \"2026-11-24T10:00:00+08:00\", \"end\": \"2026-11-24T11:00:00+08:00\"}\n]\n"
+      },
+      "checks": [
+        {
+          "artifact": "schedule.json",
+          "type": "json_list_len",
+          "path": "",
+          "equals": 4
+        },
+        {
+          "artifact": "schedule.json",
+          "type": "json_no_overlap",
+          "path": "",
+          "start_field": "start",
+          "end_field": "end"
+        },
+        {
+          "artifact": "schedule.json",
+          "type": "json_contains",
+          "values": [
+            "方案评审",
+            "压测准备",
+            "预算确认",
+            "供应商同步"
+          ]
+        }
+      ],
+      "tags": [
+        "calendar",
+        "json",
+        "planning"
+      ],
+      "order": 12
+    },
+    {
+      "id": "file-triage",
+      "title": "按类型整理收件箱并写映射",
+      "category": "files",
+      "source": "WorkBench-style",
+      "prompt": "把 inbox 里的发票和收据分别放到 sorted/invoices 和 sorted/receipts，写 triage.json 映射；缺文件算失败。",
+      "inputs": {
+        "inbox/INV-001.txt": "发票 INV-001，金额 1080。\n",
+        "inbox/RCPT-002.txt": "收据 RCPT-002，金额 120。\n"
+      },
+      "artifacts": {
+        "triage.json": "{\"INV-001\": \"sorted/invoices/INV-001.txt\", \"RCPT-002\": \"sorted/receipts/RCPT-002.txt\"}\n",
+        "sorted/invoices/INV-001.txt": "发票 INV-001，金额 1080。\n",
+        "sorted/receipts/RCPT-002.txt": "收据 RCPT-002，金额 120。\n"
+      },
+      "negative": {
+        "triage.json": "{\"INV-001\": \"sorted/invoices/INV-001.txt\"}\n",
+        "sorted/invoices/INV-001.txt": "发票 INV-001，金额 1080。\n"
+      },
+      "checks": [
+        {
+          "artifact": "triage.json",
+          "type": "json_keys",
+          "values": [
+            "INV-001",
+            "RCPT-002"
+          ]
+        },
+        {
+          "artifact": "triage.json",
+          "type": "json_value",
+          "path": "RCPT-002",
+          "equals": "sorted/receipts/RCPT-002.txt"
+        },
+        {
+          "artifact": "",
+          "type": "files_exist",
+          "values": [
+            "sorted/invoices/INV-001.txt",
+            "sorted/receipts/RCPT-002.txt"
+          ]
+        },
+        {
+          "artifact": "",
+          "type": "files_absent",
+          "values": [
+            "inbox/INV-001.txt",
+            "inbox/RCPT-002.txt"
+          ]
+        }
+      ],
+      "tags": [
+        "files",
+        "triage",
+        "office"
+      ],
+      "order": 13,
+      "remove_inputs": [
+        "inbox/INV-001.txt",
+        "inbox/RCPT-002.txt"
+      ]
+    },
+    {
+      "id": "form-fill",
+      "title": "从请求文本填写表单 JSON",
+      "category": "form",
+      "source": "WorkBench-style",
+      "prompt": "根据 request.txt 填 form.json：name、email、amount、date 四个字段都要有，金额为数字。",
+      "inputs": {
+        "request.txt": "申请人 Ada，邮箱 ada@example.com，报销金额 1200 元，日期 2026-11-30。\n"
+      },
+      "artifacts": {
+        "form.json": "{\"name\": \"Ada\", \"email\": \"ada@example.com\", \"amount\": 1200, \"date\": \"2026-11-30\"}\n"
+      },
+      "negative": {
+        "form.json": "{\"name\": \"Ada\", \"amount\": 1200, \"date\": \"2026-11-30\"}\n"
+      },
+      "checks": [
+        {
+          "artifact": "form.json",
+          "type": "json_keys",
+          "values": [
+            "name",
+            "email",
+            "amount",
+            "date"
+          ]
+        },
+        {
+          "artifact": "form.json",
+          "type": "json_value",
+          "path": "email",
+          "equals": "ada@example.com"
+        },
+        {
+          "artifact": "form.json",
+          "type": "json_value",
+          "path": "amount",
+          "equals": 1200
+        },
+        {
+          "artifact": "form.json",
+          "type": "json_value",
+          "path": "date",
+          "equals": "2026-11-30"
+        }
+      ],
+      "tags": [
+        "form",
+        "extraction",
+        "json"
+      ],
+      "order": 14
+    },
+    {
+      "id": "extract-invoice",
+      "title": "从发票文本抽取结构化字段",
+      "category": "extraction",
+      "source": "OfficeBench-style",
+      "prompt": "从 invoice.txt 抽 vendor、date、total、tax，输出 invoice.json；total 是含税总额。",
+      "inputs": {
+        "invoice.txt": "供应商：Northwind Labs\n发票日期：2026-11-15\n小计：1000\n税额：80\n合计：1080\n"
+      },
+      "artifacts": {
+        "invoice.json": "{\"vendor\": \"Northwind Labs\", \"date\": \"2026-11-15\", \"total\": 1080, \"tax\": 80}\n"
+      },
+      "negative": {
+        "invoice.json": "{\"vendor\": \"Northwind Labs\", \"date\": \"2026-11-15\", \"total\": 980, \"tax\": 80}\n"
+      },
+      "checks": [
+        {
+          "artifact": "invoice.json",
+          "type": "json_keys",
+          "values": [
+            "vendor",
+            "date",
+            "total",
+            "tax"
+          ]
+        },
+        {
+          "artifact": "invoice.json",
+          "type": "json_value",
+          "path": "vendor",
+          "equals": "Northwind Labs"
+        },
+        {
+          "artifact": "invoice.json",
+          "type": "json_value",
+          "path": "total",
+          "equals": 1080
+        },
+        {
+          "artifact": "invoice.json",
+          "type": "json_value",
+          "path": "tax",
+          "equals": 80
+        }
+      ],
+      "tags": [
+        "extraction",
+        "invoice",
+        "json"
+      ],
+      "order": 15
+    },
+    {
+      "id": "kb-answer",
+      "title": "基于两份 FAQ 回答问题并引用来源",
+      "category": "research",
+      "source": "APEX-Agents-style",
+      "prompt": "阅读 faq-a.md 和 faq-b.md，回答“灰度失败后多久必须回滚”，至少引用两份来源，不能编造。",
+      "inputs": {
+        "faq-a.md": "faq-a.md：灰度失败后 30 分钟内必须回滚；回滚由值班负责人触发。\n",
+        "faq-b.md": "faq-b.md：如果涉及账单附件，回滚窗口是 72 小时；需要财务和法务确认。\n"
+      },
+      "artifacts": {
+        "answer.md": "# 灰度失败后的回滚时限\n\n普通链路灰度失败后 30 分钟内必须回滚，由值班负责人触发（来源：faq-a.md）。\n\n如果涉及账单附件，回滚窗口是 72 小时，且需要财务和法务确认（来源：faq-b.md）。\n\n因此，先按 30 分钟处理普通链路；账单附件单独走 72 小时窗口，不能把两者混用。\n"
+      },
+      "negative": {
+        "answer.md": "# 回滚时限\n灰度失败后马上回滚。\n"
+      },
+      "checks": [
+        {
+          "artifact": "answer.md",
+          "type": "md_sections",
+          "values": [
+            "# 灰度失败后的回滚时限"
+          ]
+        },
+        {
+          "artifact": "answer.md",
+          "type": "md_phrases",
+          "values": [
+            "30 分钟",
+            "72 小时",
+            "faq-a.md",
+            "faq-b.md"
+          ]
+        },
+        {
+          "artifact": "answer.md",
+          "type": "md_min_chars",
+          "value": 120
+        },
+        {
+          "artifact": "answer.md",
+          "type": "md_forbidden",
+          "values": [
+            "不知道",
+            "立即"
+          ]
+        }
+      ],
+      "tags": [
+        "research",
+        "kb",
+        "citations"
+      ],
+      "order": 16
+    },
+    {
+      "id": "compliance-review",
+      "title": "审一份政策并输出风险标记",
+      "category": "compliance",
+      "source": "GDPval-style",
+      "prompt": "阅读 policy.md，输出 review.json；flags 至少 2 条，必须包含 PII-01 和 RET-02，并标注 high/medium。",
+      "inputs": {
+        "policy.md": "政策：客服系统可以保存用户手机号 180 天；退款申请需在 7 个工作日内处理；营销邮件必须提供退订链接。\n"
+      },
+      "artifacts": {
+        "review.json": "{\n  \"flags\": [\n    {\"id\": \"PII-01\", \"risk\": \"high\", \"reason\": \"手机号保存 180 天缺少必要性说明\"},\n    {\"id\": \"RET-02\", \"risk\": \"medium\", \"reason\": \"退款 7 个工作日需要明确起算点\"},\n    {\"id\": \"MKT-03\", \"risk\": \"low\", \"reason\": \"退订链接已提供\"}\n  ],\n  \"summary\": \"需要补充 PII 保存必要性和退款起算点。\"\n}\n"
+      },
+      "negative": {
+        "review.json": "{\"flags\": [{\"id\": \"MKT-03\", \"risk\": \"low\", \"reason\": \"退订链接已提供\"}], \"summary\": \"无高风险。\"}\n"
+      },
+      "checks": [
+        {
+          "artifact": "review.json",
+          "type": "json_keys",
+          "values": [
+            "flags",
+            "summary"
+          ]
+        },
+        {
+          "artifact": "review.json",
+          "type": "json_list_len",
+          "path": "flags",
+          "min": 2
+        },
+        {
+          "artifact": "review.json",
+          "type": "json_contains",
+          "values": [
+            "PII-01",
+            "RET-02",
+            "high",
+            "medium"
+          ]
+        }
+      ],
+      "tags": [
+        "compliance",
+        "review",
+        "json"
+      ],
+      "order": 17
+    },
+    {
+      "id": "translation-glossary",
+      "title": "按术语表翻译并保留术语",
+      "category": "translation",
+      "source": "WorkBench-style",
+      "prompt": "按 glossary.md 把 text.md 译成中文，输出 translation.json：zh 是译文，terms 至少包含三个术语。",
+      "inputs": {
+        "text.md": "The migration is blocked by vendor delivery. Confirm the budget and rollback window.\n",
+        "glossary.md": "migration=迁移；vendor delivery=供应商交付；rollback window=回滚窗口；budget=预算\n"
+      },
+      "artifacts": {
+        "translation.json": "{\"zh\": \"迁移因供应商交付受阻。请确认预算和回滚窗口。\", \"terms\": [\"迁移\", \"供应商交付\", \"回滚窗口\", \"预算\"]}\n"
+      },
+      "negative": {
+        "translation.json": "{\"zh\": \"迁移被 vendor 延迟了。\", \"terms\": [\"迁移\"]}\n"
+      },
+      "checks": [
+        {
+          "artifact": "translation.json",
+          "type": "json_keys",
+          "values": [
+            "zh",
+            "terms"
+          ]
+        },
+        {
+          "artifact": "translation.json",
+          "type": "json_value",
+          "path": "zh",
+          "equals": "迁移因供应商交付受阻。请确认预算和回滚窗口。"
+        },
+        {
+          "artifact": "translation.json",
+          "type": "json_list_len",
+          "path": "terms",
+          "min": 3
+        },
+        {
+          "artifact": "translation.json",
+          "type": "json_contains",
+          "values": [
+            "供应商交付",
+            "回滚窗口",
+            "预算"
+          ]
+        }
+      ],
+      "tags": [
+        "translation",
+        "glossary",
+        "json"
+      ],
+      "order": 18
+    },
+    {
+      "id": "task-plan",
+      "title": "把范围说明拆成带依赖的任务计划",
+      "category": "planning",
+      "source": "TheAgentCompany-style",
+      "prompt": "根据 scope.md 生成 plan.json：6 个任务，任务有 id、owner、deps，依赖不能成环。",
+      "inputs": {
+        "scope.md": "方案冻结 -> 迁移脚本 -> 压测 -> 灰度 -> 全量 -> 复盘；负责人：林晨、周野、王敏、赵磊。\n"
+      },
+      "artifacts": {
+        "plan.json": "{\"tasks\": [\n  {\"id\": \"T1\", \"owner\": \"林晨\", \"deps\": []},\n  {\"id\": \"T2\", \"owner\": \"周野\", \"deps\": [\"T1\"]},\n  {\"id\": \"T3\", \"owner\": \"赵磊\", \"deps\": [\"T2\"]},\n  {\"id\": \"T4\", \"owner\": \"王敏\", \"deps\": [\"T3\"]},\n  {\"id\": \"T5\", \"owner\": \"林晨\", \"deps\": [\"T4\"]},\n  {\"id\": \"T6\", \"owner\": \"周野\", \"deps\": [\"T5\"]}\n]}\n"
+      },
+      "negative": {
+        "plan.json": "{\"tasks\": [\n  {\"id\": \"T1\", \"owner\": \"林晨\", \"deps\": [\"T2\"]},\n  {\"id\": \"T2\", \"owner\": \"周野\", \"deps\": [\"T1\"]},\n  {\"id\": \"T3\", \"owner\": \"赵磊\", \"deps\": []}\n]}\n"
+      },
+      "checks": [
+        {
+          "artifact": "plan.json",
+          "type": "json_keys",
+          "values": [
+            "tasks"
+          ]
+        },
+        {
+          "artifact": "plan.json",
+          "type": "json_list_len",
+          "path": "tasks",
+          "equals": 6
+        },
+        {
+          "artifact": "plan.json",
+          "type": "json_dag",
+          "path": "tasks",
+          "required": [
+            "T1",
+            "T2",
+            "T3",
+            "T4",
+            "T5",
+            "T6"
+          ]
+        },
+        {
+          "artifact": "plan.json",
+          "type": "json_contains",
+          "values": [
+            "林晨",
+            "周野",
+            "王敏",
+            "赵磊"
+          ]
+        }
+      ],
+      "tags": [
+        "planning",
+        "dag",
+        "json"
+      ],
+      "order": 19
+    },
+    {
+      "id": "risk-register",
+      "title": "把风险清单整理成风险登记表",
+      "category": "risk",
+      "source": "TheAgentCompany-style",
+      "prompt": "根据 notes.md 生成 risks.csv，列 id,risk,severity,owner；至少 5 行，必须包含一条 high。",
+      "inputs": {
+        "notes.md": "R-01 供应商交付延迟 high 林晨\nR-02 灰度回滚超时 medium 周野\nR-03 旧客户端不兼容 medium 王敏\nR-04 预算超支 low 林晨\nR-05 测试账号缺失 low 赵磊\n"
+      },
+      "artifacts": {
+        "risks.csv": "id,risk,severity,owner\nR-01,供应商交付延迟,high,林晨\nR-02,灰度回滚超时,medium,周野\nR-03,旧客户端不兼容,medium,王敏\nR-04,预算超支,low,林晨\nR-05,测试账号缺失,low,赵磊\n"
+      },
+      "negative": {
+        "risks.csv": "id,risk,severity,owner\nR-04,预算超支,low,林晨\nR-05,测试账号缺失,low,赵磊\nR-02,灰度回滚超时,medium,周野\n"
+      },
+      "checks": [
+        {
+          "artifact": "risks.csv",
+          "type": "csv_columns",
+          "values": [
+            "id",
+            "risk",
+            "severity",
+            "owner"
+          ]
+        },
+        {
+          "artifact": "risks.csv",
+          "type": "csv_row_count",
+          "equals": 5
+        },
+        {
+          "artifact": "risks.csv",
+          "type": "csv_lookup",
+          "key": "id",
+          "key_value": "R-01",
+          "column": "severity",
+          "equals": "high"
+        },
+        {
+          "artifact": "risks.csv",
+          "type": "csv_lookup",
+          "key": "id",
+          "key_value": "R-03",
+          "column": "owner",
+          "equals": "王敏"
+        }
+      ],
+      "tags": [
+        "risk",
+        "csv",
+        "office"
+      ],
+      "order": 20
+    }
+  ]
+}

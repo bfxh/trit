@@ -291,12 +291,14 @@ impl BlockIndex {
             }
             layers.push(info);
         }
-        Ok(Self {
+        let index = Self {
             source_bytes,
             source_checksum,
             block_rows,
             layers,
-        })
+        };
+        super::geom::check(&index)?;
+        Ok(index)
     }
 
     pub(crate) fn layer(&self, index: usize) -> Result<&LayerIndex> {

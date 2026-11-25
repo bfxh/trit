@@ -2,7 +2,6 @@
 //!
 //! 策略本身在 `schedule`（纯函数、可穷举单测）；这里只负责线程、队列与结果汇总。
 //! 不抢占：已启动的外部命令不打断；"优先"只体现为"不派发"。
-
 use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,7 +17,6 @@ use crate::{BuildOptions, build_source};
 use trit_core::Algebra;
 
 // ---------- 双轨并行（--manifest） ----------
-
 #[derive(Debug, Clone)]
 pub(crate) struct JobSpec {
     name: String,
@@ -166,6 +164,8 @@ pub(crate) fn execute_job(job: &JobSpec, algebra: Algebra, out_root: &Path) -> V
                     emit_verilog: job.emit_verilog,
                     verify_hdl: false,
                     emit_gpu: false,
+                    backend: crate::artifacts::Backend::Table,
+                    verify_c: false,
                     threads: 1,
                     egraph: RewriteOptions::default(),
                 },

@@ -388,7 +388,7 @@ cargo run --release -p trit-cli -- verify examples/policy.json
 **可复算的质量数据**：`scripts/mutation_check.py` 的登记表（`scripts/mutants/*.json`）现有 **958**
 条关键规则的单点文本变异，逐条跑对应回归（复算：`python -c "import json,glob;print(sum(len(json.load(open(f,encoding='utf-8'))) for f in glob.glob('scripts/mutants/*.json')))"`）；
 fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / netlist_json）；
-测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
+测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.89 + wasm32。贡献流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 **对比与测量的规则**见 [`docs/positioning/TERNARY-BOUNDARIES.md`](docs/positioning/TERNARY-BOUNDARIES.md) §6/§7：
@@ -827,8 +827,8 @@ OK     free slot must not reject on unknown hopelessness
   [docs/positioning/TERNARY-BOUNDARIES.md](docs/positioning/TERNARY-BOUNDARIES.md)。
 - 三进制构建工具（M0–M3 + 2026-11-08 补齐）：`.tri`/Verilog 子集 → 化简 + e-graph **饱和重写**
   （规则逐条自证，`--cost nodes|gates` 代价模型）→ **多线程**位并行真值表 →
-  `TRB2` v3（含变量名）/CSV/`lookup.c`/双导轨 Verilog/WGSL 查表内核；
-  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog] [--verify-hdl] [--emit-gpu] [--threads N]`；
+  `TRB2` v3（含变量名）/CSV/`lookup.c`/`direct.c`（`--backend direct|both` 直算，交换律 CSE + DCE）/双导轨 Verilog/WGSL 查表内核；
+  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog] [--verify-hdl] [--emit-gpu] [--backend table|direct|both] [--verify-c] [--threads N]`；
   为什么只做这一层、哪部分仍靠 LLVM/Rust 见 [docs/reference/TERNARY-TOOLCHAIN.md](docs/reference/TERNARY-TOOLCHAIN.md)。
 - 三进制训练实验（`trit-train`）：三值 STE（Identity/Clipped/Soft）+ 每行 scale、
   位平面 ALU（Kleene/Łukasiewicz/Bochvar）+ 并发/预取剖析。边界与读数见
@@ -853,7 +853,7 @@ cargo test --workspace
 `trit-redteam binary` 会把这些路径标成 `rust-toolchain`（而非我们的问题）。
 
 CI 另外覆盖：`docs`（rustdoc `-D warnings`）、`action`（用 `examples/policy.json` 跑复合 Action 自测）、
-`MSRV`（1.88，`--locked`）、`wasm`（wasm32 构建）与 `package`（每个 crate 可打包）。
+`MSRV`（1.89，`--locked`）、`wasm`（wasm32 构建）与 `package`（每个 crate 可打包）。
 Release 前会校验 tag 与 `trit-cli` 版本一致。
 
 `main` 使用线性历史；贡献流程与本地检查见 [CONTRIBUTING.md](CONTRIBUTING.md)。

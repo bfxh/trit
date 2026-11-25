@@ -193,7 +193,15 @@ def _manifest_hash(root):
                 except OSError as exc:
                     return None, f"skipped-dir stat failed: {exc}"
                 h.update(b"DIR\0" + rel.encode("utf-8", "replace") + b"\0")
-                h.update(str(st.st_size).encode() + b":" + str(st.st_mtime_ns).encode() + b"\n")
+                if name == ".git":
+                    # Read-only git operations rewrite this directory's mtime
+                    # when they create/remove index.lock.  The lock file is
+                    # volatile and the staged index is hashed semantically
+                    # below; hashing the .git directory mtime would make a
+                    # concurrent `git status` look like a host write.
+                    h.update(b"volatile-dir-mtime\n")
+                else:
+                    h.update(str(st.st_size).encode() + b":" + str(st.st_mtime_ns).encode() + b"\n")
                 # Directory mtime catches creates/deletes, not overwrites of an
                 # existing cache file. Include name/size/mtime for files below
                 # the skipped root, still without hashing their contents.
@@ -214,6 +222,9 @@ def _manifest_hash(root):
                         h.update(str(sst.st_size).encode() + b":" + str(sst.st_mtime_ns).encode() + b"\n")
                     for subname in sorted(subfiles):
                         subfull = os.path.join(subdir, subname)
+                        srel = os.path.relpath(subfull, root).replace("\\", "/")
+                        if srel in MANIFEST_VOLATILE:
+                            continue
                         try:
                             sst = os.stat(subfull, follow_symlinks=False)
                         except OSError as exc:
@@ -221,7 +232,6 @@ def _manifest_hash(root):
                         count += 1
                         if count > MAX_HOST_FILES:
                             return None, f"host has more than {MAX_HOST_FILES} files; state unprovable"
-                        srel = os.path.relpath(subfull, root).replace("\\", "/")
                         h.update(b"FILE\0" + srel.encode("utf-8", "replace") + b"\0")
                         h.update(str(sst.st_size).encode() + b":" + str(sst.st_mtime_ns).encode() + b"\n")
                         # A cache overwrite can keep size and restore mtime. For
@@ -287,9 +297,17 @@ def fingerprint(root):
     git_value = None
     try:
         import handoff
-        value, why = handoff.state(root)
-        if value:
-            git_value = value
+        for attempt in range(3):
+            value, why = handoff.state(root)
+            if value:
+                git_value = value
+                break
+            # A concurrent sandbox can hold .git/index.lock for a few
+            # milliseconds; retry before degrading the fingerprint kind.
+            if "status failed" in (why or "") and attempt < 2:
+                time.sleep(0.05)
+            else:
+                break
     except Exception:
         git_value = None
     manifest, why = _manifest_hash(root)
@@ -1116,6 +1134,20 @@ def self_test():
        and rec["exit"] == 3 and os.path.exists(lock_file), rec["verdict"])
     if os.path.exists(lock_file):
         os.unlink(lock_file)
+
+    # A read-only `git status` can change the .git directory mtime while
+    # creating/removing index.lock. That must not look like a host write; a
+    # real file write under .git still must.
+    git_dir = os.path.join(exroot, ".git")
+    base_fp = fingerprint(exroot)[0]
+    git_st = os.stat(git_dir)
+    os.utime(git_dir, ns=(git_st.st_atime_ns, git_st.st_mtime_ns + 1_000_000))
+    ck("git dir mtime alone is not host-mutated", fingerprint(exroot)[0] == base_fp)
+    git_note = os.path.join(git_dir, "host-note")
+    with open(git_note, "w", encoding="utf-8") as fh:
+        fh.write("x")
+    ck("file write under .git is host-mutated", fingerprint(exroot)[0] != base_fp)
+    os.unlink(git_note)
 
     # non-git fallback: still detects a host write
     nogit = os.path.join(tmp, "nogit")

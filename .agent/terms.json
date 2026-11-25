@@ -17,7 +17,7 @@
       "anchors": [
         "tools/affected.py:118:fail-safe: a full run is always sound, an unproven subset is not",
         "tools/affected.py:125:\"proven\": len(unproven) == 0, \"unproven\": unproven,",
-        "AGENT-GUARDRAILS.md:33:出测试计划；没有证明就回退全量（不拒绝，如实标注 unproven）"
+        "AGENT-GUARDRAILS.md:34:出测试计划；没有证明就回退全量（不拒绝，如实标注 unproven）"
       ],
       "status": "active"
     },
@@ -50,8 +50,8 @@
       ],
       "mix": "co",
       "anchors": [
-        "tools/agent_verify.py:1466:\"changed\" if je[\"code\"] == 1 else \"failed\"))",
-        "AGENT-GUARDRAILS.md:788:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
+        "AGENT-GUARDRAILS.md:846:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
+        "tools/agent_verify.py:1899:\"clean\" if je[\"code\"] == 0 else (\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -85,8 +85,8 @@
       ],
       "mix": "exclusive",
       "anchors": [
-        "tools/agent_verify.py:129:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:192:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:158:declaration-based gate: the tool layer cannot measure model-side token",
+        "tools/agent_verify.py:256:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -105,7 +105,7 @@
       ],
       "anchors": [
         "tools/ledger.py:2:keep token cost and wall-clock cost in separate columns, on purpose",
-        "tools/agent_verify.py:138:wall is tool-measured per command; tokens are caller-declared"
+        "tools/agent_verify.py:167:wall is tool-measured per command; tokens are caller-declared"
       ],
       "status": "active"
     },
@@ -125,7 +125,7 @@
       ],
       "anchors": [
         "tools/ledger.py:7:Why separate: a task can be cheap in wall-clock and ruinous in tokens",
-        "tools/agent_verify.py:23:the tool layer CANNOT measure model-side"
+        "tools/agent_verify.py:25:the tool layer CANNOT measure model-side"
       ],
       "status": "active"
     },
@@ -150,7 +150,7 @@
       ],
       "anchors": [
         "tools/run_caps.py:32:Honest strength statement -- this is a resource cap, NOT a security boundary:",
-        "AGENT-GUARDRAILS.md:300:## 协议四：资源帽协议（何时开 --caps）"
+        "AGENT-GUARDRAILS.md:355:## 协议四：资源帽协议（何时开 --caps）"
       ],
       "status": "active"
     },
@@ -187,7 +187,7 @@
       "mix": "none",
       "anchors": [
         "tools/journal.py:214:journal: end -- ",
-        "AGENT-GUARDRAILS.md:791:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
+        "AGENT-GUARDRAILS.md:849:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
       ],
       "status": "active"
     },
@@ -202,8 +202,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "tools/agent_verify.py:1505:verdict = (\"command failed\" if not ran_ok else",
-        "AGENT-GUARDRAILS.md:769:1. **`verdict`**——只有这几种，各是什么一眼定论："
+        "AGENT-GUARDRAILS.md:827:1. **`verdict`**——只有这几种，各是什么一眼定论：",
+        "tools/agent_verify.py:1984:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -264,7 +264,7 @@
       ],
       "anchors": [
         "AGENT-GUARDRAILS.md:15:护栏链上任何一道闸拒绝，整体拒绝——这是本手册最重要的性质",
-        "AGENT-GUARDRAILS.md:50:闸门步骤任一拒绝 ⇒ 整体拒绝"
+        "AGENT-GUARDRAILS.md:51:闸门步骤任一拒绝 ⇒ 整体拒绝"
       ],
       "status": "active"
     },
@@ -285,7 +285,7 @@
       ],
       "anchors": [
         "tools/signal.py:14:Honest boundary: classify is rule triage, not a model judgment",
-        "AGENT-GUARDRAILS.md:377:classify 是规则匹配，不是模型判断"
+        "AGENT-GUARDRAILS.md:432:classify 是规则匹配，不是模型判断"
       ],
       "status": "active"
     },
@@ -300,8 +300,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "AGENT-GUARDRAILS.md:499:**主检出判定只有一个机器无关判据：`.git` 是目录。**",
-        "tools/policy.py:260:def checkout_kind(root_path):"
+        "tools/policy.py:260:def checkout_kind(root_path):",
+        "AGENT-GUARDRAILS.md:554:**主检出判定只有一个机器无关判据：`.git` 是目录。**"
       ],
       "status": "active"
     },
@@ -639,6 +639,419 @@
       "action": "update",
       "term": "failed",
       "reason": "AGENT-GUARDRAILS 命令块新增行，failed 权威行 784->788，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:50+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:50+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:50+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:51+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:27:51+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:28:10+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:28:10+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:28:11+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "receipt token work: policy allow dedupe and model view moved code/docs down; quotes unchanged, only anchor line numbers shifted",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:31:30+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "policy empty output key omitted; quotes unchanged, lines moved down",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T19:31:30+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "policy empty output key omitted; quotes unchanged, lines moved down",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "proven",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "caps",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "gate",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "triage",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T20:59:07+08:00",
+      "action": "update",
+      "term": "worktree",
+      "reason": "AGENT-GUARDRAILS 新增多用户设置/安全门/LSP 章节，正文行号下移；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:50:31+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:50:32+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:50:32+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:50:32+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-23T21:51:03+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "agent_verify 增加 stdlib signal/subprocess 遮蔽保护导入，函数体整体下移 11 行；引文逐字未变，按 --reason 重新锚定",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T02:50:24+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "agent_verify 新增 alignment 段，failed 权威行下移，引文未改写",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T02:50:24+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 新增 alignment 段，declared 权威行下移，引文未改写",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T02:50:24+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "agent_verify 新增 alignment 段，declared 第二锚点下移，引文未改写",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T02:50:24+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "agent_verify 新增 alignment 段，wall 权威行下移，引文未改写",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T02:50:24+08:00",
+      "action": "update",
+      "term": "token",
+      "reason": "agent_verify 新增 alignment 段，token 权威行下移，引文未改写",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T02:50:24+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "agent_verify 新增 alignment 段，verdict 权威行下移，引文未改写",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T03:35:10+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "alignment/2 帮助文本增加两行，failed 锚点随之下移",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T03:35:10+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "alignment/2 帮助文本增加两行，declared 锚点随之下移",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T03:35:10+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "alignment/2 帮助文本增加两行，verdict 锚点随之下移",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T04:45:43+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "post-run alignment-post block shifted agent_verify; re-anchor to current code",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T04:45:43+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "post-run alignment-post block shifted agent_verify; re-anchor to current code",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T04:45:43+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "post-run alignment-post block shifted agent_verify; re-anchor to current code",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T04:45:43+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "post-run alignment-post block shifted agent_verify; re-anchor to current code",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T04:45:43+08:00",
+      "action": "update",
+      "term": "token",
+      "reason": "post-run alignment-post block shifted agent_verify; re-anchor to current code",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T04:45:43+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "post-run alignment-post block shifted agent_verify; re-anchor to current code",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T05:35:26+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "v3 run-command provenance fields shifted agent_verify; re-anchor to current lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T05:35:26+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "v3 run-command provenance fields shifted agent_verify; re-anchor to current lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T05:35:26+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "v3 run-command provenance fields shifted agent_verify; re-anchor to current lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T06:43:15+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "declared-change stage added lines in alignment_probe and post-run call; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T06:43:19+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "declared-change stage added lines in alignment_probe and post-run call; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T07:47:39+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "goal coverage adds coverage to alignment_summary; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T07:47:44+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "goal coverage adds coverage to alignment_summary; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T11:41:44+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "line moved by stability gate integration; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T11:41:44+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "line moved by stability gate integration; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T11:41:44+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "line moved by stability gate integration; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T11:41:44+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "line moved by stability gate integration; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-24T11:41:45+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "line moved by stability gate integration; quote unchanged",
       "loosened": "drop-anchor"
     }
   ]

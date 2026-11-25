@@ -14,9 +14,11 @@ the caller has to remember the order. The order IS the safety property --
     affected      (the subset, only if it carries a proof)
     policy        (we are allowed to run this at all)
     constraints   (this change is allowed at all)
+    alignment     (goal -> requirement -> artifact/evidence/change graph)
     journal-begin (we can prove and undo what it writes)
     run           (only now; with --caps each command is wrapped by run_caps.py)
     journal-end   (what it actually wrote)
+    alignment-post (actual writes still match the declared graph; no drift)
     memory-note   (a durable, evidenced trace)
     timeline-record (a failure is a problem with a timestamp)
 
@@ -101,15 +103,39 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+# tools/signal.py shadows the stdlib `signal` module when this script is run as
+# `python tools/agent_verify.py`. Load stdlib signal and subprocess with the
+# script dir off sys.path, then restore it for the local tool modules. Without
+# this, POSIX timeout/kill paths resolve tools/signal.py and crash on SIGKILL.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if sys.path and os.path.abspath(sys.path[0]) == _SCRIPT_DIR:
+    del sys.path[0]
+import signal as _stdlib_signal  # noqa: F401 - shadow guard, keeps stdlib in sys.modules
+import subprocess
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
 import attest  # same tools directory; the budget gate consumes the attest chain balance
 import ledger  # same tools directory; the chain appends cost entries, one writer per chain
+import agent_settings  # same tools directory; user/project settings resolution
+
+# The policy allow path emits the same two boilerplate lines for every command.
+# They are useful when printed once, but repeating them per command makes the full
+# receipt (and every model that reads it) pay for the same text N times.  Keep the
+# per-command decision and every WARN/DENY/special-note line; drop only these two
+# generic lines from allow results.
+POLICY_GENERIC_ALLOW_RX = re.compile(
+    r"^policy: OK\s+allowed: .* reads or executes$"
+)
+POLICY_ALLOW_TAIL_RX = re.compile(
+    r"^policy: allow \([A-Za-z0-9_-]+(?:-[A-Za-z0-9_-]+)*, network=(?:on|off)\)$"
+)
 
 LANGS = {"rust", "python", "node", "go"}
 PROFILES = {"read-only", "workspace-write", "full"}
@@ -125,6 +151,9 @@ RESUME = os.path.join(TOOLS, "resume.py")
 HANDOFF = os.path.join(TOOLS, "handoff.py")
 CLAIMS = os.path.join(os.path.dirname(TOOLS), "scripts", "agent_claims.py")
 RUN_CAPS = os.path.join(TOOLS, "run_caps.py")
+SECURITY = os.path.join(TOOLS, "security_gate.py")
+ALIGNMENT = os.path.join(TOOLS, "alignment_gate.py")
+STABILITY = os.path.join(TOOLS, "stability_probe.py")
 
 BUDGET_NOTE = ("declaration-based gate: the tool layer cannot measure model-side token "
                "usage; --budget-token is the caller's declared remaining budget "
@@ -154,7 +183,7 @@ ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attes
                "the budget gate consumes the chain balance when it exists, stays "
                "declaration-based (labeled declared-only) when it does not")
 
-HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audited receipt.
+HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -> stability -> run -> journal -> alignment-post, one audited receipt.
 
   agent-verify.sh -Root <dir> -Changed <files> -Lang rust|python|node|go
                     [-Profile read-only|workspace-write|full] [-DryRun]
@@ -172,7 +201,42 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
                 (false or unknown refuses); a handoff packet's base_commit/state_hash must
                 match this tree (unknown or false refuses). Both are opt-in; no flag means
                 the chain is exactly what it was.)
-  receipt:      [--compact]         (single-line machine receipt; default stays full)
+  receipt:      [--compact] [--model-receipt <path>] [--settings <file>]
+                (settings resolve builtin < user < project .agent/settings.json
+                < explicit file; explicit CLI flags win; full receipt stays the
+                audit artifact; --model-receipt writes a compact routing view)
+  brief:        [--brief]           (stdout lists only failed commands; full receipt
+                still records every command and its output tail)
+  security:     [--security [--security-mode quick|static|dynamic|runtime|all]]
+                (static/dynamic/runtime gate; high/critical or a required scanner
+                gap refuses before any write; report path+hash go in the receipt;
+                off unless the flag or settings.security.enabled says otherwise)
+  alignment:    [--alignment <manifest>] [--alignment-lenient]
+                (goal -> requirement -> artifact/evidence/change explicit graph;
+                alignment/1 single goal, alignment/2 one-root goal tree, or
+                alignment/3 evidence bound to an actual successful run command;
+                missing manifests, orphan requirements, missing evidence, dangling
+                refs, hash/locator mismatch, unlinked changes and non-goal changes
+                refuse before any write. Auto-runs when the project has
+                .agent/alignment.json and settings.alignment.enabled is true;
+                --alignment overrides the path, --alignment-lenient downgrades
+                should-requirement gaps to warnings. must gaps always refuse.
+                After the run, journal-end's actual changed paths are fed back
+                through the same gate (alignment-post); alignment/3 run commands
+                are matched against the actual successful run[] entries. A run
+                that writes outside the declared graph, or whose evidence command
+                never ran, ends as "unaligned after run", not a pass.)
+  stability:    [--stability <manifest>] [--no-stability]
+                (repeat a declared command list and classify stable-pass / stable-fail /
+                flaky / nondeterministic / jittery / unstable-fail / unknown; a gate
+                passes only when the probe exits 0 and status is stable, so unknown,
+                flaky, jittery and deterministic failure all refuse before journal-begin.
+                Auto-runs when .agent/stability.json exists and settings.stability.enabled
+                is true; --stability forces a path, --no-stability disables auto-detection.
+                The manifest's commands are policy-classified before the probe executes
+                them (a manifest cannot bypass the command policy). Probe commands must
+                use temp/ignored paths: they run before journal-begin, so their writes are
+                outside the task journal.)
   delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
                 (subagent chains: only changed fields + hash refs for unchanged ones;
                 --rebuild <delta> --against <prev> [--out <full.json>] reconstructs
@@ -253,14 +317,18 @@ Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocatio
 
 def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
-           "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
-           "allow": [], "agent_id": "", "spent_token": "", "compact": False,
+           "settings": "", "allow_network": False, "dry_run": False, "receipt": "",
+           "store": "", "plan": "", "allow": [], "agent_id": "", "spent_token": "",
+           "compact": False, "brief": False, "model_receipt": "",
+           "security": False, "security_mode": "",
+           "alignment": "", "alignment_lenient": False,
+           "stability": "", "no_stability": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
            "claim_gate": False, "claim_who": "", "claims_ledger": "", "handoff": "",
            "second_opinion": False, "no_derivations": False, "delta": False,
            "against": "", "rebuild": "", "delta_full": "", "out": "",
            "gate_deadline_affected": "600", "gate_deadline_policy": "600",
-           "gate_deadline_constraints": "600"}
+           "gate_deadline_constraints": "600", "_given": set()}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -271,6 +339,11 @@ def parse_args(argv):
         # Boolean flags must be listed here: a bool flag that falls through to the
         # value-branch swallows the NEXT argument as its value (--caps -Root ... would
         # parse -Root as the caps value).
+        if name in ("brief", "security"):
+            out["brief" if name == "brief" else "security"] = True
+            out["_given"].add(name)
+            i += 1
+            continue
         if name in ("dryrun", "allownetwork", "caps", "compact", "secondopinion",
                     "second-opinion", "derivations", "noderivations", "no-derivations",
                     "delta", "claimgate", "claim-gate"):
@@ -284,10 +357,22 @@ def parse_args(argv):
                 else "delta" if name == "delta"
                 else "claim_gate" if name in ("claimgate", "claim-gate")
                 else "second_opinion"] = True
+            out["_given"].add("compact" if name == "compact" else name)
             i += 1
             continue
         if name == "parallelgates" or name == "parallel-gates":
             out["parallel_gates"] = True
+            out["_given"].add("parallel_gates")
+            i += 1
+            continue
+        if name in ("alignment-lenient", "alignmentlenient"):
+            out["alignment_lenient"] = True
+            out["_given"].add("alignment_lenient")
+            i += 1
+            continue
+        if name in ("no-stability", "nostability"):
+            out["no_stability"] = True
+            out["_given"].add("no_stability")
             i += 1
             continue
         val = argv[i + 1] if i + 1 < len(argv) else ""
@@ -298,17 +383,23 @@ def parse_args(argv):
         elif name in ("claims-receipts", "claimsreceipts"):
             out["claims_receipts"].extend([x for x in val.split(",") if x.strip()])
         else:
-            out[{"root": "root", "lang": "lang", "profile": "profile", "receipt": "receipt",
-                 "store": "store", "plan": "plan", "agent-id": "agent_id",
-                 "agentid": "agent_id", "spent-token": "spent_token",
-                 "spenttoken": "spent_token", "claims-file": "claims_file",
-                 "claimsfile": "claims_file", "delta-full": "delta_full",
-                 "deltafull": "delta_full", "claim-who": "claim_who",
-                 "claimwho": "claim_who", "claims-ledger": "claims_ledger",
-                 "claimsledger": "claims_ledger", "handoff": "handoff",
-                 "gate-deadline-affected": "gate_deadline_affected",
-                 "gate-deadline-policy": "gate_deadline_policy",
-                 "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)] = val
+            key = {"root": "root", "lang": "lang", "profile": "profile", "receipt": "receipt",
+                   "store": "store", "plan": "plan", "agent-id": "agent_id",
+                   "agentid": "agent_id", "spent-token": "spent_token",
+                   "spenttoken": "spent_token", "claims-file": "claims_file",
+                   "claimsfile": "claims_file", "delta-full": "delta_full",
+                   "deltafull": "delta_full", "claim-who": "claim_who",
+                   "claimwho": "claim_who", "claims-ledger": "claims_ledger",
+                   "claimsledger": "claims_ledger", "handoff": "handoff",
+                   "model-receipt": "model_receipt", "modelreceipt": "model_receipt",
+                   "settings": "settings", "settings-file": "settings", "settingsfile": "settings",
+                   "security-mode": "security_mode", "securitymode": "security_mode",
+                   "alignment": "alignment", "stability": "stability",
+                   "gate-deadline-affected": "gate_deadline_affected",
+                   "gate-deadline-policy": "gate_deadline_policy",
+                   "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)
+            out[key] = val
+            out["_given"].add(key)
         i += 2
     return out
 
@@ -351,6 +442,134 @@ def json_tail(result):
     return None
 
 
+def alignment_probe(root, manifest, changed, lenient, executed=None, changed_known=False):
+    """Run alignment_gate.py and return (step result, parsed report)."""
+    args = [ALIGNMENT, "--root", root, "--manifest", manifest, "--json"]
+    if changed_known:
+        args.append("--changed-set")
+        if changed:
+            args += ["--changed", ",".join(changed)]
+    elif changed:
+        args += ["--changed", ",".join(changed)]
+    for command in executed or []:
+        if str(command).strip():
+            args += ["--run-command", str(command)]
+    if lenient:
+        args.append("--lenient")
+    result = step(args, timeout=120)
+    return result, (json_tail(result) or {})
+
+
+def alignment_summary(adoc, root, manifest_path):
+    """The receipt-facing view of one alignment report (preflight and post-run)."""
+    astatus = str(adoc.get("status", "")).lower()
+    acounts = adoc.get("counts", {}) if isinstance(adoc.get("counts"), dict) else {}
+    acov = adoc.get("coverage", {}) if isinstance(adoc.get("coverage"), dict) else {}
+    try:
+        rel_manifest = os.path.relpath(manifest_path, root).replace("\\", "/")
+        if rel_manifest.startswith("../"):
+            rel_manifest = os.path.basename(manifest_path)
+    except ValueError:
+        rel_manifest = os.path.basename(manifest_path)
+    return {
+        "manifest": rel_manifest,
+        "status": astatus or "unreadable",
+        "score": adoc.get("score"),
+        "must_score": adoc.get("must_score"),
+        "counts": {k: acounts.get(k) for k in
+                   ("goals", "requirements", "must", "artifacts", "evidence",
+                    "provenance", "provenance_verified", "changed", "changed_known",
+                    "linked_changes")},
+        "coverage": {k: acov.get(k) for k in
+                     ("goals_covered", "requirements_with_artifact",
+                      "requirements_with_evidence", "requirements_with_provenance",
+                      "requirements_provenance_verified", "requirements_with_changes",
+                      "requirements_changes_realized", "requirements_full", "must_full")},
+        "failures": len(adoc.get("failures", []) or []),
+        "warnings": len(adoc.get("warnings", []) or []),
+    }
+
+
+def stability_commands(manifest_path):
+    """Extract literal command strings from a stability/1 manifest.
+
+    Returns None when the manifest cannot be read or has no command list, so the
+    caller can fail closed before executing anything.  The probe re-validates the
+    full schema; this is only the policy preflight's view.
+    """
+    try:
+        with open(manifest_path, "r", encoding="utf-8-sig") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    commands = doc.get("commands") if isinstance(doc, dict) else None
+    if not isinstance(commands, list) or not commands:
+        return None
+    out = []
+    for cmd in commands:
+        if not isinstance(cmd, dict):
+            return None
+        text = str(cmd.get("command", "")).strip()
+        if not text:
+            return None
+        out.append(text)
+    return out
+
+
+def stability_summary(sdoc, root, manifest_path):
+    """The receipt-facing view of one stability probe report."""
+    status = str(sdoc.get("status", "")).lower()
+    counts = sdoc.get("counts", {}) if isinstance(sdoc.get("counts"), dict) else {}
+    try:
+        rel_manifest = os.path.relpath(manifest_path, root).replace("\\", "/")
+        if rel_manifest.startswith("../"):
+            rel_manifest = os.path.basename(manifest_path)
+    except ValueError:
+        rel_manifest = os.path.basename(manifest_path)
+    failed = []
+    for cmd in sdoc.get("commands", []) or []:
+        if not isinstance(cmd, dict):
+            continue
+        classification = str(cmd.get("classification", "")).lower()
+        if classification and classification != "stable-pass":
+            failed.append({
+                "id": cmd.get("id"),
+                "classification": classification,
+                "passes": cmd.get("passes"),
+                "repeat": cmd.get("repeat"),
+                "warmup_failures": cmd.get("warmup_failures"),
+                "distinct_outputs": cmd.get("distinct_outputs"),
+                "duration_ratio": cmd.get("duration_ratio"),
+            })
+    return {
+        "manifest": rel_manifest,
+        "status": status or "unknown",
+        "exit": sdoc.get("exit"),
+        "commands": counts.get("commands"),
+        "runs": counts.get("runs"),
+        "warmup_runs": counts.get("warmup_runs"),
+        "stable": counts.get("stable_pass"),
+        "stable_fail": counts.get("stable_fail"),
+        "flaky": counts.get("flaky"),
+        "nondeterministic": counts.get("nondeterministic"),
+        "jittery": counts.get("jittery"),
+        "unstable_fail": counts.get("unstable_fail"),
+        "unknown": counts.get("unknown"),
+        "failures": len(sdoc.get("failures", []) or []),
+        "failed_commands": failed[:10],
+    }
+
+
+def journal_changes(out):
+    """Extract the repo-relative paths journal.py end reported as changed."""
+    changed = []
+    for line in out:
+        m = re.match(r"journal:\s+(added|deleted|modified)\s+(.+)", line)
+        if m:
+            changed.append(m.group(2).strip().replace("\\", "/"))
+    return changed
+
+
 def repo_relative(root, paths):
     """Changed paths as claim keys. Absolute paths outside -Root are unclaimable."""
     out, bad = [], []
@@ -391,8 +610,8 @@ def session_file(root, task_id):
     return os.path.join(root, ".agent", "resume", f"{task_id}.json")
 
 
-STABLE_HEAD = ("root", "lang", "profile", "changed", "agent_id", "handoff", "claim",
-               "caps", "plan",
+STABLE_HEAD = ("root", "lang", "profile", "changed", "settings", "security", "agent_id", "handoff", "claim",
+               "alignment", "stability", "caps", "plan",
                "policy", "steps", "run", "changes", "claims", "watchdog",
                "verdict", "exit")
 VOLATILE_ORDER = ("budget", "cost", "wall_s", "steps_seconds", "run_seconds",
@@ -448,6 +667,30 @@ def receipt_view(doc):
     return view
 
 
+def policy_evidence(lines, code):
+    """Per-command policy evidence without the repeated allow boilerplate.
+
+    The batch policy gate returns the exact lines a single invocation would print.
+    For an allow, two of those lines are generic (``policy: OK ... reads or
+    executes`` and ``policy: allow (<profile>, network=...)``).  They carry no
+    per-command decision not already expressed by ``command`` + ``exit``.  WARN
+    lines (advisory, exit 0), DENY lines, and special allow notes ("allowed by
+    -Allow ...", "write allowed inside workspace", ...) are kept.
+
+    This is an evidence-shape change, not a decision change: the full receipt
+    keeps every command and exit; raw policy output remains available from
+    policy.py when a caller needs it.
+    """
+    kept = []
+    for line in list(lines or [])[-3:]:
+        text = str(line).strip()
+        if code == 0 and (POLICY_GENERIC_ALLOW_RX.match(text)
+                          or POLICY_ALLOW_TAIL_RX.match(text)):
+            continue
+        kept.append(line)
+    return kept
+
+
 def compact_view(doc, steps):
     """Prefix-stable --compact shape: one line, routing fields first, volatile tail.
 
@@ -466,12 +709,25 @@ def compact_view(doc, steps):
          "changes": len(doc.get("changes", []))}
     if "plan" in doc:
         c["proven"] = bool(doc["plan"].get("proven"))
+    if "security" in doc:
+        c["security"] = {k: doc["security"].get(k) for k in
+                          ("verdict", "exit", "mode", "findings", "blocking", "gaps")}
+    if "settings" in doc:
+        # routing only: a compact reader needs to know which profile decided,
+        # not the entire scanner configuration.
+        c["settings"] = {k: doc["settings"].get(k)
+                         for k in ("name", "source", "policy_profile")}
     if "agent_id" in doc:
         c["agent_id"] = doc["agent_id"]
     if "handoff" in doc:
         # routing only: id/verdict/hashes are small; reason is free text and stays in full
         c["handoff"] = {k: v for k, v in doc["handoff"].items()
                         if k in ("id", "verdict", "base_commit", "state_hash")}
+    if "stability" in doc:
+        c["stability"] = {k: doc["stability"].get(k) for k in
+                          ("status", "exit", "commands", "runs", "warmup_runs",
+                           "flaky", "nondeterministic", "jittery", "unknown",
+                           "report", "sha256")}
     if "claim" in doc:
         # paths can be long; count + owner + verdict are the routing information
         c["claim"] = {"who": doc["claim"].get("who"),
@@ -831,8 +1087,34 @@ def main(argv):
     if not root_in or not os.path.isdir(root_in):
         print("agent-verify: -Root 必须是已存在的目录")
         return 2
+    # Settings are resolved before validation so a user/project profile can
+    # supply defaults, but an explicit CLI flag always wins.  A malformed
+    # settings file refuses the run: silently ignoring a typo in a security
+    # switch is exactly the failure mode this layer exists to prevent.
+    try:
+        effective, settings_meta = agent_settings.load_settings(
+            root_in, explicit=str(a.get("settings", "")).strip())
+    except (OSError, ValueError) as e:
+        print(f"agent-verify: 设置不可用（{e}）")
+        return 2
+    a["_effective_settings"] = effective
+    a["_settings_meta"] = settings_meta
+    if "profile" not in a["_given"]:
+        a["profile"] = str(effective.get("policy_profile", a["profile"]))
+    if "compact" not in a["_given"]:
+        a["compact"] = bool(effective.get("receipt", {}).get("compact", False))
+    if "brief" not in a["_given"]:
+        a["brief"] = bool(effective.get("receipt", {}).get("brief", False))
+    if "security" not in a["_given"]:
+        a["security"] = bool(effective.get("security", {}).get("enabled", False))
+    if "security_mode" not in a["_given"]:
+        a["security_mode"] = str(effective.get("security", {}).get("mode", "quick"))
     if not a["changed"]:
         print("agent-verify: -Changed 至少要给一个文件")
+        return 2
+    model_receipt = str(a.get("model_receipt", "")).strip()
+    if model_receipt and a.get("receipt") and os.path.abspath(model_receipt) == os.path.abspath(a["receipt"]):
+        print("agent-verify: --model-receipt 不能和 -Receipt 同一个路径（审计原文与模型视图必须分开）")
         return 2
     if a["lang"].lower() not in LANGS:
         print(f"agent-verify: -Lang 必须是 {sorted(LANGS)} 之一")
@@ -874,6 +1156,9 @@ def main(argv):
         if not os.path.isfile(packet):
             print(f"agent-verify: --handoff 包不存在或读不到：{packet}")
             return 2
+    if a.get("no_stability") and str(a.get("stability", "")).strip():
+        print("agent-verify: --no-stability 与 --stability 不能同时给（一个禁用自动发现，一个强制清单）")
+        return 2
 
     root = os.path.abspath(root_in)
     lang = a["lang"].lower()
@@ -968,6 +1253,8 @@ def main(argv):
 
     doc = {"root": root, "lang": lang, "profile": profile, "changed": a["changed"],
            "at": datetime.now().astimezone().isoformat(timespec="microseconds")}
+    doc["settings"] = agent_settings.receipt_echo(a["_effective_settings"],
+                                                   a["_settings_meta"])
     if agent_id:
         # appended field only: subagent participation recorded on the receipt; no flag, no key
         doc["agent_id"] = agent_id
@@ -989,6 +1276,11 @@ def main(argv):
             emit_delta(a["receipt"], doc, steps, delta_ctx)
         else:
             emit_receipt(a["receipt"], doc, steps, a.get("compact"))
+        if a.get("model_receipt"):
+            # Separate surfaces: the caller keeps the full (or delta) audit receipt
+            # and gives the model only the compact routing view.  No field used by a
+            # gate is removed from the audit artifact.
+            write_view(a["model_receipt"], compact_view(doc, steps), True)
         return code
 
     # --- 0. memory brief: what this project already knows ------------------------------
@@ -1016,6 +1308,39 @@ def main(argv):
             print(ln)
         print("agent-verify: 拒绝 -- preflight 判红，坏代码不要落到磁盘上")
         return finish("refused by preflight", 1)
+
+    # --- 2.1 security gate: static/dynamic/runtime evidence before any write ----------
+    # Opt-in through --security or settings.security.enabled; the default is
+    # OFF so existing chains/tests keep their timing.  A high/critical finding
+    # or a required scanner gap refuses; the report path/hash travels in the
+    # receipt so agent_audit can verify the same evidence later.
+    if a.get("security"):
+        mode = str(a.get("security_mode", "") or
+                   effective.get("security", {}).get("mode", "quick")).lower()
+        timeout_s = float(effective.get("security", {}).get("timeout_s", 900)) + 30
+        report_rel = os.path.join("target", "agent-security", "security-gate.json")
+        report_abs = os.path.join(root, report_rel)
+        sec_args = [SECURITY, "--root", root, "--mode", mode, "--out", report_abs, "--json"]
+        if str(a.get("settings", "")).strip():
+            sec_args += ["--settings", os.path.abspath(str(a["settings"]).strip())]
+        sr = step(sec_args, timeout=timeout_s)
+        sdoc = json_tail(sr) or {}
+        sverdict = str(sdoc.get("verdict", "")).lower()
+        doc["security"] = {"verdict": sverdict or "unreadable",
+                           "exit": sr["code"], "mode": mode,
+                           "findings": (sdoc.get("summary") or {}).get("findings", 0),
+                           "blocking": (sdoc.get("summary") or {}).get("blocking", 0),
+                           "gaps": len(sdoc.get("gaps") or []),
+                           "report": report_rel.replace("\\", "/")}
+        if os.path.isfile(report_abs):
+            doc["security"]["sha256"] = file_hash(report_abs)
+        add("security-gate", sr, "ok" if sr["code"] == 0 and sverdict == "pass" else "refused")
+        if sr["code"] != 0 or sverdict != "pass":
+            for ln in sr["out"][-8:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- security gate 未通过（高危/关键发现或必需扫描器缺口；"
+                  "报告在 target/agent-security/security-gate.json）")
+            return finish("refused by security gate", 1)
 
     # --- 2.2 handoff gate: is this the same tree the previous agent handed over? ------
     # trit-orch::handoff_gate's tri-state table, host-side. Unknown is NOT permission:
@@ -1175,16 +1500,25 @@ def main(argv):
                   timeout=deadlines["affected"])
         return ap, p_path
 
-    def policy_gate():
+    def policy_batch(cmds, timeout):
         b_path = os.path.join(os.environ.get("TEMP", "/tmp"),
                               f"av-policy-{uuid.uuid4().hex[:8]}.json")
         with open(b_path, "w", encoding="ascii", newline="\n") as fh:
-            json.dump({"commands": commands}, fh, ensure_ascii=True)
+            json.dump({"commands": cmds}, fh, ensure_ascii=True)
         pa = [os.path.join(TOOLS, "policy.py"), "-Profile", profile,
               "-Root", root, "-CommandsFile", b_path]
         if a["allow_network"]:
             pa.append("-AllowNetwork")
-        return step(pa, timeout=deadlines["policy"])
+        try:
+            return step(pa, timeout=timeout)
+        finally:
+            try:
+                os.unlink(b_path)
+            except OSError:
+                pass
+
+    def policy_gate():
+        return policy_batch(commands, deadlines["policy"])
 
     def constraints_gate():
         c_init = os.path.exists(os.path.join(root, ".agent", "constraints.json"))
@@ -1261,8 +1595,15 @@ def main(argv):
                 add("policy", pb, "refused")
                 print("agent-verify: 拒绝 -- policy 批量分类结果不可解析（fail-closed，不许静默放行）")
                 return finish("refused by policy", 1)
-            policy_log = [{"command": r.get("command"), "exit": r.get("exit"),
-                           "output": (r.get("lines") or [])[-3:]} for r in prs]
+            policy_log = []
+            for r in prs:
+                evidence = policy_evidence(r.get("lines"), r.get("exit"))
+                entry = {"command": r.get("command"), "exit": r.get("exit")}
+                if evidence:
+                    # empty output is the common allow case: omit the key instead of
+                    # writing output=[] for every command in the audit receipt.
+                    entry["output"] = evidence
+                policy_log.append(entry)
             policy_ok = all(r.get("exit") == 0 for r in prs)
             doc["policy"] = policy_log
             add("policy", {"out": [], "code": 0 if policy_ok else 1, "seconds": pb["seconds"]},
@@ -1292,6 +1633,98 @@ def main(argv):
     finally:
         if pool is not None:
             pool.shutdown(wait=True)
+
+    # --- 5.25 alignment: does the change still mean what the goal says? --------------
+    # The gate is a graph, not a prose check: each requirement must name its parent
+    # goal, its artifacts, its evidence and (optionally) the changed paths it owns.
+    # Missing must-evidence, dangling ids, hash/locator mismatches, unlinked changes
+    # and declared non-goal changes refuse before journal-begin.  A project opts in
+    # by creating .agent/alignment.json; --alignment overrides the path.  Unknown
+    # (missing/unreadable manifest) is not a pass.
+    alignment_manifest = str(a.get("alignment", "")).strip()
+    align_cfg = effective.get("alignment", {}) if isinstance(effective, dict) else {}
+    if not isinstance(align_cfg, dict):
+        align_cfg = {}
+    if not alignment_manifest and align_cfg.get("enabled", True):
+        candidate = os.path.join(root, str(align_cfg.get("manifest", ".agent/alignment.json")))
+        if os.path.isfile(candidate):
+            alignment_manifest = candidate
+    if alignment_manifest:
+        if not os.path.isabs(alignment_manifest):
+            alignment_manifest = os.path.join(root, alignment_manifest)
+        ar, adoc = alignment_probe(
+            root, alignment_manifest, a["changed"],
+            a.get("alignment_lenient") or not align_cfg.get("strict", True))
+        astatus = str(adoc.get("status", "")).lower()
+        doc["alignment"] = alignment_summary(adoc, root, alignment_manifest)
+        add("alignment", ar, "ok" if ar["code"] == 0 and astatus == "aligned" else "refused")
+        if ar["code"] != 0 or astatus != "aligned":
+            for ln in ar["out"][-10:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- alignment gate 未通过（目标/需求/产物/证据/变更没有对齐；"
+                  "unknown 不是通行证，先补清单或修引用）")
+            return finish("refused by alignment", 1)
+
+    # --- 5.3 stability: one pass is not proof that a command is stable ----------------
+    # A project opts in with .agent/stability.json; --stability forces a path and
+    # --no-stability disables auto-detection.  The probe itself decides per command;
+    # this gate accepts exactly exit 0 + status stable, so flaky / jittery /
+    # nondeterministic / stable-fail / unknown all refuse before journal-begin.
+    # Probe commands must use temp/ignored paths: they run before the journal starts.
+    stability_manifest = str(a.get("stability", "")).strip()
+    stab_cfg = effective.get("stability", {}) if isinstance(effective, dict) else {}
+    if not isinstance(stab_cfg, dict):
+        stab_cfg = {}
+    if a.get("no_stability"):
+        stability_manifest = ""
+    elif not stability_manifest and stab_cfg.get("enabled", True):
+        candidate = os.path.join(root, str(stab_cfg.get("manifest", ".agent/stability.json")))
+        if os.path.isfile(candidate):
+            stability_manifest = candidate
+    if stability_manifest:
+        if not os.path.isabs(stability_manifest):
+            stability_manifest = os.path.join(root, stability_manifest)
+        try:
+            stability_timeout = float(stab_cfg.get("timeout_s", 1800))
+        except (TypeError, ValueError):
+            print("agent-verify: settings.stability.timeout_s 不是数字")
+            return 2
+        report_rel = os.path.join("target", "agent-stability", "stability-gate.json")
+        report_abs = os.path.join(root, report_rel)
+        stab_commands = stability_commands(stability_manifest)
+        if stab_commands is None:
+            pr = {"out": ["stability-policy: 清单不可读或没有 commands，拒绝在执行前放行"],
+                  "code": 1, "seconds": 0}
+        else:
+            pr = policy_batch(stab_commands, deadlines["policy"])
+        add("stability-policy", pr, "ok" if pr["code"] == 0 else "refused")
+        if pr["code"] != 0:
+            for ln in pr["out"][-8:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- stability 清单里的命令没有通过 policy（"
+                  "探针执行前先按同一 profile 分类，避免清单绕过命令策略）")
+            return finish("refused by stability policy", 1)
+        sr = step([STABILITY, "--root", root, "--manifest", stability_manifest,
+                   "--out", report_abs], timeout=stability_timeout)
+        try:
+            with open(report_abs, "r", encoding="utf-8-sig") as fh:
+                sdoc = json.load(fh)
+        except (OSError, ValueError, UnicodeDecodeError):
+            sdoc = {}
+        sstatus = str(sdoc.get("status", "")).lower()
+        doc["stability"] = stability_summary(sdoc, root, stability_manifest)
+        doc["stability"]["report"] = report_rel.replace("\\", "/")
+        if os.path.isfile(report_abs):
+            doc["stability"]["sha256"] = file_hash(report_abs)
+        add("stability", sr, "ok" if sr["code"] == 0 and sstatus == "stable" else "refused")
+        if sr["code"] != 0 or sstatus != "stable":
+            for ln in sr["out"][-10:]:
+                print(ln)
+            print("agent-verify: 拒绝 -- stability gate 未通过（一次通过不等于稳定；"
+                  "flaky/nondeterministic/jittery/stable-fail/unknown 都不放行）")
+            return finish("refused by stability", 1)
+    else:
+        add("stability", skipped("stability: 未发现清单或已禁用，跳过"), "skipped")
 
     # --- 5.5 claim audit: model statements are checked against reality -----------------
     # After constraints, before journal-begin: a run does not get to start on top of
@@ -1467,6 +1900,52 @@ def main(argv):
     doc["changes"] = changes
     doc["wall_s"] = total_run
 
+    # --- 8.2 post-run alignment: did the run write what the manifest claimed? --------
+    # Preflight proves the declaration before the run; this check proves the run did
+    # not drift from it.  journal-end is the source of truth for actual paths, and the
+    # gate re-hashes artifacts/evidence after the write.  A drift does not erase the
+    # journal (cost/memory still record what happened), but the verdict cannot pass.
+    post_failed = False
+    if alignment_manifest:
+        actual_changes = journal_changes(je["out"])
+        # A caller may put the journal/cost store under -Root; those are bookkeeping
+        # writes, not product changes the manifest should explain.  The default store
+        # is outside the root, so this only protects an explicit in-root store.
+        try:
+            store_rel = os.path.relpath(store, root).replace("\\", "/")
+        except ValueError:
+            store_rel = ""
+        if store_rel and store_rel != "." and not store_rel.startswith("../"):
+            actual_changes = [p for p in actual_changes
+                              if p != store_rel and not p.startswith(store_rel + "/")]
+        post_lenient = a.get("alignment_lenient") or not align_cfg.get("strict", True)
+        if je["code"] in (0, 1):
+            executed = [r.get("command") for r in doc.get("run", [])
+                        if isinstance(r, dict) and r.get("exit") == 0
+                        and isinstance(r.get("command"), str) and r.get("command").strip()]
+            par, padoc = alignment_probe(root, alignment_manifest, actual_changes, post_lenient,
+                                        executed=executed, changed_known=True)
+            post_status = str(padoc.get("status", "")).lower()
+            doc["alignment"]["post"] = alignment_summary(padoc, root, alignment_manifest)
+            post_ok = par["code"] == 0 and post_status == "aligned"
+            add("alignment-post", par, "ok" if post_ok else "drifted")
+            if not post_ok:
+                post_failed = True
+                for ln in par["out"][-10:]:
+                    if not ln.strip().startswith("{"):
+                        print(ln)
+                print("agent-verify: 对齐漂移 -- run 后实际变更/产物/证据不再满足清单；"
+                      "journal 已保留，回执记录 alignment.post 失败")
+        else:
+            post_failed = True
+            doc["alignment"]["post"] = alignment_summary({}, root, alignment_manifest)
+            doc["alignment"]["post"]["status"] = "unknown"
+            doc["alignment"]["post"]["reason"] = "journal-end failed"
+            add("alignment-post", skipped("journal-end failed; cannot prove post-run alignment"),
+                "unknown")
+            print("agent-verify: 对齐复核不可用 -- journal-end 失败，无法证明实际落盘；"
+                  "按 drift 处理，不放行")
+
     # --- 8.5 cost recording: this run's actual consumption goes on the ledger ----------
     # journal-end 后、memory-note 前。失败也只记账面（cost 记账不是闸）：loud, not fatal.
     runid = uuid.uuid4().hex[:8]
@@ -1503,7 +1982,8 @@ def main(argv):
                   f"后续预算闸会少算这次消耗")
 
     verdict = ("command failed" if not ran_ok else
-               ("passed on full run (plan was unproven)" if not proven else "passed on proven subset"))
+               ("unaligned after run" if post_failed else
+                ("passed on full run (plan was unproven)" if not proven else "passed on proven subset")))
 
     # --- 9. memory note: leave a durable, evidenced trace of this run ------------------
     if mem_init and run_log:
@@ -1550,10 +2030,20 @@ def main(argv):
 
     print(f"agent-verify: {verdict}  (proven={str(proven).lower()}, wall={total_run}s, "
           f"changed={len(changes)})")
-    for l in run_log:
-        print(f"  {l['command']}  -> exit {l['exit']} in {l['seconds']}s")
-    for c in changes:
-        print(f"  {c}")
+    if a.get("brief"):
+        failed = [l for l in run_log if l.get("exit") != 0]
+        print(f"  commands: {len(run_log)} run, {len(failed)} failed")
+        for l in failed:
+            print(f"  FAIL {l['command']}  -> exit {l['exit']} in {l['seconds']}s")
+    else:
+        for l in run_log:
+            print(f"  {l['command']}  -> exit {l['exit']} in {l['seconds']}s")
+    if a.get("brief"):
+        if changes:
+            print(f"  changes: {len(changes)} (details in receipt)")
+    else:
+        for c in changes:
+            print(f"  {c}")
     # Appended tail, appended receipt field only -- the existing output above is unchanged.
     if "resume_checkpoint" in doc:
         print(f"  resume checkpoint: {doc['resume_checkpoint']}")
@@ -1562,7 +2052,7 @@ def main(argv):
         print(f"  cost: wall={cost.get('wall_s')}s +{cost.get('overhead_s')}s overhead "
               f"tokens={cost.get('tokens') if cost.get('tokens') is not None else '-'} "
               f"ledger={'recorded' if cost.get('recorded') else 'FAILED'} scope={cost.get('scope')}")
-    return finish(verdict, 0 if ran_ok else 1)
+    return finish(verdict, 0 if ran_ok and not post_failed else 1)
 
 
 if __name__ == "__main__":

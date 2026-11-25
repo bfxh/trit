@@ -85,6 +85,51 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
     "crates/trit-ops/src/simd.rs": "AVX 内核（见 raw-memory 条目）",
     "crates/trit-ops/src/gemv.rs": "AVX/FMA 内核（见 raw-memory 条目）",
     "crates/trit-dot/src/lib.rs": "POPCNT 内核（见 raw-memory 条目）",
+    "crates/trit-train/src/plane/backward.rs": (
+        "位平面反向 dX：三个 AVX2 函数只在 has_avx2() 的 is_x86_feature_detected! "
+        "之后调用；列数 <8 或尾部走标量，非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/plane/fused.rs": (
+        "SGD 融合量化点积：AVX2 内核只在 has_avx2() 的 is_x86_feature_detected! "
+        "之后调用；列数 <8 或尾部走标量，非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/plane/fused/backward.rs": (
+        "反向量化单遍：AVX2 dX/qdot 内核只在 has_avx2() 的 is_x86_feature_detected! "
+        "之后调用；列数 <8 或尾部走标量，非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/plane/fused/backward_step.rs": (
+        "带梯度 SGD 单遍：AVX2 dX/qdot/STE 更新内核只在 has_avx2() 的 is_x86_feature_detected! "
+        "之后调用；列数 <8 或尾部走标量，非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/plane/fused/adam_step.rs": (
+        "Adam 单遍：AVX2 dX/qdot/Adam 更新内核与 hsum 只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/plane/fused/forward_step/step.rs": (
+        "SGD 整步 AVX2 内核：只由 forward_step::train_step 在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译该模块"
+    ),
+    "crates/trit-train/src/plane/fused/adam_step/q_sign.rs": (
+        "Adam q 符号阈值：AVX2 掩码内核只在 adam_step 的 has_avx2() 分支内调用；"
+        "阈值附近回退原除法量化；非 x86_64 不编译"
+    ),
+    "crates/trit-train/src/plane/pack.rs": (
+        "位平面打包 from_latent：AVX2 内核只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/dense/row.rs": (
+        "dW 融合更新：AVX2 update_row 只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；列数 <8 或尾部走标量，"
+        "非 x86_64 不编译 SIMD 模块"
+    ),
+    "crates/trit-train/src/layer/adam/support.rs": (
+        "测试参考旧 Adam dW：AVX2 update_row 只在 has_avx2() 的 "
+        "is_x86_feature_detected! 之后调用；整个模块只在 cfg(test)+x86_64 编译，"
+        "列数 <8 或尾部走标量"
+    ),
 }
 
 ALLOW_RELAXED: dict[str, str] = {

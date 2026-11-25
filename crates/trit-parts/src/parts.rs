@@ -154,9 +154,9 @@ pub fn evaluate_frame(
     let mut unknown_px = 0usize;
     let mut valid_px = 0usize;
 
-    for p in 0..hw {
+    for (p, &vgt) in valid_gt.iter().enumerate() {
         let base = p * ch;
-        if valid_gt[p] == 1 {
+        if vgt == 1 {
             seen += 1;
             for i in 0..k {
                 let z = &logits[base + i * 3..base + i * 3 + 3];

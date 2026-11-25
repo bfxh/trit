@@ -49,6 +49,7 @@
    ├── truth.csv      真值表（人读/对拍）
    ├── truth.tritbin  TRB2 v3：头 + 变量名 + 5 trit/字节 + GF(3) CRC-3
    ├── lookup.c       主机查表函数（交给 cc/rustc 编译 —— 边界示范）
+   ├── direct.c       主机直算函数（`--backend direct|both`：线性 IR + 交换律 CSE + DCE，不展开 3ⁿ 表）
    ├── design.v       双导轨 Verilog（K3/Ł3/B3 均支持）
    ├── design_tb.v    自检 testbench + expected.mem（`--verify-hdl`）
    ├── truth.wgsl     WGSL 查表内核 + truth.gpu.bin（2 bit/trit，`--emit-gpu`）
@@ -77,7 +78,7 @@ M0 先做"语义/复核/增量"，打包密度留到 M2。
 `trit-build/src/trb.rs` 写了一份**同构的精简实现**。代价是同一格式有两份代码，必须靠
 `runtime/trit_runtime.c`（第三份、独立语言）交叉验证来兜底；codec 稳定后应统一，删掉这里的副本。
 
-## 4. 现在能跑什么（实测，2026-10-25；TRB2 v3 行更新于 2026-11-08）
+## 4. 现在能跑什么（实测，2026-10-25；TRB2 v3 行更新于 2026-11-08；直算行更新于 2026-11-24）
 
 ```bash
 # 源文件：第一行非注释内容 = 表达式
@@ -95,6 +96,8 @@ trit build demo.tri --out out --check  # 校验产物哈希
 | `TRB2` 大小 | v3：19 字节固定头 + 名字段 3×(1+1) + 6 字节载荷 = **31 B**；v2（无名）17 B；M0 的 TRB1 是 35 B |
 | 变量名 | v3 存原名，`--decode` 重建的 CSV 表头与原表一致；v2 回退 `v0..vN` |
 | 主机对拍 | `lookup.c` 用 gcc 编译后 27/27 行与 `truth.csv` 一致 |
+| 直算对拍 | `direct.c`（`--backend direct --verify-c`）用 cc 编译后 **531,441/531,441** 行与 `truth.csv` 一致（12 变量，本机 0.9 s） |
+| 直算 IR 优化 | 交换律规范化后镜像子式共用一个节点；`prune_dead` 压缩孤儿并重编号；12 变量仍 **531,441/531,441** 行通过 |
 | 增量 | 同源二次构建 `cached=true`，不重写产物 |
 | 完整性 | 篡改 `truth.tritbin` 后 `--check` 退出非 0 |
 | 复核 | 化简不等价 ⇒ 构建失败，不写任何产物 |
@@ -110,7 +113,7 @@ trit build demo.tri --out out --check  # 校验产物哈希
 |---|---|---|
 | 机器码生成、寄存器分配、指令选择 | LLVM / Cranelift | 与基数无关，重写只是更差 |
 | 链接、目标文件格式、调试信息 | LLVM 工具链 | 平台 ABI 由二进制世界定义 |
-| 主机侧执行（`lookup.c`、Rust harness） | cc / rustc | 三值语义已固化进表，执行不需要三值硬件 |
+| 主机侧执行（`lookup.c` 查表 / `direct.c` 直算、Rust harness） | cc / rustc | 三值语义已固化进表或线性 IR 的表，执行不需要三值硬件 |
 | 包管理、CI、测试框架 | Cargo / GitHub Actions | 与进制无关 |
 | 加密、网络、GUI | 现成库 | 与进制无关 |
 

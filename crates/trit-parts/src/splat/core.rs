@@ -208,7 +208,7 @@ pub fn fit_colors(splats: &mut [Splat], views: &[FitView], iters: usize, lr: f32
             if cnt[i] == 0 {
                 continue;
             }
-            let n = f64::from(cnt[i]) as f64;
+            let n = f64::from(cnt[i]);
             for (k, c) in s.color.iter_mut().enumerate() {
                 let g = (grad[i][k] / n) as f32;
                 *c = (*c - lr * g).clamp(0.0, 1.0);

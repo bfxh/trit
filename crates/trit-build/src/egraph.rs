@@ -15,6 +15,7 @@ use trit_core::{Algebra, Expr};
 use trit_eval::eval::{Assignment, eval};
 
 mod cost;
+mod extract;
 
 use cost::expr_stats;
 pub(crate) use cost::{CostModel, RewriteOptions, RewriteReport};
@@ -301,6 +302,40 @@ impl EGraph {
         class
     }
 
+    /// 只读版本：不压缩路径，供 `&self` 的代价计算/提取使用。
+    pub(super) fn root(&self, mut class: ClassId) -> ClassId {
+        while self.parent[class] != class {
+            class = self.parent[class];
+        }
+        class
+    }
+
+    /// 把每个存活 class 里的 kind 子节点改写为根 id，并去掉重复 e-node。
+    ///
+    /// `union` 之后 `classes` 里仍留着指向被并掉 class 的旧 id；`extract` 的代价表
+    /// 只按根 id 建键，旧 id 查不到代价会让整个根退化成 `X`。
+    fn canonicalize_kinds(&mut self) {
+        let len = self.classes.len();
+        for class in 0..len {
+            if self.find(class) != class {
+                continue;
+            }
+            let old = std::mem::take(&mut self.classes[class]);
+            let mut fresh: Vec<Kind> = Vec::with_capacity(old.len());
+            for kind in old {
+                let canonical = match kind {
+                    Kind::Var(_) | Kind::Const(_) => kind,
+                    Kind::Not(child) => Kind::Not(self.find(child)),
+                    Kind::Bin(op, left, right) => Kind::Bin(op, self.find(left), self.find(right)),
+                };
+                if !fresh.contains(&canonical) {
+                    fresh.push(canonical);
+                }
+            }
+            self.classes[class] = fresh;
+        }
+    }
+
     fn intern(&mut self, name: &str) -> usize {
         match self.names.iter().position(|known| known == name) {
             Some(index) => index,
@@ -405,6 +440,7 @@ impl EGraph {
                 }
             }
             if merges.is_empty() {
+                self.canonicalize_kinds();
                 self.hash = map;
                 return;
             }
@@ -496,131 +532,6 @@ impl EGraph {
             }
         }
     }
-
-    fn kind_stats(
-        &self,
-        kind: &Kind,
-        best: &HashMap<ClassId, (u64, u64)>,
-        model: CostModel,
-    ) -> Option<(u64, u64)> {
-        match kind {
-            Kind::Var(_) | Kind::Const(_) => Some((model.leaf(), 1)),
-            Kind::Not(child) => best
-                .get(child)
-                .map(|(cost, nodes)| (cost.saturating_add(model.not()), nodes + 1)),
-            Kind::Bin(op, left, right) => {
-                let (left_cost, left_nodes) = *best.get(left)?;
-                let (right_cost, right_nodes) = *best.get(right)?;
-                Some((
-                    left_cost
-                        .saturating_add(right_cost)
-                        .saturating_add(model.op(*op)),
-                    left_nodes + right_nodes + 1,
-                ))
-            }
-        }
-    }
-
-    /// 最小 (代价, 节点数) 提取；固定点迭代 + 严格小于，保证确定性。
-    fn extract(&mut self, root: ClassId, model: CostModel) -> (Expr, u64, u64) {
-        let roots: Vec<ClassId> = (0..self.classes.len())
-            .filter(|class| self.find(*class) == *class)
-            .collect();
-        let mut best: HashMap<ClassId, (u64, u64)> = HashMap::new();
-        // 每条边至少把子节点信息传一层；|roots| 轮一定覆盖最长链。
-        for _ in 0..=roots.len() {
-            let mut changed = false;
-            for class in &roots {
-                let mut choice: Option<(u64, u64)> = None;
-                for kind in &self.classes[*class] {
-                    let Some(candidate) = self.kind_stats(kind, &best, model) else {
-                        continue;
-                    };
-                    if choice.is_none_or(|current| candidate < current) {
-                        choice = Some(candidate);
-                    }
-                }
-                if let Some(candidate) = choice
-                    && best.get(class) != Some(&candidate)
-                {
-                    best.insert(*class, candidate);
-                    changed = true;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        let root = self.find(root);
-        let (cost, nodes) = best.get(&root).copied().unwrap_or((u64::MAX, u64::MAX));
-        (self.build(root, &best, model, 0), cost, nodes)
-    }
-
-    fn choose_kind(
-        &self,
-        class: ClassId,
-        best: &HashMap<ClassId, (u64, u64)>,
-        model: CostModel,
-    ) -> Option<(u64, u64, &Kind)> {
-        let mut chosen: Option<(u64, u64, &Kind)> = None;
-        for kind in &self.classes[class] {
-            let Some((cost, nodes)) = self.kind_stats(kind, best, model) else {
-                continue;
-            };
-            if chosen
-                .is_none_or(|(best_cost, best_nodes, _)| (cost, nodes) < (best_cost, best_nodes))
-            {
-                chosen = Some((cost, nodes, kind));
-            }
-        }
-        chosen
-    }
-
-    fn build(
-        &self,
-        class: ClassId,
-        best: &HashMap<ClassId, (u64, u64)>,
-        model: CostModel,
-        depth: usize,
-    ) -> Expr {
-        if depth > 256 {
-            return Expr::Const(Ternary::Unknown);
-        }
-        let Some((_, _, kind)) = self.choose_kind(class, best, model) else {
-            return Expr::Const(Ternary::Unknown);
-        };
-        match kind {
-            Kind::Var(index) => Expr::Var(self.names[*index].clone()),
-            Kind::Const(value) => Expr::Const(*value),
-            Kind::Not(child) => Expr::Not(Box::new(self.follow(*child, best, model, depth + 1))),
-            Kind::Bin(op, left, right) => {
-                let left = Box::new(self.follow(*left, best, model, depth + 1));
-                let right = Box::new(self.follow(*right, best, model, depth + 1));
-                match op {
-                    Op::And => Expr::And(left, right),
-                    Op::Or => Expr::Or(left, right),
-                    Op::Xor => Expr::Xor(left, right),
-                    Op::Implies => Expr::Implies(left, right),
-                    Op::Equiv => Expr::Equiv(left, right),
-                }
-            }
-        }
-    }
-
-    fn follow(
-        &self,
-        class: ClassId,
-        best: &HashMap<ClassId, (u64, u64)>,
-        model: CostModel,
-        depth: usize,
-    ) -> Expr {
-        // 子节点 id 在 rebuild 后可能指向非根，这里沿 parent 走到根。
-        let mut class = class;
-        while self.parent[class] != class {
-            class = self.parent[class];
-        }
-        self.build(class, best, model, depth)
-    }
 }
 
 /// 重写入口：返回（重写后的表达式，实际触发过的规则名）。
@@ -710,3 +621,6 @@ pub(crate) fn rewrite_with(expr: &Expr, alg: Algebra, options: RewriteOptions) -
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_regression;

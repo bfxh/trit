@@ -2,24 +2,31 @@
 //!
 //! 用法：
 //! ```text
-//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576]
-//!       [--threads 1,2,4,8] [--ste-steps 3000]
+//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576] [--threads 1,2,4,8] [--ste-steps 3000] [--train-steps 3] [--adam-scalar]
 //! ```
 
 use std::hint::black_box;
 use std::time::Instant;
-
 use trit_train::layer::{TernaryLinear, dot};
-use trit_train::plane::Planes;
+use trit_train::plane::{PlaneMatrix, Planes};
 use trit_train::quant::Ste;
 
+#[path = "bench/adam_step.rs"]
+mod adam_step;
+#[path = "bench/args.rs"]
+mod args;
+#[path = "bench/grad_step.rs"]
+mod grad_step;
+#[path = "bench/train_step.rs"]
+mod train_step;
+use args::{arg, thread_list};
+use train_step::bench_train_step;
 #[derive(Clone, Copy, Debug)]
 enum Op {
     And,
     Or,
     Xor,
 }
-
 /// Kleene 语义的按字运算（与 `plane` 的公式一致；bench 只测这一套）。
 fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
     match op {
@@ -31,27 +38,6 @@ fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
         }
     }
 }
-
-fn arg(args: &[String], name: &str) -> Option<usize> {
-    args.iter()
-        .position(|a| a == name)
-        .and_then(|i| args.get(i + 1))
-        .and_then(|s| s.parse().ok())
-}
-
-fn thread_list(args: &[String]) -> Vec<usize> {
-    args.iter()
-        .position(|a| a == "--threads")
-        .and_then(|i| args.get(i + 1))
-        .map(|s| {
-            s.split(',')
-                .filter_map(|v| v.parse::<usize>().ok())
-                .collect()
-        })
-        .filter(|v: &Vec<usize>| !v.is_empty())
-        .unwrap_or_else(|| vec![1, 2, 4, 8])
-}
-
 fn sample_trits(len: usize, seed: u64) -> Vec<i8> {
     let mut state = seed | 1;
     (0..len)
@@ -139,6 +125,27 @@ fn bench_dot(
     (rows * cols) as f64 / best / 1e9
 }
 
+/// 反向 `dX = Wᵀdy`：标量参考 vs 双导轨掩码内核，返回 `(标量, 内核, 加速比)`。
+fn bench_backward(m: &PlaneMatrix, dy: &[f32], scale: &[f32], rounds: usize) -> (f64, f64, f64) {
+    let macs = (m.rows() * m.cols()) as f64;
+    let mut out = vec![0.0f32; m.cols()];
+    let mut best_scalar = f64::INFINITY;
+    let mut best_plane = f64::INFINITY;
+    for _ in 0..rounds.max(1) {
+        let start = Instant::now();
+        m.input_grad_scalar(dy, scale, &mut out);
+        best_scalar = best_scalar.min(start.elapsed().as_secs_f64());
+        black_box(&out);
+        let start = Instant::now();
+        m.input_grad(dy, scale, &mut out);
+        best_plane = best_plane.min(start.elapsed().as_secs_f64());
+        black_box(&out);
+    }
+    let scalar = macs / best_scalar / 1e9;
+    let plane = macs / best_plane / 1e9;
+    (scalar, plane, plane / scalar)
+}
+
 /// 三值线性层在固定任务上的收敛（与 `layer` 的单测同一任务）。
 fn ste_round(ste: Ste, steps: usize) -> (f32, Option<usize>, Vec<Vec<i8>>) {
     let (rows, cols) = (2usize, 3usize);
@@ -193,7 +200,9 @@ fn main() {
     let rows = arg(&args, "--rows").unwrap_or(4096);
     let cols = arg(&args, "--cols").unwrap_or(576);
     let ste_steps = arg(&args, "--ste-steps").unwrap_or(3000);
+    let train_steps = arg(&args, "--train-steps").unwrap_or(3);
     let threads = thread_list(&args);
+    let adam_scalar = args.iter().any(|a| a == "--adam-scalar");
 
     let trits = mtrits * 1_000_000; // 每 trit 2 bit（两条导轨各 1 bit）
     let a = Planes::from_trits(&sample_trits(trits, 0x9E37_79B9_7F4A_7C15));
@@ -236,6 +245,28 @@ fn main() {
         }
     }
 
+    let dy: Vec<f32> = (0..rows).map(|r| ((r % 31) as f32 - 15.0) / 15.0).collect();
+    let scale: Vec<f32> = (0..rows).map(|r| 0.25 + ((r % 17) as f32) * 0.05).collect();
+    let plane = PlaneMatrix::from_quantized(q, rows, cols);
+    let (scalar, plane_gmac, speedup) = bench_backward(&plane, &dy, &scale, rounds);
+    println!(
+        "\n反向 dX：{rows}×{cols}（{} M MAC，单线程，{} 轮取最快）",
+        rows * cols / 1_000_000,
+        rounds
+    );
+    println!("{:<14} {:>10} {:>10}", "内核", "GMAC/s", "相对");
+    println!("{:<14} {scalar:>10.2} {:>10}", "标量参考", "1.00×");
+    println!("{:<14} {plane_gmac:>10.2} {:>9.2}×", "双导轨掩码", speedup);
+
+    let (scalar_step, plane_step, step_speedup, pack_step) =
+        bench_train_step(rows, cols, train_steps, rounds);
+    println!("\n训练步：{rows}×{cols}（{train_steps} 步/轮；SGD fused，pack 另计）");
+    println!("{:<14} {:>10} {:>10}", "路径", "ms/step", "相对");
+    println!("{:<14} {scalar_step:>10.2} {:>10}", "标量参考", "1.00×");
+    println!("{:<14} {plane_step:>10.2} {:>9.2}×", "融合步", step_speedup);
+    println!("{:<14} {pack_step:>10.2}", "pack() 参考");
+    adam_step::bench_adam_step(rows, cols, train_steps, rounds, adam_scalar);
+    grad_step::bench_grad_step(rows, cols, train_steps, rounds);
     println!("\nSTE 收敛（2×3 线性层，{ste_steps} 步，MSE）：");
     for (name, ste) in [
         ("Identity", Ste::Identity),

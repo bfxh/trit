@@ -1,7 +1,7 @@
 //! `trit-orch` 的宿主桥：stdin 收一份 JSON，stdout 回一份 JSON。
 //! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `trace` /
 //! `compact-gate` 以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` /
-//! `handoff-gate` / `admit-with-claim`。
+//! `delivery` / `handoff-gate` / `admit-with-claim`。
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -10,12 +10,11 @@ use trit_orch::{
     builtin, compaction_gate, dispatch_ready, handoff_gate, handoff_obligation, receipt_obligation,
     replay,
 };
-
+mod cli_delivery;
 mod cli_finish;
 mod cli_inputs;
 mod cli_trace;
 use cli_inputs::*;
-
 fn parse_ternary(raw: &str) -> Result<Ternary, trit_orch::Error> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "true" | "t" | "+1" | "1" => Ok(Ternary::True),
@@ -27,7 +26,7 @@ fn parse_ternary(raw: &str) -> Result<Ternary, trit_orch::Error> {
     }
 }
 
-fn parse_receipt_state(raw: &str) -> Result<ReceiptState, trit_orch::Error> {
+pub(crate) fn parse_receipt_state(raw: &str) -> Result<ReceiptState, trit_orch::Error> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "sent" => Ok(ReceiptState::Sent),
         "delivered" => Ok(ReceiptState::Delivered),
@@ -237,6 +236,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 "gate": format!("{gate:?}"),
             }))
         }
+        "delivery" => cli_delivery::run(input),
         "receipt" => {
             let mut request: ReceiptInput = parse(input)?;
             let receipt = match request.action.as_str() {

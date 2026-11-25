@@ -124,11 +124,7 @@ fn polyglot_full_pipeline_ingest_and_cull() {
     for i in 0..10usize {
         let lang = langs[i % 5];
         let node = j
-            .spawn(
-                inbox,
-                NodeKind::Message,
-                &format!("样本{:02} ({})", i, lang),
-            )
+            .spawn(inbox, NodeKind::Message, &format!("样本{i:02} ({lang})"))
             .unwrap();
         let refs = vec![(NodeId(node.0), codes[i % codes.len()])];
         let report = scan::run_scan(&refs, scan::RULES, &[]);
@@ -238,7 +234,7 @@ fn large_dag_thousand_nodes_full_lifecycle() {
     assert!((lc.convergence().ratio - 1.0).abs() < 1e-9, "恢复到全 +1");
 
     let elapsed = start.elapsed();
-    println!("生命周期：60 节点 + 级联回滚 + 恢复 {:?}", elapsed);
+    println!("生命周期：60 节点 + 级联回滚 + 恢复 {elapsed:?}");
 }
 
 #[test]

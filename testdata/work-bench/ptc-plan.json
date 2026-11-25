@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "name": "work-bench-ptc",
+  "min_free_mb": 32,
+  "timeout_s": 120,
+  "steps": [
+    {
+      "id": "preflight",
+      "argv": [
+        "${PYTHON}",
+        "-c",
+        "import sys, openpyxl; print('python', sys.version.split()[0], 'openpyxl', openpyxl.__version__)"
+      ],
+      "verify": [
+        {"type": "stdout_regex", "value": "python \\d+\\.\\d+.*openpyxl"}
+      ]
+    },
+    {
+      "id": "selftest",
+      "argv": [
+        "${PYTHON}", "${ROOT}/tools/work_bench.py",
+        "-Tasks", "${ROOT}/testdata/work-bench/tasks.json",
+        "-SelfTest"
+      ],
+      "verify": [
+        {"type": "stdout_regex", "value": "work-bench self-test: (\\d+)/(\\d+)"},
+        {"type": "stdout_contains", "value": "182/182"}
+      ]
+    },
+    {
+      "id": "reference",
+      "argv": [
+        "${PYTHON}", "${ROOT}/tools/work_bench.py",
+        "-Tasks", "${ROOT}/testdata/work-bench/tasks.json",
+        "-Run", "-Quiet",
+        "-Out", "${OUTDIR}/work-bench-report.json"
+      ],
+      "verify": [
+        {"type": "file_exists", "path": "${OUTDIR}/work-bench-report.json"},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-report.json", "field": "metrics.failed", "equals": 0},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-report.json", "field": "metrics.pass_rate", "equals": 1.0},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-report.json", "field": "reference.passed", "equals": 81},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-report.json", "field": "reference.total", "equals": 81},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-report.json", "field": "negative.caught", "equals": 20},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-report.json", "field": "negative.total", "equals": 20}
+      ]
+    },
+    {
+      "id": "repeat",
+      "argv": [
+        "${PYTHON}", "${ROOT}/tools/work_bench.py",
+        "-Tasks", "${ROOT}/testdata/work-bench/tasks.json",
+        "-Run", "-Repeat", "2", "-Quiet",
+        "-Out", "${OUTDIR}/work-bench-repeat2.json"
+      ],
+      "verify": [
+        {"type": "file_exists", "path": "${OUTDIR}/work-bench-repeat2.json"},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-repeat2.json", "field": "repeat_all_ok", "equals": true},
+        {"type": "json_field", "path": "${OUTDIR}/work-bench-repeat2.json", "field": "metrics.failed", "equals": 0}
+      ]
+    }
+  ]
+}

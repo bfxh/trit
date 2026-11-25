@@ -191,8 +191,8 @@ impl DepthNet {
                 gb2 += 2.0 * wt * wgt * d;
             }
             let inv2 = 1.0 / n2.max(1) as f32;
-            for i in 0..w * h {
-                dout[0][i] += g2[i] * inv2;
+            for (d, g) in dout[0].iter_mut().zip(g2.iter()) {
+                *d += *g * inv2;
             }
             grad_b_warped += gb2 * inv2;
             extra_avg = e2 * inv2;

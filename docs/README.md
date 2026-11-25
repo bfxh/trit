@@ -128,6 +128,7 @@
 | [WSP-SPAM-QAT.md](security/WSP-SPAM-QAT.md) | 三值 QAT + 工件红队：SMS Spam 全链闭环 |
 | [GUARD.md](security/GUARD.md) | 训练看门狗（parts-guard）：跑完知道、卡死不漏 GPU、崩了能续 |
 | [HAZARD-POLICY.md](security/HAZARD-POLICY.md) | 并发 / 内存高危用法的放行判据（`scripts/hazard_gate.py` 依据） |
+| [SECURITY-SCAN.md](security/SECURITY-SCAN.md) | 静态 / 动态 / 运行时统一安全门：adapter 矩阵、fail-closed gap、一次性审计与 MCP/插件审核边界 |
 
 ## engineering/ — 构建与运维
 
@@ -136,13 +137,22 @@
 | [BUILD-PERF.md](engineering/BUILD-PERF.md) | 构建性能：本机 / CI 实测、缓存边界、采纳与未采纳项 |
 | [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×）、simchain 第七面接入（AI30–AI35）、ledger/registry 成本实测与不扩缓存的理由、Rust / 三进制 / 四进制评估与剩余待办 |
 | [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
-| [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；20/20 自测与诚实边界 |
+| [AGENT-DELIVERY.md](engineering/AGENT-DELIVERY.md) | 交接包的 DeliveryReceipt 四态账本（Rust）：sent/delivered/read/acted 顺序、actor、acted 证据、包哈希绑定、`.agent/delivery` 与 state_hash 跳过；`check` 只读预检一次给出交接门 + 账本状态；`cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` 9/9 |
+| [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；21/21 自测与诚实边界 |
+| [AGENT-CONTEXT-SEARCH.md](engineering/AGENT-CONTEXT-SEARCH.md) | 1M 窗口 / 850K 触发 / 700K 目标：锚点保留 + 抽取式摘要 + fail-closed；搜索结果相关性/安全/权威/新鲜度/去重/token 预算评分与自动推理强度；23/23 + 22/22 自测、100/100 随机不变量、14/14 交叉接缝 |
+| [AGENT-ALIGNMENT.md](engineering/AGENT-ALIGNMENT.md) | 目标→需求→产物/证据/变更的显式对齐门：v1 单目标、v2 单根目标树、v3 证据绑定实际成功 run 命令、每个 goal 必须被需求父链覆盖、non-goal 路径/对象级排除/声明范围、声明变更必须实际发生（空变更集不再免检）、父链、悬空引用、sha256/locator、未挂变更、需求矛盾、scaffold 空骨架、journal-end 后 run 后漂移复核；101/101 自测、100/100 随机不变量、AL27–AL40 链集成、全仓 710 通过 |
+| [AGENT-STABILITY.md](engineering/AGENT-STABILITY.md) | 稳定性/抖动探针：重复执行项目命令，按退出码混判、输出指纹和耗时比分出 stable-pass / stable-fail / flaky / nondeterministic / jittery / unknown；接进 `agent_verify` 默认链（有清单才启用），清单命令先过 policy；unknown 不放行、超时杀进程树、报告保留每次 exit/output SHA/耗时；38/38 自测、ST1-ST6 链集成、全仓 716 通过 |
 | [AGENT-MODELS.md](engineering/AGENT-MODELS.md) | 子智能体按角色选模型：`route/probe/call`、配置 schema、密钥只走环境变量、16 条路由自测、25 条派发与输出隔离自测、未落地项 |
 | [AGENT-MODEL-MANIFEST.md](engineering/AGENT-MODEL-MANIFEST.md) | 前端/后端模型与插件清单：人类面/智能体面分工、后端默认不接前端面板、多模态准入、论文式面板顺序与任务 brief；清单为模板，不是已接入声明 |
 | [AGENT-SANDBOX.md](engineering/AGENT-SANDBOX.md) | workspace 沙盒：复制输入 + policy 前置 + run_caps + 宿主指纹；37 条自测、40/40 并发矩阵、hostwrite 100/100、WSL+bwrap 内核隔离 11/11 与诚实边界 |
 | [AGENT-TEXT-GUARD.md](engineering/AGENT-TEXT-GUARD.md) | 外部文字污染门：不可信数据封套、隐形字符剥离、NFKD/多层编码扫描、派发输入 `prompt_guard` 与产物 `output_guard`、59/59 自测、81 例红队、90 例变形矩阵与自适应攻击边界 |
 | [AGENT-REDTEAM.md](engineering/AGENT-REDTEAM.md) | 入口红队：81 例文字语料（0 攻击漏检、0 overblock）、沙盒 junction/硬链接/忽略文件及本轮 reparse 路径洞、修复与残余边界 |
 | [AGENT-COMPLETION-PROVENANCE.md](engineering/AGENT-COMPLETION-PROVENANCE.md) | 编排完成回执：`finish` 默认要求 executor `Receipt`，伪造 `Passed` 报 `unattested_evidence`；CLI/库层回归与诚实边界 |
+| [AGENT-METRICS.md](engineering/AGENT-METRICS.md) | 回执观测面：full/compact/坏回执的 verdict、step、run、成本、预算、claims 与 per-agent/lang/profile 统计；`agent_metrics.py` 178/178 自测，6 条真实场景聚合 |
+| [AGENT-BENCH.md](engineering/AGENT-BENCH.md) | 真实任务基准：28 个代码/策略夹具、gold+negative 双 patch、Python/Node/Go/Rust 真实测试执行、policy/budget/dry-run/compact 分支；SWE-bench/Terminal-Bench/τ-bench 等谱系与本地切片边界，331/331 自测 |
+| [WORK-BENCH.md](engineering/WORK-BENCH.md) | 工作任务产物基准：20 个文档/数据/表格/邮件/日历/文件整理/合规任务、15 类、81 条确定性检查、参考 81/81 与负例 20/20；原生 XLSX 公式、`-Candidates` 与 182/182 自测 |
+| [CMD-DRIVER.md](engineering/CMD-DRIVER.md) | PTC 命令行降错：plan 预检、argv 无 shell、逐步 verify、无盲重试、错误分类与摘要/本地回执分离；34/34 自测，work-bench 4 步 13/13、81/81 质量不变 |
+| [CI-CD.md](engineering/CI-CD.md) | CI/CD 与发布：开发侧 work-bench/PTC 质量门、agent-quality workflow、Release 质量前置与用户侧资产过滤、CI 预算规则 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |
@@ -174,6 +184,7 @@
 |---|---|
 | [S-YARA-FULL.md](AGENT-TASKS/S-YARA-FULL.md) | S 级任务：YARA 完整语义（官方引擎差分 + 三值性质测试 + 性能预算三条同时成立） |
 | [HANDOFF-YARA-EXPR.md](HANDOFF-YARA-EXPR.md) | 交接包：YARA 完整表达式语言 + 模块对象模型（起点 `feat/pe-sections`，验收 = 官方 4.5.4 DIFF 0） |
+| [HANDOFF-BITPLANE-BACKWARD-FRONTEND.md](HANDOFF-BITPLANE-BACKWARD-FRONTEND.md) | 前端交接：位平面反向 `dX` 的页面结构、数据契约、读数、禁止文案与验收清单（浏览器面，不是 YARA 解析前端） |
 
 ## YARA-EXPR/ — YARA 完整语义规范与任务卡
 

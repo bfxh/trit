@@ -4,7 +4,7 @@
 
 ## 开发环境
 
-- Rust 1.88 及以上（stable；MSRV 由 dev-dependency `proptest` 决定）
+- Rust 1.89 及以上（stable；MSRV 由 dev-dependency `proptest` 与 SQLite 依赖决定）
 - `cargo fmt`、`cargo clippy` 组件
 
 ```bash
@@ -32,7 +32,7 @@ python scripts/hazard_gate.py   # 并发/内存高危门（政策见 docs/securi
 | `mutation`（`python scripts/mutation_check.py --pkg <crate>`） | 改动 crate 的变异必须被抓 | 全量每周跑一次 |
 | mutation 前置检查 | 锚点用正斜杠、唯一、不在测试代码里 | 跑测试前一次性报全 |
 | `stress`（`cargo test -p trit-core --release --test stress` 等） | 极端向量 / 跨字边界 / 10 万级载荷的不变量 | release 模式 |
-| 平台面 | Linux / Windows / macOS 三平台 fmt+clippy+test、MSRV 1.88、rustdoc `-D warnings`、package、wasm、action 自测 | CI |
+| 平台面 | Linux / Windows / macOS 三平台 fmt+clippy+test、MSRV 1.89、rustdoc `-D warnings`、package、wasm、action 自测 | CI |
 
 ## 代码约定
 

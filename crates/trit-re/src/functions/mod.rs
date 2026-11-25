@@ -18,6 +18,7 @@ mod arm64walk;
 mod cfg;
 mod cooccurrence;
 pub(crate) mod stackstrings;
+mod sum;
 mod x86len;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -254,8 +255,8 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
     let exec = elf_exec_sections(bytes, info);
     let mut notes = Vec::new();
     let symbols = info.function_symbols(bytes);
-    let exec_bytes: u64 = exec.iter().map(|(_, data)| data.len() as u64).sum();
-    let covered: u64 = symbols.iter().map(|symbol| symbol.size).sum();
+    let exec_bytes = sum::exec_bytes(exec.iter().map(|(_, data)| *data), &mut notes);
+    let covered = sum::symbol_bytes(&symbols, &mut notes);
     // 带大小的符号不等于"边界完整"：裁剪过的二进制只剩几个导出符号，
     // 覆盖率不够时先看 `.eh_frame`（FDE 是链接器写下的真实函数区间），再退回启发式。
     let symtab_exact = coverage_is_complete(covered, exec_bytes);
@@ -369,10 +370,6 @@ fn site_coverage(symbols: &[elf::FunctionSymbol], xref: &XrefReport) -> usize {
         .count()
 }
 
-fn frame_bytes(symbols: &[elf::FunctionSymbol]) -> u64 {
-    symbols.iter().map(|symbol| symbol.size).sum()
-}
-
 /// 同时有 `.eh_frame` 与 `.debug_frame` 时，按实际覆盖的调用点选择；
 /// 平手再比字节数，最后偏向 `.eh_frame`（标准异步表）。
 fn choose_frame_source<'a>(
@@ -388,7 +385,9 @@ fn choose_frame_source<'a>(
             let eh_sites = site_coverage(eh_frame, xref);
             let debug_sites = site_coverage(debug_frame, xref);
             let pick_debug = debug_sites > eh_sites
-                || (debug_sites == eh_sites && frame_bytes(debug_frame) > frame_bytes(eh_frame));
+                || (debug_sites == eh_sites
+                    && sum::frame_bytes(debug_frame).unwrap_or(0)
+                        > sum::frame_bytes(eh_frame).unwrap_or(0));
             if pick_debug {
                 Some((FuncSource::DebugFrame, debug_frame, Some(eh_sites)))
             } else {
