@@ -1033,6 +1033,25 @@
   - 文档：`WSP-BUDGET-RESULTS.md` §11.17、`WSP-ALT.md` §5.5、
     `WSP-BERT6-RESULTS.md` §3.16.19、`LESSONS.md` 第 29 条。
 
+- **跨档 PCA 子空间迁移（M1.18）**：`scripts/wsp_classify_pca.py` 新增
+  `--pca-fit NAME`（PCA 在指定 run 的 train 上拟合，所有 run 投到同一组
+  主成分）、`--bootstrap-raw`（每个变换后的 run 对自己的 raw 做配对
+  bootstrap）和 `--bootstrap-metrics`。新增 1 条 mutation 锚点。
+  - SST-2 L12：把 int4 基搬到 f32，`keep4` 从 `0.603` 回到 `0.694`、
+    `keep16` 从 `0.680` 到 `0.722`；但同维数下 int4 仍有 `0.769 / 0.806`，
+    `int4−f32` 从 raw `+0.040088` 扩到 `+0.075233 / +0.083470`。
+  - 反方向把 int4 投到 f32 基：`keep4 +0.033498`、`keep8 +0.043932`、
+    `keep64 +0.047776`，优势没有消失；只有 `keep16 +0.013729` CI 跨 0。
+  - CoLA/hate 两个 fit 方向的 `keepN` CI 基本跨 0；hate L12 `fit=f32
+    keep8 +0.009829` 是单个正格子，不构成稳定结论。
+  - **结论：SST-2 的 int4 正向不能由“更好的低秩子空间”单独解释；低秩
+    集中是伴随读数，优势跟着子空间内的坐标/尺度走。仍不是量化过程的
+    因果证明。**
+  - 表：`wsp-classify-pca-transfer.tsv`（120 行：6 个数据集-深度 × 2 个
+    fit 方向 × 5 个 mode × 2 个 run）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.18、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.20、`LESSONS.md` 第 30 条。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

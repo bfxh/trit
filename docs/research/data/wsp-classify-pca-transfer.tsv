@@ -1,0 +1,121 @@
+dataset	model	fit	protocol	mode	run	kept_dims	accuracy	delta_vs_raw	raw_ci_low	raw_ci_high	delta_vs_f32	f32_ci_low	f32_ci_high
+cola	L12	fitf32	balanced_macro_f1	raw	f32		0.575264	0.000000					
+cola	L12	fitf32	balanced_macro_f1	raw	int4		0.586769	0.000000			0.011505	-0.013423	0.034516
+cola	L12	fitf32	balanced_macro_f1	keep4	f32	4	0.525407	-0.049856	-0.089166	-0.010547			
+cola	L12	fitf32	balanced_macro_f1	keep4	int4	4	0.524449	-0.062320	-0.102589	-0.021093	-0.050815	-0.013423	0.034516
+cola	L12	fitf32	balanced_macro_f1	keep8	f32	8	0.509108	-0.066155	-0.105465	-0.028763			
+cola	L12	fitf32	balanced_macro_f1	keep8	int4	8	0.522531	-0.064238	-0.104506	-0.024928	-0.052733	-0.013423	0.034516
+cola	L12	fitf32	balanced_macro_f1	keep16	f32	16	0.511985	-0.063279	-0.101654	-0.025887			
+cola	L12	fitf32	balanced_macro_f1	keep16	int4	16	0.511026	-0.075743	-0.116012	-0.037392	-0.064238	-0.013423	0.034516
+cola	L12	fitf32	balanced_macro_f1	keep64	f32	64	0.543624	-0.031640	-0.067114	0.002876			
+cola	L12	fitf32	balanced_macro_f1	keep64	int4	64	0.554171	-0.032598	-0.069032	0.002876	-0.021093	-0.013423	0.034516
+cola	L12	fitint4	balanced_macro_f1	raw	f32		0.575264	0.000000					
+cola	L12	fitint4	balanced_macro_f1	raw	int4		0.586769	0.000000			0.011505	-0.012464	0.021093
+cola	L12	fitint4	balanced_macro_f1	keep4	f32	4	0.529243	-0.046021	-0.086290	-0.006687			
+cola	L12	fitint4	balanced_macro_f1	keep4	int4	4	0.520614	-0.066155	-0.107407	-0.025887	-0.054650	-0.012464	0.021093
+cola	L12	fitint4	balanced_macro_f1	keep8	f32	8	0.516779	-0.058485	-0.097795	-0.021069			
+cola	L12	fitint4	balanced_macro_f1	keep8	int4	8	0.524449	-0.062320	-0.102589	-0.023011	-0.050815	-0.012464	0.021093
+cola	L12	fitint4	balanced_macro_f1	keep16	f32	16	0.501438	-0.073826	-0.113135	-0.035475			
+cola	L12	fitint4	balanced_macro_f1	keep16	int4	16	0.503356	-0.083413	-0.122723	-0.045062	-0.071908	-0.012464	0.021093
+cola	L12	fitint4	balanced_macro_f1	keep64	f32	64	0.549377	-0.025887	-0.060427	0.006711			
+cola	L12	fitint4	balanced_macro_f1	keep64	int4	64	0.554171	-0.032598	-0.068073	0.001918	-0.021093	-0.012464	0.021093
+cola	L6	fitf32	balanced_macro_f1	raw	f32		0.582934	0.000000					
+cola	L6	fitf32	balanced_macro_f1	raw	int4		0.574305	0.000000			-0.008629	-0.021093	0.013423
+cola	L6	fitf32	balanced_macro_f1	keep4	f32	4	0.526366	-0.056568	-0.095877	-0.017258			
+cola	L6	fitf32	balanced_macro_f1	keep4	int4	4	0.530201	-0.044104	-0.083413	-0.005753	-0.052733	-0.021093	0.013423
+cola	L6	fitf32	balanced_macro_f1	keep8	f32	8	0.521572	-0.061361	-0.100671	-0.023011			
+cola	L6	fitf32	balanced_macro_f1	keep8	int4	8	0.513902	-0.060403	-0.099712	-0.021093	-0.069032	-0.021093	0.013423
+cola	L6	fitf32	balanced_macro_f1	keep16	f32	16	0.512943	-0.069990	-0.107383	-0.033557			
+cola	L6	fitf32	balanced_macro_f1	keep16	int4	16	0.508150	-0.066155	-0.104506	-0.028763	-0.074784	-0.021093	0.013423
+cola	L6	fitf32	balanced_macro_f1	keep64	f32	64	0.526366	-0.056568	-0.088207	-0.025887			
+cola	L6	fitf32	balanced_macro_f1	keep64	int4	64	0.522531	-0.051774	-0.086290	-0.017258	-0.060403	-0.021093	0.013423
+cola	L6	fitint4	balanced_macro_f1	raw	f32		0.582934	0.000000					
+cola	L6	fitint4	balanced_macro_f1	raw	int4		0.574305	0.000000			-0.008629	-0.034516	0.021093
+cola	L6	fitint4	balanced_macro_f1	keep4	f32	4	0.531160	-0.051774	-0.090125	-0.012464			
+cola	L6	fitint4	balanced_macro_f1	keep4	int4	4	0.533078	-0.041227	-0.080537	-0.001918	-0.049856	-0.034516	0.021093
+cola	L6	fitint4	balanced_macro_f1	keep8	f32	8	0.520614	-0.062320	-0.100671	-0.023011			
+cola	L6	fitint4	balanced_macro_f1	keep8	int4	8	0.520614	-0.053691	-0.093001	-0.013423	-0.062320	-0.034516	0.021093
+cola	L6	fitint4	balanced_macro_f1	keep16	f32	16	0.519655	-0.063279	-0.100671	-0.025887			
+cola	L6	fitint4	balanced_macro_f1	keep16	int4	16	0.513902	-0.060403	-0.098754	-0.022052	-0.069032	-0.034516	0.021093
+cola	L6	fitint4	balanced_macro_f1	keep64	f32	64	0.534995	-0.047939	-0.078619	-0.017258			
+cola	L6	fitint4	balanced_macro_f1	keep64	int4	64	0.528284	-0.046021	-0.081496	-0.012464	-0.054650	-0.034516	0.021093
+hate	L12	fitf32	unweighted_accuracy	raw	f32		0.576445	0.000000					
+hate	L12	fitf32	unweighted_accuracy	raw	int4		0.572787	0.000000			-0.003658	-0.012070	0.004023
+hate	L12	fitf32	unweighted_accuracy	keep4	f32	4	0.450622	-0.125823	-0.149598	-0.101683			
+hate	L12	fitf32	unweighted_accuracy	keep4	int4	4	0.444770	-0.128018	-0.152158	-0.103877	-0.131675	-0.012070	0.004023
+hate	L12	fitf32	unweighted_accuracy	keep8	f32	8	0.525604	-0.050841	-0.066935	-0.034382			
+hate	L12	fitf32	unweighted_accuracy	keep8	int4	8	0.535479	-0.037308	-0.053402	-0.020849	-0.040966	-0.012070	0.004023
+hate	L12	fitf32	unweighted_accuracy	keep16	f32	16	0.544989	-0.031456	-0.046452	-0.016825			
+hate	L12	fitf32	unweighted_accuracy	keep16	int4	16	0.546086	-0.026701	-0.041697	-0.011704	-0.030358	-0.012070	0.004023
+hate	L12	fitf32	unweighted_accuracy	keep64	f32	64	0.562546	-0.013899	-0.025604	-0.002195			
+hate	L12	fitf32	unweighted_accuracy	keep64	int4	64	0.558522	-0.014265	-0.026335	-0.001829	-0.017922	-0.012070	0.004023
+hate	L12	fitint4	unweighted_accuracy	raw	f32		0.576445	0.000000					
+hate	L12	fitint4	unweighted_accuracy	raw	int4		0.572787	0.000000			-0.003658	-0.023784	-0.003658
+hate	L12	fitint4	unweighted_accuracy	keep4	f32	4	0.442941	-0.133504	-0.157644	-0.108998			
+hate	L12	fitint4	unweighted_accuracy	keep4	int4	4	0.441843	-0.130944	-0.154718	-0.107169	-0.134601	-0.023784	-0.003658
+hate	L12	fitint4	unweighted_accuracy	keep8	f32	8	0.517557	-0.058888	-0.075713	-0.042063			
+hate	L12	fitint4	unweighted_accuracy	keep8	int4	8	0.521580	-0.051207	-0.068398	-0.034382	-0.054865	-0.023784	-0.003658
+hate	L12	fitint4	unweighted_accuracy	keep16	f32	16	0.542429	-0.034016	-0.048647	-0.019386			
+hate	L12	fitint4	unweighted_accuracy	keep16	int4	16	0.550841	-0.021946	-0.036576	-0.007681	-0.025604	-0.023784	-0.003658
+hate	L12	fitint4	unweighted_accuracy	keep64	f32	64	0.566935	-0.009510	-0.021214	0.002560			
+hate	L12	fitint4	unweighted_accuracy	keep64	int4	64	0.553036	-0.019751	-0.032553	-0.006950	-0.023409	-0.023784	-0.003658
+hate	L6	fitf32	unweighted_accuracy	raw	f32		0.546818	0.000000					
+hate	L6	fitf32	unweighted_accuracy	raw	int4		0.532187	0.000000			-0.014631	-0.004023	0.012436
+hate	L6	fitf32	unweighted_accuracy	keep4	f32	4	0.472202	-0.074616	-0.100219	-0.049744			
+hate	L6	fitf32	unweighted_accuracy	keep4	int4	4	0.463789	-0.068398	-0.093636	-0.043526	-0.083029	-0.004023	0.012436
+hate	L6	fitf32	unweighted_accuracy	keep8	f32	8	0.527432	-0.019386	-0.036211	-0.002560			
+hate	L6	fitf32	unweighted_accuracy	keep8	int4	8	0.531090	-0.001097	-0.019386	0.016825	-0.015728	-0.004023	0.012436
+hate	L6	fitf32	unweighted_accuracy	keep16	f32	16	0.542429	-0.004389	-0.018288	0.009144			
+hate	L6	fitf32	unweighted_accuracy	keep16	int4	16	0.547915	0.015728	0.000000	0.031456	0.001097	-0.004023	0.012436
+hate	L6	fitf32	unweighted_accuracy	keep64	f32	64	0.561083	0.014265	0.002560	0.025969			
+hate	L6	fitf32	unweighted_accuracy	keep64	int4	64	0.565106	0.032919	0.018654	0.047184	0.018288	-0.004023	0.012436
+hate	L6	fitint4	unweighted_accuracy	raw	f32		0.546818	0.000000					
+hate	L6	fitint4	unweighted_accuracy	raw	int4		0.532187	0.000000			-0.014631	-0.007315	0.009510
+hate	L6	fitint4	unweighted_accuracy	keep4	f32	4	0.486832	-0.059985	-0.085964	-0.034382			
+hate	L6	fitint4	unweighted_accuracy	keep4	int4	4	0.476591	-0.055596	-0.081565	-0.029993	-0.070227	-0.007315	0.009510
+hate	L6	fitint4	unweighted_accuracy	keep8	f32	8	0.532553	-0.014265	-0.031822	0.002926			
+hate	L6	fitint4	unweighted_accuracy	keep8	int4	8	0.532187	0.000000	-0.018288	0.017922	-0.014631	-0.007315	0.009510
+hate	L6	fitint4	unweighted_accuracy	keep16	f32	16	0.546818	0.000000	-0.013899	0.013533			
+hate	L6	fitint4	unweighted_accuracy	keep16	int4	16	0.551573	0.019386	0.004023	0.034748	0.004755	-0.007315	0.009510
+hate	L6	fitint4	unweighted_accuracy	keep64	f32	64	0.563643	0.016825	0.004755	0.028895			
+hate	L6	fitint4	unweighted_accuracy	keep64	int4	64	0.564740	0.032553	0.018654	0.046452	0.017922	-0.007315	0.009510
+sst2	L12	fitf32	unweighted_accuracy	raw	f32		0.800110	0.000000					
+sst2	L12	fitf32	unweighted_accuracy	raw	int4		0.840198	0.000000			0.040088	0.026908	0.068644
+sst2	L12	fitf32	unweighted_accuracy	keep4	f32	4	0.602965	-0.197144	-0.224053	-0.171334			
+sst2	L12	fitf32	unweighted_accuracy	keep4	int4	4	0.636463	-0.203734	-0.228995	-0.179023	-0.163646	0.026908	0.068644
+sst2	L12	fitf32	unweighted_accuracy	keep8	f32	8	0.628775	-0.171334	-0.196595	-0.146623			
+sst2	L12	fitf32	unweighted_accuracy	keep8	int4	8	0.672707	-0.167490	-0.192202	-0.143328	-0.127403	0.026908	0.068644
+sst2	L12	fitf32	unweighted_accuracy	keep16	f32	16	0.679846	-0.120264	-0.142779	-0.098847			
+sst2	L12	fitf32	unweighted_accuracy	keep16	int4	16	0.693575	-0.146623	-0.170236	-0.123558	-0.106535	0.026908	0.068644
+sst2	L12	fitf32	unweighted_accuracy	keep64	f32	64	0.745195	-0.054915	-0.071938	-0.038976			
+sst2	L12	fitf32	unweighted_accuracy	keep64	int4	64	0.792971	-0.047227	-0.064800	-0.029654	-0.007139	0.026908	0.068644
+sst2	L12	fitint4	unweighted_accuracy	raw	f32		0.800110	0.000000					
+sst2	L12	fitint4	unweighted_accuracy	raw	int4		0.840198	0.000000			0.040088	0.052169	0.093355
+sst2	L12	fitint4	unweighted_accuracy	keep4	f32	4	0.694124	-0.105986	-0.127403	-0.084020			
+sst2	L12	fitint4	unweighted_accuracy	keep4	int4	4	0.769357	-0.070840	-0.090610	-0.051620	-0.030752	0.052169	0.093355
+sst2	L12	fitint4	unweighted_accuracy	keep8	f32	8	0.709500	-0.090610	-0.112576	-0.069193			
+sst2	L12	fitint4	unweighted_accuracy	keep8	int4	8	0.775398	-0.064800	-0.084020	-0.045030	-0.024712	0.052169	0.093355
+sst2	L12	fitint4	unweighted_accuracy	keep16	f32	16	0.722131	-0.077979	-0.098298	-0.058759			
+sst2	L12	fitint4	unweighted_accuracy	keep16	int4	16	0.805601	-0.034596	-0.051071	-0.018671	0.005491	0.052169	0.093355
+sst2	L12	fitint4	unweighted_accuracy	keep64	f32	64	0.753981	-0.046129	-0.062603	-0.030203			
+sst2	L12	fitint4	unweighted_accuracy	keep64	int4	64	0.826469	-0.013729	-0.028007	0.000549	0.026359	0.052169	0.093355
+sst2	L6	fitf32	unweighted_accuracy	raw	f32		0.797913	0.000000					
+sst2	L6	fitf32	unweighted_accuracy	raw	int4		0.804503	0.000000			0.006590	-0.014278	0.029105
+sst2	L6	fitf32	unweighted_accuracy	keep4	f32	4	0.589237	-0.208677	-0.235585	-0.182317			
+sst2	L6	fitf32	unweighted_accuracy	keep4	int4	4	0.619440	-0.185063	-0.210873	-0.159253	-0.178473	-0.014278	0.029105
+sst2	L6	fitf32	unweighted_accuracy	keep8	f32	8	0.612850	-0.185063	-0.210873	-0.159253			
+sst2	L6	fitf32	unweighted_accuracy	keep8	int4	8	0.647446	-0.157057	-0.181219	-0.133429	-0.150467	-0.014278	0.029105
+sst2	L6	fitf32	unweighted_accuracy	keep16	f32	16	0.693026	-0.104887	-0.126853	-0.082921			
+sst2	L6	fitf32	unweighted_accuracy	keep16	int4	16	0.700714	-0.103789	-0.125755	-0.082372	-0.097199	-0.014278	0.029105
+sst2	L6	fitf32	unweighted_accuracy	keep64	f32	64	0.754530	-0.043383	-0.060406	-0.027444			
+sst2	L6	fitf32	unweighted_accuracy	keep64	int4	64	0.762219	-0.042284	-0.060406	-0.024163	-0.035695	-0.014278	0.029105
+sst2	L6	fitint4	unweighted_accuracy	raw	f32		0.797913	0.000000					
+sst2	L6	fitint4	unweighted_accuracy	raw	int4		0.804503	0.000000			0.006590	0.020868	0.063152
+sst2	L6	fitint4	unweighted_accuracy	keep4	f32	4	0.650192	-0.147721	-0.171884	-0.123558			
+sst2	L6	fitint4	unweighted_accuracy	keep4	int4	4	0.678748	-0.125755	-0.148270	-0.102142	-0.119165	0.020868	0.063152
+sst2	L6	fitint4	unweighted_accuracy	keep8	f32	8	0.703460	-0.094454	-0.115870	-0.073572			
+sst2	L6	fitint4	unweighted_accuracy	keep8	int4	8	0.733114	-0.071389	-0.091708	-0.051071	-0.064800	0.020868	0.063152
+sst2	L6	fitint4	unweighted_accuracy	keep16	f32	16	0.724876	-0.073037	-0.092806	-0.053817			
+sst2	L6	fitint4	unweighted_accuracy	keep16	int4	16	0.763866	-0.040637	-0.058210	-0.023064	-0.034047	0.020868	0.063152
+sst2	L6	fitint4	unweighted_accuracy	keep64	f32	64	0.754530	-0.043383	-0.059857	-0.026908			
+sst2	L6	fitint4	unweighted_accuracy	keep64	int4	64	0.796815	-0.007688	-0.020868	0.005491	-0.001098	0.020868	0.063152
