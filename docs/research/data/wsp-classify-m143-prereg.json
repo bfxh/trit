@@ -1,0 +1,72 @@
+{
+  "run": "M1.43",
+  "status": "preregistered_exploratory_before_model_scores",
+  "created_at_local": "2026-11-27T00:05:00+08:00",
+  "title": "HateXplain three-class probe readout",
+  "parent": ["M1.40", "M1.42"],
+  "question": "M1.40 把 HateXplain 的 offensive 归为 0；三分类下 R12/rescan 相对 f32 的差异是否改变？",
+  "type": "exploratory, not confirmatory",
+  "dataset": {
+    "name": "HateXplain",
+    "clean_rows": {"fit": 17270, "test": 1918},
+    "three_class_counts": {
+      "fit": {"normal": 7011, "hatespeech": 5336, "offensive": 4923},
+      "test": {"normal": 777, "hatespeech": 594, "offensive": 547}
+    },
+    "mapping": {"normal": 0, "hatespeech": 1, "offensive": 2},
+    "note": "Same cleaned rows and embeddings as M1.40; only the label head changes."
+  },
+  "modeling": {
+    "encoder": "frozen all-MiniLM-L12-v2 / all-MiniLM-L6-v2, seq 64",
+    "depth_arms": {"l12": ["f32", "r12"], "l6": ["f32", "rescan"]},
+    "probes": ["logreg", "linear_svc"],
+    "probe_settings": {
+      "logreg": "multinomial LogisticRegression(C=c, max_iter=5000, solver=lbfgs, random_state=7)",
+      "linear_svc": "LinearSVC(C=c, max_iter=10000, random_state=7, tol=1e-4), one-vs-rest"
+    },
+    "seeds": [7, 13, 19, 31, 43],
+    "c_grid": [0.01, 0.1, 1.0, 10.0],
+    "c_selection": "f32 only, 5-fold StratifiedKFold on fit, 3-class accuracy; f32 and quantized arm share C",
+    "threshold": "none; argmax / predict"
+  },
+  "endpoints": {
+    "primary": {
+      "metric": "3-class accuracy",
+      "comparison": "quantized arm - f32",
+      "scope": "full test",
+      "bootstrap": "10,000 paired bootstrap, 95% percentile CI",
+      "verdict": "descriptive only; no confirmed/rejected candidate verdict"
+    },
+    "secondary": [
+      "3-class macro-F1",
+      "per-class recall",
+      "confusion matrix by depth/probe/arm",
+      "binary-equivalent accuracy (hatespeech vs rest) is not recomputed here"
+    ]
+  },
+  "hypotheses": {
+    "H1_offensive_confound": {
+      "statement": "If offensive is a hard-negative class that the binary mapping hides, the three-class arm-f32 difference may differ from the binary result, especially on offensive recall.",
+      "role": "exploratory"
+    },
+    "H2_no_candidate_rescue": {
+      "statement": "A three-class exploratory readout cannot upgrade R12/rescan; it can only motivate a later preregistered three-class test.",
+      "role": "guardrail"
+    }
+  },
+  "independence_and_boundaries": {
+    "seeds": "5 seeds share test texts; not independent.",
+    "single_corpus": "HateXplain only; no external validity.",
+    "label_mapping": "three-class labels are the corpus native majority labels; no soft labels / annotator disagreement in M1.43.",
+    "candidate": "R12 and rescan remain rejected in the binary primary; this is a mechanism/readout check."
+  },
+  "artifacts": {
+    "scripts": ["docs/research/scripts/wsp_m143/three_class.py"],
+    "data": [
+      "docs/research/data/wsp-classify-m143-raw.tsv",
+      "docs/research/data/wsp-classify-m143-compare.tsv",
+      "docs/research/data/wsp-classify-m143-primary.tsv"
+    ]
+  },
+  "prereg_commit_policy": "Committed before running model-score or accuracy computation."
+}

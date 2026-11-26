@@ -1,6 +1,48 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.40 完成（§11.40）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验 + 预注册 Hate test 半分割 confirmatory + 第二个 hate 语料 HateXplain 的预注册 confirmatory。
+> 状态：M1.45 完成（§11.41–§11.45）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验 + 预注册 Hate test 半分割 confirmatory + 第二个 hate 语料 HateXplain 的预注册 confirmatory + HateXplain 域感知先验与 fit-only 阈值搬运 + HateXplain 三分类探索 + 静态字节–质量 Pareto + Davidson 第三语料。
+>
+> **M1.45 读法**：Davidson 第三语料按 default 阈值做 descriptive
+> transport：test `4,956` 行里只有 `285` 条 hate（`5.75%`）。
+> accuracy `0.942–0.945` 看着高，但预测正例率只有 `0.38–2.08%`，
+> hate recall `3.9–20.0%`，macro-F1 `0.52–0.63`；四个 family 的
+> accuracy `arm−f32` 全部 0/5 正 CI，macro-F1 三负一微负。L12 SVC
+> 的 `+0.1211pp` accuracy 伴随 hate recall 下降，不是质量提升。
+> **default 阈值的 accuracy 被 94% 多数类撑高；第三语料仍不能升级
+> candidate。** 见 §11.45。
+>
+> **M1.43 读法**：HateXplain 三分类下，四个 family 的 accuracy
+> `arm − f32` 全部 0/5 正 CI；L12 logreg `+0.156pp`、L12 SVC
+> `−0.323pp`、L6 logreg `+0.469pp`、L6 SVC `+0.073pp`。三分类
+> accuracy 只有 `0.649–0.656`，`offensive` recall 仅 `0.354–0.426`，
+> 是主要错误来源；binary 的 `0.82` 主要来自 normal-vs-rest。**三分类
+> 只作 exploratory，不能升级 candidate。** 见 §11.43。
+>
+> **M1.44 读法**：静态工件字节 vs 7 个任务指标的 Pareto。没有跨任务
+> 统一 winner：L12 STS Spearman 是 `R12` 支配 f32/int4（10.78MB、
+> `0.8354`），L12 CoLA 是 `int4` 支配 f32（13.44MB、`0.5612`），
+> L6 STS 是 `rescan` 支配 f32（5.39MB、`0.8313`），L6 Hate 是
+> `int3` 支配 f32（5.39MB、`0.5505`），L6 SciFact 则是 `int4`
+> 最高。**成本–质量是任务相关的；最低字节有时也是最高质量，
+> 但不能从一个任务外推。** 见 §11.44。
+>
+> **M1.42 读法**：把 M1.38 的 `target_prior` 从 test 分数分位点换成
+> fit OOF 分位点后，TweetEval/hate 的 candidate gain 没有保留：L12
+> `R12` 从 `+1.83/+1.68pp` 翻成 `−1.77/−1.59pp`，L6 `rescan` 从
+> `+2.87/+2.55pp` 掉到 `+0.02/+0.58pp`；四个 family 全部
+> `not_retained`。fit-only 的 f32 accuracy 比 test-prior 低
+> `7.3–11.0pp`，预测正例率是 `0.76–0.80`，而 test 真实先验 `0.42`。
+> **M1.38 的 rescue 依赖 test 分数分布，是 transductive 现象，不是
+> 可部署阈值。** 见 §11.42。
+>
+> **M1.41 读法**：HateXplain 的 Gab/Twitter hate 先验是 `0.502/0.078`，
+> 一个全局 prior 阈值必然错配。域感知阈值 `domain_test_prior` 相对
+> global 在 L12 两个 probe 5/5、L6 logreg 4/5 上 supported，L6 SVC
+> 0/5；但它仍低于 default：`0.815/0.816`（L12）、`0.818/0.814`（L6）
+> vs default `0.823/0.822`。所以域拆开只解释了一部分伤害；匹配边际
+> 先验不等于匹配最优决策阈值。fit-only 在 L12 略好、L6 更差。
+> **candidate 没有被域规则救回，target_prior 仍不能当默认协议。**
+> 见 §11.41。
 >
 > **M1.40 HateXplain 独立语料 confirmatory（2026-11-26）**：在第二个 hate
 > 语料 HateXplain 的官方 `train+val`/`test` 上预注册 confirmatory；清洗后
@@ -6315,8 +6357,624 @@ python docs/research/scripts/wsp_m140/hatexplain_target_prior.py \
 - `scripts/wsp_m140/prepare_hatexplain.py`、`make_chunk_inputs.py`、
   `hatexplain_target_prior.py`。
 
+## 11.41 域感知先验与 fit-only 阈值（M1.41）
+
+### 11.41.1 问题
+
+M1.40 的 `target_prior` 在 HateXplain 上把 f32 accuracy 从约 `0.823`
+压到 `0.808/0.811`，但 M1.38 的 TweetEval/hate 上同一规则却是 rescue。
+HateXplain 的 fit/test 都含两个来源，且 hate 率先验差异极大：
+
+| 来源 | fit n | fit hate | fit hate rate | test n | test hate | test hate rate |
+|---|---:|---:|---:|---:|---:|---:|
+| Gab | 9,408 | 4,719 | `0.501594` | 1,038 | 516 | `0.497110` |
+| Twitter | 7,862 | 617 | `0.078479` | 880 | 78 | `0.088636` |
+| 全体 | 17,270 | 5,336 | `0.308975` | 1,918 | 594 | `0.309698` |
+
+因此一个全局先验阈值（31%）对 Gab 是压低、对 Twitter 是抬高。M1.41
+先问：把先验按域拆开后，M1.40 的伤害是否只是全局阈值错配？随后把
+同一规则改成 fit 内 OOF 阈值，问它是否还能部署。
+
+预注册 `docs/research/data/wsp-classify-m141-prereg.json` 先于任何模型
+分数提交（`d897af81`，primary arm 澄清 `6737b21c`）。数据、切分、5 seeds、
+C 网格、probe 设置全部沿用 M1.40；只新增规则，不重新编码。
+
+### 11.41.2 五条规则
+
+| rule | 阈值 | 用 test 分数 | 用 test 标签 |
+|---|---|---|---|
+| `default` | logreg 0.5 / SVC 0.0 | 否 | 否 |
+| `global_test_prior` | 全部 test 分数的 `1−prior_fit_global` 分位 | 是 | 否 |
+| `domain_test_prior` | 每域 test 分数的 `1−prior_fit_domain` 分位 | 是 | 否 |
+| `global_fit_prior` | 全部 OOF fit 分数的 `1−prior_fit_global` 分位 | 否 | 否 |
+| `domain_fit_prior` | 每域 OOF fit 分数的 `1−prior_fit_domain` 分位 | 否 | 否 |
+
+OOF 分数来自与 C 选择相同的 5 折：每折用 4/5 fit 训练、对留出折打分。
+所有阈值都不使用 test 标签；test 标签只用于 accuracy/macro-F1。
+
+### 11.41.3 Primary：domain-aware 阈值 vs global 阈值
+
+Primary 是 f32 的 overall accuracy，`domain_test_prior − global_test_prior`，
+5 seeds，10k paired stratified bootstrap（域内重采样，保持 1,038/880 构成）。
+
+| depth | probe | 正 CI /5 | 5-seed 均值 | 预注册判定 |
+|---|---|---:|---:|---|
+| L12 | logreg | 5 | `+0.7821pp` | supported |
+| L12 | linear_svc | 5 | `+0.6569pp` | supported |
+| L6 | logreg | 4 | `+0.6361pp` | supported |
+| L6 | linear_svc | 0 | `+0.3650pp` | rejected |
+
+L6 SVC 的点估计为正，但 5 个 CI 都跨 0；这里的 `rejected` 只表示
+“没有显著优于 global”，不是“domain-aware 更差”。总体看，H2 在
+3/4 个 probe family 上 supported：域感知阈值确实收回了一部分
+global 阈值的伤害。
+
+### 11.41.4 绝对 accuracy：收回一部分，但仍低于 default
+
+f32 的 5-seed 均值：
+
+| rule | L12 logreg | L12 SVC | L6 logreg | L6 SVC |
+|---|---:|---:|---:|---:|
+| `default` | `0.8233` | `0.8216` | `0.8227` | `0.8229` |
+| `global_test_prior` | `0.8076` | `0.8095` | `0.8116` | `0.8107` |
+| `domain_test_prior` | `0.8154` | `0.8161` | `0.8179` | `0.8144` |
+| `domain_fit_prior` | `0.8185` | `0.8193` | `0.8125` | `0.8111` |
+
+`domain_test_prior − default` 仍为负：
+
+- L12：`−0.7821pp`（logreg）/`−0.5527pp`（SVC）；
+- L6：`−0.4797pp`（logreg）/`−0.8551pp`（SVC）。
+
+也就是说，域拆开只能解释/收回 global 阈值的一部分损失，不能把
+`target_prior` 变回优于 default 的规则。
+
+### 11.41.5 为什么 global 会伤：Twitter 被过度抬正
+
+预测正例率（5-seed 均值）：
+
+| rule | L12 logreg overall | L12 logreg twitter | L12 logreg gab | L6 logreg overall | L6 logreg twitter | L6 logreg gab |
+|---|---:|---:|---:|---:|---:|---:|
+| `default` | `0.2404` | `0.0580` | `0.3950` | `0.2532` | `0.0698` | `0.4087` |
+| `global_test_prior` | `0.3092` | `0.1000` | `0.4865` | `0.3092` | `0.0955` | `0.4904` |
+| `domain_test_prior` | `0.3076` | `0.0784` | `0.5019` | `0.3076` | `0.0784` | `0.5019` |
+
+test 真实先验是 Gab `0.4971`、Twitter `0.0886`。全局阈值把 Twitter
+从 default 的 `0.058–0.070` 抬到 `0.096–0.100`，超过真实 `0.0886`；
+域感知阈值把 Twitter 拉到 `0.0784`，接近真实值，但 accuracy 仍低于
+default。per-domain accuracy：
+
+| scope | rule | L12 logreg | L12 SVC | L6 logreg | L6 SVC |
+|---|---|---:|---:|---:|---:|
+| Gab | `default` | `0.7495` | `0.7468` | `0.7617` | `0.7609` |
+| Gab | `global_test_prior` | `0.7486` | `0.7493` | `0.7547` | `0.7553` |
+| Gab | `domain_test_prior` | `0.7486` | `0.7478` | `0.7574` | `0.7505` |
+| Twitter | `default` | `0.9102` | `0.9098` | `0.8948` | `0.8961` |
+| Twitter | `global_test_prior` | `0.8773` | `0.8805` | `0.8786` | `0.8761` |
+| Twitter | `domain_test_prior` | `0.8943` | `0.8966` | `0.8893` | `0.8898` |
+
+Gab 上各规则接近 default；主要伤害集中在 Twitter。但即使 Twitter
+的正例率被拉回真实先验，accuracy 仍低于 default 约 `1.0–1.6pp`
+（L12）/`0.5–0.7pp`（L6）；这说明“匹配边际先验”不等于“匹配最优
+决策阈值”，排序/校准本身仍有差异。
+
+### 11.41.6 fit-only 阈值：L12 略好，L6 更差
+
+`domain_fit_prior − domain_test_prior` 的 overall accuracy：
+
+| depth | probe | 正 CI /5 | 5-seed 均值 |
+|---|---|---:|---:|
+| L12 | logreg | 4 | `+0.3024pp` |
+| L12 | linear_svc | 4 | `+0.3233pp` |
+| L6 | logreg | 0 | `−0.5422pp` |
+| L6 | linear_svc | 0 | `−0.3337pp` |
+
+L12 上 OOF 阈值反而略好；L6 上明显更差。绝对值见 §11.41.4。这个
+结果不是“fit-only 稳定”，而是“fit-only 的阈值随深度/分数分布变化，
+不能保证搬运”。M1.42 在 TweetEval/hate 上把这一点放大：fit-only
+阈值没有保留 M1.38 的 candidate gain。
+
+### 11.41.7 candidate 没有被域规则救回来
+
+`arm − f32` 的 overall accuracy（domain_test_prior）：
+
+- L12 `R12`：logreg `0.0000`、SVC `0.0000`（5/5 都跨 0）；
+- L6 `rescan`：logreg `+0.4170pp`、SVC `+0.5010pp`，但两个 probe 都是
+  0/5 正 CI。
+
+`domain_fit_prior` 下 L12 `R12` 变成 `−0.740/−0.782pp`，L6 `rescan`
+为 `+0.344/+0.615pp`，同样没有正 CI。域感知规则没有把 M1.40 的
+rejected candidate 变成可升级候选；它只解释了 global 阈值的一部分
+伤害。
+
+### 11.41.8 判决与边界
+
+- **H1（全局阈值错配）成立但不足以解释全部损失**：global 阈值在
+  Twitter 上过度抬正，Gab 上接近 default；overall 仍差 default
+  `1.1–1.6pp`（L6/L12）。
+- **H2（域感知阈值）部分成立**：`domain_test_prior` 相对 global
+  在 3/4 个 family 上 supported（L6 SVC 仅点估计正、CI 全跨 0），
+  但仍低于 default。
+- **H3（fit-only 可部署）不成立/混合**：L12 略好、L6 更差；
+  M1.42 在 TweetEval 上给出更强的“不保留”证据。
+- **candidate 不升级**：`R12`/`rescan` 在域规则下仍没有正 CI。
+- 边界：单一 HateXplain official test；域标签来自 `source` 元数据，
+  不是新语料；每域 n=`1,038/880`，CI 宽；5 seeds 共享 test 文本，
+  同 C 可能重复；`offensive→0` 仍是外部映射；没有做第三个语料。
+
+### 11.41.9 复算
+
+```bash
+python docs/research/scripts/wsp_m141/domain_prior.py \
+  --root "$TRIT_RESULTS/hatexplain" \
+  --out "$TRIT_RESULTS/hatexplain" \
+  --iters 10000
+```
+
+产物：
+
+- `data/wsp-classify-m141-prereg.json`
+- `data/wsp-classify-m141-raw.tsv`（1,200 行、16 列）
+- `data/wsp-classify-m141-compare.tsv`（1,500 行、19 列）
+- `data/wsp-classify-m141-summary.tsv`（240 行、9 列）
+- `data/wsp-classify-m141-compare-summary.tsv`（300 行、16 列）
+- `data/wsp-classify-m141-primary.tsv`（4 行、7 列）
+- `scripts/wsp_m141/domain_prior.py`
+
+## 11.42 fit-only 阈值搬运（M1.42）
+
+### 11.42.1 问题与预注册
+
+M1.38 的 rescue 用的是 `quantile(test_scores, 1−prior_fit)`：它不需要
+test 标签，但需要 test 分数分布，属于 transductive。M1.42 在
+TweetEval/hate 上把阈值换成 fit 内 OOF 分位点，问 candidate gain
+是否还能保留。预注册
+`docs/research/data/wsp-classify-m142-prereg.json` 先于结果提交
+（`19f1d5c1`）。
+
+数据：fit `8,985`、test `2,734`；prior_fit `0.420812`；规则只有
+`default`、`global_test_prior`、`global_fit_prior`；其余建模口径与
+M1.38/M1.41 一致。
+
+### 11.42.2 Primary：candidate gain 没有保留
+
+`arm − f32` 的 full-test accuracy，阈值 `global_fit_prior`：
+
+| depth | probe | 正 CI /5 | 5-seed 均值 | 预注册判定 |
+|---|---|---:|---:|---|
+| L12 | logreg | 0 | `−1.7703pp` | not_retained |
+| L12 | linear_svc | 0 | `−1.5947pp` | not_retained |
+| L6 | logreg | 0 | `+0.0219pp` | not_retained |
+| L6 | linear_svc | 1 | `+0.5779pp` | not_retained |
+
+对照同一脚本的 `global_test_prior`（复现 M1.38 方向）：
+
+| depth | probe | `global_test_prior` arm−f32 | `global_fit_prior` arm−f32 |
+|---|---|---:|---:|
+| L12 | logreg | `+1.8288pp` | `−1.7703pp` |
+| L12 | linear_svc | `+1.6825pp` | `−1.5947pp` |
+| L6 | logreg | `+2.8676pp` | `+0.0219pp` |
+| L6 | linear_svc | `+2.5457pp` | `+0.5779pp` |
+
+L12 的 test-prior 读数与 M1.38 的 `+1.8288/+1.6825pp` 一致；L6
+logreg 是 `+2.8676pp`（M1.38 为 `+2.7213pp`，同向、约 `+0.15pp`
+差异，来自本轮 C/折选择）。**一旦把阈值改成 fit-only，L12 直接翻负，
+L6 掉到约 0；M1.38 的 rescue 不能搬运。**
+
+### 11.42.3 fit-only 阈值为什么失效
+
+f32 的 absolute accuracy：
+
+| rule | L12 logreg | L12 SVC | L6 logreg | L6 SVC |
+|---|---:|---:|---:|---:|
+| `default` | `0.5743` | `0.5723` | `0.5413` | `0.5390` |
+| `global_test_prior` | `0.6342` | `0.6376` | `0.6329` | `0.6328` |
+| `global_fit_prior` | `0.5608` | `0.5586` | `0.5292` | `0.5225` |
+
+阈值与预测正例率：
+
+| rule | L12 logreg thr / pos | L12 SVC thr / pos | L6 logreg thr / pos | L6 SVC thr / pos |
+|---|---:|---:|---:|---:|
+| `default` | `0.5 / 0.7341` | `0.0 / 0.7351` | `0.5 / 0.7571` | `0.0 / 0.7616` |
+| `global_test_prior` | `0.7632 / 0.4210` | `0.4585 / 0.4210` | `0.7745 / 0.4210` | `0.4741 / 0.4210` |
+| `global_fit_prior` | `0.4669 / 0.7612` | `−0.0497 / 0.7638` | `0.4637 / 0.7885` | `−0.0528 / 0.7948` |
+
+test 真实 hate 率约 `0.421`。test 分位阈值正好把正例率压到 `0.421`；
+fit OOF 分位阈值却落在 `0.76–0.80`，说明 OOF 分数分布与 test 分数
+分布明显不同，分位点不能搬运。`global_fit_prior` 不仅没有保留
+candidate gain，连 f32 的绝对 accuracy 都比 default 低
+`1.35–2.65pp`（L12/L6），比 test-prior 低 `7.3–11.0pp`。
+
+### 11.42.4 判决与边界
+
+- **M1.38 的 target_prior rescue 是 test 分数分位点现象**：它依赖
+  未标注 test 分数的分布；换成 fit OOF 后，L12 翻负、L6 归零。
+- **fit-only 不是可部署替代**：OOF 分数分布与 test 不同，分位阈值
+  会系统性偏移；不能把 `target_prior` 写成部署协议。
+- **candidate 线到此收口**：`R12`/`rescan` 的 Hate-only、target_prior
+  条件性候选没有跨语料复现，也没有通过 fit-only 搬运。继续开第三个
+  hate 语料做 candidate confirmatory 的边际信息很低。
+- 边界：仍是 TweetEval/hate 单一 test、n=2,734；5 seeds 共享文本；
+  C 由 f32 fit 内 5 折选；OOF 与最终 full-fit 的分数尺度不完全一致；
+  没有做校准曲线/AUC 的完整诊断。
+- 下一步若继续，应该换 **prior-free / inductive** 的决策规则，而不是
+  继续在 test 分数上匹配先验；第三语料只有在新的规则预注册后才值得开。
+
+### 11.42.5 复算
+
+```bash
+python docs/research/scripts/wsp_m142/fit_only_threshold.py \
+  --root "$TRIT_RESULTS/tweet-hate" \
+  --out "$TRIT_RESULTS/tweet-hate" \
+  --iters 10000
+```
+
+产物：
+
+- `data/wsp-classify-m142-prereg.json`
+- `data/wsp-classify-m142-raw.tsv`（240 行、12 列）
+- `data/wsp-classify-m142-compare.tsv`（300 行、18 列）
+- `data/wsp-classify-m142-primary.tsv`（4 行、7 列）
+- `scripts/wsp_m142/fit_only_threshold.py`
+
+## 11.43 三分类探索（M1.43）
+
+### 11.43.1 问题与预注册
+
+M1.40 把 HateXplain 的 `offensive` 并进负类，只测 binary hate。若
+`offensive` 是 hard negative，binary 口径会把一部分“像 hate 的 offensive”
+当成错误；三分类可能改变 `R12`/`rescan` 相对 f32 的读数。M1.43 在
+**同一批清洗行、同一批 embedding** 上只换标签头：
+
+- fit `7,011 normal / 5,336 hate / 4,923 offensive`，共 `17,270`；
+- test `777 / 594 / 547`，共 `1,918`；
+- 映射 `normal=0, hatespeech=1, offensive=2`；
+- 预注册见 `data/wsp-classify-m143-prereg.json`（commit `3af46565`），
+  状态是 `exploratory, not confirmatory`，不设 candidate confirm/reject。
+
+### 11.43.2 口径与 C 选择
+
+- 5 seeds `7/13/19/31/43`；2 probes：multinomial logreg、LinearSVC OVR；
+- L12 `f32` vs `R12`，L6 `f32` vs `rescan`；
+- C 只由 f32 的 fit 内 5 折 accuracy 选，f32 与量化臂共用同一 C；
+- 无阈值；三分类 `argmax` / `predict`；
+- primary 是 test 三分类 accuracy 的 `arm − f32`，10k paired stratified
+  bootstrap 95% percentile CI；macro-F1 与 per-class recall 只报点估计。
+
+实现说明：logreg 在 L12 的五个 seed 都选中 `C=1.0`；L6 logreg 的 seed 7
+5 折也选中 `1.0`。为避免对同一个 `C=1.0` 重复跑 5×20 次全量 CV，L6
+logreg 余下 seed 固定 `C=1.0`；SVC 仍逐 seed 选 C（选中 `1.0` 或 `10.0`）。
+这不改变“f32-only 选 C、两臂共用 C”的规则，也不改变任何 test 标签。
+
+### 11.43.3 Primary：四个 family 全部 0/5 正 CI
+
+| depth | probe | 正 CI /5 | mean point | mean CI | 预注册判定 |
+|---|---|---:|---:|---:|---|
+| L12 | logreg | 0 | `+0.1564pp` | `[−1.366, +1.648]pp` | descriptive only |
+| L12 | linear_svc | 0 | `−0.3233pp` | `[−1.794, +1.147]pp` | descriptive only |
+| L6 | logreg | 0 | `+0.4692pp` | `[−1.011, +1.929]pp` | descriptive only |
+| L6 | linear_svc | 0 | `+0.0730pp` | `[−1.450, +1.595]pp` | descriptive only |
+
+三分类的 CI 比 binary 宽：test 只有 `1,918` 行，且每类几百行。四个
+family 中没有任何一个 seed 的 95% CI 完全在 0 以上；L6 logreg 的
+`+0.4692pp` 是点估计最大的，但 5 个 CI 全部跨 0。**不能把任何一个
+写成 candidate rescue。**
+
+### 11.43.4 绝对 accuracy 与 macro-F1
+
+5-seed 均值：
+
+| depth/probe | arm | accuracy | macro-F1 | Δacc | Δmacro-F1 |
+|---|---|---:|---:|---:|---:|
+| L12 logreg | f32 | `0.651199` | `0.631284` | — | — |
+| L12 logreg | R12 | `0.652763` | `0.629616` | `+0.1564pp` | `−0.1668pp` |
+| L12 SVC | f32 | `0.649948` | `0.623033` | — | — |
+| L12 SVC | R12 | `0.646715` | `0.617367` | `−0.3233pp` | `−0.5666pp` |
+| L6 logreg | f32 | `0.651721` | `0.628103` | — | — |
+| L6 logreg | rescan | `0.656413` | `0.632608` | `+0.4692pp` | `+0.4505pp` |
+| L6 SVC | f32 | `0.648697` | `0.619882` | — | — |
+| L6 SVC | rescan | `0.649426` | `0.619689` | `+0.0730pp` | `−0.0193pp` |
+
+三分类 accuracy 约 `0.649–0.656`，比 binary 的 `0.82` 低很多；这不是
+量化损失，而是任务本身多了 `offensive` 这个与 hate 高度重叠的类。L12
+logreg 的 accuracy 微正、macro-F1 微负；L6 logreg 两者都微正，但都
+没有 CI 支持。L12 SVC 两项都负。
+
+### 11.43.5 混淆在哪里：offensive recall 最低
+
+5-seed 均值 per-class recall：
+
+| depth/probe | arm | normal | hatespeech | offensive |
+|---|---|---:|---:|---:|
+| L12 logreg | f32 | `0.7864` | `0.6818` | `0.4260` |
+| L12 logreg | R12 | `0.7902` | `0.7020` | `0.4040` |
+| L12 SVC | f32 | `0.8113` | `0.6936` | `0.3733` |
+| L12 SVC | R12 | `0.8028` | `0.7118` | `0.3543` |
+| L6 logreg | f32 | `0.7864` | `0.7155` | `0.3912` |
+| L6 logreg | rescan | `0.7967` | `0.7104` | `0.3985` |
+| L6 SVC | f32 | `0.7974` | `0.7232` | `0.3565` |
+| L6 SVC | rescan | `0.8121` | `0.7047` | `0.3583` |
+
+`offensive` recall 只有 `0.354–0.426`，是主要错误来源；`normal` 最高，
+`hatespeech` 居中。`R12`/`rescan` 的主要变化是把一部分 `offensive`
+预测成 `hatespeech`：L12 SVC 的 hate recall `+1.82pp`、offensive
+`−1.90pp`；L6 SVC 的 normal `+1.47pp`、hate `−1.85pp`。L6 logreg 的
+rescan 则是 normal `+1.03pp`、hate `−0.51pp`、offensive `+0.73pp`，
+方向更均衡，所以 accuracy 与 macro-F1 同时微正。
+
+这不是“量化保真更好”的证据：三类边界本身不稳，`offensive` 与
+`hatespeech` 的决策面在 384 维线性 probe 下高度重叠；微小的分数扰动
+就能改变几百行的归类。
+
+### 11.43.6 判决与边界
+
+- 四个 family 的 primary 全部 `0/5` 正 CI，按预注册只能写
+  **descriptive only**；不能升级 `R12`/`rescan`。
+- 三分类没有复制 binary 的 `R12`/`rescan` 负结果，也没有给出正结果；
+  它说明 binary 的 82% 主要来自 normal-vs-rest 的易分边界，而不是
+  hate/offensive 的细边界。
+- 单语料、单标签映射、无软标签、无 annotator 分歧；`offensive` 的
+  低 recall 是 HateXplain 原生多数标签口径下的读数，不外推到其他
+  三分类定义。
+- 5 seeds 共享同一 test；CI 不是独立重复实验的 CI。
+
+### 11.43.7 复算
+
+- 预注册：`data/wsp-classify-m143-prereg.json`
+- 脚本：`scripts/wsp_m143/three_class.py`（`--depth/--probe/--suffix` 分块，
+  `merge_chunks.py` 合并）；`--fixed-c` 只用于 L6 logreg 的 `C=1.0` 复用。
+- 表：`data/wsp-classify-m143-raw.tsv`（40 行、12 列）、
+  `-compare.tsv`（40 行、14 列）、`-primary.tsv`（4 行、7 列）
+- 原始分块读数（未入库）与日志 `m143-l12-logreg.log`、
+  `m143-l12-svc.log`、`m143-l6-logreg.log`（L6 SVC 的终端输出未单独
+  落盘）同在实验输出目录；仓库内只保留合并后的三张表。
+
+## 11.44 静态字节–质量 Pareto（M1.44）
+
+### 11.44.1 问题与口径
+
+前面的结论一直是“同字节预算下谁更好”，但没有一张把**成本**和**任务
+质量**放在同一张表里的图。M1.44 只做静态综合，不新跑模型：
+
+- 成本 = `WSP-BUDGET-RESULTS.md` 已发布的**实际工件字节**（含 metadata），
+  不是 weight-only，也不是运行时 RSS/延迟。L12 f32 `84,934,656 B`、
+  int3/R12 `10,782,720 B`、int4 `13,436,928 B`；L6 f32
+  `42,467,328 B`、int3/rescan `5,391,360 B`、int4 `6,718,464 B`。
+- 质量 = 已发布的 corrected true-f32 对照读数：STS Pearson/Spearman、
+  SciFact MRR@10/nDCG@10、SST-2 accuracy、CoLA macro-F1、
+  TweetEval-hate accuracy。
+- 分类只取 logreg，避免把 logreg/SVC 混成同一条 frontier；检索/STS
+  是同一份句向量口径。
+- Pareto 定义：对同一 depth×task×metric，若存在另一配置
+  `bytes ≤ 本配置` 且 `quality ≥ 本配置`（至少一项严格），本配置被支配。
+  这是**点估计 frontier**，不是统计显著 frontier；CI 见各原节。
+
+### 11.44.2 成本表
+
+| depth | f32 | int3 | int4 | mixed | mixed 名称 |
+|---|---:|---:|---:|---:|---|
+| L12 | 84,934,656 | 10,782,720 | 13,436,928 | 10,782,720 | `R12`（6/54/12） |
+| L6 | 42,467,328 | 5,391,360 | 6,718,464 | 5,391,360 | `rescan`（6/24/6） |
+
+int3/R12 是 f32 工件字节的 `12.69%`，int4 是 `15.82%`；但这是
+**工件字节比**，不是参数位宽比，也不是推理时间比。f32 工件包含的不止
+权重，不能把它当“4×int3”的干净换算。
+
+### 11.44.3 每个任务的 Pareto frontier
+
+按成本从低到高列非支配点（括号内是质量指标）：
+
+| depth | task | metric | Pareto frontier |
+|---|---|---|---|
+| L12 | STS | Pearson | `R12(10.78MB,.8337)` → `int4(13.44MB,.8375)` → `f32(84.93MB,.8376)` |
+| L12 | STS | Spearman | `R12(10.78MB,.8354)` **唯一** |
+| L12 | SciFact | nDCG@10 | `int3(10.78MB,.5320)` → `int4(13.44MB,.5684)` → `f32(84.93MB,.5899)` |
+| L12 | SciFact | MRR@10 | `int3(10.78MB,.4967)` → `int4(13.44MB,.5294)` → `f32(84.93MB,.5538)` |
+| L12 | SST-2 | accuracy | `int3(10.78MB,.8232)` → `int4(13.44MB,.8402)` → `f32(84.93MB,.8429)` |
+| L12 | CoLA | macro-F1 | `R12(10.78MB,.5430)` → `int4(13.44MB,.5612)` |
+| L12 | TweetEval-hate | accuracy | `int3(10.78MB,.5647)` → `int4(13.44MB,.5655)` → `f32(84.93MB,.5743)` |
+| L6 | STS | Pearson | `rescan(5.39MB,.8313)` **唯一** |
+| L6 | STS | Spearman | `rescan(5.39MB,.8245)` **唯一** |
+| L6 | SciFact | nDCG@10 | `int3(5.39MB,.5411)` → `int4(6.72MB,.5738)` |
+| L6 | SciFact | MRR@10 | `int3(5.39MB,.5103)` → `int4(6.72MB,.5345)` |
+| L6 | SST-2 | accuracy | `int3(5.39MB,.8083)` → `f32(42.47MB,.8116)` |
+| L6 | CoLA | macro-F1 | `int3(5.39MB,.5471)` → `f32(42.47MB,.5531)` |
+| L6 | TweetEval-hate | accuracy | `int3(5.39MB,.5505)` **唯一** |
+
+被支配的典型点：
+
+- L12 STS Pearson 的 `int3` 被 `R12` 支配（同字节、`R12` 高
+  `+0.015231`）；但 `R12` 仍低于 `int4`/f32。
+- L12 STS Spearman 的 `int3`/`int4`/`f32` 都被 `R12` 支配：`R12`
+  在 10.78MB 上 `0.835411`，高于 f32 `0.830894` 和 int4 `0.832047`。
+  这是全表最强的成本–质量点，但只对 Spearman 成立；同配置的 Pearson
+  仍低于 f32。
+- L12 CoLA 的 f32 被 `int4` 支配：int4 更便宜且 macro-F1 更高
+  （`0.561151` vs `0.548644`）；`R12` 更便宜但更低，仍留在 frontier。
+- L6 STS 的 `int3`/`int4`/f32 都被 `rescan` 支配：`rescan` 在
+  5.39MB 上 Pearson `0.831304`、Spearman `0.824457`，高于 f32。
+- L6 Hate 的 `f32`/`int4`/`rescan` 都被 `int3` 支配：int3 在
+  5.39MB 上 `0.550475`，高于 f32 `0.546086`；这是唯一一个
+  “最低成本点同时最高质量”的任务。
+- L6 SciFact 的 `rescan` 被 `int3` 支配：同字节，nDCG@10
+  `0.514939` vs `int3 0.541137`；STS 最优不等于检索最优。
+
+### 11.44.4 判决与边界
+
+- **不存在跨任务统一的最优配置**。L12 的 frontier 在 STS Spearman
+  是 `R12`，在 CoLA 是 `int4`，在 SST-2/Hate 是 int4–f32 的窄带；
+  L6 在 STS/Hate 是 `int3`/`rescan`，在 SciFact 是 `int4`。
+- **成本–质量是任务相关的**：同一 10.78MB/5.39MB 预算，换任务就换
+  winner；不能用一个任务（尤其 STS）的 frontier 推部署配置。
+- **“最低字节”不等于“最差质量”**：L6 Hate 的 int3 同时是最低成本
+  和最高 accuracy；L12 STS Spearman 的 R12 也是最低成本和最高
+  Spearman。反过来，f32 在 CoLA L12 被 int4 支配，在 L6 Hate 被
+  int3 支配。
+- 边界：只有 logreg；没有 SVC frontier；没有 CI/显著性；没有实际
+  latency/内存带宽/能耗；f32 工件字节含 metadata/非权重内容，
+  不能当纯权重压缩率；`R12`/`rescan` 是 in-sample 选块，frontier
+  不是“未见过任务的预期”。
+- 复算：`python docs/research/scripts/wsp_m144/cost_pareto.py`，输出
+  `data/wsp-classify-m144-pareto.tsv`（56 行、9 列）。TSV 的
+  `dominated_by`/`pareto` 列就是上表的机器可读版本。
+
+## 11.45 Davidson 第三语料（M1.45）
+
+### 11.45.1 问题与预注册
+
+M1.40 在 HateXplain 上否定了 `R12`/`rescan`，M1.42 又否定了 fit-only
+阈值搬运。M1.45 换第三个 hate 语料 Davidson et al. 2017，只问一个问题：
+**按 default 阈值（logreg 0.5 / LinearSVC 0），量化臂还能不能保持
+f32 的 accuracy/macro-F1？** 预注册见
+`data/wsp-classify-m145-prereg.json`（commit `d1810448`），
+`descriptive only`，不做 candidate confirm/reject，不测 target_prior。
+
+数据：Davidson 原始 `24,783` 行，`1,430 hate / 19,190 offensive /
+4,163 neither`；空白折叠、去重（去 1 条）、binary 映射
+`class=0 hate -> 1; offensive+neither -> 0`。无官方 split，固定
+stratified 80/20 `random_state=7`；test 中 1 条与 TweetEval/HateXplain
+精确重叠被移除。最终 fit `19,825`（`18,681/1,144`），test `4,956`
+（`4,671/285`）；fit prior `0.057704918`，test prior
+`0.057506053`。
+
+### 11.45.2 口径与 C
+
+- 冻结编码器，L12 `f32`/`R12`，L6 `f32`/`rescan`；seq 64；
+- 5 seeds、2 probes、default 阈值；无 target_prior、无三分类；
+- C 只由 f32 的 fit 内 5 折 accuracy 选；为控制重复 CV，C 在 seed 7
+  的 5 折上各 depth×probe 选一次，然后所有 seed/两臂共用：
+  L12 logreg `10.0`、L12 SVC `10.0`、L6 logreg `1.0`、L6 SVC `0.1`。
+  这符合预注册的“f32 only、5 折、两臂共用 C”；没有用 test 标签。
+
+### 11.45.3 Primary：四个 family 全部 0/5 正 CI
+
+| depth | probe | 正 CI /5 | mean point | mean CI | 预注册判定 |
+|---|---|---:|---:|---:|---|
+| L12 | logreg | 0 | `−0.0202pp` | `[−0.319, +0.270]pp` | descriptive only |
+| L12 | linear_svc | 0 | `+0.1211pp` | `[−0.133, +0.383]pp` | descriptive only |
+| L6 | logreg | 0 | `−0.0202pp` | `[−0.258, +0.210]pp` | descriptive only |
+| L6 | linear_svc | 0 | `−0.0605pp` | `[−0.242, +0.109]pp` | descriptive only |
+
+accuracy 的差值都在 `±0.13pp` 内，CI 很窄；四个 family 没有任何
+一个 seed 的正 CI。L12 SVC 的点估计 `+0.1211pp` 是唯一正号，但
+hate recall 反而从 `0.1263` 降到 `0.1228`，不是质量提升。
+
+### 11.45.4 绝对 accuracy 与 macro-F1：accuracy 被多数类撑高
+
+5-seed 均值：
+
+| depth/probe | arm | accuracy | macro-F1 | Δacc | Δmacro-F1 |
+|---|---|---:|---:|---:|---:|
+| L12 logreg | f32 | `0.944713` | `0.632523` | — | — |
+| L12 logreg | R12 | `0.944512` | `0.620858` | `−0.0202pp` | `−1.1665pp` |
+| L12 SVC | f32 | `0.943906` | `0.588320` | — | — |
+| L12 SVC | R12 | `0.945117` | `0.588128` | `+0.1211pp` | `−0.0192pp` |
+| L6 logreg | f32 | `0.942292` | `0.576474` | — | — |
+| L6 logreg | rescan | `0.942090` | `0.564186` | `−0.0202pp` | `−1.2288pp` |
+| L6 SVC | f32 | `0.943705` | `0.531079` | — | — |
+| L6 SVC | rescan | `0.943099` | `0.521509` | `−0.0605pp` | `−0.9570pp` |
+
+macro-F1 的 5-seed 均值差：
+
+| depth | probe | Δmacro-F1 | mean CI |
+|---|---|---:|---:|
+| L12 | logreg | `−1.1665pp` | `[−3.448, +1.058]pp` |
+| L12 | linear_svc | `−0.0192pp` | `[−2.533, +2.473]pp` |
+| L6 | logreg | `−1.2288pp` | `[−3.555, +1.032]pp` |
+| L6 | linear_svc | `−0.9570pp` | `[−3.057, +1.075]pp` |
+
+所有 macro-F1 CI 都跨 0；`R12` 在 L12 logreg 上掉 `1.17pp`，`rescan`
+在 L6 logreg 上掉 `1.23pp`。**accuracy 的微小正号不能抵消 macro-F1
+的负号。**
+
+### 11.45.5 为什么 accuracy 接近天花板：default 阈值几乎不预测 hate
+
+test 真实 hate 率 `0.0575`，但 default 阈值下预测正例率只有：
+
+| depth/probe | arm | pred pos rate | hate recall | non-hate recall |
+|---|---|---:|---:|---:|
+| L12 logreg | f32 | `0.0208` | `0.2000` | `0.9902` |
+| L12 logreg | R12 | `0.0186` | `0.1789` | `0.9912` |
+| L12 SVC | f32 | `0.0131` | `0.1263` | `0.9938` |
+| L12 SVC | R12 | `0.0115` | `0.1228` | `0.9953` |
+| L6 logreg | f32 | `0.0131` | `0.1123` | `0.9929` |
+| L6 logreg | rescan | `0.0113` | `0.0947` | `0.9938` |
+| L6 SVC | f32 | `0.0044` | `0.0491` | `0.9983` |
+| L6 SVC | rescan | `0.0038` | `0.0386` | `0.9983` |
+
+non-hate 占 `94.25%`，所以“几乎全判 non-hate”就能拿到 `94%` accuracy；
+但 hate recall 只有 `3.9–20.0%`，macro-F1 只有 `0.52–0.63`。
+**这是 default 阈值在 5.7% 先验下的保守性，不是模型真的学会了
+hate/offensive 边界。** 准确率差值接近 0，主要是因为两边都很少
+判正；它不能作为量化保真的证据。
+
+M1.42 已经证明 fit-only 阈值不能把 prior 搬过来；本轮的 default
+阈值同样没有解决 5.7% 先验下的低 recall。M1.45 不重测 target_prior，
+因此这里只记录“default 下 accuracy 近零差、macro-F1 负”，不提出
+新的阈值方案。
+
+### 11.45.6 判决与边界
+
+- 第三语料按 default 阈值没有给出 candidate gain：accuracy 全部
+  0/5 正 CI，macro-F1 四个 family 的点估计三负一微负。
+- L12 SVC 的 `+0.1211pp` accuracy 与 `−0.0192pp` macro-F1 是
+  “多数类几乎不变、hate recall 更低”的组合，不是质量提升。
+- 无官方 split、只有 285 条 hate test、binary 把 offensive 归 0；
+  这是 external descriptive transport，不是对 Davidson 总体的
+  总体推断，也不是 confirmatory。
+- 没有 target_prior / fit-only / 三分类；阈值问题仍由 M1.42 的
+  负结果封口。
+- 结论：**R12/rescan 在第三个 hate 语料上仍不能升级；default
+  阈值的 accuracy 被 94% 多数类撑高，必须同时看 macro-F1 与 hate
+  recall。** candidate 线保持关闭。
+
+### 11.45.7 复算
+
+- 预注册：`data/wsp-classify-m145-prereg.json`
+- 数据：`data/wsp-classify-m145-prepare-summary.json`（SHA256
+  `FCB8BC7C68120AE4AF04A5B9ACD58585513EDE11E1548EBF36A5C2040B6F6281`）
+- 脚本：`scripts/wsp_m145/prepare_davidson.py`、
+  `run_encode.ps1`、`davidson_probe.py`
+- 表：`data/wsp-classify-m145-raw.tsv`（40 行、11 列）、
+  `-compare.tsv`（40 行、14 列）、`-primary.tsv`（4 行、7 列）
+- 编码：17 个 chunks，L12/L6 各 4 套 `24,781×384` f32 文件；
+  编码日志 `encode.log`，`all done`。
+
 ## 12. 下一步
 
+> **M1.45 读法**：Davidson 第三语料 default 阈值下，四个 family 的
+> accuracy `arm−f32` 全部 0/5 正 CI（`−0.06~+0.12pp`）；accuracy
+> `0.942–0.945` 但 hate recall `3.9–20.0%`、macro-F1 `0.52–0.63`。
+> **accuracy 被 94% 多数类撑高；第三语料仍不能升级 candidate。**
+> 见 §11.45。
+>
+> **M1.43 读法**：HateXplain 三分类下四个 family 的 `arm−f32` 全部
+> 0/5 正 CI；accuracy 只有 `0.649–0.656`，`offensive` recall
+> `0.354–0.426`。binary 的 `0.82` 主要来自 normal-vs-rest，不是
+> hate/offensive 细边界。**三分类只作 exploratory，不能升级
+> candidate。** 见 §11.43。
+>
+> **M1.44 读法**：静态字节–质量 Pareto 不是“越贵越好”。L12 的
+> STS Spearman 最优点是 `R12`（10.78MB），CoLA 是 `int4`（13.44MB），
+> L6 的 STS 是 `rescan`（5.39MB）、Hate 是 `int3`（5.39MB）、SciFact
+> 是 `int4`（6.72MB）。**同一个预算换任务就换 winner；不能把一个
+> 任务的 frontier 当部署结论。** 见 §11.44。
+>
+> **M1.42 读法**：fit-only 阈值没有保留 M1.38 的 candidate gain。
+> TweetEval/hate 上 L12 `R12` 从 test-prior 的 `+1.83/+1.68pp` 变成
+> `−1.77/−1.59pp`，L6 `rescan` 从 `+2.87/+2.55pp` 掉到
+> `+0.02/+0.58pp`；四个 family 都是 `not_retained`。fit-only 的 f32
+> accuracy 比 test-prior 低 `7.3–11.0pp`，预测正例率 `0.76–0.80`
+> 而真实先验 `0.42`。**M1.38 的 rescue 是 test 分数分位点现象，
+> 不是可部署协议。** 见 §11.42。
+>
+> **M1.41 读法**：HateXplain 的全局先验阈值在 Gab/Twitter 先验
+> `0.502/0.078` 上错配；域感知阈值把 global 的伤害收回一部分
+> （L12 5/5、L6 logreg 4/5 supported；L6 SVC 0/5），但仍低于 default
+> （`0.815/0.816` vs `0.823`，L6 `0.818/0.814` vs `0.822`）。
+> 匹配边际先验不等于匹配最优阈值；fit-only 在 L12 略好、L6 更差。
+> **candidate 没有被域规则救回，target_prior 仍是 transductive
+> exploratory。** 见 §11.41。
+>
 > **M1.40 读法**：第二个 hate 语料 HateXplain 的预注册 confirmatory 没有
 > 复现 M1.38/M1.39。Primary accuracy（full test、target_prior、matched-C）：
 > L12 `R12` logreg 0/5（`+0.10pp`）、SVC 0/5（`−0.29pp`）；L6 `rescan`

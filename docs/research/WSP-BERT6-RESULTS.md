@@ -14,6 +14,32 @@ LayerNorm、GELU、残差都在 f32 里跑，只把线性权重三值化。目�
 > target_prior 在 HateXplain 上还把 f32 的绝对 accuracy 从约 `0.823`
 > 降到 `0.808/0.811`。这是第二个 hate 语料，不是 TweetEval 的切分；
 > 详见 `WSP-BUDGET-RESULTS.md` §11.40。
+>
+> **M1.41/M1.42 域先验与 fit-only 读数（2026-11-26）**：HateXplain
+> 的 Gab/Twitter hate 先验是 `0.502/0.078`，全局阈值必然错配；
+> `domain_test_prior` 相对 `global_test_prior` 在 L12 两个 probe 5/5、
+> L6 logreg 4/5 上 supported（L6 SVC 0/5），但绝对 accuracy 仍低于
+> default：`0.815/0.816`（L12）、`0.818/0.814`（L6）vs `0.823/0.822`。
+> TweetEval/hate 上把阈值改成 fit OOF 分位点后，L12 `R12` 从
+> `+1.83/+1.68pp` 变成 `−1.77/−1.59pp`，L6 `rescan` 从
+> `+2.87/+2.55pp` 掉到 `+0.02/+0.58pp`，四个 family 全部
+> `not_retained`。**匹配先验不是校准；target_prior 的 rescue 依赖
+> test 分数分布，fit-only 不能部署。** 详见
+> `WSP-BUDGET-RESULTS.md` §11.41/§11.42。
+>
+> **M1.43 三分类读数（2026-11-27）**：HateXplain 同一批行换成
+> `normal/hate/offensive` 三分类后，accuracy 只有 `0.649–0.656`；
+> 四个 family 的 `arm−f32` 全部 0/5 正 CI（L12 logreg `+0.156pp`、
+> L12 SVC `−0.323pp`、L6 logreg `+0.469pp`、L6 SVC `+0.073pp`）。
+> `offensive` recall 仅 `0.354–0.426`；binary 的 `0.82` 主要来自
+> normal-vs-rest。**三分类只作 exploratory，不能升级 candidate。**
+> 详见 `WSP-BUDGET-RESULTS.md` §11.43。
+>
+> **M1.45 Davidson 第三语料（2026-11-27）**：default 阈值下四个 family
+> accuracy `arm−f32` 全部 0/5 正 CI（`−0.06~+0.12pp`），macro-F1
+> 三负一微负；accuracy `0.942–0.945` 但 hate recall `3.9–20.0%`、
+> macro-F1 `0.52–0.63`，94% 多数类把 accuracy 撑高。**第三语料仍不能
+> 升级 candidate。** 详见 `WSP-BUDGET-RESULTS.md` §11.45。
 
 ## 1. 协议
 
