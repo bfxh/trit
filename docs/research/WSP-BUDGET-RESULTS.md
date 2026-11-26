@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.33 完成（§11.33）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
+> 状态：M1.34 完成（§11.34）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -4843,6 +4843,178 @@ L6 的 `int4`。这些不是“量化没提升”，而是**统计上更差**。
 合成，不新增训练；原始读数仍来自 SST-2 全臂 TSV、CoLA/hate 全臂
 TSV 和 M1.32 的 L6 bits4 复验。
 
+> **M1.34 复验（重要）**：上面的 `0 正 / 9 负 / 27 跨 0` 是 seed 7
+> 单次 C 选择的结果，不是 5-seed 稳健计数。换 5 个 CV seed 后，
+> 29/36 点估计同号、7 个翻号；9 个负向只有 6 个在 5/5 seed 仍为负；
+> Hate L6 `logreg int3` 在 4/5 seed 变成显著正向，但 matched-C 控制
+> 下 CI 跨 0。引用本节必须带“seed 7 条件”。见 §11.34。
+
+## 11.34 C 选择敏感性：36 个判决不是稳健计数（M1.34）
+
+### 11.34.1 问题
+
+M1.33 的 36 个比较固定了 **一个** CV seed（`7`）：每个 arm 在 train 内
+用 `StratifiedKFold(5, shuffle=True, random_state=7)` 选 C，test 只评一次；
+bootstrap 只重采样 test，不覆盖 C 选择。换一个 CV seed，选出的 C 可能
+变化，量化档与 f32 的相对位置也可能变化。M1.34 问的就是：
+
+> M1.33 的 `0 正 / 9 负 / 27 跨 0` 是分类头的稳健判决，还是 seed 7
+> 单次 C 选择的结果？
+
+### 11.34.2 口径
+
+- 固定 test，只重做 train 内 5 折 **C 选择**。5 个 seed：`7/13/19/31/43`，
+  C grid 仍是 `(0.01, 0.1, 1.0, 10.0)`；每个 arm 独立选 C，再在完整
+  train 上重训、test 上评一次。
+- 36 个比较 × 5 seed = 180 个点估计；全部跑完。点估计的符号稳定性和
+  极差见 `data/wsp-classify-cv-seed-stability.tsv`（180 行）与
+  `data/wsp-classify-cv-seed-summary.tsv`（36 行）。
+- 其中 24 个比较（SST-2 L12、CoLA L12、Hate L12、Hate L6）另做 5 套
+  10k paired bootstrap（同一 test 重采样索引同时用于 arm 与 f32），
+  共 120 行，见 `data/wsp-classify-cv-seed-ci.tsv`。SST-2 L6、CoLA L6
+  只做点符号，不重算 CI。
+- 还做了一组 **matched-C** 控制：Hate L6 logreg 的 f32/int3/int4/rescan
+  在相同 C（0.1/1/10）下重训，见
+  `data/wsp-classify-hate-l6-common-c.tsv`（9 行）。
+- 口径修正：M1.33 的 `delta` 列实际是 **bootstrap 均值**，不是点估计；
+  §11.33.2 的“最大点估计”应读作“最大 bootstrap 均值”。M1.34 同时报
+  `point_delta` 与 `boot_mean`。CoLA L6 SVC `rescan-k2` 的
+  `+0.000042` 就是 bootstrap 均值，点估计是 `−0.000038`，不能算正向。
+
+### 11.34.3 点符号稳定性
+
+| dataset | depth | 比较数 | 5 seed 同号 | 翻号 |
+|---|---|---:|---:|---:|
+| SST-2 | L12 | 6 | 4 | 2 |
+| SST-2 | L6 | 6 | 6 | 0 |
+| CoLA | L12 | 6 | 6 | 0 |
+| CoLA | L6 | 6 | 4 | 2 |
+| Hate | L12 | 6 | 6 | 0 |
+| Hate | L6 | 6 | 3 | 3 |
+| **合计** | | **36** | **29** | **7** |
+
+7 个翻号的是：SST-2 L12 的 `true-bits4` 两个 probe（幅度只有
+`±0.1pp`）；CoLA L6 的 `int4` 两个 probe；Hate L6 的 `int4` 两个
+probe；Hate L6 SVC `rescan`。**29/36 同号**说明多数比较的方向不是单次
+C 选择的偶然，但 7 个翻号已经足够让“所有负向都稳健”失效。
+
+### 11.34.4 M1.33 的 9 个显著负向：只有 6 个在 5/5 seed 仍为负
+
+| dataset | depth | probe | arm | seed 7 Δ / CI | 5 seed 的 CI 判决 |
+|---|---|---|---|---:|---|
+| SST-2 | L12 | logreg | official-int3 | `−0.019732` `[−0.035146,−0.004942]` | 5/5 负 |
+| SST-2 | L12 | logreg | official-R12 | `−0.022967` `[−0.038440,−0.007688]` | 5/5 负 |
+| SST-2 | L12 | linear_svc | official-int3 | `−0.024053` `[−0.040088,−0.008237]` | 5/5 负 |
+| SST-2 | L12 | linear_svc | official-R12 | `−0.028556` `[−0.043932,−0.013180]` | 5/5 负 |
+| Hate | L12 | logreg | official-R12 | `−0.013568` `[−0.026335,−0.000732]` | 5/5 负 |
+| Hate | L12 | linear_svc | official-int3 | `−0.017598` `[−0.029993,−0.004755]` | 4 负 + 1 跨 |
+| Hate | L12 | linear_svc | official-R12 | `−0.013585` `[−0.025969,−0.001454]` | 5/5 负 |
+| Hate | L6 | logreg | official-int4 | `−0.015084` `[−0.024872,−0.005486]` | 1 负 + 3 跨 + 1 正 |
+| Hate | L6 | linear_svc | official-int4 | `−0.017248` `[−0.027067,−0.007681]` | 2 负 + 3 跨 |
+
+- **6/9 在 5/5 seed 的 CI 仍整段为负**：SST-2 L12 的四个
+  `int3`/`R12`，以及 Hate L12 两个 probe 的 `R12`。这些负向没有随
+  C 选择翻掉。
+- Hate L12 SVC `int3` 在 4/5 seed 为负、seed 43 变跨 0；方向仍是负，
+  但不能再写“每个 seed 都显著”。
+- **Hate L6 的两个 `int4` 臂不再稳定负向**：logreg 在 seed 7 是
+  `−1.50pp`（CI 全负），seed 13/19/31 变跨 0，seed 43 变
+  `+1.17pp`（CI `[+0.001463,+0.021946]`，全正）；SVC 在 seed 7/13
+  为负，seed 19/31/43 跨 0。**“Hate L6 int4 显著负向”是 seed 7 的
+  条件结论，不是稳健结论。**
+
+### 11.34.5 M1.33 的 6 个正向：5 个稳定，1 个变成显著正向
+
+| dataset | depth | probe | arm | seed 7 Δ / CI | 5 seed |
+|---|---|---|---|---:|---|
+| CoLA | L12 | logreg | true-bits4 | `+0.011989` `[−0.007385,+0.031764]` | 5/5 跨 0，点 5/5 正 |
+| CoLA | L12 | linear_svc | true-bits4 | `+0.009261` `[−0.009135,+0.027831]` | 5/5 跨 0，点 5/5 正 |
+| Hate | L6 | logreg | official-int3 | `+0.004218` `[−0.008778,+0.017191]` | 1 跨 + 4 正，点 5/5 正 |
+| Hate | L6 | linear_svc | official-int3 | `+0.000582` `[−0.012070,+0.013533]` | 5/5 跨 0，点 5/5 正 |
+| Hate | L6 | logreg | official-rescan | `+0.000282` `[−0.014265,+0.014265]` | 5/5 跨 0，点 5/5 正 |
+| CoLA | L6 | linear_svc | official-rescan-k2 | `+0.000042`（boot mean） | 点 0/5 正、5/5 负；均值 `−0.011901` |
+
+- CoLA L12 的 `int4` 正向在 5 个 seed 上点估计全正，但 **5/5 CI 都跨 0**；
+  它仍然只是点估计，不是显著增益。
+- Hate L6 的 `logreg int3` 是唯一在多个 seed 上变成显著正向的比较：
+  seed 13/19/31/43 都是 `+1.7191pp`，CI `[+0.003658,+0.031090]`。
+- Hate L6 SVC `int3` 点估计 5/5 正，但 CI 5/5 跨 0；`logreg rescan`
+  同样 5/5 跨 0。
+- CoLA L6 SVC `rescan-k2` 的 `+0.000042` 是 bootstrap 均值；点估计
+  seed 7 已是 `−0.000038`，5 seed 点估计全负，均值 `−0.011901`。
+  **这个“正向”不能计入 6 个正向点估计。**
+
+### 11.34.6 关键反转是 C 选择，不是量化增益
+
+Hate L6 `logreg int3` 的 4/5 显著正向来自 f32 基线的 C 选择：
+
+- seed 7：f32 C=1，test acc `0.546086`；int3 C=1，`0.550475`；
+  Δ `+0.004389`，CI 跨 0。
+- seed 13/19/31/43：f32 C=10，test acc `0.533285`；int3 C=1，
+  `0.550475`；Δ `+0.017191`，CI 全正。
+
+也就是说，正向不是 int3 变好，而是 **f32 在 C=10 上掉了 1.28pp**。
+matched-C 控制把这一点拆开：
+
+| C | f32 acc | int3 acc | int3−f32 | 95% CI |
+|---:|---:|---:|---:|---:|
+| 0.1 | `0.555596` | `0.568032` | `+0.012436` | `[−0.001829,+0.026335]` |
+| 1 | `0.546086` | `0.550475` | `+0.004389` | `[−0.008778,+0.017191]` |
+| 10 | `0.533285` | `0.534748` | `+0.001463` | `[−0.012070,+0.014996]` |
+
+三个 C 下 int3 都只有点估计优势，**CI 都跨 0**。per-arm C 的
+`+1.71pp` 全正 CI 是“f32 选 C=10、int3 选 C=1”的错配结果，不是
+“int3 在 matched-C 下更好”。
+
+同样的错配也解释了 Hate L6 `int4` 的负向翻转：
+
+- seed 7：f32 C=1 `0.546086`，int4 C=10 `0.531090`，Δ `−0.015084`，
+  CI 全负；matched C=1 时 int4 只有 `−0.001097`，CI 跨 0。
+- seed 43：f32 C=10 `0.533285`，int4 C=1 `0.544989`，Δ `+0.011704`，
+  CI 全正；matched C=10 时 int4 只有 `−0.002195`，CI 跨 0。
+
+**两个方向的“显著”都可以由 C 选择制造出来；matched-C 下都消失。**
+
+### 11.34.7 判决
+
+- M1.33 的 seed 7 算术没有错，但 `0 正 / 9 负 / 27 跨 0` **不是稳健
+  计数**，只能写成“seed 7 的 C 选择下”的判决。
+- 9 个显著负向里，6 个在 5/5 seed 仍为负；Hate L6 的两个 `int4`
+  不再稳定负向。不要把 M1.33 的 9 个负向整体当作“已证负向”。
+- 6 个正向点估计里，5 个点符号稳定；CoLA L6 SVC `rescan-k2` 是
+  bootstrap 均值伪影。唯一在多个 seed 上显著正向的是 Hate L6
+  `logreg int3`，但 matched-C 下 CI 跨 0，不能算量化增益。
+- **matched-C 的控制仍然支持原结论：没有量化档稳定超过真 f32（3 个
+  matched-C 下 Δ 的 CI 全跨 0，见上表）。** 但“0 个显著正向”不能作为
+  跨 C 选择的强断言；它是 seed 7 的条件读数。分类头继续用 f32 锚点，
+  但引用 M1.33 必须带这个条件。
+- 方法边界：5 个 seed 不是独立重复，C 选择之间高度相关；CI 只重采样
+  test，不覆盖 train 侧方差；只有 3 个数据集、2 个深度、2 个线性头；
+  没有 MLP、没有 encoder 微调、没有 MNLI；24/36 个比较有 5-seed CI，
+  SST-2 L6 与 CoLA L6 只做点符号。matched-C 只做了 Hate L6 logreg，
+  不能把“C 错配解释”直接推广到所有数据集。
+
+### 11.34.8 复算
+
+```bash
+# 5 seed 点估计（每个 case 单独落盘，避免长任务中断）
+python geometry/cv_seed_stability.py --dataset hate --depth l6
+python geometry/cv_seed_stability.py --dataset cola --depth l12
+
+# 24 个比较的 5-seed paired CI
+python geometry/cv_seed_ci.py --dataset hate --depth l6
+python geometry/cv_seed_ci.py --dataset cola --depth l12
+
+# 合并与表格
+python geometry/make_cv_seed_tsv.py
+python geometry/make_cv_seed_ci_tsv.py
+```
+
+表见 `data/wsp-classify-cv-seed-stability.tsv`（180 行）、
+`data/wsp-classify-cv-seed-summary.tsv`（36 行）、
+`data/wsp-classify-cv-seed-ci.tsv`（120 行）、
+`data/wsp-classify-hate-l6-common-c.tsv`（9 行）。
+
 ## 12. 下一步
 
 > **M1.28 读法**：本节及历史 §11.12–§11.25 中所有 SST-2 的 `f32` 读数
@@ -4877,6 +5049,22 @@ TSV 和 M1.32 的 L6 bits4 复验。
 > 27 个跨 0。SST-2 的 `int4` 正向不存在；CoLA L12 的 `+1.20pp` 只是
 > 点估计且 CI 跨 0；hate 的 `R12`/`int4` 多处显著负向。分类头继续用
 > f32 锚点，不把任何量化档当默认。见 §11.33。
+>
+> **M1.34 读法**：M1.33 的 `0/9/27` 不是稳健计数，只是 seed 7 的
+> C 选择结果。5 个 CV seed 下 29/36 点估计同号、7 个翻号；9 个负向
+> 只有 6 个在 5/5 seed 仍为负。Hate L6 `logreg int3` 在 4/5 seed
+> 变成显著正向（`+1.71pp`），但 matched-C 的 C=1/10 下只有
+> `+0.44pp/+0.15pp` 且 CI 跨 0，是 f32 选 C=10、int3 选 C=1 的错配。
+> 分类头仍用 f32 锚点，但引用 M1.33 必须带“seed 7 条件”；量化 vs
+> f32 的显著性不能再用 per-arm C 单独判定。见 §11.34。
+> **M1.34 C 选择敏感性**：同一批 36 个比较换 5 个 CV seed 重选 C，
+> 29/36 点估计同号、7 个翻号。M1.33 的 9 个显著负向里只有 6 个在
+> 5/5 seed 仍是负向；Hate L6 的两个 `int4` 臂不再稳定负向。更关键的是
+> Hate L6 `logreg int3` 在 4/5 seed 变成显著正向（`+1.71pp`，CI
+> `[+0.37,+3.11]`），但 matched-C 控制下 C=1 只有 `+0.44pp`、C=10
+> 只有 `+0.15pp`，CI 都跨 0。**M1.33 的 `0/9/27` 只是 seed 7 单次
+> C 选择的结果，不是稳健计数；matched-C 下仍没有量化增益。** 见
+> §11.34。
 
 - **M1.26 基线审计已完成（§11.26）**：SST-2 L12 的 `l12-pure-f32` 是
   ternary，真实 f32→int4 为 `−0.001503`（CI `[−0.012081,+0.008786]`），

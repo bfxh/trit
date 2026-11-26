@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Changed（M1.34：C 选择敏感性）
+
+- 对 M1.33 的 36 个比较重跑 5 个 CV seed（`7/13/19/31/43`），每个 arm
+  独立重选 C，test 固定：29/36 点估计同号，7 个翻号。
+- M1.33 的 9 个显著负向里只有 6 个在 5/5 seed 仍为负；Hate L6 两个
+  `int4` 臂不再稳定负向（logreg seed 43 变 `+1.17pp` 全正 CI）。
+- Hate L6 `logreg int3` 在 seed 13/19/31/43 变显著正向
+  `+1.7191pp`（CI `[+0.003658,+0.031090]`），但 matched-C 控制下
+  C=1 为 `+0.44pp`、C=10 为 `+0.15pp`，CI 都跨 0；4/5 显著正向是
+  f32 选 C=10、int3 选 C=1 的错配，不是量化增益。
+- 修正 M1.33 口径：其 `delta` 是 bootstrap 均值，不是点估计；
+  CoLA L6 SVC `rescan-k2` 的 `+0.000042` 是 boot mean，点估计
+  `−0.000038`，5 seed 点估计全负、均值 `−0.011901`。
+- 判决：M1.33 的 `0/9/27` 只是 seed 7 条件读数；matched-C 下仍无
+  量化档稳定超过 f32。引用分类头结论必须带“seed 7 条件”。
+- 新增 `wsp-classify-cv-seed-stability.tsv`（180 行）、
+  `wsp-classify-cv-seed-summary.tsv`（36 行）、
+  `wsp-classify-cv-seed-ci.tsv`（120 行）、
+  `wsp-classify-hate-l6-common-c.tsv`（9 行）。
+
 ### Changed（M1.33：分类头跨任务判决）
 
 - 把 SST-2/CoLA/hate 的 L12/L6 线性头结果按“每个量化档只计一次”
