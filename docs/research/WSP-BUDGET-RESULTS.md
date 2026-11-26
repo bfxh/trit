@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.29 完成（§11.29）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
+> 状态：M1.30 完成（§11.30）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -81,6 +81,11 @@
 > 为 `−0.26pp`（CI 跨 0）；L6 的 `int3/int4/rescan` 分别为
 > `−0.33/−0.50/−0.83pp`，CI 都跨 0。M1.12 的“量化档高于 f32”不只
 > int4，int3/R12/rescan 也是 ternary 基线的恢复（§11.29）。
+> **M1.30 L6 标签收口**：CoLA/hate 的 L6 `l6-pure-f32` 已用全量
+> 9,594 / 11,719 条逐行确认是真 f32（余弦 `1.00000000`，max abs diff
+> `1.8e-7 / 1.9e-7`），不是 ternary；官方 `l6-int4` 在 512 行上与真
+> bits4 逐位一致。SST-2 是唯一 L12 与 L6 的 `pure-f32` 都错标成 ternary
+> 的数据集；CoLA/hate 的 L6 分类结论无需重算（§11.30）。
 
 
 ## 1. 结论先行
@@ -4315,8 +4320,9 @@ int4−官方 ternary 是 `+0.010811`（logreg）/`+0.002492`（SVC），CI 也�
 CoLA/hate 的 `0.95` 与 SST-2 真 f32 vs 真 bits4 的 `0.948531` 同量级，
 倾向“真 f32 vs bits4”；SST-2 的 `0.36` 则是 ternary vs bits4。因此
 SST-2 是**两个深度都出错**的数据集：L12 与 L6 的 `pure-f32` 都是
-ternary；CoLA/hate L12 已确认是真 f32，L6 目前只有上述余弦诊断，未做
-全量 PyTorch 逐位复刻，不能写成已确认。
+ternary；CoLA/hate L12 已确认是真 f32，L6 当时只有上述余弦诊断，
+未做全量 PyTorch 逐位复刻，不能写成已确认。M1.30 已补齐全量复刻：
+CoLA/hate 的 L6 `pure-f32` 都是真 f32（§11.30）。
 
 ### 11.28.4 结论与边界
 
@@ -4326,12 +4332,12 @@ ternary；CoLA/hate L12 已确认是真 f32，L6 目前只有上述余弦诊断�
   `−0.004964`（logreg）/`−0.006079`（SVC），CI 都跨 0；旧
   `+0.0060` 是 ternary→4-bit 恢复。
 - **SST-2 的“正向只在 SST-2”仍然成立，但范围扩大**：SST-2 的 L12 和 L6
-  的 f32 标签都是 ternary；CoLA/hate L12 是真 f32，L6 倾向真 f32 但未
-  全量确认。不能再把 SST-2 L6 的旧正向当反例。
+  的 f32 标签都是 ternary；CoLA/hate L12 是真 f32，L6 在 M1.30 也已
+  全量确认为真 f32。不能再把 SST-2 L6 的旧正向当反例。
 - 边界：本节只做 SST-2 L6 的 f32/ternary/int4 标签判定；CoLA/hate L6
-  未全量复刻；只跑 logreg + LinearSVC，没有 MLP、没有 encoder 微调、
-  没有 MNLI。L6 的 `int3`/`rescan-k2` 已在 §11.29 补跑，不能再用本节
-  “未重算”的说法把它们留在旧锚点上。
+  的全量复刻在 M1.30 补齐（§11.30）；只跑 logreg + LinearSVC，没有 MLP、
+  没有 encoder 微调、没有 MNLI。L6 的 `int3`/`rescan-k2` 已在 §11.29
+  补跑，不能再用本节“未重算”的说法把它们留在旧锚点上。
 
 复算材料：`data/wsp-classify-baseline-audit.tsv` 的 L6 行；全量
 embedding 见实验目录 `l6-sst2-f32.npy` / `l6-sst2-bits4.npy` /
@@ -4456,6 +4462,84 @@ M1.12 的旧锚点是 ternary `f32`，所以旧表的“量化增益”需要整
 - 完整 64 行见 `data/wsp-classify-sst2-full-arms.tsv`；L12/L6 的原始
   评测 JSON 为 `sst2-l12-arms-eval.json` / `l6-sst2-arms-eval.json`。
 
+## 11.30 CoLA/hate 的 L6 `l6-pure-f32` 全量确认真 f32（M1.30）
+
+### 11.30.1 问题与结论
+
+M1.28.3 只做了 `official pure vs official int4` 的余弦诊断（CoLA
+`0.955514`、hate `0.953085`），把 CoLA/hate L6 的 `l6-pure-f32` 暂标为
+“倾向真 f32、未全量确认”。M1.30 直接把这条边界做完：用
+`all-MiniLM-L6-v2` 读取官方同一批 `chunks-l6-1500` 的 `input.f32` /
+`mask.u8`，全量生成真 f32 与真 ternary，再和官方
+`emb6/l6-pure-f32-*.f32` 逐行比较。
+
+结论：**CoLA 与 hate 的 L6 `l6-pure-f32` 都是真 f32，不是 ternary。**
+官方 `l6-int4` 与真 f32 的全量余弦分别只有 `0.955514` / `0.953085`，
+是正常的 f32→bits4 距离；首 512 行与真 bits4 逐位一致。因此
+M1.14/M1.15 的 L6 基线无需重算，SST-2 是唯一 L12 和 L6 的 `pure-f32`
+都被错标成 ternary 的数据集。
+
+### 11.30.2 口径与复算材料
+
+- 模型：`all-MiniLM-L6-v2`，6 层 / 384 维 / 12 头，seq 64；forward
+  与 `torch_l6_full.py` 相同（手写 LayerNorm/GELU、mean pooling、
+  L2 normalize）。
+- 输入：直接读官方 `chunks-l6-1500/chunk-*/input.f32` 与 `mask.u8`，
+  不重新 tokenize，避免 tokenizer 差异污染标签判定。
+- 全量规模：CoLA `9,594×384`，hate `11,719×384`；官方文件按 chunk
+  顺序拼接后逐行比较。
+- 真值文件：实验目录 `geometry/corrected/l6-cola-f32.npy` /
+  `l6-cola-ternary.npy`、`l6-tweet-hate-f32.npy` /
+  `l6-tweet-hate-ternary.npy`；脚本 `full_l6_other.py`（复用
+  `probe_l6_labels.py` 的 forward）。
+- 官方臂：`emb6/l6-pure-f32-000..006.f32`、`l6-int4-000..006.f32`；
+  hate 为 `000..007`，格式 `WSPEMB1`。
+
+### 11.30.3 全量逐行读数
+
+| 数据集 | 对照 | 余弦均值 | 余弦范围 | max abs diff |
+|---|---|---:|---:|---:|
+| CoLA（9,594） | 官方 `l6-pure-f32` vs 真 f32 | `1.00000000` | `0.99999988–1.00000024` | `1.81e-7` |
+| CoLA（9,594） | 官方 `l6-pure-f32` vs 真 ternary | `0.463824` | `0.194986–0.669567` | `0.325793` |
+| CoLA（9,594） | 官方 `l6-int4` vs 真 f32 | `0.955514` | `0.839514–0.975569` | `0.112572` |
+| CoLA（9,594） | 官方 `l6-int4` vs 真 ternary | `0.455618` | `0.171715–0.637002` | `0.332822` |
+| Hate（11,719） | 官方 `l6-pure-f32` vs 真 f32 | `1.00000000` | `0.99999988–1.00000024` | `1.91e-7` |
+| Hate（11,719） | 官方 `l6-pure-f32` vs 真 ternary | `0.378651` | `0.043444–0.619112` | `0.447816` |
+| Hate（11,719） | 官方 `l6-int4` vs 真 f32 | `0.953085` | `0.849936–0.973675` | `0.106138` |
+| Hate（11,719） | 官方 `l6-int4` vs 真 ternary | `0.369449` | `0.061683–0.623018` | `0.437681` |
+
+`official pure vs true f32` 的 max abs diff 只有 `1.8–1.9e-7`，是纯
+浮点舍入；对真 ternary 的余弦只有 `0.46` / `0.38`，与 SST-2 L6 的
+`0.99999976`（pure vs ternary）形成清晰对照。因此不是“部分行像
+f32”或“混合输出”，而是全量 f32。
+
+`official int4` 的 512 行首块与真 bits4 逐位比较：
+
+| 数据集（512 行） | 余弦均值 | 余弦范围 | max abs diff |
+|---|---:|---:|---:|
+| CoLA `l6-int4` vs 真 bits4 | `1.00000000` | `0.99999988–1.00000024` | `1.26e-7` |
+| Hate `l6-int4` vs 真 bits4 | `1.00000000` | `0.99999994–1.00000024` | `1.38e-7` |
+
+全量 bits4 没有重跑；但全量 `official int4 vs true f32` 余弦与
+SST-2 真 f32 vs 真 bits4 的 `0.948531` 同量级，且首块逐位一致，
+足以确认官方 `l6-int4` 仍是正常 bits4，而不是 ternary 或 f32。
+
+### 11.30.4 结论与边界
+
+- **CoLA/hate L6 `l6-pure-f32` 标签收口**：两者都是真 f32；M1.28.3
+  的“倾向”可以改为“已确认”。
+- **SST-2 是唯一双深度错标的数据集**：SST-2 L12/L6 的 `pure-f32`
+  都是 ternary；CoLA/hate 的 L12（M1.26）和 L6（M1.30）都是真 f32。
+- **CoLA/hate L6 分类结果不需要重算**：基线标签没有变化，M1.14/M1.15
+  的 L6 读数继续有效；不能把 SST-2 的 `int4−f32≈+0.04` 外推到这两个
+  数据集。
+- 边界：本节只做标签判定；全量生成真 f32/ternary，未全量生成 bits4；
+  bits4 用首 512 行逐位验证。只涉及线性 probe 的基线，不做 MLP、
+  不做 encoder 微调、不做 MNLI。
+
+复算材料：`data/wsp-classify-baseline-audit.tsv` 新增 CoLA/hate L6
+provenance 行；原始读数见上表，脚本在实验目录未入库。
+
 ## 12. 下一步
 
 > **M1.28 读法**：本节及历史 §11.12–§11.25 中所有 SST-2 的 `f32` 读数
@@ -4466,6 +4550,11 @@ M1.12 的旧锚点是 ternary `f32`，所以旧表的“量化增益”需要整
 > **M1.29 读法**：SST-2 的 `int3`/`R12`/`rescan-k2` 也已在真 f32 上重跑，
 > 没有任何量化档超过真 f32；L12 `int3`/`R12` 的 CI 整段为负。历史
 > §11.12 里除 `int4` 之外的量化“增益”同样是 ternary 基线伪影。见 §11.29。
+>
+> **M1.30 读法**：CoLA/hate 的 L6 `l6-pure-f32` 已全量逐行确认真 f32
+> （对真 f32 余弦 `1.00000000`，max abs diff `1.8–1.9e-7`；对真 ternary
+> 只有 `0.46` / `0.38`）。这两套 L6 分类结论无需重算；SST-2 是唯一
+> L12 与 L6 的 `pure-f32` 都错标成 ternary 的数据集。见 §11.30。
 
 - **M1.26 基线审计已完成（§11.26）**：SST-2 L12 的 `l12-pure-f32` 是
   ternary，真实 f32→int4 为 `−0.001503`（CI `[−0.012081,+0.008786]`），

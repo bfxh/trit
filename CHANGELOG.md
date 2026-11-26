@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed（M1.30：CoLA/hate L6 基线标签收口）
+
+- 用 `all-MiniLM-L6-v2` 读取官方同一批 `chunks-l6-1500` 的
+  `input.f32`/`mask.u8`，全量生成真 f32 与真 ternary，并与官方
+  `l6-pure-f32-*.f32` 逐行比较：CoLA 9,594 条的余弦均值 `1.00000000`
+  （max abs diff `1.81e-7`），hate 11,719 条为 `1.00000000`
+  （`1.91e-7`）；对真 ternary 只有 `0.463824` / `0.378651`。因此
+  CoLA/hate L6 的 `l6-pure-f32` 是真 f32，不是 ternary。
+- 官方 `l6-int4` 首 512 行与真 bits4 逐位一致（max abs diff
+  `1.26e-7` / `1.38e-7`）；全量 `official int4 vs true f32` 余弦为
+  `0.955514` / `0.953085`，与正常 f32→bits4 距离同量级。M1.14/M1.15
+  的 L6 分类结论无需重算；SST-2 是唯一 L12 与 L6 的 `pure-f32` 都
+  错标成 ternary 的数据集。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 新增 8 行
+  CoLA/hate L6 provenance 读数；`WSP-BUDGET-RESULTS.md` 新增 §11.30，
+  修正 §11.28.3/§11.28.4 的 L6 边界与 §12 读法；
+  `WSP-ALT.md`/`WSP-BERT6-RESULTS.md` 追加 M1.30 结论。
+
 ### Fixed（M1.29：SST-2 全臂矩阵复核）
 
 - 把 L12 的 `int3`/`R12` 和 L6 的 `int3`/`rescan-k2` 也改为相对真 f32

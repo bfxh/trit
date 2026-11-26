@@ -55,3 +55,11 @@ sst2	l6	accuracy_svc	delta	true-bits4	true-f32	-0.006079	-0.014827	0.002746	Line
 sst2	l6	accuracy_svc	delta	official-int4	official-pure-f32	0.002492	-0.017573	0.023064	LinearSVC,M1.28
 sst2	l6	accuracy_svc	delta	official-pure-f32	true-f32	-0.008571	-0.028556	0.011532	LinearSVC,M1.28
 sst2	l6	accuracy_svc	delta	true-bits4	official-int4	0.000000	0.000000	0.000000	LinearSVC,M1.28
+cola	l6	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.81e-07;n=9594;M1.30_full
+cola	l6	provenance	official_pure_f32_vs_ternary	official-pure-f32	true-ternary	0.463824			cos_min=0.194986;cos_max=0.669567;max_abs_diff=0.325793;n=9594;M1.30_full
+cola	l6	provenance	official_int4_vs_true_f32	official-int4	true-f32	0.955514			cos_min=0.839514;cos_max=0.975569;max_abs_diff=0.112572;n=9594;M1.30_full
+cola	l6	provenance	official_int4_vs_true_bits4	official-int4	true-bits4	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.26e-07;n=512;M1.30_first_chunk
+hate	l6	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.91e-07;n=11719;M1.30_full
+hate	l6	provenance	official_pure_f32_vs_ternary	official-pure-f32	true-ternary	0.378651			cos_min=0.043444;cos_max=0.619112;max_abs_diff=0.447816;n=11719;M1.30_full
+hate	l6	provenance	official_int4_vs_true_f32	official-int4	true-f32	0.953085			cos_min=0.849936;cos_max=0.973675;max_abs_diff=0.106138;n=11719;M1.30_full
+hate	l6	provenance	official_int4_vs_true_bits4	official-int4	true-bits4	1.000000			cos_min=0.99999994;cos_max=1.00000024;max_abs_diff=1.38e-07;n=512;M1.30_first_chunk

@@ -1139,6 +1139,12 @@ bootstrap 只重采样 test，不能当独立多重检验。详见
 > `R12` 为 `−2.30pp`（两个 CI 整段为负）；L6 的 `int3/int4/rescan`
 > 为 `−0.33/−0.50/−0.83pp`（CI 都跨 0）。旧表里非 int4 的量化“增益”
 > 也是 ternary 锚点伪影。详见 `WSP-BUDGET-RESULTS.md` §11.29。
+>
+> **M1.30 追加**：CoLA/hate 的 L6 `l6-pure-f32` 已全量逐行确认真 f32
+> （对真 f32 余弦 `1.00000000`，max abs diff `1.8e-7 / 1.9e-7`；对真
+> ternary 只有 `0.46 / 0.38`）。这两套 L6 的基线标签没有变，M1.14/
+> M1.15 的分类读数无需重算；SST-2 是唯一 L12 与 L6 的 `pure-f32` 都
+> 错标成 ternary 的数据集。详见 `WSP-BUDGET-RESULTS.md` §11.30。
 
 M1.23 直接看 `r = x_int4 − x_f32`。SST-2 L12 上只用 `r` 训练同一个线性
 probe 就有 `0.832510`，比 f32 `0.800110` 高 `+3.23pp`，接近 int4
