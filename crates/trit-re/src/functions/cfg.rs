@@ -270,12 +270,7 @@ fn harvest_edges(base: u64, data: &[u8], arch: Arch) -> Vec<FlowEdge> {
         Arch::Arm64 => {
             let mut index = 0usize;
             while index + 4 <= data.len() {
-                let word = u32::from_le_bytes([
-                    data[index],
-                    data[index + 1],
-                    data[index + 2],
-                    data[index + 3],
-                ]);
+                let word = u32::from_le_bytes(data[index..index + 4].try_into().unwrap());
                 let opcode = word & 0xFC00_0000;
                 let call = match opcode {
                     0x9400_0000 => true,
@@ -286,7 +281,10 @@ fn harvest_edges(base: u64, data: &[u8], arch: Arch) -> Vec<FlowEdge> {
                     }
                 };
                 let imm = sign_extend_28(((word & 0x03FF_FFFF) as i64) << 2);
-                let from = base + index as u64;
+                let Some(from) = base.checked_add(index as u64) else {
+                    index += 4;
+                    continue;
+                };
                 let to = from.wrapping_add(imm as u64);
                 if to >= base && to < high {
                     edges.push(FlowEdge { from, to, call });

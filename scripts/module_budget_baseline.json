@@ -2127,6 +2127,10 @@
       "lines": 280
     },
     {
+      "file": "crates/trit-graph/src/guards.rs",
+      "lines": 80
+    },
+    {
       "file": "crates/trit-graph/src/hyper.rs",
       "lines": 227
     },
@@ -2161,6 +2165,14 @@
     {
       "file": "crates/trit-graph/src/wl.rs",
       "lines": 174
+    },
+    {
+      "file": "crates/trit-graph/tests/classifier_guards.rs",
+      "lines": 173
+    },
+    {
+      "file": "crates/trit-graph/tests/score_state.rs",
+      "lines": 108
     },
     {
       "file": "crates/trit-immune/examples/scenario.rs",
@@ -2671,6 +2683,10 @@
       "lines": 164
     },
     {
+      "file": "crates/trit-lsp/tests/shutdown_lifecycle.rs",
+      "lines": 146
+    },
+    {
       "file": "crates/trit-lsp/tests/wire.rs",
       "lines": 278
     },
@@ -2701,6 +2717,10 @@
     {
       "file": "crates/trit-machines/tests/cli.rs",
       "lines": 68
+    },
+    {
+      "file": "crates/trit-machines/tests/vm_empty_stack.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-mmap/src/error.rs",
@@ -3505,6 +3525,10 @@
     {
       "file": "crates/trit-orch/tests/delivery_cli.rs",
       "lines": 173
+    },
+    {
+      "file": "crates/trit-orch/tests/dispatch_dedup.rs",
+      "lines": 99
     },
     {
       "file": "crates/trit-orch/tests/durable.rs",
@@ -4319,6 +4343,10 @@
       "lines": 112
     },
     {
+      "file": "crates/trit-parts/tests/depthdata_length.rs",
+      "lines": 187
+    },
+    {
       "file": "crates/trit-parts/tests/depthnet_e2e.rs",
       "lines": 206
     },
@@ -4488,11 +4516,11 @@
     },
     {
       "file": "crates/trit-re/src/functions/arm64walk.rs",
-      "lines": 220
+      "lines": 213
     },
     {
       "file": "crates/trit-re/src/functions/cfg.rs",
-      "lines": 520
+      "lines": 518
     },
     {
       "file": "crates/trit-re/src/functions/cooccurrence.rs",
@@ -4727,6 +4755,10 @@
       "lines": 79
     },
     {
+      "file": "crates/trit-re/tests/arm64_overflow.rs",
+      "lines": 119
+    },
+    {
       "file": "crates/trit-re/tests/cli.rs",
       "lines": 59
     },
@@ -4931,6 +4963,14 @@
       "lines": 284
     },
     {
+      "file": "crates/trit-schedule/tests/checkpoint_generation.rs",
+      "lines": 190
+    },
+    {
+      "file": "crates/trit-schedule/tests/checkpoint_order.rs",
+      "lines": 66
+    },
+    {
       "file": "crates/trit-schedule/tests/stop_promotion.rs",
       "lines": 67
     },
@@ -5059,7 +5099,11 @@
       "lines": 307
     },
     {
-      "file": "crates/trit-texture/src/ttx3.rs",
+      "file": "crates/trit-texture/src/ttx3/layout.rs",
+      "lines": 122
+    },
+    {
+      "file": "crates/trit-texture/src/ttx3/mod.rs",
       "lines": 609
     },
     {
@@ -5089,6 +5133,14 @@
     {
       "file": "crates/trit-texture/tests/ttx3.rs",
       "lines": 224
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx3_alias_policy.rs",
+      "lines": 258
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx3_hostile_parse.rs",
+      "lines": 45
     },
     {
       "file": "crates/trit-texture/tests/ttx3_malformed.rs",

@@ -48,12 +48,12 @@
   "filter": "file_store_rejects_bad_version_without_writing"
  },
  {
-  "name": "file checkpoint: 加载取最旧",
+  "name": "file checkpoint: 加载改按文件名字典序",
   "file": "crates/trit-schedule/src/checkpoint/file.rs",
-  "old": "    files.sort();\n    Ok(files.pop())\n",
-  "new": "    files.sort();\n    Ok(files.into_iter().next())\n",
+  "old": "        candidates.sort_by(|a, b| {\n            b.0.cmp(&a.0)\n                .then_with(|| b.1.file_name().cmp(&a.1.file_name()))\n        });\n",
+  "new": "        candidates.sort_by(|a, b| b.1.file_name().cmp(&a.1.file_name()));\n",
   "pkg": "trit-schedule",
-  "filter": "file_store_round_trips_versions_and_escapes_ids"
+  "filter": "load_prefers_numeric_generation_over_lexical_filename_order"
  },
  {
   "name": "index: state_bytes 取代号",

@@ -13,11 +13,7 @@ use crate::data::read_rgb;
 /// 推理时拿不到「这张图自己的中位数」，网格就没有尺度。
 pub type DepthSample = (Vec<Vec<f32>>, Vec<f32>, Vec<bool>, f32, f32, usize);
 
-/// 采样窗口是否落在图内。
-///
-/// `size` 来自 `--size`（CPU / GPU / 复核三条训练线各自读 argv）：`0` 会让 `w / size` 除零，
-/// 超过图宽高会让 `w - size` 下溢绕成巨数。两种情况这帧都没有样本 —— 与「图不存在」
-/// 同一处理：判空返回，不 panic。
+/// 采样窗口是否落在图内。`size` 来自 `--size`：`0` 除零、超过图宽高会让 `w-size` 下溢；判空返回不 panic。
 pub fn window_is_usable(size: usize, w: usize, h: usize) -> bool {
     size > 0 && size <= w && size <= h
 }
@@ -49,6 +45,10 @@ pub fn load_sample(
         crate::geo::read_npy_f32(&scene.join("depth").join(format!("{frame:06}.npy"))).ok()?;
     let (seg, _) =
         crate::data::read_npy_i32(&scene.join("seg").join(format!("{frame:06}.npy"))).ok()?;
+    // depth/seg 必须覆盖全部像素（口径同 `data::depth_planes`）；短数组按 `si` 索引会越界 panic，判空返回。
+    if dep.len() < w * h || seg.len() < w * h {
+        return None;
+    }
     // 已证明 `size` 落在图内，`cells` 至多 `w * h`；三处缓冲共用同一份，省掉重复裸乘。
     let cells = size * size;
     let (x0, y0) = ((w - size) / 2, (h - size) / 2);
