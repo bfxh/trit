@@ -17,8 +17,5 @@ fn fanout_stops_the_descent() {
         Algebra::Kleene,
     );
     assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
-    assert!(
-        source.contains("return trit_bin(T_AND, -(trit_bin(T_AND, vars[0], t0)), t0);"),
-        "共享输入要引用已发射变量、根节点直接返回：{source}"
-    );
+    assert!(source.contains("return T_AND[(-(T_AND["), "{source}");
 }

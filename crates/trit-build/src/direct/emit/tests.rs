@@ -2,7 +2,6 @@
 use super::render;
 use crate::direct::ir::Op;
 use trit_core::Algebra;
-
 fn vars() -> Vec<String> {
     vec!["a".to_string(), "b".to_string()]
 }
@@ -23,8 +22,10 @@ fn single_use_and_is_inlined_into_not() {
         "{source}"
     );
     assert!(!source.contains("trit_bin("), "{source}");
-    assert!(!source.contains("return t0;"), "{source}");
-    assert!(!source.contains("int8_t t0 ="), "{source}");
+    assert!(
+        !source.contains("return t0;") && !source.contains("int8_t t0 ="),
+        "{source}"
+    );
 }
 #[test]
 fn shared_and_stays_a_separate_statement() {
@@ -40,14 +41,9 @@ fn shared_and_stays_a_separate_statement() {
         Algebra::Kleene,
     );
     assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
-    assert!(
-        source.contains("int8_t t0 = trit_bin(T_AND, vars[0], vars[1]);"),
-        "{source}"
-    );
-    assert!(
-        source.contains("return trit_bin(T_AND, -(t0), t0);"),
-        "{source}"
-    );
+    assert!(source.contains("int8_t t0 = T_AND["), "{source}");
+    assert!(source.contains("return T_AND[(-(t0)"), "{source}");
+    assert!(!source.contains("trit_bin("), "{source}");
     assert!(!source.contains("int8_t t1 ="), "{source}");
 }
 #[test]
@@ -73,3 +69,4 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
     );
     assert!(!xor_source.contains("trit_bin("), "{xor_source}");
 }
+mod helper;

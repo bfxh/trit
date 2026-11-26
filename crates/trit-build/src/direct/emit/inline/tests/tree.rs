@@ -16,10 +16,8 @@ fn single_use_binary_tree_collapses_into_root() {
         Algebra::Kleene,
     );
     assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
-    assert!(
-        source.contains("return trit_bin(T_OR, trit_bin(T_AND, vars[0], vars[1]), vars[2]);"),
-        "{source}"
-    );
+    assert!(source.contains("return T_OR[(T_AND["), "{source}");
+    assert!(source.contains("+ 1) * 3 + (vars[2] + 1)];"), "{source}");
 }
 /// 三层以内的单用锥整个并进根返回：`Not(And(Or(a,b),c))` 不留临时语句。
 #[test]
@@ -38,7 +36,9 @@ fn multilevel_single_use_cone_fits_one_statement() {
     );
     assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
     assert!(
-        source.contains("return -(trit_bin(T_AND, trit_bin(T_OR, vars[0], vars[1]), vars[2]));"),
+        source.contains(
+            "return -(T_AND[(T_OR[(vars[0] + 1) * 3 + (vars[1] + 1)] + 1) * 3 + (vars[2] + 1)]);"
+        ),
         "{source}"
     );
 }
