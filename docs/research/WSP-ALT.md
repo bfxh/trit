@@ -33,6 +33,13 @@
 > **这是 recall tilt，不是 macro-F1 改进；candidate 线保持关闭。**
 > 5 个 seed 实际是同一组预测的 5 次 bootstrap，唯一 5/5 格不是
 > 独立确认。详见 §11.46。
+> M1.47 再把这一格放到 5 个全新 80/20 split 上重跑：点估计
+> 5/5 为正（均值 `+2.12pp`），但只有 1/5 CI 低端大于 0；
+> 预注册判为 `directional`，不是 supported。balanced 仍稳定
+> 表现为 hate recall `0.696–0.738`、non-hate recall
+> `0.810–0.824`、accuracy `0.804–0.818` 的 recall tilt。
+> **原切分的 `+6.90pp` 不是跨切分稳定增益；candidate 关闭。**
+> 详见 §11.47。
 > 详见 `WSP-BUDGET-RESULTS.md`。
 > 其余方案仍是草案。层内预演只覆盖 L12 第 0 层 `query/key/value`，不是全模型，
 > 也不是 STS。文中所有“误差下降”都是层内重建或层输出范数，不能直接当

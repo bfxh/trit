@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed（M1.47：Davidson L6 SVC 独立 split 稳定性审计）
+
+- 预注册 5 个全新 80/20 分层 split（seed `101/103/107/109/113`），只审计 M1.46 唯一
+  5/5 格：Davidson L6 SVC f32 的 `balanced − unweighted` macro-F1。C 在每个 split
+  的 f32 fit 上重选，5 折 unweighted accuracy，balanced/unweighted 共用。
+- 结果：5/5 点估计为正，均值 `+2.1158pp`（范围 `+0.1662~+3.4049pp`），但只有 1/5 的
+  95% CI 低端大于 0；预注册判为 `directional`，`supported=false`。M1.46 原切分的
+  `+6.8989pp` 没有被独立切分复现，不能当跨切分稳定增益。
+- balanced 仍是 recall tilt：hate recall `0.6958–0.7378`、non-hate recall
+  `0.8103–0.8244`、accuracy `0.8043–0.8178`，预测正例率 `0.2056–0.2195`；test
+  真实先验 `0.0577`。不升级 candidate。
+- 新增 `docs/research/data/wsp-classify-m147-{prereg,splits,raw,primary,verdict}` 与
+  `docs/research/scripts/wsp_m147/split_audit.py`；更新 `WSP-BUDGET-RESULTS.md`
+  §11.47/§12、`WSP-ALT.md`、`WSP-BERT6-RESULTS.md` 和 `LESSONS.md` #63。
+
 ### Added（第五十轮：direct 单二元调用展开）
 
 - `direct/emit.rs` / `direct/emit/inline.rs`：统计折叠后的二元节点；全文只有一个二元

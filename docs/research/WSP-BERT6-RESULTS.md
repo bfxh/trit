@@ -51,6 +51,16 @@ LayerNorm、GELU、残差都在 f32 里跑，只把线性权重三值化。目�
 > 也不是校准；量化臂没有被救回。** 5 个 seed 实际是同一组预测的
 > 5 次 bootstrap，唯一 5/5 格不是独立确认。详见
 > `WSP-BUDGET-RESULTS.md` §11.46。
+>
+> **M1.47 Davidson L6 SVC 独立 split 审计（2026-11-27）**：把 M1.46
+> 唯一 5/5 格放到 5 个全新 80/20 split 上重跑：点估计 5/5 为正
+> （`+0.17~+3.40pp`，均值 `+2.12pp`），但只有 1/5 的 95% CI
+> 低端大于 0；预注册判为 `directional`，不是 supported。
+> balanced 仍是 recall tilt：hate recall `0.696–0.738`、non-hate
+> recall `0.810–0.824`、accuracy `0.804–0.818`，预测正例率
+> `0.206–0.219`（真实 `0.0577`）。**原切分的 `+6.90pp` 不能当
+> 跨切分稳定结论；candidate 仍关闭。** 详见
+> `WSP-BUDGET-RESULTS.md` §11.47。
 
 ## 1. 协议
 

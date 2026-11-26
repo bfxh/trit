@@ -1,6 +1,15 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.46 完成（§11.41–§11.46）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验 + 预注册 Hate test 半分割 confirmatory + 第二个 hate 语料 HateXplain 的预注册 confirmatory + HateXplain 域感知先验与 fit-only 阈值搬运 + HateXplain 三分类探索 + 静态字节–质量 Pareto + Davidson 第三语料 + fit-balanced prior-free 决策规则。
+> 状态：M1.47 完成（§11.41–§11.47）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验 + 预注册 Hate test 半分割 confirmatory + 第二个 hate 语料 HateXplain 的预注册 confirmatory + HateXplain 域感知先验与 fit-only 阈值搬运 + HateXplain 三分类探索 + 静态字节–质量 Pareto + Davidson 第三语料 + fit-balanced prior-free 决策规则 + Davidson L6 SVC 独立 split 稳定性审计。
+>
+> **M1.47 读法**：把 M1.46 唯一 5/5 的 Davidson L6 SVC
+> balanced 格做独立重切分审计。5 个全新 80/20 split 上点估计
+> 5/5 为正（`+0.17~+3.40pp`，均值 `+2.12pp`），但只有 1/5 的
+> CI 低端大于 0，预注册判为 **directional**，不是 supported。
+> balanced 仍是 recall tilt：hate recall `0.696–0.738`，
+> non-hate recall `0.810–0.824`，accuracy `0.804–0.818`，
+> 预测正例率 `0.206–0.219`（真实 `0.0577`）。**M1.46 的
+> `+6.90pp` 不能当跨切分稳定结论；candidate 仍关闭。** 见 §11.47。
 >
 > **M1.46 读法**：把 `class_weight="balanced"` 当作 inductive、
 > prior-free 的决策规则（只用 fit 标签估权重、固定默认阈值），
@@ -7143,9 +7152,118 @@ accuracy `0.8121468926553672`、macro-F1
 - 运行日志：`m146-both.log`（各 corpus root）；
   C 选择与 5 个 bootstrap RNG 的输出均在日志里。
 
+## 11.47 Davidson L6 SVC balanced 的独立 split 稳定性审计（M1.47）
+
+### 11.47.1 问题与预注册
+
+M1.46 的唯一 5/5 是 Davidson L6 SVC balanced f32 的
+macro-F1 `+6.8989pp`。但那个 5/5 只是同一组 test 预测的
+5 次 bootstrap 重采样，不是 5 次独立拟合；M1.47 因此不新增
+语料、不改规则，只把 Davidson 的 train/test 重新独立切分，
+检验这个单格是否跨切分稳定。
+
+预注册 `data/wsp-classify-m147-prereg.json`（`4d5d9c2d`）在
+看到任何模型分数前固定：
+
+- 数据：M1.45 导出的 24,781 行 Davidson 二分类表；23,352
+  non-hate / 1,429 hate；规范化文本无重复，且已移除与
+  TweetEval/hate、HateXplain 的 1 行外部重叠。
+- 5 个独立 80/20 分层 split，`random_state` 为
+  `101/103/107/109/113`；每个 split 19,824 fit / 4,957 test，
+  test 286 hate（先验 `0.0577`）。
+- 只跑 L6 SVC f32；`LinearSVC(C, max_iter=10000,
+  random_state=7, tol=1e-4)`，阈值固定 `0.0`。
+- C 在每个 split 的 f32 fit 上用 5 折 `StratifiedKFold`
+  （`random_state=7`）按 unweighted accuracy 选，grid
+  `0.01/0.1/1.0/10.0`，balanced 与 unweighted 共用该 C。
+- Primary：`balanced f32 − unweighted f32` 的 macro-F1；
+  每个 split 10k paired test-level bootstrap，95% 双侧 CI。
+- 判决：≥4/5 split 同时满足点估计 >0、CI 低端 >0，且
+  5 个点估计均值 >0 才是 `supported`；≥3/5 点正且均值 >0
+  但未满足前者是 `directional`；其余 `not_supported`。
+
+这 5 行是 5 次**独立切分**，不是 5 个独立语料；test 集之间
+仍有重叠。M1.47 是描述性 split-stability 审计，不是 candidate
+confirmatory，也不把 Davidson 变成有官方 split 的 benchmark。
+
+### 11.47.2 Primary：5/5 点正，但只有 1/5 CI 正
+
+| split | C | unweighted macro-F1 | balanced macro-F1 | Δ | 95% CI | 判读 |
+|---|---:|---:|---:|---:|---|---|
+| 101 | 10.0 | 0.5702 | 0.6043 | +3.4049pp | `[+0.1870,+6.5362]pp` | positive |
+| 103 | 1.0 | 0.5776 | 0.5959 | +1.8221pp | `[−1.3919,+4.9590]pp` | cross |
+| 107 | 10.0 | 0.5636 | 0.5902 | +2.6605pp | `[−0.3395,+5.6083]pp` | cross |
+| 109 | 10.0 | 0.6025 | 0.6041 | +0.1662pp | `[−3.1240,+3.4221]pp` | cross |
+| 113 | 1.0 | 0.5746 | 0.5998 | +2.5254pp | `[−0.6768,+5.6750]pp` | cross |
+
+5 个 split 的点估计全部为正，均值 `+2.1158pp`，范围
+`+0.1662~+3.4049pp`；但 CI 低端大于 0 的只有 1/5。按预注册
+判据 `supported=false`、`verdict=directional`：方向稳定，
+但幅度没有跨切分显著。
+
+M1.46 原切分的 `+6.8989pp` 与这里均值 `+2.1158pp` 相差
+约 `4.78pp`。两者切分不同，不能把这 `4.78pp` 直接读成
+偏差估计；可以确定的是：**原单格的点估计没有被独立切分
+复现，5/5 bootstrap 不能当跨切分稳定性的证据。**
+
+### 11.47.3 Secondary：仍是 recall tilt
+
+同一批 5 个 split 上，balanced 的 per-class recall 与
+操作点方向不变：
+
+- hate recall：unweighted `0.0979–0.1399` → balanced
+  `0.6958–0.7378`。
+- non-hate recall：`0.9936–0.9964` → `0.8103–0.8244`。
+- accuracy：`0.9417–0.9467` → `0.8043–0.8178`。
+- 预测正例率：`0.0091–0.0117` → `0.2056–0.2195`；
+  test 真实先验只有 `0.0577`。
+- C：`10.0/1.0/10.0/10.0/1.0`；C 只由 fit 选，未用 test。
+
+macro-F1 的 5 个点估计都为正，但 4/5 CI 跨 0；这说明
+`balanced` 在 Davidson 上仍是 recall-oriented operating
+point，不是稳定的 macro-F1 提升。+2.1pp 的均值只能当
+descriptive，不是可部署增益。
+
+### 11.47.4 判决与边界
+
+- 预注册判决是 **directional, not supported**：点估计 5/5
+  正，CI 正只有 1/5，均值 +2.12pp。`supported` 要求至少
+  4/5 个 CI 低端大于 0，本轮不满足。
+- **不升级 candidate。** M1.46 的 `+6.90pp` 不能继续作为
+  “Davidson L6 SVC 稳定增益”引用；正确读法是“原切分
+  单个显著比较；独立重切分后均值 +2.12pp、1/5 CI 正”。
+- 边界：5 个 split 来自同一语料，test 集有重叠；每个 test
+  只有 286 条 hate，macro-F1 的 CI 较宽。1/5 CI 正既不能
+  证明效应为零，也不能证明效应稳定；它只否定“5/5 单格
+  可跨切分复现”。
+- 本轮没有 L12、logreg、量化臂、target_prior、fit-prior
+  分位点、calibration 或阈值搜索；没有新增语料或重训编码器。
+- 若继续 Davidson，只能换新的独立语料/任务契约或做
+  pre-registered 的独立数据收集；不要在同一批 split 上继续
+  换 C/阈值/规则。
+
+### 11.47.5 复算
+
+- 预注册：`data/wsp-classify-m147-prereg.json`（`4d5d9c2d`）
+- driver：`scripts/wsp_m147/split_audit.py`（`62038ede`）
+- split 表：`data/wsp-classify-m147-splits.tsv`（5 行、10 列）
+- raw：`data/wsp-classify-m147-raw.tsv`（10 行、11 列）
+- primary：`data/wsp-classify-m147-primary.tsv`（5 行、12 列）
+- 判决：`data/wsp-classify-m147-verdict.json`
+- 运行日志：Davidson 结果目录的 `m147-split.log`；
+  C 选择、每个 split 的点估计与 CI 都在日志里。
+
 ## 12. 下一步
 
 
+> **M1.47 读法**：独立重切分把 M1.46 唯一 5/5 格打成
+> “方向稳定、CI 脆弱”：5 个新 split 上点估计 5/5 为正
+> （均值 `+2.12pp`），但只有 1/5 CI 低端大于 0，预注册判为
+> `directional`。**原切分的 `+6.90pp` 不是跨切分稳定增益；
+> prior-free 分类决策规则仍收口，candidate 关闭。** 下一步
+> 只能换新语料/新任务契约，不再调同一批 Davidson split。
+> 见 §11.47。
+>
 > **M1.46 读法**：`class_weight="balanced"` 作为 prior-free
 > 决策规则在三个 hate 语料上整体 `not_supported`：12 个 primary
 > cell 只有 Davidson L6 SVC 过预注册 5/5（macro-F1 `+6.90pp`）；
