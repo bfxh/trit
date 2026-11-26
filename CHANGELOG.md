@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed（M1.33：分类头跨任务判决）
+
+- 把 SST-2/CoLA/hate 的 L12/L6 线性头结果按“每个量化档只计一次”
+  合成 36 个 `dataset×depth×probe×arm` 比较：0 个 CI 整段 `>0`，
+  9 个整段 `<0`，27 个跨 0。
+- 显著负向集中在 SST-2 L12 的 `int3`/`R12`（两个 probe 都负）、
+  hate L12 的 `R12` 与 SVC `int3`、hate L6 的 `int4`（两个 probe 都负）。
+- 最大正向点估计仍是 CoLA L12 的 `int4` `+1.20pp`（logreg macro，
+  CI `[−0.007385,+0.031764]`），不显著；CoLA L6 没有转正。
+- SST-2 L12 的 `true-bits4` 是 `−0.10pp`（SVC）/`−0.15pp`（logreg），
+  CI 跨 0；历史 `+4.22pp` 是 ternary→4-bit 恢复，不是 f32→int4。
+- 判决：分类头没有可提升的量化档，f32 继续是默认锚点；`int3`/`int4`/
+  `R12`/`rescan` 都不因“可能正则化”被提升。
+- 新增 `docs/research/data/wsp-classify-cross-task-verdict.tsv`（36 行），
+  `WSP-BUDGET-RESULTS.md` 新增 §11.33 与 §12 读法。
+
 ### Fixed（M1.32：L6 int4 全量逐位复刻）
 
 - 用 `all-MiniLM-L6-v2` 读取官方 `chunks-l6-1500`，全量生成 CoLA/hate
