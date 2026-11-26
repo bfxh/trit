@@ -50,7 +50,7 @@ fn finds_direct_blr_through_slot() {
     put(&mut data, 0, adrp(0x1000, 0x2000, 9));
     put(&mut data, 1, ldr(9, 0x40, 9));
     put(&mut data, 2, blr(9));
-    let (refs, _) = references(&data, 0x1000);
+    let (refs, _, _) = references(&data, 0x1000);
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].slot, 0x2040);
     assert_eq!(refs[0].site, 0x1008);
@@ -64,7 +64,7 @@ fn follows_add_then_ldr() {
     put(&mut data, 1, add(9, 0x48, 9));
     put(&mut data, 2, ldr(9, 0x0, 9));
     put(&mut data, 3, blr(9));
-    let (refs, _) = references(&data, 0x1000);
+    let (refs, _, _) = references(&data, 0x1000);
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].slot, 0x2048);
     assert_eq!(refs[0].site, 0x100c);
@@ -79,7 +79,7 @@ fn interleaved_instructions_do_not_hide_the_reference() {
     put(&mut data, 3, 0xD2800041); // movz x1, #2
     put(&mut data, 4, 0xD2800062); // movz x2, #3
     put(&mut data, 5, blr(9));
-    let (refs, _) = references(&data, 0x1000);
+    let (refs, _, _) = references(&data, 0x1000);
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].slot, 0x2040);
     assert_eq!(refs[0].site, 0x1014);
@@ -97,7 +97,7 @@ fn mov_alias_carries_the_address() {
     put(&mut data, 2, ldr(10, 0x40, 10));
     put(&mut data, 3, 0xD503201F); // nop
     put(&mut data, 4, blr(10));
-    let (refs, _) = references(&data, 0x1000);
+    let (refs, _, _) = references(&data, 0x1000);
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].slot, 0x2040);
     assert_eq!(refs[0].site, 0x1010);
@@ -111,7 +111,7 @@ fn mov_alias_carries_the_loaded_pointer() {
     put(&mut data, 2, mov(10, 9));
     put(&mut data, 3, 0xD503201F); // nop
     put(&mut data, 4, blr(10));
-    let (refs, _) = references(&data, 0x1000);
+    let (refs, _, _) = references(&data, 0x1000);
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].slot, 0x2040);
 }
@@ -123,7 +123,7 @@ fn clobbered_register_breaks_the_chain() {
     put(&mut data, 1, 0xD2800009); // movz x9, #0
     put(&mut data, 2, ldr(9, 0x40, 9));
     put(&mut data, 3, blr(9));
-    let (refs, _) = references(&data, 0x1000);
+    let (refs, _, _) = references(&data, 0x1000);
     assert!(refs.is_empty());
 }
 
@@ -132,7 +132,7 @@ fn address_only_reference_is_marked_taken() {
     let mut data = vec![0u8; 24];
     put(&mut data, 0, adrp(0x1000, 0x2000, 9));
     put(&mut data, 1, ldr(9, 0x40, 9));
-    let (refs, taken) = references(&data, 0x1000);
+    let (refs, taken, _) = references(&data, 0x1000);
     assert!(refs.is_empty());
     assert!(taken.contains(&0x2040));
 }
@@ -143,7 +143,7 @@ fn thunk_is_a_jump_at_adrp() {
     put(&mut data, 0, adrp(0x1020, 0x2000, 16));
     put(&mut data, 1, ldr(16, 0x40, 17));
     put(&mut data, 2, br(17));
-    let (refs, _) = references(&data, 0x1020);
+    let (refs, _, _) = references(&data, 0x1020);
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].kind, SiteKind::Jump);
     assert_eq!(refs[0].site, 0x1020);

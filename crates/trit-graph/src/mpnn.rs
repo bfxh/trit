@@ -10,6 +10,7 @@ use trit_core::quant::Ste;
 use trit_core::value::Ternary;
 
 use crate::council::tally;
+use crate::guards::{finite_latent, finite_scalar};
 use crate::view::TriGraphView;
 
 /// 死区：`|latent| ≤ DEAD_ZONE` 的票视为"弃权"。
@@ -65,13 +66,13 @@ impl TransitionTable {
         }
     }
 
-    /// 一步监督拟合：样本 `(边状态, 邻居状态, 目标票)`。
-    ///
-    /// 前向硬票、反向 STE；返回本轮"硬票 ≠ 目标"的比例。
+    /// 一步监督拟合：样本 `(边状态, 邻居状态, 目标票)`；前向硬票、反向 STE。
+    /// 非有限 `lr` 按 0 步长、现有 latent 非有限按 0.0 兜底，毒值不回写表项。
     pub fn fit_step(&mut self, samples: &[(Ternary, Ternary, Ternary)], lr: f32, ste: Ste) -> f32 {
         if samples.is_empty() {
             return 0.0;
         }
+        let lr = finite_scalar(lr);
         let mut wrong = 0usize;
         for &(edge, state, target) in samples {
             let e = index_of(edge);
@@ -81,8 +82,8 @@ impl TransitionTable {
                 wrong += 1;
             }
             let grad_q = value_of(target) - value_of(current);
-            let grad = ste.backward(self.latent[e][s], 1.0, grad_q);
-            self.latent[e][s] += lr * grad;
+            let safe = finite_latent(self.latent[e][s]);
+            self.latent[e][s] = safe + lr * ste.backward(safe, 1.0, grad_q);
         }
         wrong as f32 / samples.len() as f32
     }
@@ -269,7 +270,6 @@ mod tests {
         let g = paths(&[(0, 1, Ternary::Unknown)], 2);
         let mpnn = TriMpnn::new(TransitionTable::identity(), 1);
         let states = [Ternary::True, Ternary::False];
-        // 中立项投弃权票；目标没有其它入边 → 议会全弃权 → Unknown。
         assert_eq!(mpnn.run(&g, &states), vec![Ternary::True, Ternary::Unknown]);
     }
 

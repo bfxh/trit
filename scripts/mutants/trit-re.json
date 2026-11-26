@@ -254,5 +254,21 @@
     "new": "            ' ' | '\\t' | '\\r' | '\\n' => {\n                chars.next();\n            }",
     "pkg": "trit-re",
     "filter": "lexer_terminates_on_every_unicode_whitespace"
+  },
+  {
+    "name": "trit-re: ARM64 xref 地址溢出不降级 complete",
+    "file": "crates/trit-re/src/xref/aarch64.rs",
+    "old": "    let complete = complete && !address_overflow;",
+    "new": "    let complete = complete;",
+    "pkg": "trit-re",
+    "filter": "near_max_section_base_downgrades_xref_complete"
+  },
+  {
+    "name": "trit-re: ARM64 遍历节尾步进回绕（checked_add 去掉）",
+    "file": "crates/trit-re/src/functions/arm64walk.rs",
+    "old": "            let Some(next) = cur.checked_add(ARM64_INSN_LEN) else {\n                break;\n            };",
+    "new": "            let next = cur.wrapping_add(ARM64_INSN_LEN);",
+    "pkg": "trit-re",
+    "filter": "walk_at_near_max_base_does_not_wrap_addresses"
   }
 ]

@@ -18,6 +18,8 @@ use crate::{
     TritTexture, decode_rgba_into,
 };
 
+mod layout;
+
 /// 容器魔数。
 pub const MAGIC: [u8; 4] = *b"TTX3";
 /// 头部字节数：magic(4) + flags(u16) + reserved(u16) + level_count(u8) +
@@ -408,13 +410,12 @@ struct ArchiveLevel {
     height: usize,
     policy: LevelPolicy,
     dir_offset: u64,
-    #[allow(dead_code)]
-    tiles: usize,
 }
 
 impl<'a> Ttx3Archive<'a> {
-    /// 解析头部与级目录（不校验瓦片——那是 [`Ttx3Archive::decode_tile`] /
-    /// [`Ttx3Archive::verify`] 的活，逐瓦片惰性）。
+    /// 解析头部与级目录，并在解析期对账瓦片载荷区间归属/disjoint 与政策副本数
+    /// （见 [`layout`]）；瓦片 CRC 仍是 [`Ttx3Archive::decode_tile`] /
+    /// [`Ttx3Archive::verify`] 的活，逐瓦片惰性校验。
     pub fn parse(bytes: &'a [u8]) -> Result<Self, TextureError> {
         if bytes.len() < HEADER_BYTES || bytes[0..4] != MAGIC {
             return Err(TextureError::Ttx3Magic);
@@ -448,15 +449,14 @@ impl<'a> Ttx3Archive<'a> {
             let height = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
             let policy = LevelPolicy::from_byte(bytes[at + 8])?;
             let dir_offset = u64::from_le_bytes(bytes[at + 12..at + 20].try_into().unwrap());
-            let (tx, ty) = tile_grid(width, height);
             levels.push(ArchiveLevel {
                 width,
                 height,
                 policy,
                 dir_offset,
-                tiles: tx * ty,
             });
         }
+        layout::validate(bytes, &levels)?;
         Ok(Self { bytes, levels })
     }
 
