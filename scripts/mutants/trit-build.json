@@ -658,10 +658,10 @@
  {
   "name": "inline: 深度不封顶",
   "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
-  "old": "    if depth > MAX_INLINE_DEPTH {\n        // 到边界就不再并进上一层；该节点自己发射，子树重新计深度。\n        mark_children(uses, inlined, ops, &ops[index], 1);\n        return;\n    }\n",
+  "old": "    if depth > MAX_INLINE_DEPTH {\n        mark_children(uses, inlined, ops, &ops[index], 1);\n        return;\n    }\n",
   "new": "",
   "pkg": "trit-build",
-  "filter": "direct::emit::inline::tests::depth::depth_cap_keeps_deep_leaves_declared"
+  "filter": "direct::emit::inline::tests::depth::depth_cap_keeps_the_boundary_node_declared"
  },
  {
   "name": "emit: 根节点仍落临时变量",
@@ -718,7 +718,37 @@
   "new": "                inline::call(table, left, right, false)",
   "pkg": "trit-build",
   "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
+ },
+ {
+  "name": "inline: 变量复用阈值失效（全部直写）",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "        if matches!(ops[index], Op::Const(_)) || uses[index] <= 5 {",
+  "new": "        if true {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::variable_reuse_boundary"
+ },
+ {
+  "name": "inline: 变量复用阈值提前到 5 次",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "        if matches!(ops[index], Op::Const(_)) || uses[index] <= 5 {",
+  "new": "        if matches!(ops[index], Op::Const(_)) || uses[index] < 5 {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::variable_reuse_boundary"
+ },
+ {
+  "name": "inline: 常量不再总是直写",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "        if matches!(ops[index], Op::Const(_)) || uses[index] <= 5 {",
+  "new": "        if uses[index] <= 5 {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::reused_constant_stays_inline"
+ },
+ {
+  "name": "inline: 常量叶子不进直写分支",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "    if matches!(ops[index], Op::Var(_) | Op::Const(_)) {",
+  "new": "    if matches!(ops[index], Op::Var(_)) {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::reused_constant_stays_inline"
  }
 ]
-
-

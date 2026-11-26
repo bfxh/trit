@@ -15,7 +15,7 @@ fn negated_single_use_variable_is_inlined() {
     assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
     assert!(source.contains("return -(vars[0]);"), "{source}");
 }
-
 mod depth;
 mod fanout;
+mod reuse;
 mod tree;

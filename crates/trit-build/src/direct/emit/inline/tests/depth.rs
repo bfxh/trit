@@ -1,10 +1,8 @@
 //! 深度封顶：越过 3 层的单用链重新找发射点。
-
 use super::*;
-
-/// 从发射父节点算起超过 3 层就不再下钻，边界节点自己发射；根节点仍直接返回。
+/// 从发射父节点算起超过 3 层就不再下钻，边界节点自己发射；叶子仍直接重写。
 #[test]
-fn depth_cap_keeps_deep_leaves_declared() {
+fn depth_cap_keeps_the_boundary_node_declared() {
     let source = render(
         vec![
             Op::Var(0),
@@ -14,12 +12,14 @@ fn depth_cap_keeps_deep_leaves_declared() {
             Op::And(2, 3),
             Op::Var(3),
             Op::And(4, 5),
-            Op::Not(6),
+            Op::Const(trit_core::value::Ternary::False),
+            Op::And(6, 7),
+            Op::Not(8),
         ],
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 2, "{source}");
-    assert!(source.contains("int8_t t0 = vars[0];"), "{source}");
+    assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
+    assert!(source.contains("int8_t t0 = T_AND["), "{source}");
     assert!(source.contains("return -("), "{source}");
 }

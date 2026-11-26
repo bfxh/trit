@@ -1,13 +1,8 @@
 //! 内联决策：单用节点从最近的发射父节点起，最多并进 3 层。
-//! 这里不再只沿 `Not` 的操作数锥走：任何只被引用一次的节点都可以不落临时变量，
-//! 由父语句的 C 表达式递归展开。扇出节点仍单独发语句；根节点由 `return` 直接展开。
-//! 深度封顶避免一条语句被单用长链撑成超长表达式。
-
+//! 变量叶子复用 ≤5 次直接重写（≥6 次临时变量更短），常量叶子总是直接重写；扇出节点单独发语句。
 use crate::direct::ir::Op;
-
 /// 从发射父节点算起的最大内联层数。
 const MAX_INLINE_DEPTH: usize = 3;
-
 /// 标记哪些节点不单独发语句。
 pub(crate) fn targets(ops: &[Op]) -> Vec<bool> {
     let mut uses = vec![0usize; ops.len()];
@@ -55,11 +50,16 @@ fn mark_children(uses: &[usize], inlined: &mut [bool], ops: &[Op], op: &Op, dept
 }
 
 fn mark(uses: &[usize], inlined: &mut [bool], ops: &[Op], index: usize, depth: usize) {
+    if matches!(ops[index], Op::Var(_) | Op::Const(_)) {
+        if matches!(ops[index], Op::Const(_)) || uses[index] <= 5 {
+            inlined[index] = true;
+        }
+        return;
+    }
     if uses[index] != 1 || inlined[index] {
         return;
     }
     if depth > MAX_INLINE_DEPTH {
-        // 到边界就不再并进上一层；该节点自己发射，子树重新计深度。
         mark_children(uses, inlined, ops, &ops[index], 1);
         return;
     }
