@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.32 完成（§11.32）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
+> 状态：M1.33 完成（§11.33）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -99,6 +99,12 @@
 > 作为独立臂重跑后，CoLA L6 `−0.94pp`、hate L6 `−1.55pp`（logreg）
 > 的结论不变，hate 的 CI 仍整段为负。M1.30 的 512 行抽检升级为全量，
 > L6 不再有“官方 int4 只验证了首块”的边界（§11.32）。
+> **M1.33 跨任务判决**：把 SST-2 / CoLA / hate 的 L12/L6 线性头结果
+> 按“每个量化档只计一次”合成 36 个 `dataset×depth×probe×arm` 比较。
+> **0 个的 95% CI 整段大于 0，9 个整段小于 0，27 个跨 0。** 最大正向
+> 点估计仍是 CoLA L12 的 int4 `+1.20pp`（CI 跨 0）；SST-2 L12 的
+> `int3`/`R12`、hate L12 的 `R12`、hate L6 的 `int4` 都是显著负向。
+> 分类头没有可提升的量化档，f32 继续是默认锚点（§11.33）。
 
 
 ## 1. 结论先行
@@ -4758,6 +4764,85 @@ hate 的 LinearSVC 也完全相同，logreg 有 11/2,734 条预测翻转，净 a
 `data/wsp-classify-baseline-audit.tsv` 的两条 L6 provenance 行已从
 `n=512` 更新为全量，并新增 20 行 L6 true-bits4 分类读数。
 
+## 11.33 跨任务判决：36 个量化比较里 0 个显著正向（M1.33）
+
+### 11.33.1 统计分母
+
+M1.33 不再训练新模型，只把已有结果按统一规则合成。每个
+`dataset×depth×probe×量化档` 只算一次，不把同一格式的官方/真值两份
+实现重复计数：
+
+- 12 层：3 个数据集 × 2 个 probe × 3 档（`int4`/`int3`/`R12`）= 18。
+  `int4` 用独立 true bits4（SST-2/CoLA/hate 都有）；`official-int4`
+  仅作溯源，不单独计入。
+- 6 层：SST-2 2 个 probe × 3 档（`true-bits4`/`int3`/`rescan-k2`）= 6；
+  CoLA/hate 各 2 个 probe × 3 档（`official-int4`/`int3`/`rescan`）= 12。
+  CoLA/hate 的官方 `int4` 已在 M1.32 全量确认为真 bits4，因此作为该格
+  的 `int4` 代表。
+- 合计 36 个比较。每个比较都是同一 test split、同一 probe、同一主指标
+  的 `量化 − 真 f32`，10k paired bootstrap CI；C 只在 train 内 5 折选。
+- `official-pure-f32` 不计入：它是基线标签/溯源对象，不是量化档。
+
+判定：CI 整段 `>0` 记为“显著正”，整段 `<0` 记为“显著负”，其余记为
+“跨 0”。CI 跨 0 只说明没有统计分离，不等于证明等价。
+
+### 11.33.2 逐格汇总
+
+| dataset | depth | 比较数 | 显著正 | 显著负 | 跨 0 | 最大点估计（主指标） | 95% CI |
+|---|---|---:|---:|---:|---:|---:|---:|
+| SST-2 | L12 | 6 | 0 | 4 | 2 | `−0.001040`（SVC true bits4） | `[−0.010434,+0.008237]` |
+| SST-2 | L6 | 6 | 0 | 0 | 6 | `−0.001632`（SVC int3） | `[−0.016474,+0.013180]` |
+| CoLA | L12 | 6 | 0 | 0 | 6 | `+0.011989`（logreg true bits4） | `[−0.007385,+0.031764]` |
+| CoLA | L6 | 6 | 0 | 0 | 6 | `+0.000042`（SVC rescan-k2） | `[−0.029487,+0.029020]` |
+| Hate | L12 | 6 | 0 | 3 | 3 | `−0.004826`（SVC true bits4） | `[−0.015362,+0.005852]` |
+| Hate | L6 | 6 | 0 | 2 | 4 | `+0.004218`（logreg int3） | `[−0.008778,+0.017191]` |
+| **合计** | | **36** | **0** | **9** | **27** | | |
+
+“最大点估计”即使为负也照列，避免只挑正向臂。六个格子里没有任何一个
+量化档的 CI 整段大于 0；CoLA L12 的 `+1.20pp` 是唯一接近正向的点估计，
+但 CI 仍跨 0。
+
+### 11.33.3 九个显著负向
+
+| dataset | depth | probe | arm | 主指标 | Δ vs true f32 | 95% CI |
+|---|---|---|---|---:|---:|---:|
+| SST-2 | L12 | logreg | official-int3 | accuracy | `−0.019732` | `[−0.035146,−0.004942]` |
+| SST-2 | L12 | logreg | official-R12 | accuracy | `−0.022967` | `[−0.038440,−0.007688]` |
+| SST-2 | L12 | linear_svc | official-int3 | accuracy | `−0.024053` | `[−0.040088,−0.008237]` |
+| SST-2 | L12 | linear_svc | official-R12 | accuracy | `−0.028556` | `[−0.043932,−0.013180]` |
+| Hate | L12 | logreg | official-R12 | accuracy | `−0.013568` | `[−0.026335,−0.000732]` |
+| Hate | L12 | linear_svc | official-int3 | accuracy | `−0.017598` | `[−0.029993,−0.004755]` |
+| Hate | L12 | linear_svc | official-R12 | accuracy | `−0.013585` | `[−0.025969,−0.001454]` |
+| Hate | L6 | logreg | official-int4 | accuracy | `−0.015084` | `[−0.024872,−0.005486]` |
+| Hate | L6 | linear_svc | official-int4 | accuracy | `−0.017248` | `[−0.027067,−0.007681]` |
+
+负向集中在 SST-2 L12 的 3-bit/混合预算，以及 hate L12 的 `R12`、hate
+L6 的 `int4`。这些不是“量化没提升”，而是**统计上更差**。
+
+### 11.33.4 判决
+
+- **分类头没有可提升的量化档**：36 个比较里 0 个显著正、9 个显著负、
+  27 个跨 0。f32 应继续作为分类头的默认锚点；`int3`/`int4`/`R12`/`rescan`
+  都不应因为“可能正则化”被提升为默认。
+- **SST-2 的 int4 正向不存在**：SST-2 L12 的 `true-bits4` 是
+  `−0.10pp`（SVC）/`−0.15pp`（logreg），CI 跨 0；历史上 `+4.22pp`
+  是 ternary 锚点到 4-bit 的恢复，不是 f32→int4。SST-2 L12 的
+  `int3`/`R12` 反而是显著负向。
+- **CoLA L12 是唯一的“正向方向”**：`true-bits4`/`int4` 的 `+1.20pp`
+  （logreg macro）和 `+0.93pp`（SVC）都跨 0。它是点估计，不是可发布
+  的增益；CoLA L6 也没有转正。
+- **Hate 的负向更硬**：L12 `R12` 两个 probe 都显著负，L12 SVC `int3`
+  也显著负；L6 `int4` 两个 probe 都显著负。混合预算在 hate 上没有
+  分类优势。
+- 边界：3 个数据集、2 个深度、2 个线性头；冻结编码器；没有 MLP、
+  没有 encoder 微调、没有 MNLI。跨数据集的主指标不同（SST-2/hate
+  用 accuracy，CoLA 用 macro-F1），所以只比“同格内相对 f32 的符号与
+  CI”，不把跨数据集的百分点直接相加。
+
+完整 36 行见 `data/wsp-classify-cross-task-verdict.tsv`。M1.33 只做
+合成，不新增训练；原始读数仍来自 SST-2 全臂 TSV、CoLA/hate 全臂
+TSV 和 M1.32 的 L6 bits4 复验。
+
 ## 12. 下一步
 
 > **M1.28 读法**：本节及历史 §11.12–§11.25 中所有 SST-2 的 `f32` 读数
@@ -4786,6 +4871,12 @@ hate 的 LinearSVC 也完全相同，logreg 有 11/2,734 条预测翻转，净 a
 > （logreg macro）、hate `−1.55pp`（logreg accuracy）的方向不变，
 > hate 的 CI 仍整段为负。M1.30 的 512 行抽检已升级为全量，M1.31 的
 > L6 `int4` 数字不需要改。见 §11.32。
+>
+> **M1.33 读法**：分类头已经收口。按“每个量化档只计一次”合成 36 个
+> `dataset×depth×probe×arm` 比较，0 个 CI 整段大于 0，9 个整段小于 0，
+> 27 个跨 0。SST-2 的 `int4` 正向不存在；CoLA L12 的 `+1.20pp` 只是
+> 点估计且 CI 跨 0；hate 的 `R12`/`int4` 多处显著负向。分类头继续用
+> f32 锚点，不把任何量化档当默认。见 §11.33。
 
 - **M1.26 基线审计已完成（§11.26）**：SST-2 L12 的 `l12-pure-f32` 是
   ternary，真实 f32→int4 为 `−0.001503`（CI `[−0.012081,+0.008786]`），
