@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Changed（M1.36：nested CV 复验 Hate L6 边界格）
+
+- 对 M1.35 最接近正向的 Hate L6 `logreg rescan` 做 nested CV：
+  outer 5 折 ×5 个 outer seed（`7/13/19/31/43`），inner 5 折只在
+  真 f32 上选 C，f32 与 `int3`/`int4`/`rescan` 共用；两个 probe，
+  30 个 OOF paired CI，50 个 outer fold 点差值。
+- 结果：**2 个显著正向、0 个显著负向、28 个跨 0**。两个正向都在
+  `logreg`：`rescan` seed 7 `+0.857pp`，CI `[+0.156,+1.558]pp`；
+  `int3` seed 43 `+0.790pp`，CI `[+0.134,+1.458]pp`。SVC `0/15`。
+- `rescan` 与 `int3` 在 10/10 outer seed 点估计为正；`int4` 9/10。
+  但 `rescan` 只有 1/10 CI 显著、`int3` 1/10、`int4` 0/10；50 个
+  fold 中 `rescan` 正/负/零为 `20/5/0`（logreg）与 `19/5/1`（SVC）。
+- OOF f32 accuracy `0.761–0.767`，官方 test `0.533–0.556`，约
+  `21pp` 分布差；OOF 的 `+0.44–+0.59pp` 弱正向不能搬到官方 test。
+- 判决：`rescan` 不是纯噪声，点方向在两种口径下都未出现负 CI；但
+  30 个 CI 只有 2 个刚过 0，SVC 0/5，不能升级为可发布增益。f32 继续
+  是默认锚点；`rescan` 只保留为弱候选。
+- 新增 `docs/research/data/wsp-classify-nested-cv-hate-l6-raw.tsv`
+  （30 行）、`wsp-classify-nested-cv-hate-l6-folds.tsv`（50 行）、
+  `wsp-classify-nested-cv-hate-l6-summary.tsv`（6 行）；
+  `WSP-BUDGET-RESULTS.md` 新增 §11.36 与 §12 读法。
+
 ### Changed（M1.35：matched-C 全矩阵）
 
 - 把 M1.34 的 matched-C 控制扩到全部 36 个比较：每个

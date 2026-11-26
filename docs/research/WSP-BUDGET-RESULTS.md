@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.35 完成（§11.35）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
+> 状态：M1.36 完成（§11.36）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -5144,8 +5144,9 @@ f32 自己在 test 上从 C=1 的 `0.546086` 掉到 `0.533285`，而 rescan
   SST-2 L12 的 `int3`/`R12` 和 Hate L12 的 `R12`/SVC `int3` 在共同 C
   下仍 5/5 显著更差。
 - **Hate L6 `rescan` 是最接近正向的一格，但三个共同 C 的 CI 全部跨
-  0，下界最好也只到 `−0.000366`；不能记作显著增益。** 若以后要追这
-  一格，应做 nested CV 或重复 train 子样本，而不是再加一个 seed。
+  0，下界最好也只到 `−0.000366`；不能记作显著增益。** M1.36 已用嵌套
+  CV 复验这一格；OOF train 上点估计 10/10 为正，但只有 1/10 的 CI
+  整段为正，见 §11.36。**仍不能升级为默认。**
 - **分类头到此可以收口：f32 继续是默认锚点；`int3`/`int4`/`R12`/
   `rescan` 都不因“可能正则化”被提升。** SST-2 `int4 > f32` 已被
   M1.26/M1.29 否掉；M1.33 的 `0/9/27` 是 seed 7 条件读数；M1.34 的
@@ -5177,6 +5178,147 @@ ci_high verdict`）与 `data/wsp-classify-matched-c-summary.tsv`
 （36 行数据、14 列：`dataset depth probe arm metric seeds
 n_pos_verdict n_neg_verdict n_cross any_positive mean_point_delta
 min_point_delta max_point_delta C_by_seed`）。
+
+## 11.36 nested CV 复验 Hate L6 边界格（M1.36）
+
+### 11.36.1 问题
+
+M1.35 的 matched-C 全矩阵里，最接近正向的是 Hate L6 `logreg rescan`
+在 C=10：`+1.3168pp`，CI `[−0.0366,+2.6701]pp`，仍跨 0。这个格子有
+两个疑点：
+
+1. C=10 是 f32 的 CV 选择，但 f32 在 test 上 C=10 比 C=0.1 低
+   `2.23pp`；接近显著可能只是 f32 在坏 C 上掉了，而不是 rescan 变好。
+2. M1.35 仍只评一次官方 test；C 选择发生在 train 内，test 不覆盖
+   C 选择与训练划分的方差。
+
+M1.36 用 nested CV 复验这个格子：C 选择放进 outer CV 内部，outer
+held-out fold 只用来评分。它回答的是：
+
+> 如果完整执行“f32 内层选 C → 所有臂共用 C → 训练 → 预测”这套
+> procedure，held-out fold 上 rescan 是否仍稳定优于 f32？
+
+注意：M1.36 评的是 **train 的 OOF**，不是官方 test；它不能替代
+M1.35 的 test 读数，也不能和 test 百分点直接混表。
+
+### 11.36.2 口径
+
+- 数据：TweetEval hate L6，train `8,985` 条；官方 test `2,734` 条
+  在本实验里完全不用。
+- outer：`StratifiedKFold(5, shuffle=True, random_state=outer_seed)`，
+  outer seed 为 `7/13/19/31/43`；每个 outer seed 生成一套覆盖全部
+  `8,985` 条 train 的 OOF 预测。
+- inner：在每个 outer-train 内再做
+  `StratifiedKFold(5, shuffle=True, random_state=7)`，只在 **真 f32**
+  上选 C；C grid `(0.01,0.1,1.0,10.0)`。选定后 f32 与 `int3`/`int4`/
+  `rescan` 共用这个 C，在 outer-train 上重训，预测 outer-val。
+- probe：`logreg` 与 `linear_svc`；hate 口径无类别权重，主指标
+  accuracy。
+- 每个 `probe×outer_seed×arm` 对 f32 做 10k paired bootstrap（同一组
+  OOF 重采样索引同时用于臂与 f32）：`2 probes ×5 seeds ×3 arms =
+  30` 个 CI；另有 `2×5×5 = 50` 个 outer fold 的点差值。
+- 这不是 per-arm C：每个 outer fold 只有一个 f32 选出的 C，所有臂
+  共享。`C_by_fold` 与 `fold_deltas` 都落盘，便于复核。
+
+### 11.36.3 总读数：2 正 / 0 负 / 28 跨 0
+
+30 个 CI 的判决：
+
+| 判决 | 个数 |
+|---|---:|
+| CI 整段 `>0` | **2** |
+| CI 整段 `<0` | **0** |
+| CI 跨 0 | **28** |
+| 合计 | **30** |
+
+两个显著正向都在 `logreg`；SVC 三个臂合计 `0/15`：
+
+| probe | arm | outer seed | Δ | 95% CI | verdict |
+|---|---|---:|---:|---:|---|
+| logreg | rescan | 7 | `+0.008570`（`+0.857pp`） | `[+0.001558,+0.015582]` | 正 |
+| logreg | int3 | 43 | `+0.007902`（`+0.790pp`） | `[+0.001336,+0.014580]` | 正 |
+
+两个下界都只比 0 高 `0.13–0.16pp`；不是大幅超出的强正向。
+
+分 probe/arm 的 5-seed 汇总：
+
+| probe | arm | 5-seed 平均 | sd | min | max | 点估计正 | CI 正/负/跨 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| logreg | int3 | `+0.467pp` | `0.216pp` | `+0.212pp` | `+0.790pp` | 5/5 | 1/0/4 |
+| logreg | int4 | `+0.252pp` | `0.134pp` | `+0.122pp` | `+0.401pp` | 5/5 | 0/0/5 |
+| logreg | rescan | `+0.590pp` | `0.189pp` | `+0.345pp` | `+0.857pp` | 5/5 | 1/0/4 |
+| linear_svc | int3 | `+0.258pp` | `0.120pp` | `+0.100pp` | `+0.423pp` | 5/5 | 0/0/5 |
+| linear_svc | int4 | `+0.114pp` | `0.185pp` | `−0.145pp` | `+0.334pp` | 4/5 | 0/0/5 |
+| linear_svc | rescan | `+0.436pp` | `0.216pp` | `+0.100pp` | `+0.634pp` | 5/5 | 0/0/5 |
+
+- **`rescan` 与 `int3` 在两个 probe 的 10 个 outer seed 上点估计全部
+  为正**；`int4` 只有 SVC seed 43 一个负点（`−0.145pp`）。
+- 但 `rescan` 只有 1/10 个 CI 整段为正，`int3` 也只有 1/10；SVC 的
+  三个臂合计 `0/15`。**点方向一致，不等于 5/5 显著。**
+- 50 个 outer fold 的点差值也同向但分散：`rescan` 正/负/零为
+  `20/5/0`（logreg）与 `19/5/1`（SVC）；`int3` 为 `17/7/1` 与
+  `17/8/0`；`int4` 为 `18/6/1` 与 `15/7/3`。没有哪个臂在 fold 级别
+  一致为正。
+
+### 11.36.4 为什么 OOF 的正向不能直接搬到官方 test
+
+nested CV 的 f32 OOF accuracy 是 `0.761–0.767`，而官方 test 的 f32
+只有 `0.533–0.556`（M1.34/M1.35 的 C=0.1/1/10 读数）。两者差约
+`21pp`，说明 hate 的 train 与官方 test 分布差很大。M1.36 的
+`+0.44–+0.59pp` 是 **train 分布内** held-out 的弱正向；它不能证明
+官方 test 上也会出现同号增益。
+
+这也解释了为什么 M1.35 的 C=10 边界格更大（`+1.32pp`）：那是
+official test 上 f32 从 C=0.1 的 `0.555596` 掉到 C=10 的 `0.533285`
+造成的；nested CV 的 inner 选 C 不会系统性地把 f32 推到同一个坏 C，
+所以效应缩到 `+0.44–+0.59pp`。**M1.35 的“接近显著”主要是 C 选择
+造成的放大，M1.36 的 nested CV 把它降回一个弱候选。**
+
+### 11.36.5 判决
+
+- `rescan` 不是纯噪声：nested CV 里 10/10 outer seed 点估计为正、
+  50 个 fold 中 39 个为正、0 个负 CI。`int3` 同样是 10/10 点正且
+  0 个负 CI；两者在 Hate L6 的官方 matched-C 与 nested CV 两个口径
+  下都没有负向 CI。`rescan` 的点估计更大，是唯一在官方 test 上接近
+  显著的弱候选。
+- 但它也不是可发布增益：30 个 CI 只有 2 个整段为正（且都在
+  `logreg`，下界只高 `0.13–0.16pp`），SVC `0/15`，28/30 跨 0；
+  按 30 个比较的多重性看，不能把这两格当成稳健正向。
+- **分类头最终判决不变：没有量化档稳定超过真 f32；f32 继续是默认
+  锚点。** `rescan` 是唯一值得保留的弱候选，但不能提升为默认；它的
+  OOF 正向不能替代官方 test 读数。
+- 方法边界：nested CV 只覆盖 Hate L6；OOF 与官方 test 分布差约
+  `21pp`；outer/inner 各 5 折、5 个 outer seed，仍不是独立重复；
+  bootstrap 只重采样 OOF，不覆盖模型训练方差；只有线性头；没有
+  MLP、没有 encoder 微调、没有 MNLI。
+
+### 11.36.6 复算
+
+```bash
+# 10 个 case（2 probe ×5 outer seed），每个单独落盘
+python geometry/nested_cv_hate_l6.py --probe logreg --outer-seed 7
+python geometry/nested_cv_hate_l6.py --probe logreg --outer-seed 13
+python geometry/nested_cv_hate_l6.py --probe logreg --outer-seed 19
+python geometry/nested_cv_hate_l6.py --probe logreg --outer-seed 31
+python geometry/nested_cv_hate_l6.py --probe logreg --outer-seed 43
+python geometry/nested_cv_hate_l6.py --probe linear_svc --outer-seed 7
+python geometry/nested_cv_hate_l6.py --probe linear_svc --outer-seed 13
+python geometry/nested_cv_hate_l6.py --probe linear_svc --outer-seed 19
+python geometry/nested_cv_hate_l6.py --probe linear_svc --outer-seed 31
+python geometry/nested_cv_hate_l6.py --probe linear_svc --outer-seed 43
+
+# 合并 30 个 CI、50 个 fold、6 行汇总
+python geometry/make_nested_cv_tsv.py
+```
+
+表见 `data/wsp-classify-nested-cv-hate-l6-raw.tsv`（30 行数据、16 列：
+`dataset depth probe arm outer_seed inner_seed n_oof f32_acc arm_acc
+point_delta boot_mean ci_low ci_high verdict C_by_fold fold_deltas`）、
+`data/wsp-classify-nested-cv-hate-l6-folds.tsv`（50 行数据、10 列：
+`dataset depth probe outer_seed fold C f32_acc int3_delta int4_delta
+rescan_delta`）与 `data/wsp-classify-nested-cv-hate-l6-summary.tsv`
+（6 行数据、14 列，含 `n_pos_verdict/n_neg_verdict/n_cross/n_pos_point/
+mean_delta/sd_delta/min_delta/max_delta/C_by_seed`）。
 
 ## 12. 下一步
 
@@ -5231,6 +5373,15 @@ min_point_delta max_point_delta C_by_seed`）。
 > `[−0.0366,+2.67]pp`，仍跨 0；三个共同 C 都不显著。**matched-C 下
 > 仍没有量化档显著超过真 f32；41 个负向说明量化不是一律无损，但
 > 没有正向。** 见 §11.35。
+>
+> **M1.36 读法**：用 nested CV 复验 Hate L6 边界格。OOF train 上
+> 30 个 CI 里 2 个显著正向、0 个负向、28 个跨 0；`logreg rescan`
+> 点估计 10/10 为正，但只有 1/10 CI 整段为正（seed 7 为
+> `+0.857pp`，CI `[+0.156,+1.558]pp`），SVC `0/5`。`int3` 也是
+> 10/10 点正、1/10 显著；`int4` 9/10 点正、0/5 显著。OOF f32 为
+> `0.761–0.767`，官方 test 只有 `0.533–0.556`，约 `21pp` 分布差，
+> 不能把 OOF 弱正向搬到 test。**`rescan` 不是纯噪声，但也不是可
+> 发布增益；f32 继续是默认锚点。** 见 §11.36。
 
 - **M1.26 基线审计已完成（§11.26）**：SST-2 L12 的 `l12-pure-f32` 是
   ternary，真实 f32→int4 为 `−0.001503`（CI `[−0.012081,+0.008786]`），
