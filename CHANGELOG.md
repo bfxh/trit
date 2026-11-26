@@ -1259,6 +1259,25 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
     SVC；一个 seed；bootstrap 只重采样 test；残差是量化算子的确定性函数，
     本文是观测性拆解，不是因果证明。
 
+- **直接量化代理负对照（M1.24）**：新增
+  `scripts/wsp_classify_direct_quant.py`，对冻结 f32 embedding 直接做
+  group=1/32/384 的对称 int4 RTN，比较 `q`、`r=q−x` 和 f32 的线性
+  probe。带 `--self-test` 和 2 条 mutation 锚点（残差方向取反 / group=1
+  被强制成 per-row）。
+  - SST-2 L12：`q` 从 `0.800110` 降到 `0.787479`（g32）/`0.768259`
+    （g384）；直接残差单独 probe 在 `0.499176`（chance）。
+  - 6 组 × 3 group：残差 probe 在 chance/多数类基线（hate `0.592` 是
+    多数类基线，macro-F1 `0.372`）；残差/f32 类均值 `0–0.081`，但在
+    f32 probe 上的 margin 比只有 `−0.008` 到 `+0.005`。
+  - 结论：M1.23 的类别条件偏置不能由输出端 int4 舍入复现，依赖权重量化
+    误差在编码器里的传播路径；这是 representation-level 负对照，不是
+    权重量化器的因果消融。
+  - 表：`wsp-classify-direct-quant.tsv`（18 行：6 组 × 3 group）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.24、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.26、`LESSONS.md` 第 36 条。
+  - 边界：logreg；一个 seed；bootstrap 只重采样 test；weight per-group
+    sweep 在本机 CPU 上单档 20+ 分钟未完成，已停，不写成结论。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
