@@ -1278,6 +1278,30 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
   - 边界：logreg；一个 seed；bootstrap 只重采样 test；weight per-group
     sweep 在本机 CPU 上单档 20+ 分钟未完成，已停，不写成结论。
 
+- **残差线性算子与数据集特异几何（M1.25）**：新增
+  `scripts/wsp_classify_residual_linear.py`，只在 train 上拟合
+  `r ≈ (x−μ)W+r_μ`，在 test 上评估 `R²`、余弦、类均值放大/角度和
+  跨数据集迁移；可选 `--probe` 把 SST-2 残差拆成 `r_hat`/`r_perp` 再
+  probe。带 `--self-test` 和 2 条 mutation 锚点（残差方向取反 / 预测忘记
+  加回残差均值）。
+  - 六组 test `R²` 0.42–0.52，shuffled `R²` −0.04 到 −0.09；残差有
+    42–52% 的方差可由 f32 embedding 线性预测。
+  - 类均值响应数据集特异：SST-2 L12 放大 `1.52×`、旋转 `86.1°`，L6
+    `1.15×`、`93.7°`；CoLA/hate 压缩到 `0.21–0.23×`、旋转 `99°–108°`。
+  - 跨数据集不迁移：SST-2 算子用到 CoLA/hate 的 `R²` 是
+    `−43.4/−36.5`（L12），反过来只有 `0.016–0.031`。
+  - SST-2 残差分解：L12 `r_hat` 0.7935 / `r_perp` 0.6310；L6 0.8040 /
+    0.5837。
+  - 结论：SST-2 的正向可由“类均值方向落在被放大的方向”描述，但没有
+    一个跨数据集共同算子；这是线性代理，不是权重量化器的因果消融。
+  - 表：`wsp-classify-residual-linear.tsv`（24 行）、
+    `wsp-classify-residual-linear-probe.tsv`（6 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.25、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.27、`LESSONS.md` 第 37 条。
+  - 边界：ridge α=0.1 固定、无 CV；只读最终 384 维 embedding；无
+    bootstrap CI；一个 seed；只跑 logreg；cross-transfer 用目标数据集
+    自己的截距。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；

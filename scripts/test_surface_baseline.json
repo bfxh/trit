@@ -147,6 +147,7 @@
  "script/wsp_classify_interpolate.py": 1,
  "script/wsp_classify_pca.py": 1,
  "script/wsp_classify_residual.py": 1,
+ "script/wsp_classify_residual_linear.py": 1,
  "script/wsp_classify_rotate.py": 1,
  "script/wsp_classify_subsample.py": 1,
  "script/wsp_export_scifact.py": 1,
