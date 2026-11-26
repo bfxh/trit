@@ -1,13 +1,13 @@
-//! CSE 判据：合并化简后重新出现的同构子式，并对合并后暴露的
-//! `x ∧ x` / `x ∨ x` 走幂等律；语义与 `trit_eval` 全赋值对拍。
+//! CSE 判据：合并化简后重新出现的同构子式，并对合并后暴露的 `x ∧ x` / `x ∨ x` 走幂等律；语义与 `trit_eval` 全赋值对拍。
 
 use super::cse;
 use crate::direct::fold::fold;
 use crate::direct::ir::Op;
 use crate::direct::lower::lower;
-use trit_core::value::Ternary;
-use trit_core::{Algebra, Parser};
+use trit_core::{Algebra, Parser, value::Ternary};
 use trit_eval::eval::{Assignment, eval};
+
+mod assoc;
 
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 

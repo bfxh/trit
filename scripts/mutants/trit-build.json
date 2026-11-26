@@ -264,28 +264,12 @@
   "filter": "direct::fold::simplify::tests::idem::idempotence_aliases_to_the_operand"
  },
  {
-  "name": "cse: 交换律不排序",
-  "file": "crates/trit-build/src/direct/fold/cse.rs",
-  "old": "        Op::And(a, b) => Op::And(a.min(b), a.max(b)),",
-  "new": "        Op::And(a, b) => Op::And(a, b),",
+  "name": "cse: 结合链不重用前缀",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "        if let Some(&node) = memo.get(&key) {",
+  "new": "        if let Some(&node) = None::<&usize> {",
   "pkg": "trit-build",
-  "filter": "direct::fold::cse::tests::duplicate_and_idempotent_nodes_collapse"
- },
- {
-  "name": "cse: 同构节点不合并",
-  "file": "crates/trit-build/src/direct/fold/cse.rs",
-  "old": "        let out = match memo.get(&key) {",
-  "new": "        let out = match None::<&usize> {",
-  "pkg": "trit-build",
-  "filter": "direct::fold::cse::tests::unit_alias_then_cse_keeps_semantics"
- },
- {
-  "name": "cse: 幂等节点不别名",
-  "file": "crates/trit-build/src/direct/fold/cse.rs",
-  "old": "        if let Op::And(left, right) | Op::Or(left, right) = op\n            && left == right",
-  "new": "        if let Op::And(left, right) | Op::Or(left, right) = op\n            && false",
-  "pkg": "trit-build",
-  "filter": "direct::fold::cse::tests::duplicate_and_idempotent_nodes_collapse"
+  "filter": "direct::fold::cse::tests::assoc::mirrored_associations_share_one_chain"
  },
  {
   "name": "lattice: B3 守卫被绕过",
@@ -446,5 +430,37 @@
   "new": "    Some(if dual {\n        Op::Or(left, right)\n    } else {\n        Op::And(left, right)\n    })",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::negation::tests::both_inverted_operands_collapse_to_the_dual_operator"
+ },
+ {
+  "name": "cse: 结合链不展平",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "        Op::And(left, right) if !dual => {\n            collect(kept, left, dual, out);\n            collect(kept, right, dual, out);\n        }",
+  "new": "        Op::And(..) if !dual => {\n            out.push(index);\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::mirrored_associations_share_one_chain"
+ },
+ {
+  "name": "cse: 结合链叶子不排序",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "    leaves.sort_unstable();\n",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::mirrored_associations_share_one_chain"
+ },
+ {
+  "name": "cse: 重复叶子不去重",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "    leaves.dedup();\n",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::duplicate_leaves_collapse_by_idempotence"
+ },
+ {
+  "name": "cse: 对偶链写反",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "        kept.push(if dual {\n            Op::Or(acc, leaves[end - 1])\n        } else {\n            Op::And(acc, leaves[end - 1])\n        });",
+  "new": "        kept.push(if dual {\n            Op::And(acc, leaves[end - 1])\n        } else {\n            Op::Or(acc, leaves[end - 1])\n        });",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::dual::or_chain_keeps_dual_operator"
  }
 ]

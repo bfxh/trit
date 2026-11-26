@@ -248,11 +248,27 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse.rs",
-      "lines": 88
+      "lines": 86
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+      "lines": 57
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests.rs",
       "lines": 89
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/assoc.rs",
+      "lines": 66
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/chain.rs",
+      "lines": 46
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/dual.rs",
+      "lines": 25
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
