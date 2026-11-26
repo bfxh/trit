@@ -620,6 +620,19 @@ L12 `R12`（logreg 5/5、SVC 4/5）与 L6 `rescan`（两 probe 5/5）
 “跨域不成立”，但 target_prior 是 transductive、后验选择的条件性
 口径，不能升级为默认。**（§11.38）。
 
+M1.39 把 M1.38 的 Hate 条件性正结果拿去做预注册半分割：官方 test
+按标签 50/50 分层切开，一半未标注分数校准 target_prior、另一半标签
+评估，双向交叉，5 seeds × 2 probes。Primary accuracy 只有 L6
+`rescan` logreg 过线（10/10 正 CI，`+2.82pp`）；L6 `rescan` SVC
+7/10（`+2.45pp`）未过线，但 macro-F1 10/10。L12 `R12` logreg
+5/10（`+1.90pp`）、SVC 4/10（`+1.62pp`），都是 inconclusive。
+Default 0.5 下 `R12` 仍是 0 正 / 5 负 / 5 跨，`rescan` logreg 只有
+4 正、SVC 0 正。**半分割没有确认 `R12`，它仍是 Hate-only/
+target_prior 条件下的候选；`rescan` 只在 L6 primary 的 logreg 上
+confirmed。target_prior 仍是 transductive exploratory；半分割不是
+新语料，下一步必须换第二个 hate 数据集做预注册 confirmatory。**
+（§11.39）。
+
 ## 6. WSP-MXQ 在新排序里的位置
 
 MXQ 仍然成立，但不再是第一枪：

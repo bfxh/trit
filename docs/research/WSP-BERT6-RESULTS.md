@@ -1215,6 +1215,19 @@ bootstrap 只重采样 test，不能当独立多重检验。详见
 > 不能再写“跨域不成立”，但 target_prior 是 transductive、后验选择
 > 的条件性口径，不能升级为默认。** 详见 `WSP-BUDGET-RESULTS.md`
 > §11.38。
+>
+> **M1.39 追加**：把 M1.38 的 Hate 条件性正结果做预注册半分割。
+> 官方 test 按标签 50/50 分层切开，一半未标注分数校准 target_prior、
+> 另一半标签评估，双向交叉，5 seeds × 2 probes。Primary accuracy
+> 只有 L6 `rescan` logreg 过线（10/10 正 CI，`+2.82pp`）；L6
+> `rescan` SVC 7/10（`+2.45pp`）未过线，但 macro-F1 10/10。
+> L12 `R12` logreg 5/10（`+1.90pp`）、SVC 4/10（`+1.62pp`），
+> 都是 inconclusive。Default 0.5 下 `R12` 仍是 0 正 / 5 负 / 5 跨，
+> `rescan` logreg 只有 4 正、SVC 0 正。**半分割没有确认 `R12`；
+> `rescan` 只在 L6 primary 的 logreg 上 confirmed。target_prior
+> 仍是 transductive exploratory；半分割不是新语料，下一步必须换
+> 第二个 hate 数据集做预注册 confirmatory。** 详见
+> `WSP-BUDGET-RESULTS.md` §11.39。
 
 M1.23 直接看 `r = x_int4 − x_f32`。SST-2 L12 上只用 `r` 训练同一个线性
 probe 就有 `0.832510`，比 f32 `0.800110` 高 `+3.23pp`，接近 int4

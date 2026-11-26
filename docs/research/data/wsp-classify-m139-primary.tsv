@@ -1,0 +1,5 @@
+dataset	depth	probe	arm	n_pos_ci	n_eval_ci	mean_delta	sd_delta	min_delta	max_delta	verdict
+hate	l12	logreg	r12	5	10	0.019020	0.003855	0.015362	0.022677	inconclusive
+hate	l12	linear_svc	r12	4	10	0.016167	0.009179	0.002195	0.026335	inconclusive
+hate	l6	logreg	rescan	10	10	0.028237	0.004296	0.025604	0.040234	confirmed
+hate	l6	linear_svc	rescan	7	10	0.024506	0.003890	0.020483	0.030724	inconclusive

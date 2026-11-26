@@ -148,6 +148,33 @@
 - 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算行与未验证清单。
 
 诚实边界：仍只覆盖组合逻辑与单一选中输出；没有综合、时序/面积收敛与门级优化。
+### Changed（M1.39：Hate 目标先验的预注册半分割 confirmatory）
+
+- 在既有 TweetEval/hate 官方 test 上预注册 50/50 标签分层半分割
+  （split seed `101`，预注册文件先于结果提交）。一半 test 分数只用于
+  target_prior 校准，另一半标签只用于评估，双向交叉；5 seeds
+  `7/13/19/31/43` × 2 probes × 4 臂 × 2 规则（default / target_prior）。
+  仍冻结编码器、只训练线性 probe；C 只由真 f32 的 train 内 5 折选。
+- Primary accuracy：L12 `R12` logreg 5/10 正 CI（`+1.9020pp`）、
+  SVC 4/10（`+1.6167pp`），均 inconclusive；L6 `rescan` logreg
+  10/10（`+2.8237pp`）confirmed、SVC 7/10（`+2.4506pp`）
+  inconclusive。Macro-F1 次要口径：L12 `R12` 5/10、4/10；L6
+  `rescan` 两 probe 均 10/10（`+2.8345/+2.5372pp`）。
+- Default 0.5 下 L12 `R12` 仍是 0 正 / 5 负 / 5 跨（logreg
+  `−1.3533pp`、SVC `−1.4411pp`）；L6 `rescan` logreg `+1.0534pp`
+  （4 正）、SVC `+0.6072pp`（0 正）。target_prior 相对 default
+  分别抬 `+3.26/+3.06pp` 与 `+1.77/+1.84pp`。
+- 判决：**半分割没有确认 `R12`，它仍是 Hate-only、target_prior
+  条件下的候选；`rescan` 只在 L6 primary 的 logreg accuracy 上
+  confirmed，SVC accuracy 未过线但 macro-F1 10/10。target_prior
+  仍是 transductive exploratory，不是默认协议。半分割只分开校准
+  分数与评估标签，没有换语料；不能替代第二个 hate 数据集的独立
+  confirmatory。**
+- 新增 `docs/research/scripts/wsp_m139/split_half_confirm.py`，以及
+  `data/wsp-classify-m139-prereg.json`、`-split.tsv`、`-raw.tsv`
+  （240 行）、`-summary.tsv`（24 行）、`-primary.tsv`（4 行）、
+  `-raw-macro.tsv`（240 行）、`-summary-macro.tsv`（24 行）。
+
 ### Changed（M1.38：Hate 域/阈值分解与目标先验阈值复验）
 
 - 对 Hate 的 20–22pp 差距做三组拆分：train/test 文本域分类器、
