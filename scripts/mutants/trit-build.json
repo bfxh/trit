@@ -653,7 +653,7 @@
   "old": "        names[index] = Some(next);",
   "new": "        names[index] = Some(index);",
   "pkg": "trit-build",
-  "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
+  "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
  },
  {
   "name": "inline: 深度不封顶",
@@ -662,6 +662,14 @@
   "new": "",
   "pkg": "trit-build",
   "filter": "direct::emit::inline::tests::depth::depth_cap_keeps_deep_leaves_declared"
+ },
+ {
+  "name": "emit: 根节点仍落临时变量",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "    inlined[ops.len() - 1] = true;",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
  },
  {
   "name": "inline: 不递归下钻",

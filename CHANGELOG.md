@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（第四十八轮：direct 根节点直返）
+
+- `direct/emit/inline/plan.rs`：根节点也标记为不发射，`direct.c` 直接写成 `return <根表达式>;`，
+  不再先落 `tN` 再 `return tN`。其余单用内联规则、深度 3 封顶、扇出节点单独落变量均不变；
+  `nvars` 不足仍按 X fail-closed 返回 0。
+- 读数（同机，`.tri` 源；字节数为整个 `direct.c`）：`(a & b) | c` 661→641 B、1→0 条临时语句；
+  `((a & b) | c) & (d | e)` 716→696 B、1→0 条；`((a => b) <=> (!a | b)) ^ c` 773→753 B、2→1 条；
+  11 变量混合式 1273→1251 B、11→10 条；深链 `a & (b | (c & (d | (e & f))))` 784→764 B、3→2 条；
+  `!a` 486→466 B、1→0 条。
+- 判据：`cargo test -p trit-build` 129 单元 + 全部集成测试通过；既有语句数断言同步改为
+  「根不落临时语句」，并增加根 `return` 形状断言；三代数 `--verify-c` 在 11 变量
+  （3^11 = 177147 行）上逐行一致；`mutation_check --pkg trit-build` 85/85 caught。
+- 边界：只改变根节点的落盘形状，不改变表达式语义、算子表集合与函数入口检查。
+
 ### Added（第四十七轮：direct 单用节点递归内联）
 
 - `direct/emit/inline/plan.rs`：内联决策从「只沿 `Not` 的操作数锥」扩成「从每个会发射的

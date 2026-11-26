@@ -2,7 +2,7 @@
 //!
 //! 单用节点的内联决策与表达式展开在 `inline`：节点只被这一处引用时，不再单独落
 //! 临时变量，沿单用操作数递归并进父语句（深度 3）；扇出节点仍单独成变量，网表
-//! 扇出不复制。内联后临时变量重编号为连续 `t0..tn`。
+//! 扇出不复制。根节点直接由 `return` 展开，也不再落临时变量。
 
 use trit_core::Algebra;
 
@@ -135,8 +135,8 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
         text.push_str(&line);
         next += 1;
     }
-    text.push_str("    return t");
-    text.push_str(&names[ops.len() - 1].expect("根节点一定发语句").to_string());
+    text.push_str("    return ");
+    text.push_str(&inline::expr(&ops, &names, &inlined, ops.len() - 1));
     text.push_str(";\n}\n");
     text
 }

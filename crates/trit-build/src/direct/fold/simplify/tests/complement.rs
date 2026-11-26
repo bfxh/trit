@@ -103,14 +103,14 @@ fn complement_elimination_drops_redundant_tables() {
     let expr = Parser::parse("a & (!a | b)").expect("解析");
     let vars = expr.variables();
     let c = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
-    assert_eq!(c.matches("    int8_t t").count(), 1, "{c}");
+    assert_eq!(c.matches("    int8_t t").count(), 0, "{c}");
     assert!(!c.contains("T_NOT") && !c.contains("T_OR"), "{c}");
     assert!(c.contains("T_AND"), "{c}");
 
     let expr = Parser::parse("a | (!a & b)").expect("解析");
     let vars = expr.variables();
     let c = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
-    assert_eq!(c.matches("    int8_t t").count(), 1, "{c}");
+    assert_eq!(c.matches("    int8_t t").count(), 0, "{c}");
     assert!(!c.contains("T_NOT") && !c.contains("T_AND"), "{c}");
     assert!(c.contains("T_OR"), "{c}");
 }

@@ -105,10 +105,10 @@ fn lukasiewicz_complement_collapses_but_k3_and_bochvar_stay() {
 #[test]
 fn strong_add_c_tables_follow_the_dispatch() {
     for (alg, source, statements, has_table) in [
-        (Algebra::Kleene, "a ^ 1", 1, false),
-        (Algebra::Kleene, "a ^ 0", 1, true),
-        (Algebra::Lukasiewicz, "a ^ 0", 1, false),
-        (Algebra::Lukasiewicz, "a ^ 1", 1, false),
+        (Algebra::Kleene, "a ^ 1", 0, false),
+        (Algebra::Kleene, "a ^ 0", 0, true),
+        (Algebra::Lukasiewicz, "a ^ 0", 0, false),
+        (Algebra::Lukasiewicz, "a ^ 1", 0, false),
     ] {
         let expr = Parser::parse(source).expect("解析");
         let vars = expr.variables();

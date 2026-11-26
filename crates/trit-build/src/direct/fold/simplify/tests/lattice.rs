@@ -59,7 +59,7 @@ fn non_absorbing_forms_stay() {
     }
 }
 
-/// 渲染面：K3/Ł3 吸收后只剩一条取变量语句，不注册任何算子表；B3 仍要表。
+/// 渲染面：K3/Ł3 吸收后根节点直接返回变量，不注册任何算子表；B3 仍要表。
 #[test]
 fn absorbing_c_has_one_statement_and_no_tables() {
     for alg in [Algebra::Kleene, Algebra::Lukasiewicz] {
@@ -69,7 +69,7 @@ fn absorbing_c_has_one_statement_and_no_tables() {
             let c = emit(&expr, &vars, alg).expect("生成");
             assert_eq!(
                 c.matches("    int8_t t").count(),
-                1,
+                0,
                 "{source} {alg:?}: {c}"
             );
             assert!(
