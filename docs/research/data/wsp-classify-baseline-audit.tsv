@@ -1,6 +1,6 @@
 dataset	depth	metric	kind	left	right	value	ci_low	ci_high	extra
 sst2	l12	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	0.316900			first5_cos_range=0.2790-0.3823
-sst2	l6	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	0.981600			first5_cos_range=0.9690-0.9873;L6_model=all-MiniLM-L6-v2
+sst2	l6	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	0.373686			cos_min=0.084716;cos_max=0.621769;max_abs_diff=0.397101;n=8741;L6_model=all-MiniLM-L6-v2;M1.28_full
 sst2	l12	provenance	official_pure_f32_vs_ternary	official-pure-f32	tiny-bits2	1.000000			first5_cos=1.0_exact
 sst2	l12	provenance	official_int4_vs_true_bits4	official-int4	true-bits4				max_abs_diff=1.83e-07
 cola	l12	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32				max_abs_diff=2.09e-07
@@ -40,3 +40,18 @@ hate	l12	accuracy	arm	true-f32		0.574250			C=1
 hate	l12	accuracy	arm	true-bits4		0.571690			C=1
 hate	l12	accuracy	delta	true-bits4	true-f32	-0.002560	-0.011704	0.006584	logreg
 hate	l12	accuracy	delta	official-int4	official-pure-f32	-0.002560			official_arms
+sst2	l6	provenance	official_pure_f32_vs_ternary	official-pure-f32	true-ternary	0.99999976			cos_min=0.99999905;cos_max=1.0000001;max_abs_diff=0.00116657;n=8741;M1.28_full
+sst2	l6	provenance	official_int4_vs_true_bits4	official-int4	true-bits4				max_abs_diff=1.83e-07;n=8741;M1.28_full
+sst2	l6	provenance	true_f32_vs_true_bits4	true-f32	true-bits4	0.948531			cos_min=0.821476;cos_max=0.972609;max_abs_diff=0.112170;n=8741;M1.28_full
+sst2	l6	accuracy	arm	true-f32		0.811642			C=1,logreg
+sst2	l6	accuracy	arm	true-bits4		0.806700			C=1,logreg
+sst2	l6	accuracy	arm	official-pure-f32		0.795717			C=10,logreg
+sst2	l6	accuracy	arm	official-int4		0.806700			C=1,logreg
+sst2	l6	accuracy	delta	true-bits4	true-f32	-0.004964	-0.013729	0.003844	logreg,M1.28
+sst2	l6	accuracy	delta	official-int4	official-pure-f32	0.010811	-0.009336	0.030752	logreg,M1.28
+sst2	l6	accuracy	delta	official-pure-f32	true-f32	-0.015775	-0.035695	0.004393	logreg,M1.28
+sst2	l6	accuracy	delta	true-bits4	official-int4	0.000000	0.000000	0.000000	logreg,M1.28
+sst2	l6	accuracy_svc	delta	true-bits4	true-f32	-0.006079	-0.014827	0.002746	LinearSVC,M1.28
+sst2	l6	accuracy_svc	delta	official-int4	official-pure-f32	0.002492	-0.017573	0.023064	LinearSVC,M1.28
+sst2	l6	accuracy_svc	delta	official-pure-f32	true-f32	-0.008571	-0.028556	0.011532	LinearSVC,M1.28
+sst2	l6	accuracy_svc	delta	true-bits4	official-int4	0.000000	0.000000	0.000000	LinearSVC,M1.28
