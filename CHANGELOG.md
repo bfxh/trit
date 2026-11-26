@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Fixed（M1.28：SST-2 L6 基线标签）
+
+- 用 `all-MiniLM-L6-v2` 全量生成真 f32 / 真 bits4 / 真 ternary，并与官方
+  `l6-pure-f32-c*.f32` / `l6-int4-c*.f32` 逐行核对：官方 `l6-pure-f32`
+  与 L6 真 ternary 余弦 `0.99999976`（max abs diff `1.17e-3`），与真 f32
+  只有 `0.373686`；官方 `l6-int4` 与真 bits4 的 max abs diff 为
+  `1.83e-7`。M1.26 的“L6 未发现 ternary”作废，SST-2 L6 的 `f32` 标签
+  同样是 ternary。
+- 重算 L6 分类头（train 6,920 / test 1,821，冻结编码器 + 线性 probe，
+  5 折选 C，10k paired bootstrap）：真 f32 / 真 bits4 / 官方 ternary /
+  官方 int4 的 logreg accuracy 为 `0.811642 / 0.806700 / 0.795717 /
+  0.806700`；真 bits4−真 f32 为 `−0.004964`（CI `[−0.013729,+0.003844]`），
+  官方 int4−官方 ternary 为 `+0.010811`（CI `[−0.009336,+0.030752]`），
+  真 bits4−官方 int4 为 `0`（逐条预测相同）。SVC 同向：真差值
+  `−0.006079`（CI `[−0.014827,+0.002746]`），官方差值 `+0.002492`
+  （CI `[−0.017573,+0.023064]`）。L6 的旧 `int4−f32≈+0.0060` 也是
+  ternary→4-bit 恢复，不是 int4 超过真 f32。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 的 L6 行改为全量
+  读数并补 15 行（provenance、arm、logreg/SVC delta），共 56 行；
+  `WSP-BUDGET-RESULTS.md` 新增 §11.28，并修正 §11.26 的 L6 边界与 §12
+  的读法；`WSP-BERT6-RESULTS.md` §3.16.25 追加 M1.28 修正。
+- `docs/results/LESSONS.md` 新增第 43–44 条：5 条样本不能给标签定性；
+  标签错误可能在同一数据集的多个深度重复。
+
 ### Fixed（M1.27：残差矩阵严格复核）
 
 - `scripts/wsp_classify_residual.py` 的 test 侧类均值/组内置换不再使用
@@ -1329,10 +1353,11 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
     M1.23 的 `1.594× / +0.068` 属于 ternary→4-bit。CoLA/Hate 也是
     压缩（`0.250/0.220×`、`cos −0.473/−0.301`），没有 SST-2 特异放大。
   - CoLA 真 f32→int4 macro-F1 `+0.012073`（CI 跨 0）；Hate
-    `−0.002560`（CI 跨 0）。只有 SST-2 的 f32 基线坏了，CoLA/hate
-    旧结论保留；SST-2 L6 是另一模型 `all-MiniLM-L6-v2`，首 5 条与真
-    f32 余弦 `0.97–0.99`，未发现同错，暂不新增结论。
-  - 表：`docs/research/data/wsp-classify-baseline-audit.tsv`（41 行）。
+    `−0.002560`（CI 跨 0）。当时判断只有 SST-2 的 L12 f32 基线坏了，
+    CoLA/hate 旧结论保留；SST-2 L6 首 5 条与真 f32 余弦 `0.97–0.99`，
+    未发现同错。**M1.28 后作废：L6 也是 ternary，见上条 M1.28 条目。**
+  - 表：`docs/research/data/wsp-classify-baseline-audit.tsv`（M1.26 时 41 行，
+    M1.28 后 56 行）。
     文档：`WSP-BUDGET-RESULTS.md` §11.26（§11.12–§11.25 加修正横幅）、
     `WSP-ALT.md` §5.5、`WSP-BERT6-RESULTS.md` §3.16.25、
     `LESSONS.md` 第 38–40 条。
