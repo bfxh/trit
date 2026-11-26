@@ -1151,6 +1151,12 @@ bootstrap 只重采样 test，不能当独立多重检验。详见
 > 只有 `+1.24pp/+0.93pp` 点估计且 CI 跨 0；hate 的 `R12`/`int3`/`int4`
 > 多处 CI 整段为负。SST-2 的 `int4` 正向没有跨到这两个任务，
 > `R12`/`rescan` 也没有分类增益。详见 `WSP-BUDGET-RESULTS.md` §11.31。
+>
+> **M1.32 追加**：CoLA/hate 的 L6 官方 `l6-int4` 已全量 9,594 / 11,719
+> 行确认真 bits4（余弦 `1.00000000`，max abs diff `1.64e-7 / 1.53e-7`，
+> 全部行 ≤`1e-6`）。补跑 `true-bits4` 分类臂后，CoLA L6 `−0.94pp`、
+> hate L6 `−1.55pp`（logreg）的方向不变，hate 的 CI 仍整段为负；
+> M1.31 的 L6 读数无需修改。详见 `WSP-BUDGET-RESULTS.md` §11.32。
 
 M1.23 直接看 `r = x_int4 − x_f32`。SST-2 L12 上只用 `r` 训练同一个线性
 probe 就有 `0.832510`，比 f32 `0.800110` 高 `+3.23pp`，接近 int4
