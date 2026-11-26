@@ -1,0 +1,92 @@
+{
+  "run": "M1.42",
+  "status": "preregistered_before_model_scores",
+  "created_at_local": "2026-11-26T23:59:00+08:00",
+  "title": "Fit-only threshold transport on TweetEval/hate",
+  "parent": ["M1.38", "M1.41"],
+  "question": "M1.38 的 target_prior rescue 使用 test 分数分位点（transductive）；把阈值换成 fit 内 OOF 分位点后，candidate gain 和绝对 accuracy 是否还在？",
+  "dataset": {
+    "name": "TweetEval/hate",
+    "clean_rows": {"fit": 8985, "test": 2734},
+    "label_mapping": "hate=1; non-hate=0",
+    "note": "same corpus as M1.15/M1.38; no new corpus."
+  },
+  "modeling": {
+    "depth_arms": {"l12": ["f32", "r12"], "l6": ["f32", "rescan"]},
+    "probes": ["logreg", "linear_svc"],
+    "seeds": [7, 13, 19, 31, 43],
+    "c_grid": [0.01, 0.1, 1.0, 10.0],
+    "c_selection": "f32 only, 5-fold StratifiedKFold on fit, accuracy; f32 and quantized arm share C",
+    "encoder": "frozen all-MiniLM-L12-v2 / all-MiniLM-L6-v2, seq 64"
+  },
+  "rules": {
+    "default": {"threshold": {"logreg": 0.5, "linear_svc": 0.0}},
+    "global_test_prior": {
+      "threshold": "quantile(all test scores, 1 - prior_fit)",
+      "uses_test_scores": true,
+      "uses_test_labels": false
+    },
+    "global_fit_prior": {
+      "threshold": "quantile(out-of-fold fit scores, 1 - prior_fit)",
+      "uses_test_scores": false,
+      "uses_test_labels": false,
+      "note": "deployable control; OOF folds are the same 5 folds used for C selection"
+    }
+  },
+  "hypotheses": {
+    "H1_threshold_transport": {
+      "statement": "On f32, global_fit_prior overall accuracy is close to global_test_prior; a large negative gap means the M1.38 rescue depends on test score distribution.",
+      "role": "secondary descriptive"
+    },
+    "H2_candidate_transport": {
+      "statement": "Under global_fit_prior, the quantized arm minus f32 remains positive for the M1.38 candidate cells (L12 R12, L6 rescan), i.e. the gain is deployable without test scores.",
+      "role": "primary"
+    },
+    "H3_absolute_calibration": {
+      "statement": "global_fit_prior does not collapse absolute accuracy relative to default; report the gap descriptively.",
+      "role": "secondary"
+    }
+  },
+  "primary_endpoint": {
+    "metric": "accuracy",
+    "scope": "full test",
+    "comparison": "arm - f32 under global_fit_prior",
+    "units": "depth x probe x seed; 2 depths x 2 probes x 5 seeds = 20 cells",
+    "bootstrap": "10,000 paired bootstrap, 95% percentile CI",
+    "verdict": {
+      "retained": "for each depth/probe family, >=4/5 positive CIs and 5-seed mean > 0",
+      "partially_retained": "one probe family meets retained, the other has >=2/5 positive CIs",
+      "not_retained": "both probe families have <=1/5 positive CIs",
+      "otherwise": "inconclusive"
+    },
+    "note": "This is a transport test, not a new candidate confirmation; the same TweetEval test is reused."
+  },
+  "secondary_endpoints": [
+    "global_fit_prior - global_test_prior on f32 overall accuracy",
+    "global_fit_prior - default and global_test_prior - default on f32 overall accuracy",
+    "macro-F1 for all rules",
+    "predicted positive rate and threshold by rule",
+    "candidate arm - f32 under default and global_test_prior, for direct comparison to M1.38"
+  ],
+  "independence_and_boundaries": {
+    "seeds": "5 seeds share the same test texts and often the same C; not independent repeats.",
+    "corpus": "single TweetEval/hate test, n=2,734; this does not add cross-corpus evidence.",
+    "m1_38_reference": {
+      "l12_r12_logreg": 0.018288,
+      "l12_r12_linear_svc": 0.016825,
+      "l6_rescan_logreg": 0.027213,
+      "l6_rescan_linear_svc": 0.025457,
+      "note": "M1.38 full-test target_prior 5-seed means; reference only, not a paired comparison."
+    },
+    "candidate": "M1.38/M1.39/M1.40 already rejected or left inconclusive; M1.42 asks whether the threshold is deployable, not whether the candidate is confirmed."
+  },
+  "artifacts": {
+    "scripts": ["docs/research/scripts/wsp_m142/fit_only_threshold.py"],
+    "data": [
+      "docs/research/data/wsp-classify-m142-raw.tsv",
+      "docs/research/data/wsp-classify-m142-compare.tsv",
+      "docs/research/data/wsp-classify-m142-primary.tsv"
+    ]
+  },
+  "prereg_commit_policy": "Committed before running model-score or accuracy computation."
+}
