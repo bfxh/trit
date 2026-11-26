@@ -417,6 +417,19 @@
     `data/wsp-classify-residual-linear.tsv` 与
     `wsp-classify-residual-linear-probe.tsv`，正文见 §11.25。
 
+38. **`pure-f32` 是文件名，不是语义标签**。`bert6` 每次运行都先落
+    `pure-f32.f32`；若在量化模式（`TRIT_WEIGHT_BITS=2`）之后把它复制成
+    `l12-pure-f32`，得到的就是 ternary 输出。任何跨档差值都要先用 tiny
+    样本把标签钉住，不能只看文件名（M1.26）。
+
+39. **同一个 tag 在不同数据集可能不同源**。SST-2 的 `l12-pure-f32` 是
+    ternary，CoLA/hate 的同名文件只差 `2.1e-7`（f32 舍入量级）。基线
+    审计必须按数据集做，不能由一条数据集的错误推断全部历史表（M1.26）。
+
+40. **先确认现象存在，再解释几何**。M1.23–M1.25 的 SST-2 放大几何描述
+    的是 ternary→4-bit；真实 f32→4-bit 是压缩（`0.191×`、`cos −0.353`）。
+    差值方向错了，后面的机制解释会整体反向（M1.26）。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter
