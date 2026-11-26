@@ -1,0 +1,95 @@
+{
+  "run": "M1.46",
+  "status": "preregistered_before_model_scores",
+  "created_at_local": "2026-11-27T12:10:00+08:00",
+  "title": "Fit-balanced linear probes as a prior-free decision rule",
+  "parent": "M1.41/M1.42/M1.45",
+  "question": "M1.41-M1.45 的 default / test-prior / fit-prior 阈值都没有在低 hate 先验语料上给出可部署的改进。M1.42 已证明 fit-prior 分位点不能搬运，M1.45 显示 5.7% 先验下 default 阈值几乎不预测 hate。M1.46 改问一个 inductive、决策时不依赖 test 分数/先验的问题：只用 fit 标签估计类别权重（class_weight=balanced），固定默认阈值，是否能在 HateXplain、TweetEval/hate、Davidson 三个语料上提高 macro-F1 与 hate recall，并且量化臂相对 f32 是否仍保持质量？",
+  "motivation": {
+    "prior_free": "决策时只使用 fit 标签与固定阈值；不使用 test 分数分位点、test 先验或 test 标签。类别权重在 fit 内估计，属于 inductive cost-sensitive learning，不是 transductive 阈值匹配。",
+    "why_balanced": "低先验语料上 accuracy 被多数类主导，default 阈值 hate recall 只有 3.9%-20.0%（M1.45）。balanced 重加权是标准线性 probe 修正，不改变冻结编码器，也不引入 MLP/微调。",
+    "not_a_threshold_tweak": "本轮不做阈值搜索、不做 calibration、不做 target_prior；只比较同一 C 下的 unweighted 与 balanced 两个 probe。"
+  },
+  "corpora": [
+    {
+      "name": "HateXplain",
+      "root": "D:/trit-results/hatexplain",
+      "texts": "texts-l12.json",
+      "rows": 19188,
+      "fit": 17270,
+      "test": 1918,
+      "binary_mapping": "hate=1; normal+offensive=0",
+      "arms": {"l12": ["f32", "r12"], "l6": ["f32", "rescan"]}
+    },
+    {
+      "name": "TweetEval/hate",
+      "root": "D:/trit-results/tweet-hate",
+      "texts": "texts-l12.json",
+      "rows": 11719,
+      "fit": 8985,
+      "test": 2734,
+      "binary_mapping": "hate=1; non-hate=0",
+      "arms": {"l12": ["f32", "r12"], "l6": ["f32", "rescan"]}
+    },
+    {
+      "name": "Davidson",
+      "root": "D:/trit-results/davidson",
+      "texts": "texts-l12.json",
+      "rows": 24781,
+      "fit": 19825,
+      "test": 4956,
+      "binary_mapping": "class=0 hate -> 1; offensive+neither -> 0",
+      "arms": {"l12": ["f32", "r12"], "l6": ["f32", "rescan"]}
+    }
+  ],
+  "modeling": {
+    "encoder": "frozen all-MiniLM-L12-v2 / all-MiniLM-L6-v2",
+    "seq_len": 64,
+    "probes": ["logreg", "linear_svc"],
+    "seeds": [7, 13, 19, 31, 43],
+    "c_grid": [0.01, 0.1, 1.0, 10.0],
+    "c_selection": "f32 only, 5-fold StratifiedKFold on fit, unweighted accuracy; C is selected once per corpus/depth/probe/seed and shared by unweighted, balanced, and quantized arms",
+    "probe_settings": {
+      "unweighted": {
+        "logreg": "LogisticRegression(C=c, max_iter=5000, solver=lbfgs, random_state=7)",
+        "linear_svc": "LinearSVC(C=c, max_iter=10000, random_state=7, tol=1e-4)"
+      },
+      "balanced": {
+        "logreg": "LogisticRegression(C=c, class_weight=balanced, max_iter=5000, solver=lbfgs, random_state=7)",
+        "linear_svc": "LinearSVC(C=c, class_weight=balanced, max_iter=10000, random_state=7, tol=1e-4)"
+      }
+    },
+    "threshold": {
+      "logreg": 0.5,
+      "linear_svc": 0.0,
+      "uses_test_scores": false,
+      "uses_test_labels": false
+    }
+  },
+  "design": {
+    "rules": ["unweighted", "balanced"],
+    "arms": "same as corpora: l12 f32/r12, l6 f32/rescan",
+    "primary_cells": "3 corpora x 2 depths x 2 probes = 12 cells",
+    "primary_contrast": "balanced f32 - unweighted f32, macro-F1, full test",
+    "primary_bootstrap": "10,000 paired test-level bootstrap, 95% two-sided CI, per cell",
+    "primary_verdict": "a cell is supported if 5/5 seed CIs are entirely above 0; directional if 4/5; otherwise not_supported. The rule is supported if at least 10/12 cells are supported and every corpus has at least 3/4 supported cells.",
+    "secondary": [
+      "accuracy, hate recall, non-hate recall, predicted positive rate for both rules and all arms",
+      "balanced arm - balanced f32 macro-F1/accuracy: does quantization retain quality under the prior-free rule",
+      "unweighted vs balanced for the quantized arm: does the rule change the arm ranking",
+      "per-corpus prior and predicted positive rate to diagnose calibration vs reweighting"
+    ]
+  },
+  "boundaries": [
+    "No test-prior, target_prior, fit-prior quantile, calibration curve, or threshold search.",
+    "No MLP, no encoder fine-tuning, no MNLI.",
+    "No new corpus or new embedding; reuse M1.41/M1.42/M1.45 encodings.",
+    "Balanced class weights are estimated from fit labels only; this is inductive, not transductive.",
+    "Candidate line remains closed: even if balanced improves f32 macro-F1, a quantized candidate must pass a separate preregistered confirmatory before upgrade."
+  ],
+  "expected_readout": {
+    "if_supported": "Report balanced as a valid prior-free decision rule and report whether it closes the low-recall gap without a quantized gain.",
+    "if_not_supported": "Report that class weighting does not transport across these corpora and keep default/f32 as the anchor.",
+    "never": "Do not call balanced a candidate rescue, a calibration fix, or a universal default without cross-corpus support."
+  }
+}
