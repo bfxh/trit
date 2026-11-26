@@ -71,7 +71,7 @@ fn resolve_algebra(name: &str) -> Result<Algebra> {
 }
 
 /// 构建工具版本（参与缓存键；产物格式变了就 bump）。
-const BUILD_VERSION: u32 = 26;
+const BUILD_VERSION: u32 = 27;
 /// 允许穷举的变量上限（3^12 = 531,441）。
 const MAX_BUILD_VARS: u32 = 12;
 

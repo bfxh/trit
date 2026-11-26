@@ -633,17 +633,17 @@
  },
  {
   "name": "emit: 单用取反子式不内联",
-  "file": "crates/trit-build/src/direct/emit.rs",
-  "old": "        if uses[inner] == 1 && is_binary(&ops[inner]) {",
-  "new": "            if false {",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
+  "new": "    if true {",
   "pkg": "trit-build",
   "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
  },
  {
   "name": "emit: 多用子式也内联",
-  "file": "crates/trit-build/src/direct/emit.rs",
-  "old": "        if uses[inner] == 1 && is_binary(&ops[inner]) {",
-  "new": "        if is_binary(&ops[inner]) {",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
+  "new": "    if depth > MAX_INLINE_DEPTH || uses[index] == 0 || inlined[index] {",
   "pkg": "trit-build",
   "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
  },
@@ -654,6 +654,22 @@
   "new": "        names[index] = Some(index);",
   "pkg": "trit-build",
   "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
+ },
+ {
+  "name": "inline: 深度不封顶",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
+  "new": "    if uses[index] != 1 || inlined[index] {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::depth_cap_keeps_deep_leaves_declared"
+ },
+ {
+  "name": "inline: 不递归下钻",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "            mark(uses, inlined, ops, left, depth + 1);\n            mark(uses, inlined, ops, right, depth + 1);",
+  "new": "            let _ = (left, right);",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::multilevel_single_use_cone_fits_one_statement"
  }
 ]
 
