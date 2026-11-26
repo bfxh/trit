@@ -248,7 +248,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
-      "lines": 101
+      "lines": 95
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/build.rs",
@@ -261,6 +261,10 @@
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/absorb.rs",
       "lines": 43
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/idem.rs",
+      "lines": 62
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests.rs",

@@ -8,10 +8,12 @@
   `Algebra` 现算成 `Op::Const`，后续引用它的节点继续折；`Xor2` 走
   `GateKind::XorClassic.eval`，不借用 `strong_add` 的表。
 - `direct/fold/simplify.rs`：常量驱动的恒等式化简。三种代数通用
-  `x ∧ T = x`、`x ∨ F = x`（别名到操作数）、`¬¬x = x`；K3/Ł3 额外做吸收律
-  `x ∧ F = F`、`x ∨ T = T`。别名通过 `resolve` 表压平，最后 `prune_dead` 统一收孤儿；
-  不做 `x ∧ x = x`（Ł3 下 `U ∧ U = F`），也不碰 `=>` / `<=>` 的常量律
+  `x ∧ T = x`、`x ∨ F = x`（别名到操作数）、`¬¬x = x`、`x ∧ x = x`、
+  `x ∨ x = x`（后两条是幂等律）。K3/Ł3 额外做吸收律 `x ∧ F = F`、`x ∨ T = T`。
+  别名通过 `resolve` 表压平，最后 `prune_dead` 统一收孤儿；不碰 `=>` / `<=>` 的常量律
   （K3 与 Ł3 的蕴含表不同）。
+- 更正：`∧` / `∨` 在 K3/Ł3 是格序 min/max，`U ∧ U = U`、`U ∨ U = U`，所以幂等律三代数通用；
+  Ł3 的强合取 `⊗` 才有 `U ⊗ U = F`，不要与 `∧` 混淆。
 - 负结果：B3 的 U 传染，`U ∧ F = U`、`U ∨ T = U`，所以吸收律按代数分派，B3 保留原式；
   `simplify/tests/absorb.rs` 用反例钉住。辅助函数拆到 `simplify/build.rs` 以守行数台账。
 - 判据：全常量树（`((1 & X) | !0) <=> (X => 0)`）在 K3/Ł3/B3 下都塌成 **一条 `Const`**，
@@ -19,10 +21,11 @@
   与 `trit_eval` 一致；`Xor2` 的 3×3 常量表逐格与 `GateKind::XorClassic` 一致。
 - 读数：同一 3 输入 Verilog 网表（`assign z = 1'b1 & 1'b0`）**16→14→12 条语句、
   1331→1267→1203 B**（K3，折叠后接恒等式化简）；K3/Ł3 的 `a & 0` / `a | 1`
-  只剩一条常量语句，B3 仍保留 `T_AND` / `T_OR`。12 变量 `direct --verify-c` 折叠前后
+  只剩一条常量语句，B3 仍保留 `T_AND` / `T_OR`；`a & a` / `a | a` 在三种代数下
+  都只剩一条取变量语句。12 变量 `direct --verify-c` 折叠前后
   `direct.c` 同为 1418 B，531,441/531,441 行通过，墙钟 0.42→0.41 s、RSS 46172→46124 KB
   （变量表达式不产常量节点）。
-- `BUILD_VERSION` 7 → 9：折叠与按代数分派的吸收律都会改变 `direct.c` 的语句数，旧缓存失效。
+- `BUILD_VERSION` 7 → 10：折叠、代数分派吸收律与幂等律都会改变 `direct.c` 的语句数，旧缓存失效。
 - 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算架构行、实测行与边界。
 
 诚实边界：折叠/化简只减少常量与单位元节点，不做代数恒等式全集、不重排算子；Verilog 侧

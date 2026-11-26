@@ -6,9 +6,9 @@ use trit_core::Algebra;
 use trit_core::Parser;
 use trit_core::value::Ternary;
 mod absorb;
+mod idem;
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
-
 /// 每种代数、每个值都成立的三条规则；吸收律只在 K3/Ł3 成立。
 #[test]
 fn laws_hold_for_every_value_and_algebra() {

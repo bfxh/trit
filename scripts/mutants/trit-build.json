@@ -254,5 +254,21 @@
   "new": "                if false",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::absorb::absorption_is_only_for_k3_and_lukasiewicz"
+ },
+ {
+  "name": "simplify: 与幂等律不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify.rs",
+  "old": "                } else if left == right || consts[left] == Some(Ternary::True) {",
+  "new": "                } else if consts[left] == Some(Ternary::True) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::idem::idempotence_aliases_to_the_operand"
+ },
+ {
+  "name": "simplify: 或幂等律不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify.rs",
+  "old": "                } else if left == right || consts[left] == Some(Ternary::False) {",
+  "new": "                } else if consts[left] == Some(Ternary::False) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::idem::idempotence_aliases_to_the_operand"
  }
 ]

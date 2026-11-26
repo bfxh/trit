@@ -1,13 +1,7 @@
-//! 常量驱动的恒等式化简：只做三种代数下可证的格律。
-//!
-//! - `x ∧ T = x`、`x ∨ F = x`（单位律，结果别名到操作数）；
-//! - `¬¬x = x`（对合律）；
-//! - K3/Ł3 额外做吸收律 `x ∧ F = F`、`x ∨ T = T`；B3 的 U 传染
-//!   （`U ∧ F = U`、`U ∨ T = U`），所以 B3 保留原式。
-//!
-//! 不做 `x ∧ x = x` / `x ∨ x = x`：K3 下 `U ∧ U = U`，Ł3 下 `U ∧ U = F`；
-//! 也不碰 `=>` / `<=>` 的常量律，K3 与 Ł3 的蕴含表不同。
-//! 规则由 `tests.rs` 对 3 种代数 × 3 个值逐条穷举。
+//! 常量驱动的恒等式化简：单位律、对合律、幂等律三代数通用；吸收律按代数分派。
+//! `x ∧ T = x`、`x ∨ F = x`、`¬¬x = x`、`x ∧ x = x`、`x ∨ x = x` 三种代数都成立；
+//! K3/Ł3 额外 `x ∧ F = F`、`x ∨ T = T`，B3 的 U 传染保留原式；`=>` / `<=>` 常量律不做，
+//! 规则由 `tests.rs` 对 3 代数 × 3 值穷举。
 
 use trit_core::Algebra;
 use trit_core::value::Ternary;
@@ -51,7 +45,7 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
                         || consts[right] == Some(Ternary::False))
                 {
                     push_const(&mut resolve, &mut kept, &mut consts, Ternary::False);
-                } else if consts[left] == Some(Ternary::True) {
+                } else if left == right || consts[left] == Some(Ternary::True) {
                     resolve.push(right);
                 } else if consts[right] == Some(Ternary::True) {
                     resolve.push(left);
@@ -65,7 +59,7 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
                     && (consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True))
                 {
                     push_const(&mut resolve, &mut kept, &mut consts, Ternary::True);
-                } else if consts[left] == Some(Ternary::False) {
+                } else if left == right || consts[left] == Some(Ternary::False) {
                     resolve.push(right);
                 } else if consts[right] == Some(Ternary::False) {
                     resolve.push(left);
