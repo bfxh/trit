@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// 从发射父节点算起超过 3 层就不再下钻，边界节点自己发射。
+/// 从发射父节点算起超过 3 层就不再下钻，边界节点自己发射；根节点仍直接返回。
 #[test]
 fn depth_cap_keeps_deep_leaves_declared() {
     let source = render(
@@ -19,7 +19,7 @@ fn depth_cap_keeps_deep_leaves_declared() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 3, "{source}");
+    assert_eq!(source.matches("    int8_t t").count(), 2, "{source}");
     assert!(source.contains("int8_t t0 = vars[0];"), "{source}");
-    assert!(source.contains("int8_t t1 = vars[1];"), "{source}");
+    assert!(source.contains("return trit_not("), "{source}");
 }

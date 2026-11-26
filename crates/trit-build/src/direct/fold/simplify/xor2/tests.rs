@@ -116,8 +116,8 @@ fn netlist_xor_with_constants_does_not_register_xor2_table() {
         let c = emit_netlist(&circuit, "y", &vars, Algebra::Kleene).expect("生成");
         assert_eq!(
             c.matches("    int8_t t").count(),
-            1,
-            "单用输入与取反都并进根语句：{design}: {c}"
+            0,
+            "单用输入与取反都并进根返回：{design}: {c}"
         );
         assert!(!c.contains("T_XOR2"), "{design}: {c}");
         assert_eq!(c.contains("T_NOT"), expects_not, "{design}: {c}");

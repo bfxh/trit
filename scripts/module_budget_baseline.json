@@ -256,7 +256,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests.rs",
-      "lines": 24
+      "lines": 21
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/depth.rs",

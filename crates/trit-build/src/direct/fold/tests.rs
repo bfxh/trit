@@ -82,7 +82,7 @@ fn folded_ir_matches_eval_for_every_assignment() {
     }
 }
 
-/// 全常量树渲染成一条语句，不注册 `T_NOT` / `T_AND` 等表。
+/// 全常量树渲染成直接返回，不注册 `T_NOT` / `T_AND` 等表。
 #[test]
 fn constant_c_has_one_statement_and_no_operator_tables() {
     let expr = Parser::parse("(1 & X) | !0").expect("解析");
@@ -91,7 +91,7 @@ fn constant_c_has_one_statement_and_no_operator_tables() {
         let source = emit(&expr, &vars, alg).expect("生成");
         assert_eq!(
             source.matches("    int8_t t").count(),
-            1,
+            0,
             "{alg:?}: {source}"
         );
         assert!(
@@ -100,7 +100,7 @@ fn constant_c_has_one_statement_and_no_operator_tables() {
         );
         assert!(!source.contains("trit_bin("), "{alg:?}: {source}");
         assert!(!source.contains("trit_not("), "{alg:?}: {source}");
-        assert!(source.contains("return t0;"), "{alg:?}: {source}");
+        assert!(source.contains("return "), "{alg:?}: {source}");
     }
 }
 
