@@ -1145,6 +1145,12 @@ bootstrap 只重采样 test，不能当独立多重检验。详见
 > ternary 只有 `0.46 / 0.38`）。这两套 L6 的基线标签没有变，M1.14/
 > M1.15 的分类读数无需重算；SST-2 是唯一 L12 与 L6 的 `pure-f32` 都
 > 错标成 ternary 的数据集。详见 `WSP-BUDGET-RESULTS.md` §11.30。
+>
+> **M1.31 追加**：CoLA/hate 的 L12/L6 全臂在同一 per-arm 5 折选 C
+> 口径下重跑；没有任何量化臂显著超过真 f32。CoLA L12 的 `int4`/bits4
+> 只有 `+1.24pp/+0.93pp` 点估计且 CI 跨 0；hate 的 `R12`/`int3`/`int4`
+> 多处 CI 整段为负。SST-2 的 `int4` 正向没有跨到这两个任务，
+> `R12`/`rescan` 也没有分类增益。详见 `WSP-BUDGET-RESULTS.md` §11.31。
 
 M1.23 直接看 `r = x_int4 − x_f32`。SST-2 L12 上只用 `r` 训练同一个线性
 probe 就有 `0.832510`，比 f32 `0.800110` 高 `+3.23pp`，接近 int4

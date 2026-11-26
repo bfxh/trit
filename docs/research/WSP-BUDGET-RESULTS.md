@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.30 完成（§11.30）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
+> 状态：M1.31 完成（§11.31）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -86,6 +86,13 @@
 > `1.8e-7 / 1.9e-7`），不是 ternary；官方 `l6-int4` 在 512 行上与真
 > bits4 逐位一致。SST-2 是唯一 L12 与 L6 的 `pure-f32` 都错标成 ternary
 > 的数据集；CoLA/hate 的 L6 分类结论无需重算（§11.30）。
+> **M1.31 CoLA/hate 全臂矩阵**：用同一套 5 折选 C + test 只评一次 +
+> 10k paired bootstrap，把 CoLA/hate 的 L12/L6 全部量化臂相对真 f32
+> 重跑（logreg + LinearSVC）。**四个数据集×深度组合里没有任何量化臂
+> 显著超过真 f32。** CoLA L12 的 int4 / true bits4 点估计为正
+> （macro-F1 `+1.24pp` / `+1.20pp`），但 CI 跨 0；其余 CoLA L6、
+> hate L12/L6 全为负或零，hate 的 `int3`/`R12`/`int4` 多处 CI 整段
+> 为负。SST-2 的 `int4` 正向不是跨任务规律（§11.31）。
 
 
 ## 1. 结论先行
@@ -4540,6 +4547,137 @@ SST-2 真 f32 vs 真 bits4 的 `0.948531` 同量级，且首块逐位一致，
 复算材料：`data/wsp-classify-baseline-audit.tsv` 新增 CoLA/hate L6
 provenance 行；原始读数见上表，脚本在实验目录未入库。
 
+## 11.31 CoLA/hate 全臂矩阵：没有任何量化档显著超过真 f32（M1.31）
+
+### 11.31.1 问题与口径
+
+M1.14/M1.15 已经测过 CoLA/hate 的 `int4`，但没有把全部量化臂在同一
+口径下对齐；而且 M1.15 的 hate L12 主表用固定 `C=1`，与 SST-2 的
+per-arm 5 折选 C 不可直接拼表。M1.31 用同一套流程重跑：
+
+- train 内 5 折 `StratifiedKFold(random_state=7)`，C 网格
+  `0.01/0.1/1/10`，每个臂独立选 C；test 只评一次。
+- CoLA：`balanced` class weight + macro-F1 选 C，train 8,551 / test 1,043。
+- Hate：无类别权重 + accuracy 选 C，train 8,985 / test 2,734。
+- logreg 与 LinearSVC 都跑；10k paired bootstrap，报告主指标差值 CI。
+- 真 f32 锚点：CoLA/hate 的 L12 用独立生成的
+  `cola-l12-f32.npy` / `hate-l12-f32.npy`；L6 用 `l6-cola-f32.npy` /
+  `l6-tweet-hate-f32.npy`。官方 `pure-f32` 与真 f32 只差 `2.1e-7`
+  量级，但分类预测会有 0–5 条翻转，因此以真 f32 为锚点，不用官方
+  `pure-f32` 代替。
+- 臂：`true-bits4`（仅 L12）、`official-pure-f32`、`official-int3`、
+  `official-int4`、`official-r12`（L12）/`official-rescan-k2`（CoLA L6）/
+  `official-rescan`（hate L6）。L6 的官方 `int4` 已由 M1.30 在 512 行上
+  与真 bits4 逐位对齐；L12 的 `true-bits4` 是独立生成的全量臂。
+
+### 11.31.2 CoLA L12（主指标 macro-F1）
+
+| probe | arm | C | accuracy | macro-F1 | Δ vs true f32 | 95% CI |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | true f32 | 10 | `0.573346` | `0.548644` | — | — |
+| logreg | true bits4 | 10 | `0.586769` | `0.560717` | `+0.011989` | `[−0.007385,+0.031764]` |
+| logreg | official pure-f32 | 10 | `0.576222` | `0.552321` | `+0.003627` | `[−0.004144,+0.011653]` |
+| logreg | official int3 | 10 | `0.558965` | `0.534089` | `−0.014776` | `[−0.043998,+0.014406]` |
+| logreg | official int4 | 10 | `0.586769` | `0.561151` | `+0.012395` | `[−0.006947,+0.031930]` |
+| logreg | official R12 | 10 | `0.566635` | `0.543040` | `−0.005731` | `[−0.033790,+0.023189]` |
+| linear_svc | true f32 | 10 | `0.577181` | `0.550525` | — | — |
+| linear_svc | true bits4 | 10 | `0.585810` | `0.559916` | `+0.009261` | `[−0.009135,+0.027831]` |
+| linear_svc | official pure-f32 | 10 | `0.577181` | `0.550525` | `0` | `[0,0]` |
+| linear_svc | official int3 | 10 | `0.566635` | `0.539541` | `−0.011200` | `[−0.040025,+0.017882]` |
+| linear_svc | official int4 | 10 | `0.585810` | `0.559916` | `+0.009261` | `[−0.009135,+0.027831]` |
+| linear_svc | official R12 | 10 | `0.563758` | `0.538937` | `−0.011817` | `[−0.040323,+0.016637]` |
+
+CoLA L12 的 `int4`/`true bits4` 点估计为正，是四个组合里唯一“看起来
+可能增益”的格子；但 logreg `+1.24pp` 的 CI 跨 0，SVC `+0.93pp` 也跨 0。
+`int3`/`R12` 都是负向，`R12` 在 SVC 上也没有转正。
+
+### 11.31.3 CoLA L6（主指标 macro-F1）
+
+| probe | arm | C | accuracy | macro-F1 | Δ vs true f32 | 95% CI |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | true f32 | 1 | `0.577181` | `0.553124` | — | — |
+| logreg | official pure-f32 | 1 | `0.581975` | `0.557138` | `+0.004024` | `[−0.002409,+0.010906]` |
+| logreg | official int3 | 10 | `0.570470` | `0.547084` | `−0.005909` | `[−0.032745,+0.020631]` |
+| logreg | official int4 | 1 | `0.568552` | `0.543789` | `−0.009351` | `[−0.027439,+0.008747]` |
+| logreg | official rescan-k2 | 1 | `0.565676` | `0.540530` | `−0.012499` | `[−0.039901,+0.015703]` |
+| linear_svc | true f32 | 0.1 | `0.573346` | `0.549910` | — | — |
+| linear_svc | official pure-f32 | 0.1 | `0.573346` | `0.549910` | `0` | `[0,0]` |
+| linear_svc | official int3 | 1 | `0.571429` | `0.548302` | `−0.001486` | `[−0.028257,+0.025510]` |
+| linear_svc | official int4 | 1 | `0.573346` | `0.548644` | `−0.001357` | `[−0.023225,+0.020539]` |
+| linear_svc | official rescan-k2 | 10 | `0.574305` | `0.549872` | `+0.000042` | `[−0.029487,+0.029020]` |
+
+CoLA L6 没有任何量化臂转正：logreg 的 `int3/int4/rescan` 都在 `−0.59pp`
+到 `−1.25pp` 之间，SVC 的 `rescan` 只有 `+0.004pp`、等于零；所有 CI
+都跨 0。官方 `pure-f32` 与真 f32 的 logreg 差值 `+0.40pp` 也只是
+舍入导致的预测翻转，不是 f32 内部的“增益”。
+
+### 11.31.4 Hate L12（主指标 accuracy）
+
+| probe | arm | C | accuracy | macro-F1 | Δ vs true f32 | 95% CI |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | true f32 | 1 | `0.574250` | `0.565499` | — | — |
+| logreg | true bits4 | 10 | `0.565472` | `0.556540` | `−0.008816` | `[−0.019020,+0.001097]` |
+| logreg | official pure-f32 | 1 | `0.574250` | `0.565499` | `0` | `[0,0]` |
+| logreg | official int3 | 10 | `0.564740` | `0.553275` | `−0.009601` | `[−0.022312,+0.003658]` |
+| logreg | official int4 | 10 | `0.565472` | `0.556540` | `−0.008816` | `[−0.019020,+0.001097]` |
+| logreg | official R12 | 1 | `0.560717` | `0.549522` | `−0.013568` | `[−0.026335,−0.000732]` |
+| linear_svc | true f32 | 0.1 | `0.571324` | `0.562138` | — | — |
+| linear_svc | true bits4 | 1 | `0.566569` | `0.557233` | `−0.004826` | `[−0.015362,+0.005852]` |
+| linear_svc | official pure-f32 | 0.1 | `0.571324` | `0.562138` | `0` | `[0,0]` |
+| linear_svc | official int3 | 0.1 | `0.553767` | `0.541568` | `−0.017598` | `[−0.029993,−0.004755]` |
+| linear_svc | official int4 | 1 | `0.566569` | `0.557233` | `−0.004826` | `[−0.015362,+0.005852]` |
+| linear_svc | official R12 | 0.1 | `0.557791` | `0.545421` | `−0.013585` | `[−0.025969,−0.001454]` |
+
+Hate L12 的所有量化臂都低于真 f32。`R12` 在 logreg/SVC 上分别
+`−1.36pp / −1.36pp`，两个 CI 都不含 0；`int3` 在 SVC 上
+`−1.76pp`、CI 整段为负；`int4` 为 `−0.88pp / −0.48pp`，CI 跨 0。
+这与 M1.15 的固定 `C=1` 读数方向一致；M1.15 的 `int4−f32` 为
+`−0.37pp`，M1.31 的 per-arm 选 C 为 `−0.88pp`，差异来自 C 选择，
+不能把两表混用。
+
+### 11.31.5 Hate L6（主指标 accuracy）
+
+| probe | arm | C | accuracy | macro-F1 | Δ vs true f32 | 95% CI |
+|---|---|---:|---:|---:|---:|---:|
+| logreg | true f32 | 1 | `0.546086` | `0.534408` | — | — |
+| logreg | official pure-f32 | 1 | `0.546086` | `0.534408` | `0` | `[0,0]` |
+| logreg | official int3 | 1 | `0.550475` | `0.538579` | `+0.004218` | `[−0.008778,+0.017191]` |
+| logreg | official int4 | 10 | `0.531090` | `0.516935` | `−0.015084` | `[−0.024872,−0.005486]` |
+| logreg | official rescan | 10 | `0.546452` | `0.531903` | `+0.000282` | `[−0.014265,+0.014265]` |
+| linear_svc | true f32 | 0.1 | `0.546452` | `0.534505` | — | — |
+| linear_svc | official pure-f32 | 0.1 | `0.546452` | `0.534505` | `0` | `[0,0]` |
+| linear_svc | official int3 | 0.1 | `0.547184` | `0.533635` | `+0.000582` | `[−0.012070,+0.013533]` |
+| linear_svc | official int4 | 1 | `0.529261` | `0.514096` | `−0.017248` | `[−0.027067,−0.007681]` |
+| linear_svc | official rescan | 1 | `0.544623` | `0.529190` | `−0.001922` | `[−0.016094,+0.011704]` |
+
+Hate L6 的 `int4` 在两个 probe 上都是显著负向：logreg `−1.51pp`
+（CI `[−2.49,−0.55]`），SVC `−1.72pp`（CI `[−2.71,−0.77]`）。
+`int3` 的点估计略正（`+0.42pp / +0.06pp`），但 CI 跨 0；`rescan`
+基本持平。这里没有任何“4-bit 正则化提升”的证据。
+
+### 11.31.6 结论与边界
+
+- **CoLA/hate 全臂没有显著正向**：四个数据集×深度组合里，没有任何
+  量化臂的主指标 CI 整段大于 0。唯一正向的 CoLA L12 `int4/bits4`
+  也只有 `+1.24pp`（logreg macro）/`+0.93pp`（SVC），CI 都跨 0。
+- **Hate 的负向更硬**：L12 `R12` 两个 probe 的 CI 都不含 0，SVC `int3`
+  也不含 0；L6 `int4` 两个 probe 的 CI 都不含 0。`R12`/`rescan` 的
+  混合预算没有转成分类增益。
+- **和 SST-2 的关系**：SST-2 的 `int4−f32` 在真 f32 下也不显著
+  （`−0.26pp`，§11.29）；唯一显著的 `+4.22pp` 是相对 ternary 锚点。
+  因此“SST-2 的 int4 正向”不能被写成跨任务规律，也不能用 CoLA L12
+  的正向点估计复活它。
+- **口径差异**：M1.15 hate L12 主表是固定 `C=1`；M1.31 是 per-arm
+  5 折选 C，故 `int4−f32` 从 `−0.37pp` 变为 `−0.88pp`。两表方向一致，
+  但只能各自引用，不能混算。
+- 边界：只跑 logreg + LinearSVC；没有 MLP、没有 encoder 微调、没有
+  MNLI。L12 有独立 true bits4；L6 的 bits4 臂是官方 `int4`（M1.30
+  512 行逐位对齐，未做全量 bits4 生成）。
+
+完整 80 行见 `data/wsp-classify-cola-hate-full-arms.tsv`；原始评测 JSON
+为 `cola-l12-full-arms-eval.json`、`cola-l6-full-arms-eval.json`、
+`hate-l12-full-arms-eval.json`、`hate-l6-full-arms-eval.json`。
+
 ## 12. 下一步
 
 > **M1.28 读法**：本节及历史 §11.12–§11.25 中所有 SST-2 的 `f32` 读数
@@ -4555,6 +4693,12 @@ provenance 行；原始读数见上表，脚本在实验目录未入库。
 > （对真 f32 余弦 `1.00000000`，max abs diff `1.8–1.9e-7`；对真 ternary
 > 只有 `0.46` / `0.38`）。这两套 L6 分类结论无需重算；SST-2 是唯一
 > L12 与 L6 的 `pure-f32` 都错标成 ternary 的数据集。见 §11.30。
+>
+> **M1.31 读法**：CoLA/hate 的 L12/L6 全臂已在同一 per-arm 5 折选 C
+> 口径下重跑。没有任何量化臂的主指标 CI 整段大于 0；CoLA L12 的
+> `int4`/bits4 只有 `+1.24pp/+0.93pp` 点估计且 CI 跨 0，hate 的
+> `R12`/`int3`/`int4` 多处 CI 整段为负。SST-2 的 `int4` 正向没有跨到
+> 这两个任务；`R12`/`rescan` 也没有分类增益。见 §11.31。
 
 - **M1.26 基线审计已完成（§11.26）**：SST-2 L12 的 `l12-pure-f32` 是
   ternary，真实 f32→int4 为 `−0.001503`（CI `[−0.012081,+0.008786]`），
