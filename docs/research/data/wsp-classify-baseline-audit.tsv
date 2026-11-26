@@ -1,0 +1,42 @@
+dataset	depth	metric	kind	left	right	value	ci_low	ci_high	extra
+sst2	l12	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	0.316900			first5_cos_range=0.2790-0.3823
+sst2	l6	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	0.981600			first5_cos_range=0.9690-0.9873;L6_model=all-MiniLM-L6-v2
+sst2	l12	provenance	official_pure_f32_vs_ternary	official-pure-f32	tiny-bits2	1.000000			first5_cos=1.0_exact
+sst2	l12	provenance	official_int4_vs_true_bits4	official-int4	true-bits4				max_abs_diff=1.83e-07
+cola	l12	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32				max_abs_diff=2.09e-07
+hate	l12	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32				max_abs_diff=2.10e-07
+sst2	l12	accuracy	arm	true-f32		0.842943			C=1
+sst2	l12	accuracy	arm	true-bits4		0.841296			C=10
+sst2	l12	accuracy	arm	official-pure-f32		0.797913			C=10
+sst2	l12	accuracy	arm	official-int4		0.840198			C=10
+sst2	l12	accuracy	delta	official-int4	official-pure-f32	0.042207	0.023064	0.061505	logreg
+sst2	l12	accuracy	delta	true-bits4	true-f32	-0.001503	-0.012081	0.008786	logreg
+sst2	l12	accuracy	delta	official-pure-f32	true-f32	-0.044833	-0.064250	-0.025261	logreg
+sst2	l12	accuracy	delta	true-bits4	official-int4	0.001123	-0.001647	0.004393	logreg
+sst2	l12	accuracy_svc	delta	true-bits4	true-f32	-0.001040	-0.010434	0.008237	LinearSVC
+sst2	l12	accuracy_svc	delta	official-int4	official-pure-f32	0.043783	0.025261	0.062603	LinearSVC
+sst2	l12	geometry	class_mean_norm	residual		0.034505			f32_class_mean_norm=0.180823
+sst2	l12	geometry	ratio_residual_over_f32	residual	f32	0.190820			M1.23_ternary_ratio=1.594
+sst2	l12	geometry	cos_f32_residual	f32	residual	-0.352546			M1.23_ternary_cos=+0.0676
+sst2	l12	geometry	ratio_int4_over_f32	int4	f32	0.949667			class_mean
+sst2	l12	geometry	cos_f32_int4	f32	int4	0.982163			class_mean
+sst2	l12	accuracy	residual_probe	residual		0.804503			C=10
+cola	l12	geometry	ratio_residual_over_f32	residual	f32	0.250283			class_mean
+cola	l12	geometry	cos_f32_residual	f32	residual	-0.472799			class_mean
+cola	l12	geometry	ratio_int4_over_f32	int4	f32	0.908831			class_mean
+cola	l12	geometry	cos_f32_int4	f32	int4	0.970110			class_mean
+hate	l12	geometry	ratio_residual_over_f32	residual	f32	0.219699			class_mean
+hate	l12	geometry	cos_f32_residual	f32	residual	-0.300562			class_mean
+hate	l12	geometry	ratio_int4_over_f32	int4	f32	0.957184			class_mean
+hate	l12	geometry	cos_f32_int4	f32	int4	0.975744			class_mean
+cola	l12	macro_f1	arm	true-f32		0.548644			C=10,balanced
+cola	l12	macro_f1	arm	true-bits4		0.560717			C=10,balanced
+cola	l12	macro_f1	delta	true-bits4	true-f32	0.012073	-0.007332	0.030755	logreg,balanced
+cola	l12	accuracy	arm	true-f32		0.573346			C=10,balanced
+cola	l12	accuracy	arm	true-bits4		0.586769			C=10,balanced
+cola	l12	accuracy	delta	true-bits4	true-f32	0.013423			logreg,balanced
+cola	l12	macro_f1	delta	official-int4	official-pure-f32	0.008830			official_arms
+hate	l12	accuracy	arm	true-f32		0.574250			C=1
+hate	l12	accuracy	arm	true-bits4		0.571690			C=1
+hate	l12	accuracy	delta	true-bits4	true-f32	-0.002560	-0.011704	0.006584	logreg
+hate	l12	accuracy	delta	official-int4	official-pure-f32	-0.002560			official_arms

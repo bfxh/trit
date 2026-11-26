@@ -1302,6 +1302,30 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
     bootstrap CI；一个 seed；只跑 logreg；cross-transfer 用目标数据集
     自己的截距。
 
+- **基线标签审计与 SST-2 修正（M1.26）**：逐位核对发现 SST-2 L12
+  的 `sst2/emb12/l12-pure-f32-*.f32` 不是 f32，而是 `bert6`
+  `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出（首 5 条与 tiny bits2
+  余弦 `1.0`，与真 f32 余弦 `0.279–0.382`）。`l12-int4` 与真 4-bit
+  只差 `1.83e-7`；CoLA/hate 的 `l12-pure-f32` 才是真 f32（只差 `2.1e-7`）。
+  - 真 f32 `0.842943`、真 int4 `0.841296`，差值 `−0.001503`
+    （CI `[−0.012081,+0.008786]`）；官方 ternary `0.797913`、官方
+    int4 `0.840198`，`+0.042207`（CI `[+0.023064,+0.061505]`）是
+    2-bit→4-bit 恢复，不是 int4 超过 f32。
+  - 几何反转：真 f32→int4 残差类均值 `0.191×`、`cos −0.353`；
+    M1.23 的 `1.594× / +0.068` 属于 ternary→4-bit。CoLA/Hate 也是
+    压缩（`0.250/0.220×`、`cos −0.473/−0.301`），没有 SST-2 特异放大。
+  - CoLA 真 f32→int4 macro-F1 `+0.012073`（CI 跨 0）；Hate
+    `−0.002560`（CI 跨 0）。只有 SST-2 的 f32 基线坏了，CoLA/hate
+    旧结论保留；SST-2 L6 是另一模型 `all-MiniLM-L6-v2`，首 5 条与真
+    f32 余弦 `0.97–0.99`，未发现同错，暂不新增结论。
+  - 表：`docs/research/data/wsp-classify-baseline-audit.tsv`（41 行）。
+    文档：`WSP-BUDGET-RESULTS.md` §11.26（§11.12–§11.25 加修正横幅）、
+    `WSP-ALT.md` §5.5、`WSP-BERT6-RESULTS.md` §3.16.25、
+    `LESSONS.md` 第 38–40 条。
+  - 边界：PyTorch 复刻是独立实现，f32/f64 累加差异在 `2e-7` 量级，
+    不是 Rust 位级等价；只跑 logreg + LinearSVC，无 MLP、无 encoder
+    微调、无 MNLI。
+
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
   Pearson/Spearman。`R12` 对 `F5F7V7` 为 4 胜 1 平 1 负，对纯 int4 为 0/6 胜；
