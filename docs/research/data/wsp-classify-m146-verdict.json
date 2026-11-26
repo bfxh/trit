@@ -1,0 +1,150 @@
+{
+  "metric": "balanced f32 - unweighted f32 macro_f1",
+  "gate": {
+    "supported_cells": ">= 10/12",
+    "per_corpus": ">= 3/4 supported in every corpus"
+  },
+  "supported_cells": 1,
+  "total_cells": 12,
+  "per_corpus": {
+    "hatexplain": 0,
+    "tweet-hate": 0,
+    "davidson": 1
+  },
+  "supported": false,
+  "verdict": "not_supported",
+  "cells": [
+    {
+      "corpus": "hatexplain",
+      "depth": "l12",
+      "probe": "logreg",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.009963554765055505,
+      "mean_boot": -0.009940708574995336,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "hatexplain",
+      "depth": "l12",
+      "probe": "linear_svc",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.005775315592412955,
+      "mean_boot": -0.005743864679127837,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "hatexplain",
+      "depth": "l6",
+      "probe": "logreg",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.015532851110759083,
+      "mean_boot": -0.015516700447893017,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "hatexplain",
+      "depth": "l6",
+      "probe": "linear_svc",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.011545071959834896,
+      "mean_boot": -0.011546640955680434,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "tweet-hate",
+      "depth": "l12",
+      "probe": "logreg",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.03893851587524244,
+      "mean_boot": -0.03896073061249517,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "tweet-hate",
+      "depth": "l12",
+      "probe": "linear_svc",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.04090158795908594,
+      "mean_boot": -0.040933572630732246,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "tweet-hate",
+      "depth": "l6",
+      "probe": "logreg",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.0438669717268283,
+      "mean_boot": -0.04390976324200302,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "tweet-hate",
+      "depth": "l6",
+      "probe": "linear_svc",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.04872873985351034,
+      "mean_boot": -0.048769800703775554,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "davidson",
+      "depth": "l12",
+      "probe": "logreg",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": -0.032216418237404953,
+      "mean_boot": -0.03195959603101405,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "davidson",
+      "depth": "l12",
+      "probe": "linear_svc",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": 0.011747693249412605,
+      "mean_boot": 0.012004258831834376,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "davidson",
+      "depth": "l6",
+      "probe": "logreg",
+      "metric": "macro_f1",
+      "positive": 0,
+      "n": 5,
+      "mean_point": 0.02024686688368449,
+      "mean_boot": 0.020396753693077023,
+      "verdict": "not_supported"
+    },
+    {
+      "corpus": "davidson",
+      "depth": "l6",
+      "probe": "linear_svc",
+      "metric": "macro_f1",
+      "positive": 5,
+      "n": 5,
+      "mean_point": 0.06898920802207509,
+      "mean_boot": 0.06909280890224476,
+      "verdict": "supported"
+    }
+  ]
+}

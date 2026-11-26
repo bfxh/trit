@@ -246,6 +246,43 @@
 - 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算行与未验证清单。
 
 诚实边界：仍只覆盖组合逻辑与单一选中输出；没有综合、时序/面积收敛与门级优化。
+
+### Changed（M1.46：fit-balanced prior-free 决策规则）
+
+- 预注册 `data/wsp-classify-m146-prereg.json`（commit `f6a6264`，
+  C 选择澄清 `49a7427`）后，只用 fit 标签估
+  `class_weight="balanced"`，固定默认阈值（logreg 0.5 / LinearSVC 0），
+  在 HateXplain、TweetEval/hate、Davidson 三个语料上复用
+  M1.41/M1.42/M1.45 的 L12 `f32/R12`、L6 `f32/rescan` embedding，
+  比较 `balanced f32 − unweighted f32` 的 macro-F1。C 仍由 f32
+  fit 内 5 折 unweighted accuracy 在 seed 7 选一次，所有
+  seed/rule/arm 共用。
+- Primary：12 个 cell 只有 Davidson L6 SVC 过 5/5
+  （macro-F1 `+6.8989pp`，平均 CI `[+4.054,+9.624]pp`），总计
+  **1/12 supported**；HateXplain `0/4`、TweetEval `0/4`、
+  Davidson `1/4`，远低于 `≥10/12` 且每语料 `≥3/4` 的门槛。
+  TweetEval 四个 CI 全负（`−3.8939~−4.8729pp`），HateXplain
+  四个点估计全负但 CI 跨 0，Davidson L12 logreg 4/5 负 CI。
+- Secondary：balanced 在 12 个 f32 cell 上稳定提高 hate recall
+  `+3.4~+68.1pp`、提高预测正例率 `+5.8~+21.0pp`，同时降低
+  non-hate recall `−7.4~−18.1pp`、accuracy `−2.7~−13.4pp`；
+  macro-F1 只有 Davidson 3 个 cell 点正，HateXplain/TweetEval
+  9 个全负。Davidson 预测正例率 `0.214–0.217`，真实先验
+  `0.0575`。**这是 recall tilt，不是 macro-F1 改进，也不是校准；
+  candidate 线保持关闭。** 量化臂在 balanced 下 macro-F1
+  `quant−f32` 只有 3/12 个点正，未被救回。
+- 新增 `docs/research/scripts/wsp_m146/balanced_probe.py`、
+  `merge_results.py`，以及 `data/wsp-classify-m146-raw.tsv`
+  （240 行、15 列）、`-compare.tsv`（300 行、18 列）、
+  `-primary.tsv`（12 行、9 列）、`-summary.tsv`（48 行、13 列）、
+  `-rule-delta.tsv`（60 行、9 列）、`-arm-delta.tsv`（48 行、9 列）、
+  `-verdict.json`。详见 `WSP-BUDGET-RESULTS.md` §11.46。
+- Post-run 审计：driver 的 5 个 `SEEDS` 只进入 bootstrap RNG，
+  分类器 `random_state` 固定 7，12 个 cell 的 5 行 raw 指标逐位
+  相同；`5/5` 是同一组预测的 5 次 bootstrap，不是 5 次独立拟合。
+  唯一 5/5 格只能算单个显著比较，不能当独立 confirmatory；整体
+  `not_supported` 判决不受影响。
+
 ### Changed（M1.45：Davidson 第三 hate 语料）
 
 - 预注册 `data/wsp-classify-m145-prereg.json`（commit `d1810448`）后，

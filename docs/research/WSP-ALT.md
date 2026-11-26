@@ -25,6 +25,14 @@
 > accuracy 全部 0/5 正 CI；accuracy `0.942–0.945` 但 hate recall
 > `3.9–20.0%`、macro-F1 `0.52–0.63`，多数类把 accuracy 撑高。
 > **第三语料仍不能升级 candidate。** 详见 §11.45。
+> M1.46 用 fit-only `class_weight="balanced"` 做 prior-free 决策
+> 规则：三语料 12 个 primary cell 只有 Davidson L6 SVC 过 5/5
+> （macro-F1 `+6.90pp`），总计 1/12，整体 `not_supported`；
+> balanced 稳定提高 hate recall `+3.4~+68.1pp`，同时把 non-hate
+> recall 压低 `−7.4~−18.1pp`、accuracy 压低 `−2.7~−13.4pp`。
+> **这是 recall tilt，不是 macro-F1 改进；candidate 线保持关闭。**
+> 5 个 seed 实际是同一组预测的 5 次 bootstrap，唯一 5/5 格不是
+> 独立确认。详见 §11.46。
 > 详见 `WSP-BUDGET-RESULTS.md`。
 > 其余方案仍是草案。层内预演只覆盖 L12 第 0 层 `query/key/value`，不是全模型，
 > 也不是 STS。文中所有“误差下降”都是层内重建或层输出范数，不能直接当

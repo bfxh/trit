@@ -1,6 +1,21 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.45 完成（§11.41–§11.45）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验 + 预注册 Hate test 半分割 confirmatory + 第二个 hate 语料 HateXplain 的预注册 confirmatory + HateXplain 域感知先验与 fit-only 阈值搬运 + HateXplain 三分类探索 + 静态字节–质量 Pareto + Davidson 第三语料。
+> 状态：M1.46 完成（§11.41–§11.46）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验 + 预注册 Hate test 半分割 confirmatory + 第二个 hate 语料 HateXplain 的预注册 confirmatory + HateXplain 域感知先验与 fit-only 阈值搬运 + HateXplain 三分类探索 + 静态字节–质量 Pareto + Davidson 第三语料 + fit-balanced prior-free 决策规则。
+>
+> **M1.46 读法**：把 `class_weight="balanced"` 当作 inductive、
+> prior-free 的决策规则（只用 fit 标签估权重、固定默认阈值），
+> 三个 hate 语料 12 个 cell 里只有 Davidson L6 SVC 过预注册 5/5
+> （macro-F1 `+6.90pp`，平均 CI `[+4.05,+9.62]pp`）；总计
+> 1/12，HateXplain 0/4、TweetEval 0/4、Davidson 1/4，远低于
+> `≥10/12` 且每语料 `≥3/4` 的门槛。TweetEval 四个 cell 的 CI
+> 整段为负（`−3.89~−4.87pp`），HateXplain 四个点估计全负但 CI
+> 跨 0，Davidson L12 logreg 4/5 负 CI。`balanced` 的稳定效应是
+> hate recall `+3.4~+68.1pp`，代价是 non-hate recall
+> `−7.4~−18.1pp`、accuracy `−2.7~−13.4pp`；Davidson 预测正例率
+> 被抬到 `0.215`（真实 `0.0575`）。**它是 recall tilt / 操作点
+> 移动，不是 macro-F1 改进，也不是校准；candidate 线仍关闭。**
+> 另外，本轮 `5/5` 是同一组预测的 5 次 bootstrap RNG，
+> 不是 5 次独立拟合（§11.46.6）。见 §11.46。
 >
 > **M1.45 读法**：Davidson 第三语料按 default 阈值做 descriptive
 > transport：test `4,956` 行里只有 `285` 条 hate（`5.75%`）。
@@ -6939,8 +6954,213 @@ M1.42 已经证明 fit-only 阈值不能把 prior 搬过来；本轮的 default
 - 编码：17 个 chunks，L12/L6 各 4 套 `24,781×384` f32 文件；
   编码日志 `encode.log`，`all done`。
 
+## 11.46 fit-balanced prior-free 决策规则（M1.46）
+
+### 11.46.1 问题与预注册
+
+M1.41–M1.45 已经把 test-prior、fit-prior 分位点和三分类都试过：
+低先验语料上的默认阈值几乎不预测 hate（Davidson hate recall
+`3.9–20.0%`），而 fit-prior 阈值又不能从 test 分数分位点搬过来。
+M1.46 换一个真正 inductive 的问题：**只用 fit 标签估
+`class_weight="balanced"`，固定默认阈值（logreg 0.5 / LinearSVC 0），
+是否能在三个 hate 语料上提高 macro-F1 与 hate recall，并且量化臂
+相对 f32 是否仍保持质量？**
+
+这不是阈值搜索：不使用 test 分数分位点、test 先验、test 标签，
+也不做 calibration。唯一的改动是 fit 内的类别权重；C 仍在 f32
+fit 上用 seed 7 的 5 折 unweighted accuracy 选一次，然后所有
+seed/rule/arm 共用。预注册在跑分前写入
+`data/wsp-classify-m146-prereg.json`（commit `f6a6264`），随后用
+`49a7427` 澄清 C 只选一次；driver 是 `5d94679`。三个语料复用
+M1.41/M1.42/M1.45 的同一套 embedding，不新增语料、不重训编码器。
+
+### 11.46.2 口径与 C
+
+- HateXplain：fit `17,270`、test `1,918`，fit/test prior
+  `0.308975/0.309698`；
+- TweetEval/hate：fit `8,985`、test `2,734`，prior
+  `0.420812/0.407827`；
+- Davidson：fit `19,825`、test `4,956`，prior
+  `0.057705/0.057506`；
+- 每个语料 L12 `f32`/`R12`，L6 `f32`/`rescan`；2 probes ×5 个
+  bootstrap RNG ×2 rules（unweighted/balanced）；
+- Primary 是 `balanced f32 − unweighted f32` 的 macro-F1，12 个
+  cell，每 cell 10k paired test-level bootstrap；判定门槛是
+  `≥10/12` 且每个语料 `≥3/4` 为 supported。
+
+C 选择结果（两 rule、两臂共用）：
+
+| corpus | L12 logreg | L12 SVC | L6 logreg | L6 SVC |
+|---|---:|---:|---:|---:|
+| HateXplain | `1.0` | `0.1` | `10.0` | `10.0` |
+| TweetEval/hate | `1.0` | `0.1` | `1.0` | `0.1` |
+| Davidson | `10.0` | `10.0` | `1.0` | `0.1` |
+
+### 11.46.3 Primary：只有 Davidson L6 SVC 过线，整体 1/12
+
+| corpus | depth/probe | C | 正 CI /5 | mean point | 平均 CI | 判定 |
+|---|---|---:|---:|---:|---:|---|
+| HateXplain | L12 logreg | `1.0` | 0/5 | `−0.9964pp` | `[−2.755,+0.798]pp` | not_supported |
+| HateXplain | L12 SVC | `0.1` | 0/5 | `−0.5775pp` | `[−2.334,+1.214]pp` | not_supported |
+| HateXplain | L6 logreg | `10.0` | 0/5 | `−1.5533pp` | `[−3.248,+0.152]pp` | not_supported |
+| HateXplain | L6 SVC | `10.0` | 0/5 | `−1.1545pp` | `[−2.871,+0.569]pp` | not_supported |
+| TweetEval/hate | L12 logreg | `1.0` | 0/5（全负） | `−3.8939pp` | `[−4.899,−2.914]pp` | not_supported |
+| TweetEval/hate | L12 SVC | `0.1` | 0/5（全负） | `−4.0902pp` | `[−5.092,−3.120]pp` | not_supported |
+| TweetEval/hate | L6 logreg | `1.0` | 0/5（全负） | `−4.3867pp` | `[−5.477,−3.324]pp` | not_supported |
+| TweetEval/hate | L6 SVC | `0.1` | 0/5（全负） | `−4.8729pp` | `[−5.980,−3.790]pp` | not_supported |
+| Davidson | L12 logreg | `10.0` | 0/5（4 负 1 跨） | `−3.2216pp` | `[−6.408,−0.027]pp` | not_supported |
+| Davidson | L12 SVC | `10.0` | 0/5（全跨） | `+1.1748pp` | `[−2.033,+4.333]pp` | not_supported |
+| Davidson | L6 logreg | `1.0` | 0/5（全跨） | `+2.0247pp` | `[−1.092,+5.074]pp` | not_supported |
+| Davidson | L6 SVC | `0.1` | 5/5 | `+6.8989pp` | `[+4.054,+9.624]pp` | supported |
+
+总计 **1/12 supported**：HateXplain `0/4`、TweetEval `0/4`、
+Davidson `1/4`。整体门槛 `≥10/12` 且每语料 `≥3/4` 都没达到。
+方向也不一致：TweetEval 四个 CI 全部整段为负；HateXplain 四个
+点估计全负但 CI 全跨 0；Davidson 一个显著负（L12 logreg 4/5
+负 CI）、两个点正但全跨、一个 5/5 正。**这不是“低先验语料上
+balanced 普遍有效”，而是同一语料内 depth/probe 都能翻转的
+异质结果。**
+
+### 11.46.4 Secondary：balanced 是 recall tilt，不是 macro-F1 改进
+
+f32 上 5-seed 均值的 `balanced − unweighted`：
+
+| corpus | depth/probe | Δmacro-F1 | Δaccuracy | Δhate recall | Δnon-hate recall | Δpred pos rate |
+|---|---|---:|---:|---:|---:|---:|
+| HateXplain | L12 logreg | `−0.9964pp` | `−3.0240pp` | `+15.152pp` | `−11.178pp` | `+12.409pp` |
+| HateXplain | L12 SVC | `−0.5775pp` | `−2.6590pp` | `+15.320pp` | `−10.725pp` | `+12.148pp` |
+| HateXplain | L6 logreg | `−1.5533pp` | `−3.3368pp` | `+13.636pp` | `−10.952pp` | `+11.783pp` |
+| HateXplain | L6 SVC | `−1.1545pp` | `−2.9718pp` | `+14.141pp` | `−10.650pp` | `+11.731pp` |
+| TweetEval/hate | L12 logreg | `−3.8939pp` | `−2.8530pp` | `+3.767pp` | `−7.412pp` | `+5.925pp` |
+| TweetEval/hate | L12 SVC | `−4.0902pp` | `−3.0358pp` | `+3.408pp` | `−7.474pp` | `+5.816pp` |
+| TweetEval/hate | L6 logreg | `−4.3867pp` | `−2.9261pp` | `+4.843pp` | `−8.277pp` | `+6.876pp` |
+| TweetEval/hate | L6 SVC | `−4.8729pp` | `−3.3285pp` | `+4.574pp` | `−8.771pp` | `+7.059pp` |
+| Davidson | L12 logreg | `−3.2216pp` | `−13.3979pp` | `+54.035pp` | `−17.512pp` | `+19.613pp` |
+| Davidson | L12 SVC | `+1.1748pp` | `−13.1759pp` | `+60.351pp` | `−17.662pp` | `+20.117pp` |
+| Davidson | L6 logreg | `+2.0247pp` | `−13.3374pp` | `+61.404pp` | `−17.898pp` | `+20.400pp` |
+| Davidson | L6 SVC | `+6.8989pp` | `−13.1558pp` | `+68.070pp` | `−18.112pp` | `+20.985pp` |
+
+四个非-macro 指标在 12 个 cell 上方向完全一致：hate recall 全部
+上升（5/5 行；同一组预测的 5 次 bootstrap），non-hate recall
+与 accuracy 全部下降（0/5 行为正），预测正例率全部上升（5/5
+行）。macro-F1 只有 Davidson 的三个 cell 点估计为正；HateXplain
+与 TweetEval 的九个 cell 全负。**`balanced` 不是“提高分类质量”的规则，而是把
+决策边界向 hate 类移动：少数类 recall 上升， specificity、
+accuracy 和多数类 F1 付出代价。**
+
+这种“用 accuracy 换 hate recall”的幅度在 Davidson 最明显：
+L6 SVC 的 hate recall 从 `0.049` 提到 `0.730`，macro-F1 从
+`0.531` 提到 `0.600`，但 accuracy 从 `0.944` 掉到 `0.812`，
+non-hate recall 从 `0.998` 掉到 `0.817`；预测正例率从 `0.004`
+升到 `0.214`，而真实 hate 率只有 `0.0575`。**这是 recall
+operating point 的移动，不是模型更会分 hate/offensive 边界。**
+
+“prior-free”也不等于“prior-calibrated”：三个语料的 f32 预测
+正例率分别是：
+
+| corpus | 真实 test prior | unweighted pos rate | balanced pos rate |
+|---|---:|---:|---:|
+| HateXplain | `0.3097` | `0.237–0.259` | `0.359–0.376` |
+| TweetEval/hate | `0.4078` | `0.734–0.752` | `0.793–0.823` |
+| Davidson | `0.0575` | `0.004–0.021` | `0.214–0.217` |
+
+HateXplain 的 unweighted 本来略低于先验，balanced 把它抬到先验的
+约 `1.16–1.21×`；TweetEval 的 unweighted 已经约 `1.8×` 先验，
+balanced 进一步到约 `1.95–2.02×`；Davidson 从 `0.004–0.021`
+直接抬到先验的约 `3.7×`。所以类别权重不是把输出分布校准到
+先验，而是把损失函数的少数类权重调大；在默认阈值下，它的
+正例率可以远离真实先验。**这解释了为什么 low-prior 的
+Davidson 能涨 macro-F1，却同时把 accuracy 掉 13pp。**
+
+### 11.46.5 量化臂没有被 balanced 救回
+
+在 `balanced` 下比较 `quant − f32` 的 5-seed 均值，macro-F1
+只有 3/12 个 cell 点估计为正：HateXplain L12 SVC `+0.021pp`、
+L6 logreg `+1.287pp`、L6 SVC `+0.299pp`；其余 9 个为负
+（HateXplain L12 logreg `−0.079pp`，TweetEval `−0.118~−1.893pp`，
+Davidson `−0.164~−0.694pp`）。accuracy 同样只有 3/12 个点估计
+为正。`unweighted` 下只有 HateXplain L6 SVC `+0.073pp` 一个
+macro-F1 正，其余 11 个为负。
+
+这些 arm 差值都是点估计，没有 bootstrap CI；正号只有
+`0.02–1.29pp`，负号最大到 `−1.89pp`。**balanced 没有把量化臂
+抬回 f32：同一 C、同一阈值下，R12/rescan 仍然在多数 cell 上
+低于 f32；candidate 线保持关闭。** 不能因为 Davidson L6 SVC
+的 f32 macro-F1 变高，就把该 cell 的 rescan 也写成候选。
+
+### 11.46.6 post-run 审计、判决与边界
+
+**5 个 “seed” 实际是 5 个 bootstrap RNG，不是 5 次独立拟合。**
+driver 的 `make_clf` 把 `random_state` 固定为 `7`；`SEEDS`
+只传给 `boot_macro`，没有进入分类器。三语料 12 个 cell 的
+5 行 raw 指标逐位相同（例如 Davidson L6 SVC balanced f32 的
+accuracy `0.8121468926553672`、macro-F1
+`0.6000681283048404` 在 seed 7/13/19/31/43 完全相同）。
+因此表中的 `5/5` 是同一组 test 预测的 5 次 bootstrap 重采样，
+不是 5 个独立模型/数据切分；`4/5`、`0/5` 也应这样读。这个
+口径与 M1.41–M1.45 的 `make_clf(random_state=7)` 相同，是
+本轮审计才明确写出的限制，不是看到结果后改预注册。
+
+由此：
+
+- 整体预注册判决是 **not_supported**：1/12 supported，门槛
+  `≥10/12` 与每语料 `≥3/4` 都不满足；11/12 个 cell 未过线。
+- Davidson L6 SVC 的 `+6.90pp` 是 5 条 bootstrap CI 都过 0 的
+  **单个显著比较**，不能写成 5 次独立确认，也不能据此升级
+  candidate。若要把它做成 confirmatory，必须另开预注册的
+  独立 split/模型种子；不能复用同一批 test 的 5 个 bootstrap。
+- balanced 是 inductive 的 cost-sensitive 规则：只用 fit 标签，
+  不使用 test 标签/分数；但它不是 calibration，也不是
+  prior matching。它稳定提高 hate recall，同时稳定降低
+  non-hate recall 与 accuracy；在 HateXplain/TweetEval 上
+  macro-F1 甚至显著变差。**把它写成“低先验语料上的通用
+  修正”是错的；正确写法是“recall-oriented operating point，
+  是否值得用取决于部署对 FN/FP 的代价”。**
+- 没有 target_prior、fit-prior 分位点、calibration、阈值搜索；
+  没有 MLP、微调、新语料。C 只由 f32 fit 选一次，未用 test
+  标签。Davidson 仍是无官方 split 的 descriptive transport，
+  HateXplain/TweetEval 的标签映射也仍是外部边界。
+- **判决：M1.46 的 prior-free 规则不支持“提高 macro-F1”的
+  假设；candidate 线保持关闭。分类决策规则这条线到此收口，
+  不再在同一批 test 上换 class weight/阈值/先验写法。**
+- 下一步若要继续，只能是新的独立任务/数据契约，或转回
+  检索/核心 `direct`；不要用 M1.46 的 Davidson L6 SVC 单格
+  反过来开 candidate confirmatory。
+
+### 11.46.7 复算
+
+- 预注册：`data/wsp-classify-m146-prereg.json`（`f6a6264`，
+  C 选择澄清 `49a7427`）
+- driver：`scripts/wsp_m146/balanced_probe.py`（`5d94679`）
+- 合并/汇总：`scripts/wsp_m146/merge_results.py`
+- 表：`data/wsp-classify-m146-raw.tsv`（240 行、15 列）、
+  `-compare.tsv`（300 行、18 列）、`-primary.tsv`（12 行、9 列）、
+  `-summary.tsv`（48 行、13 列）、`-rule-delta.tsv`（60 行、9 列）、
+  `-arm-delta.tsv`（48 行、9 列）、`-verdict.json`；
+- 数据根：M1.42/M1.45 的 `hatexplain`、`tweet-hate`、`davidson` 三个
+  结果目录；每套 `texts-l12.json` + `emb12/l12-pure-f32-*`/`l12-r12-*` +
+  `emb6/l6-pure-f32-*`/`l6-rescan-*`；
+- 运行日志：`m146-both.log`（各 corpus root）；
+  C 选择与 5 个 bootstrap RNG 的输出均在日志里。
+
 ## 12. 下一步
 
+
+> **M1.46 读法**：`class_weight="balanced"` 作为 prior-free
+> 决策规则在三个 hate 语料上整体 `not_supported`：12 个 primary
+> cell 只有 Davidson L6 SVC 过预注册 5/5（macro-F1 `+6.90pp`）；
+> 总计 1/12，HateXplain 0/4、TweetEval 0/4、Davidson 1/4。
+> TweetEval 四个 CI 全负（`−3.89~−4.87pp`），HateXplain 四个点
+> 估计全负但 CI 跨 0，Davidson L12 logreg 4/5 负 CI。balanced
+> 的稳定效应是 hate recall `+3.4~+68.1pp`，代价是 non-hate
+> recall `−7.4~−18.1pp`、accuracy `−2.7~−13.4pp`；Davidson
+> 预测正例率被抬到 `0.214–0.217`，真实先验只有 `0.0575`。
+> **它是 recall tilt，不是 macro-F1 改进，也不是校准；量化臂
+> 没有被救回。** 5 个 “seed” 实际是同一组预测的 5 次 bootstrap，
+> 唯一 5/5 的 Davidson L6 SVC 不是 5 次独立确认。**prior-free
+> 分类决策规则到此收口；candidate 线保持关闭，不再在同一批
+> test 上换 class weight/阈值/先验写法。** 见 §11.46。
+>
 > **M1.45 读法**：Davidson 第三语料 default 阈值下，四个 family 的
 > accuracy `arm−f32` 全部 0/5 正 CI（`−0.06~+0.12pp`）；accuracy
 > `0.942–0.945` 但 hate recall `3.9–20.0%`、macro-F1 `0.52–0.63`。

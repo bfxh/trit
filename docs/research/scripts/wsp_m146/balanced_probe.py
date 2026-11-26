@@ -25,6 +25,10 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.svm import LinearSVC
 
 SEEDS = [7, 13, 19, 31, 43]
+# These are bootstrap RNG seeds, not model seeds. `make_clf` fixes
+# random_state=7, so all five rows per cell have identical predictions and
+# metrics; the 5 CIs are repeated resamples of the same comparison. For an
+# independent-seed confirmatory, vary the fit/split, not only boot_macro.
 GRID = (0.01, 0.1, 1.0, 10.0)
 CORPORA = {
     "hatexplain": {

@@ -596,6 +596,27 @@
     必须同时报 macro-F1、per-class recall 与 pred pos rate，且
     第三语料仍不能升级 candidate**（M1.45）。
 
+61. **`class_weight="balanced"` 是 recall tilt，不是 prior-free 的
+    macro-F1 修正**。M1.46 在 HateXplain/TweetEval/Davidson 12 个
+    primary cell 上只拿到 1/12 supported（Davidson L6 SVC
+    `+6.90pp`）；TweetEval 四个 CI 全负，HateXplain 四个点全负但
+    CI 跨 0。它在 12 个 f32 cell 上稳定提高 hate recall
+    `+3.4~+68.1pp`，同时降低 non-hate recall `−7.4~−18.1pp`、
+    accuracy `−2.7~−13.4pp`；Davidson 预测正例率被抬到 `0.214`
+    而真实先验 `0.0575`。**“prior-free”只表示不用 test 标签/分数，
+    不等于“prior-calibrated”；低先验语料上它可以把 macro-F1 抬一点，
+    代价是 accuracy/特异度，不能当通用分类质量修正**（M1.46）。
+
+62. **“5 seeds”必须真的改变拟合；只换 bootstrap RNG 是伪重复**。
+    M1.46 driver 的 `make_clf` 固定 `random_state=7`，`SEEDS`
+    只传给 `boot_macro`；12 个 cell 的 5 行 raw 指标逐位相同。
+    所以 `5/5` 是同一组 test 预测的 5 次 bootstrap，不是 5 次独立
+    模型/数据切分；唯一 5/5 的 Davidson L6 SVC 只能算单个显著比较，
+    不能当独立 confirmatory。**要报 5/5 独立复现，必须让 seed 进入
+    拟合（真正的模型随机性）或换独立 train/test split，并在预注册里
+    写清楚；否则 5 个 bootstrap CI 只是重复同一比较**（M1.46；
+    M1.41–M1.45 的同类 `random_state=7` 也应这样读）。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter

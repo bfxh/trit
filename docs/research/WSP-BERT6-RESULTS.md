@@ -40,6 +40,17 @@ LayerNorm、GELU、残差都在 f32 里跑，只把线性权重三值化。目�
 > 三负一微负；accuracy `0.942–0.945` 但 hate recall `3.9–20.0%`、
 > macro-F1 `0.52–0.63`，94% 多数类把 accuracy 撑高。**第三语料仍不能
 > 升级 candidate。** 详见 `WSP-BUDGET-RESULTS.md` §11.45。
+>
+> **M1.46 fit-balanced prior-free 规则（2026-11-27）**：三语料 12 个
+> primary cell 只有 Davidson L6 SVC 过预注册 5/5（macro-F1
+> `+6.90pp`，CI `[+4.05,+9.62]pp`），总计 1/12，整体
+> `not_supported`。balanced 的稳定效应是 hate recall
+> `+3.4~+68.1pp`，代价是 non-hate recall `−7.4~−18.1pp`、
+> accuracy `−2.7~−13.4pp`；Davidson 预测正例率被抬到 `0.214–0.217`
+> 而真实先验 `0.0575`。**这是 recall tilt，不是 macro-F1 改进，
+> 也不是校准；量化臂没有被救回。** 5 个 seed 实际是同一组预测的
+> 5 次 bootstrap，唯一 5/5 格不是独立确认。详见
+> `WSP-BUDGET-RESULTS.md` §11.46。
 
 ## 1. 协议
 
