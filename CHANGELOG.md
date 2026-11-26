@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（第五十三轮：direct 单用内联取消深度封顶）
+
+- `direct/emit/inline/plan.rs`：删掉 `MAX_INLINE_DEPTH = 3`，凡 `uses == 1` 的非叶子节点
+  都沿单用边并进父表达式，直到叶子；扇出/多用节点仍单独落语句，网表扇出不复制。
+  每个单用临时语句比它的引用多至少约 20 B，因此全量内联在字节上严格更短，代价是深链和
+  密集网变成更长的单条 `return` 表达式。
+- 新增 `direct/emit/inline/expr.rs`：内联锥的表达式展开也用显式栈走后序，不再按链长递归；
+  两万层单用链的展开测试留在该文件，避免“取消深度封顶”重新引入调用栈崩溃面。
+- 读数（同机 CLI，K3；整个 `direct.c`）：深链 `a & (b | (c & (d | (e & f))))`
+  669→649 B、dense 12 项 1254→1174 B、高复用 `(a ^ b) | ... | (a ^ i)` 1003→963 B；
+  11 变量混合式保持 893 B，其余 fixtures 不变。
+- 判据：`direct_c_size.rs` 深链预算收紧到 649 B；深链测试改为断言四层 `And` 全并进
+  根返回、零临时语句；新增两万层单用链展开测试；三代数 `--verify-c` 对 11 变量、dense
+  与高复用样例全过；`cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+
+  全部集成测试通过；`mutation_check --pkg trit-build` 93/93 caught（深度封顶变异替换为
+  不下钻子节点变异）。
+
 ### Added（第五十二轮：direct 叶子临时变量消除）
 
 - `direct/emit/inline/plan.rs`：变量/常量叶子不再无条件落 `int8_t tN = vars[i];`；变量复用
