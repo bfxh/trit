@@ -7,7 +7,6 @@ use trit_core::Algebra;
 fn vars() -> Vec<String> {
     vec!["a".to_string(), "b".to_string()]
 }
-
 #[test]
 fn single_use_and_is_inlined_into_not() {
     let source = render(
@@ -21,7 +20,7 @@ fn single_use_and_is_inlined_into_not() {
         "单用锥与根节点都直接展开，不留临时语句：{source}"
     );
     assert!(
-        source.contains("return trit_not(trit_bin(T_AND, vars[0], vars[1]));"),
+        source.contains("return -(trit_bin(T_AND, vars[0], vars[1]));"),
         "{source}"
     );
     assert!(!source.contains("return t0;"), "{source}");
@@ -47,7 +46,7 @@ fn shared_and_stays_a_separate_statement() {
         "{source}"
     );
     assert!(
-        source.contains("return trit_bin(T_AND, trit_not(t0), t0);"),
+        source.contains("return trit_bin(T_AND, -(t0), t0);"),
         "{source}"
     );
     assert!(!source.contains("int8_t t1 ="), "{source}");
@@ -61,7 +60,7 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
         Algebra::Kleene,
     );
     assert!(
-        or_source.contains("trit_not(trit_bin(T_OR, vars[0], vars[1]))"),
+        or_source.contains("-(trit_bin(T_OR, vars[0], vars[1]))"),
         "{or_source}"
     );
     let xor_source = render(
@@ -70,7 +69,7 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
         Algebra::Kleene,
     );
     assert!(
-        xor_source.contains("trit_not(trit_bin(T_XOR2, vars[0], vars[1]))"),
+        xor_source.contains("-(trit_bin(T_XOR2, vars[0], vars[1]))"),
         "{xor_source}"
     );
 }

@@ -38,9 +38,7 @@ fn multilevel_single_use_cone_fits_one_statement() {
     );
     assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
     assert!(
-        source.contains(
-            "return trit_not(trit_bin(T_AND, trit_bin(T_OR, vars[0], vars[1]), vars[2]));"
-        ),
+        source.contains("return -(trit_bin(T_AND, trit_bin(T_OR, vars[0], vars[1]), vars[2]));"),
         "{source}"
     );
 }

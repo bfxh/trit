@@ -42,17 +42,15 @@ fn generated_tables_match_eval() {
                 );
             }
         }
-        let not_expr = Parser::parse("!a").expect("解析");
-        let table = unary_table(alg, Algebra::not);
-        for (index, value) in VALUES.iter().enumerate() {
-            let mut assignment = Assignment::new();
-            assignment.set("a".to_string(), *value);
-            assert_eq!(
-                table[index],
-                code_of(eval(&not_expr, &assignment, alg)),
-                "{alg:?} !{} 不一致",
-                code(*value)
-            );
+    }
+}
+
+/// 三种代数的 `not` 在 -1/0/1 上都等价于算术取负；这是 C 侧写 `-x` 的依据。
+#[test]
+fn negation_is_unary_minus_in_every_algebra() {
+    for alg in [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar] {
+        for value in VALUES {
+            assert_eq!(code(alg.not(value)), -code(value), "{alg:?} {value:?}");
         }
     }
 }
@@ -104,7 +102,8 @@ fn render_is_linear_not_a_truth_table() {
         "{source}"
     );
     assert!(source.contains("trit_bin(T_AND"), "{source}");
-    assert!(source.contains("trit_not("), "{source}");
+    assert!(source.contains("-("), "{source}");
+    assert!(!source.contains("T_NOT"), "{source}");
     assert!(
         !source.contains("TRIT_TABLE"),
         "直算后端不该有 3^n 表：{source}"

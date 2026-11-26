@@ -59,7 +59,7 @@ pub(super) fn expr(ops: &[Op], names: &[Option<usize>], inlined: &[bool], index:
                 expr(ops, names, inlined, right)
             )
         }
-        Op::Not(inner) => format!("trit_not({})", expr(ops, names, inlined, inner)),
+        Op::Not(inner) => format!("-({})", expr(ops, names, inlined, inner)),
     }
 }
 
