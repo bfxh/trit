@@ -40,7 +40,7 @@ pub(super) fn verify(args: &[String]) -> Result<(), String> {
 /// `--allow N` 是调用方自报阈值：警告证书不能单独作为合规证据。
 pub(super) fn warn_if_allow(allow: usize) {
     if allow > 0 {
-        eprintln!(
+        trit_log::error!(
             "警告：--allow {allow} 是调用方自报阈值；证书不能单独作为合规证据，需配合独立策略"
         );
     }

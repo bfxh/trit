@@ -241,7 +241,7 @@ mod tests {
             .collect();
         let (a_pos, a_neg) = pack_rows(&a, k);
         let Some(out) = matmul_wf32(m, n, k, &a_pos, &a_neg, &b) else {
-            eprintln!("无 GPU adapter，跳过");
+            trit_log::warn!("无 GPU adapter，跳过");
             return;
         };
         for r in 0..m {
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn gpu_wf32_reg4_matches_cpu_and_scalar() {
         let Some(gpu) = Wf32Gpu::new() else {
-            eprintln!("无 GPU adapter，跳过");
+            trit_log::warn!("无 GPU adapter，跳过");
             return;
         };
         for (m, n, k) in [(7usize, 9usize, 100usize), (5, 8, 37), (4, 64, 100)] {

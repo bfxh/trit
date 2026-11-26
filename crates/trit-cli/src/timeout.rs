@@ -23,7 +23,7 @@ pub(crate) fn run_with_timeout(timeout_ms: u64) -> Result<()> {
         if started.elapsed() >= limit {
             let _ = child.kill();
             let _ = child.wait();
-            eprintln!("超时：{timeout_ms} ms 内未完成，已终止");
+            trit_log::error!("超时：{timeout_ms} ms 内未完成，已终止");
             std::process::exit(124);
         }
         std::thread::sleep(std::time::Duration::from_millis(10));

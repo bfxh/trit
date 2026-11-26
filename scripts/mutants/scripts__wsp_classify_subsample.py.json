@@ -1,0 +1,11 @@
+[
+ {
+  "name": "subsample: positive/negative 计数互换",
+  "file": "scripts/wsp_classify_subsample.py",
+  "old": "        \"positive\": int((data > 0).sum()),\n        \"negative\": int((data < 0).sum()),",
+  "new": "        \"positive\": int((data < 0).sum()),\n        \"negative\": int((data > 0).sum()),",
+  "pkg": "scripts/wsp_classify_subsample.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

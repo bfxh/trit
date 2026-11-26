@@ -7,6 +7,8 @@
 use crate::plane::PlaneMatrix;
 use crate::quant::{Ste, quantize_with_scale};
 
+mod adam;
+mod grad;
 #[cfg(test)]
 mod packed_tests;
 mod scalar;
@@ -16,15 +18,15 @@ mod scalar;
 /// 只存一阶/二阶矩与步数；`lr`、`beta`、`eps` 是构造时固定的超参数。
 #[derive(Clone, Debug)]
 pub struct Adam {
-    lr: f32,
-    beta1: f32,
-    beta2: f32,
-    eps: f32,
+    pub(crate) lr: f32,
+    pub(crate) beta1: f32,
+    pub(crate) beta2: f32,
+    pub(crate) eps: f32,
     step: u32,
-    bias1: f32,
-    bias2: f32,
-    m: Vec<f32>,
-    v: Vec<f32>,
+    pub(crate) bias1: f32,
+    pub(crate) bias2: f32,
+    pub(crate) m: Vec<f32>,
+    pub(crate) v: Vec<f32>,
 }
 
 impl Adam {
@@ -58,14 +60,14 @@ impl Adam {
         self.step
     }
 
-    fn begin(&mut self) {
+    pub(crate) fn begin(&mut self) {
         self.step = self.step.saturating_add(1);
         let t = self.step as i32;
         self.bias1 = 1.0 - self.beta1.powi(t);
         self.bias2 = 1.0 - self.beta2.powi(t);
     }
 
-    fn apply(&mut self, index: usize, grad: f32, value: f32) -> f32 {
+    pub(crate) fn apply(&mut self, index: usize, grad: f32, value: f32) -> f32 {
         let m = &mut self.m[index];
         *m = self.beta1 * *m + (1.0 - self.beta1) * grad;
         let v = &mut self.v[index];
@@ -155,116 +157,37 @@ impl TernaryLinear {
 
     /// 把当前 latent 量化一次，打成双导轨位平面。
     ///
-    /// 前向、`dX` 与 scale 梯度共用这份位平面；`from_latent` 一步完成量化与
-    /// 打包，不再为每行分配临时 `q`。
+    /// 训练/前向热路径已改用 `plane::fused` 单遍；这里保留为公开的位平面
+    /// 检查与对拍入口，`from_latent` 一步完成量化与打包，不再逐行分配 `q`。
     pub fn pack(&self) -> PlaneMatrix {
         PlaneMatrix::from_latent(&self.latent, &self.scale, self.rows, self.cols)
     }
 
-    /// 前向：`y[r] = scale[r] * Σ q[r,c]·x[c]`，走双导轨位平面。
+    /// 前向：`y[r] = scale[r] * Σ q[r,c]·x[c]`，量化与点积走 `fused::forward_dot`。
     pub fn forward(&self, x: &[f32]) -> Vec<f32> {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
-        let planes = self.pack();
-        self.forward_with_planes(&planes, x)
-    }
-
-    fn forward_with_planes(&self, planes: &PlaneMatrix, x: &[f32]) -> Vec<f32> {
-        (0..self.rows)
-            .map(|r| self.scale[r] * planes.row_dot(r, x))
-            .collect()
+        let qdot =
+            crate::plane::fused::forward_dot(&self.latent, &self.scale, self.rows, self.cols, x);
+        qdot.iter().zip(&self.scale).map(|(&d, &s)| s * d).collect()
     }
 
     /// 单样本 SGD 一步，返回更新前的 MSE。
     ///
-    /// 前向与 scale 梯度共用一份 [`PlaneMatrix`]；`dW` 走 `dense::sgd_update` 融合更新。
+    /// 前向 `q·x`、MSE/`dy`、`dW` 与 scale 更新按行融合在
+    /// [`crate::plane::fused::forward_step`] 里，一行 latent 只扫一遍。
     pub fn train_step(&mut self, x: &[f32], target: &[f32]) -> f32 {
         assert_eq!(x.len(), self.cols, "输入长度必须是 cols");
         assert_eq!(target.len(), self.rows, "目标长度必须是 rows");
-
-        let planes = self.pack();
-        let y = self.forward_with_planes(&planes, x);
-        let (loss, dy) = self.loss_and_grad(&y, target);
-
-        let (lr, ste, cols) = (self.lr, self.ste, self.cols);
-        crate::dense::sgd_update(
+        crate::plane::fused::forward_step::train_step(
             &mut self.latent,
+            &mut self.scale,
+            self.rows,
+            self.cols,
             x,
-            self.rows,
-            cols,
-            &dy,
-            &self.scale,
-            lr,
-            ste,
-        );
-        for (r, &dy_r) in dy.iter().enumerate() {
-            self.scale[r] = (self.scale[r] - lr * dy_r * planes.row_dot(r, x)).max(1e-4);
-        }
-        loss
-    }
-
-    /// 用输出梯度更新一层，并返回输入梯度（供上一层反向）。
-    ///
-    /// `output_grad[r] = ∂L/∂y[r]`；内部按 STE 更新 latent/scale，返回
-    /// `∂L/∂x[c] = Σ_r output_grad[r] · scale[r] · q[r,c]`（用更新前的三值权重）。
-    /// `dX` 与 scale 梯度都走一次打包后的双导轨位平面，标量路径保留在
-    /// [`crate::plane::PlaneMatrix::input_grad_scalar`] 供对拍。
-    pub fn train_step_with_grad(&mut self, input: &[f32], output_grad: &[f32]) -> Vec<f32> {
-        assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
-        assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
-        let planes = self.pack();
-        let mut input_grad = vec![0.0f32; self.cols];
-        planes.input_grad(output_grad, &self.scale, &mut input_grad);
-        let (lr, ste, cols) = (self.lr, self.ste, self.cols);
-        crate::dense::sgd_update(
-            &mut self.latent,
-            input,
-            self.rows,
-            cols,
-            output_grad,
-            &self.scale,
-            lr,
-            ste,
-        );
-        for (r, &dy_r) in output_grad.iter().enumerate() {
-            self.scale[r] = (self.scale[r] - lr * dy_r * planes.row_dot(r, input)).max(1e-4);
-        }
-        input_grad
-    }
-
-    /// 用 Adam 更新一层，并返回输入梯度（供上一层反向）。
-    ///
-    /// 三值量化与 STE 口径与 [`Self::train_step_with_grad`] 相同；`latent_opt` /
-    /// `scale_opt` 的参数个数必须分别是 `rows * cols` / `rows`。
-    pub fn train_step_with_grad_adam(
-        &mut self,
-        input: &[f32],
-        output_grad: &[f32],
-        latent_opt: &mut Adam,
-        scale_opt: &mut Adam,
-    ) -> Vec<f32> {
-        assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
-        assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
-        assert_eq!(latent_opt.len(), self.latent.len(), "latent 优化器大小");
-        assert_eq!(scale_opt.len(), self.rows, "scale 优化器大小");
-        latent_opt.begin();
-        scale_opt.begin();
-        let planes = self.pack();
-        let (ste, cols) = (self.ste, self.cols);
-        let mut input_grad = vec![0.0f32; self.cols];
-        planes.input_grad(output_grad, &self.scale, &mut input_grad);
-        for (r, &dy_r) in output_grad.iter().enumerate() {
-            let scale = self.scale[r];
-            let grad_scale = dy_r * planes.row_dot(r, input);
-            self.scale[r] = scale_opt.apply(r, grad_scale, scale).max(1e-4);
-            let base = r * cols;
-            for (c, &xc) in input.iter().enumerate() {
-                let grad_q = dy_r * scale * xc;
-                let idx = base + c;
-                let grad = ste.backward(self.latent[idx], scale, grad_q);
-                self.latent[idx] = latent_opt.apply(idx, grad, self.latent[idx]);
-            }
-        }
-        input_grad
+            target,
+            self.lr,
+            self.ste,
+        )
     }
 }
 
@@ -536,20 +459,6 @@ mod tests {
             })
             .sum();
         assert!(hits >= 4, "q={q:?}");
-    }
-
-    #[test]
-    fn adam_first_step_matches_closed_form() {
-        let mut layer = TernaryLinear::new(1, 1, |_, _| 1.0, Ste::Identity, 0.0, 1.0);
-        let mut latent_opt = Adam::new(1, 0.1);
-        let mut scale_opt = Adam::new(1, 0.0);
-        // 输入 1、输出梯度 2 ⇒ ∂L/∂latent = 2；第一步 mhat=2、vhat=4。
-        layer.train_step_with_grad_adam(&[1.0], &[2.0], &mut latent_opt, &mut scale_opt);
-        let got = layer.latent()[0];
-        assert!(
-            (got - 0.9).abs() < 1e-5,
-            "latent={got}（偏置校正后应为 1 - 0.1 = 0.9）"
-        );
     }
 
     #[test]

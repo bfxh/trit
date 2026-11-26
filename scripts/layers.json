@@ -9,6 +9,7 @@
   },
   "crates": {
     "trit-core": "base",
+    "trit-log": "base",
     "trit-eval": "base",
     "trit-belnap": "base",
     "trit-dot": "ops",

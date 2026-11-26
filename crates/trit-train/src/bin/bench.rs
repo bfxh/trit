@@ -2,32 +2,31 @@
 //!
 //! 用法：
 //! ```text
-//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576]
-//!       [--threads 1,2,4,8] [--ste-steps 3000] [--train-steps 3]
+//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576] [--threads 1,2,4,8] [--ste-steps 3000] [--train-steps 3] [--adam-scalar]
 //! ```
 
 use std::hint::black_box;
 use std::time::Instant;
-
 use trit_train::layer::{TernaryLinear, dot};
 use trit_train::plane::{PlaneMatrix, Planes};
 use trit_train::quant::Ste;
 
+#[path = "bench/adam_step.rs"]
+mod adam_step;
 #[path = "bench/args.rs"]
 mod args;
+#[path = "bench/grad_step.rs"]
+mod grad_step;
 #[path = "bench/train_step.rs"]
 mod train_step;
-
 use args::{arg, thread_list};
 use train_step::bench_train_step;
-
 #[derive(Clone, Copy, Debug)]
 enum Op {
     And,
     Or,
     Xor,
 }
-
 /// Kleene 语义的按字运算（与 `plane` 的公式一致；bench 只测这一套）。
 fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
     match op {
@@ -39,7 +38,6 @@ fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
         }
     }
 }
-
 fn sample_trits(len: usize, seed: u64) -> Vec<i8> {
     let mut state = seed | 1;
     (0..len)
@@ -204,6 +202,7 @@ fn main() {
     let ste_steps = arg(&args, "--ste-steps").unwrap_or(3000);
     let train_steps = arg(&args, "--train-steps").unwrap_or(3);
     let threads = thread_list(&args);
+    let adam_scalar = args.iter().any(|a| a == "--adam-scalar");
 
     let trits = mtrits * 1_000_000; // 每 trit 2 bit（两条导轨各 1 bit）
     let a = Planes::from_trits(&sample_trits(trits, 0x9E37_79B9_7F4A_7C15));
@@ -261,15 +260,13 @@ fn main() {
 
     let (scalar_step, plane_step, step_speedup, pack_step) =
         bench_train_step(rows, cols, train_steps, rounds);
-    println!("\n训练步：{rows}×{cols}（{train_steps} 步/轮，{rounds} 轮取最快，含 pack）");
+    println!("\n训练步：{rows}×{cols}（{train_steps} 步/轮；SGD fused，pack 另计）");
     println!("{:<14} {:>10} {:>10}", "路径", "ms/step", "相对");
     println!("{:<14} {scalar_step:>10.2} {:>10}", "标量参考", "1.00×");
-    println!(
-        "{:<14} {plane_step:>10.2} {:>9.2}×",
-        "位平面步", step_speedup
-    );
-    println!("{:<14} {pack_step:>10.2}", "其中 pack()");
-
+    println!("{:<14} {plane_step:>10.2} {:>9.2}×", "融合步", step_speedup);
+    println!("{:<14} {pack_step:>10.2}", "pack() 参考");
+    adam_step::bench_adam_step(rows, cols, train_steps, rounds, adam_scalar);
+    grad_step::bench_grad_step(rows, cols, train_steps, rounds);
     println!("\nSTE 收敛（2×3 线性层，{ste_steps} 步，MSE）：");
     for (name, ste) in [
         ("Identity", Ste::Identity),

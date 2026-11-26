@@ -1,0 +1,9 @@
+comparison	metric	delta	ci95_low	ci95_high	candidate_better_frac
+rule-L12 vs int3	pearson	-0.016104	-0.023405	-0.009015	0.0000
+rule-L12 vs int3	spearman	-0.007297	-0.015931	+0.001055	0.0448
+rule-L12 vs int4	pearson	-0.021663	-0.030552	-0.012589	0.0000
+rule-L12 vs int4	spearman	-0.017811	-0.028090	-0.007695	0.0001
+rule-L6 vs int3	pearson	-0.011125	-0.019033	-0.003352	0.0026
+rule-L6 vs int3	spearman	-0.008598	-0.018165	+0.000603	0.0350
+rule-L6 vs int4	pearson	-0.016685	-0.026429	-0.006981	0.0006
+rule-L6 vs int4	spearman	-0.019112	-0.030305	-0.008305	0.0002

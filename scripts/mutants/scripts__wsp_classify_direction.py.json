@@ -1,0 +1,11 @@
+[
+ {
+  "name": "direction: 跨基能量误用自己的基",
+  "file": "scripts/wsp_classify_direction.py",
+  "old": "        \"left_in_right\": _shares(left, right_components),",
+  "new": "        \"left_in_right\": _shares(left, left_components),",
+  "pkg": "scripts/wsp_classify_direction.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

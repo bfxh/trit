@@ -86,7 +86,6 @@
 //!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop` 十九个工具，参数与返回见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
-
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 pub mod activations;
@@ -116,6 +115,7 @@ pub mod probe;
 pub mod program;
 pub mod rebase;
 pub mod repair;
+pub mod residual;
 pub mod safetensors;
 pub mod scale;
 pub mod shard;

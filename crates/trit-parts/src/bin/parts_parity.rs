@@ -38,7 +38,7 @@ fn main() {
     }
 
     let t = Tensors::load(&dir).unwrap_or_else(|e| {
-        eprintln!("权重读取失败: {e}");
+        trit_log::error!("权重读取失败: {e}");
         std::process::exit(1)
     });
     let xin = read_f32(&dir.join("input.bin")).expect("input.bin");

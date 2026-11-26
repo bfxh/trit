@@ -2172,6 +2172,7 @@ version = "0.12.0"
 dependencies = [
  "serde_json",
  "trit-learn",
+ "trit-log",
 ]
 
 [[package]]
@@ -2208,6 +2209,7 @@ dependencies = [
  "trit-circuit",
  "trit-core",
  "trit-eval",
+ "trit-log",
  "wgpu",
 ]
 
@@ -2253,6 +2255,7 @@ dependencies = [
  "trit-core",
  "trit-count",
  "trit-eval",
+ "trit-log",
  "trit-policy",
  "trit-sat",
  "trit-schedule",
@@ -2266,6 +2269,7 @@ dependencies = [
  "thiserror 2.0.21",
  "trit-core",
  "trit-fuzz",
+ "trit-log",
 ]
 
 [[package]]
@@ -2289,6 +2293,7 @@ dependencies = [
  "trit-eval",
  "trit-fuzz",
  "trit-learn",
+ "trit-log",
  "trit-sat",
 ]
 
@@ -2298,6 +2303,7 @@ version = "0.12.0"
 dependencies = [
  "trit-core",
  "trit-learn",
+ "trit-log",
 ]
 
 [[package]]
@@ -2307,6 +2313,7 @@ dependencies = [
  "serde_json",
  "trit-core",
  "trit-fuzz",
+ "trit-log",
 ]
 
 [[package]]
@@ -2325,6 +2332,7 @@ version = "0.12.0"
 dependencies = [
  "thiserror 2.0.21",
  "trit-core",
+ "trit-log",
 ]
 
 [[package]]
@@ -2333,6 +2341,7 @@ version = "0.12.0"
 dependencies = [
  "serde_json",
  "trit-fuzz",
+ "trit-log",
 ]
 
 [[package]]
@@ -2362,6 +2371,7 @@ dependencies = [
  "trit-bench",
  "trit-capacity",
  "trit-learn",
+ "trit-log",
  "trit-simd",
  "trit-texture",
  "trit-wspace",
@@ -2384,6 +2394,7 @@ dependencies = [
  "rustls-pemfile",
  "trit-core",
  "trit-fuzz",
+ "trit-log",
 ]
 
 [[package]]
@@ -2403,6 +2414,10 @@ version = "0.12.0"
 dependencies = [
  "trit-core",
 ]
+
+[[package]]
+name = "trit-log"
+version = "0.12.0"
 
 [[package]]
 name = "trit-look"
@@ -2427,6 +2442,7 @@ version = "0.12.0"
 dependencies = [
  "serde_json",
  "trit-core",
+ "trit-log",
 ]
 
 [[package]]
@@ -2454,6 +2470,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "trit-core",
+ "trit-log",
  "trit-texture",
 ]
 
@@ -2469,6 +2486,7 @@ name = "trit-ops"
 version = "0.12.0"
 dependencies = [
  "trit-core",
+ "trit-log",
 ]
 
 [[package]]
@@ -2480,6 +2498,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "trit-core",
+ "trit-log",
  "trit-ops",
  "trit-schedule",
  "tritdb-cas",
@@ -2498,6 +2517,7 @@ dependencies = [
  "pollster",
  "trit-core",
  "trit-learn",
+ "trit-log",
  "trit-look",
  "trit-train",
  "wgpu",
@@ -2523,6 +2543,7 @@ dependencies = [
  "anyhow",
  "clap",
  "serde_json",
+ "trit-log",
 ]
 
 [[package]]
@@ -2535,6 +2556,7 @@ dependencies = [
  "trit-belnap",
  "trit-core",
  "trit-eval",
+ "trit-log",
 ]
 
 [[package]]
@@ -2544,6 +2566,7 @@ dependencies = [
  "anyhow",
  "clap",
  "serde_json",
+ "trit-log",
 ]
 
 [[package]]
@@ -2583,6 +2606,7 @@ dependencies = [
  "thiserror 2.0.21",
  "trit-core",
  "trit-fuzz",
+ "trit-log",
 ]
 
 [[package]]
@@ -2591,6 +2615,7 @@ version = "0.12.0"
 dependencies = [
  "trit-core",
  "trit-learn",
+ "trit-log",
 ]
 
 [[package]]
@@ -2601,6 +2626,7 @@ dependencies = [
  "clap",
  "serde_json",
  "trit-core",
+ "trit-log",
 ]
 
 [[package]]
@@ -2623,6 +2649,7 @@ dependencies = [
  "trit-core",
  "trit-export",
  "trit-learn",
+ "trit-log",
  "trit-train",
 ]
 

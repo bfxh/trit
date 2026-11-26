@@ -1,0 +1,20 @@
+[
+ {
+  "name": "pca: keepN 把全部主成分置零",
+  "file": "scripts/wsp_classify_pca.py",
+  "old": "        train_z[:, k:] = 0.0\n        test_z[:, k:] = 0.0",
+  "new": "        train_z[:, :] = 0.0\n        test_z[:, :] = 0.0",
+  "pkg": "scripts/wsp_classify_pca.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "pca: 忽略跨 run 的 PCA 拟合源",
+  "file": "scripts/wsp_classify_pca.py",
+  "old": "    fit_x = train_x if fit_train_x is None else fit_train_x",
+  "new": "    fit_x = train_x",
+  "pkg": "scripts/wsp_classify_pca.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

@@ -239,7 +239,7 @@ impl TraceEventStore {
                 .into()),
             FrameResult::Healed { payload, repairs } => {
                 // 单错自愈：数据可证明恢复（块级 d≥3/5 纠错），但必须出声。
-                eprintln!(
+                trit_log::error!(
                     "[ecc] {}:{}: 校验子命中，已自愈（纠正 {repairs} 个块）",
                     self.path.display(),
                     index + 1

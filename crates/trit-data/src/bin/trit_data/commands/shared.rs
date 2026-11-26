@@ -24,6 +24,6 @@ pub(crate) fn created_unix() -> u64 {
 }
 
 pub(crate) fn die(msg: &str) -> ! {
-    eprintln!("{msg}");
+    trit_log::error!("{msg}");
     std::process::exit(2);
 }

@@ -38,7 +38,7 @@ impl From<bool> for Ternary {
     }
 }
 
-/// 三值取反；在 Kleene / Ł3 / B3 三套语义下相同。
+/// 三值取反；在 Kleene / Ł3 / B3 三套语义下相同。 // BEGIN K3 OPS
 impl std::ops::Not for Ternary {
     type Output = Self;
 
@@ -89,7 +89,7 @@ impl std::ops::BitXor for Ternary {
             _ => Self::True,
         }
     }
-}
+} // END K3 OPS
 
 impl Ternary {
     /// 逻辑常量假。

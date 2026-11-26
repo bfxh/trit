@@ -224,27 +224,243 @@
     },
     {
       "file": "crates/trit-build/src/artifacts.rs",
-      "lines": 192
+      "lines": 174
+    },
+    {
+      "file": "crates/trit-build/src/artifacts/lookup.rs",
+      "lines": 46
     },
     {
       "file": "crates/trit-build/src/bitplan.rs",
       "lines": 435
     },
     {
+      "file": "crates/trit-build/src/cache.rs",
+      "lines": 25
+    },
+    {
       "file": "crates/trit-build/src/direct.rs",
-      "lines": 294
+      "lines": 87
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit.rs",
+      "lines": 167
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline.rs",
+      "lines": 110
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/tests.rs",
+      "lines": 85
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/tests.rs",
+      "lines": 76
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold.rs",
+      "lines": 54
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse.rs",
+      "lines": 25
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+      "lines": 57
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/factor.rs",
+      "lines": 70
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/key.rs",
+      "lines": 45
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/pass.rs",
+      "lines": 41
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests.rs",
+      "lines": 89
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/assoc.rs",
+      "lines": 66
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/chain.rs",
+      "lines": 46
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/dual.rs",
+      "lines": 25
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/factor.rs",
+      "lines": 96
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/xorchain.rs",
+      "lines": 58
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+      "lines": 49
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/negchain.rs",
+      "lines": 92
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/negchain/tests.rs",
+      "lines": 136
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify.rs",
+      "lines": 57
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+      "lines": 91
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/build.rs",
+      "lines": 29
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/complement.rs",
+      "lines": 52
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+      "lines": 92
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests.rs",
+      "lines": 189
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
+      "lines": 28
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+      "lines": 29
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/de_morgan.rs",
+      "lines": 26
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/tests.rs",
+      "lines": 89
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/tests/const_emit.rs",
+      "lines": 30
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/tests/const_fold.rs",
+      "lines": 26
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests.rs",
+      "lines": 70
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/absorb.rs",
+      "lines": 43
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/complement.rs",
+      "lines": 116
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/complement/alias.rs",
+      "lines": 16
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/idem.rs",
+      "lines": 62
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice.rs",
+      "lines": 85
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice/chain.rs",
+      "lines": 103
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/poison.rs",
+      "lines": 25
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/xor/tests.rs",
+      "lines": 123
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+      "lines": 57
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/xor2/tests.rs",
+      "lines": 134
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/tests.rs",
+      "lines": 135
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/tests/factor.rs",
+      "lines": 37
+    },
+    {
+      "file": "crates/trit-build/src/direct/ir.rs",
+      "lines": 21
+    },
+    {
+      "file": "crates/trit-build/src/direct/ir/remap.rs",
+      "lines": 20
     },
     {
       "file": "crates/trit-build/src/direct/lower.rs",
-      "lines": 172
+      "lines": 164
     },
     {
       "file": "crates/trit-build/src/direct/lower/tests.rs",
       "lines": 93
     },
     {
+      "file": "crates/trit-build/src/direct/netlist.rs",
+      "lines": 148
+    },
+    {
+      "file": "crates/trit-build/src/direct/netlist/tests.rs",
+      "lines": 81
+    },
+    {
       "file": "crates/trit-build/src/direct/tests.rs",
-      "lines": 158
+      "lines": 143
+    },
+    {
+      "file": "crates/trit-build/src/direct/tests/eval.rs",
+      "lines": 35
+    },
+    {
+      "file": "crates/trit-build/src/direct/verify.rs",
+      "lines": 124
     },
     {
       "file": "crates/trit-build/src/egraph.rs",
@@ -276,7 +492,7 @@
     },
     {
       "file": "crates/trit-build/src/main.rs",
-      "lines": 733
+      "lines": 728
     },
     {
       "file": "crates/trit-build/src/parallel.rs",
@@ -296,7 +512,7 @@
     },
     {
       "file": "crates/trit-build/src/verilog.rs",
-      "lines": 138
+      "lines": 137
     },
     {
       "file": "crates/trit-build/tests/build.rs",
@@ -304,7 +520,15 @@
     },
     {
       "file": "crates/trit-build/tests/direct_c.rs",
-      "lines": 176
+      "lines": 139
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_relative.rs",
+      "lines": 42
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_verilog.rs",
+      "lines": 92
     },
     {
       "file": "crates/trit-build/tests/egraph_equiv.rs",
@@ -628,7 +852,7 @@
     },
     {
       "file": "crates/trit-cli/src/commands/equiv.rs",
-      "lines": 277
+      "lines": 275
     },
     {
       "file": "crates/trit-cli/src/commands/eval.rs",
@@ -960,7 +1184,7 @@
     },
     {
       "file": "crates/trit-count/src/main.rs",
-      "lines": 435
+      "lines": 433
     },
     {
       "file": "crates/trit-count/src/oracle.rs",
@@ -2399,6 +2623,10 @@
       "lines": 149
     },
     {
+      "file": "crates/trit-log/src/lib.rs",
+      "lines": 476
+    },
+    {
       "file": "crates/trit-lsp/src/analysis.rs",
       "lines": 364
     },
@@ -2608,7 +2836,7 @@
     },
     {
       "file": "crates/trit-net/src/netsec_cli.rs",
-      "lines": 169
+      "lines": 167
     },
     {
       "file": "crates/trit-net/src/train.rs",
@@ -3740,7 +3968,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train.rs",
-      "lines": 554
+      "lines": 552
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train/args.rs",
@@ -4923,24 +5151,80 @@
       "lines": 34
     },
     {
+      "file": "crates/trit-train/examples/forward_probe.rs",
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-train/examples/fused_backward_probe.rs",
+      "lines": 73
+    },
+    {
+      "file": "crates/trit-train/examples/fused_probe.rs",
+      "lines": 70
+    },
+    {
       "file": "crates/trit-train/src/bin/bench.rs",
-      "lines": 283
+      "lines": 280
+    },
+    {
+      "file": "crates/trit-train/src/bin/bench/adam_setup.rs",
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-train/src/bin/bench/adam_step.rs",
+      "lines": 47
     },
     {
       "file": "crates/trit-train/src/bin/bench/args.rs",
       "lines": 21
     },
     {
+      "file": "crates/trit-train/src/bin/bench/grad_step.rs",
+      "lines": 50
+    },
+    {
       "file": "crates/trit-train/src/bin/bench/train_step.rs",
       "lines": 80
     },
     {
+      "file": "crates/trit-train/src/bin/shape_bench.rs",
+      "lines": 88
+    },
+    {
       "file": "crates/trit-train/src/dense.rs",
-      "lines": 192
+      "lines": 125
+    },
+    {
+      "file": "crates/trit-train/src/dense/row.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-train/src/layer.rs",
-      "lines": 581
+      "lines": 490
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam.rs",
+      "lines": 58
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/support.rs",
+      "lines": 176
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/tests.rs",
+      "lines": 91
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/tests/closed_form.rs",
+      "lines": 25
+    },
+    {
+      "file": "crates/trit-train/src/layer/adam/tests/fused.rs",
+      "lines": 126
+    },
+    {
+      "file": "crates/trit-train/src/layer/grad.rs",
+      "lines": 59
     },
     {
       "file": "crates/trit-train/src/layer/packed_tests.rs",
@@ -4964,11 +5248,87 @@
     },
     {
       "file": "crates/trit-train/src/plane/backward.rs",
-      "lines": 430
+      "lines": 428
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused.rs",
+      "lines": 116
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step.rs",
+      "lines": 269
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step/q_sign.rs",
+      "lines": 62
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step/simd_tests.rs",
+      "lines": 66
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/adam_step/tests.rs",
+      "lines": 121
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward.rs",
+      "lines": 152
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward/tests.rs",
+      "lines": 50
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward_step.rs",
+      "lines": 192
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward_step/tests.rs",
+      "lines": 72
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/backward_step/tests/scalar.rs",
+      "lines": 70
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/forward_step.rs",
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/forward_step/step.rs",
+      "lines": 56
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/forward_step/tests.rs",
+      "lines": 108
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/row.rs",
+      "lines": 27
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/tests.rs",
+      "lines": 42
+    },
+    {
+      "file": "crates/trit-train/src/plane/fused/tests/threshold.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-train/src/plane/pack.rs",
-      "lines": 184
+      "lines": 139
+    },
+    {
+      "file": "crates/trit-train/src/plane/pack/tests.rs",
+      "lines": 47
+    },
+    {
+      "file": "crates/trit-train/src/plane/q.rs",
+      "lines": 24
+    },
+    {
+      "file": "crates/trit-train/src/plane/q/tests.rs",
+      "lines": 12
     },
     {
       "file": "crates/trit-train/src/prefetch.rs",
@@ -5052,11 +5412,31 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/linear.rs",
-      "lines": 41
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/dense.rs",
+      "lines": 25
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/kinds.rs",
+      "lines": 25
     },
     {
       "file": "crates/trit-wspace/examples/bert6/linear/quant.rs",
-      "lines": 79
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/quant/quant_impl.rs",
+      "lines": 130
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/uniform.rs",
+      "lines": 34
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/uniform/gptq.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-wspace/examples/bert6/main.rs",
@@ -5064,15 +5444,55 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 171
+      "lines": 146
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/config.rs",
-      "lines": 43
+      "lines": 4
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config/budget.rs",
+      "lines": 48
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config/builders.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config/opts.rs",
+      "lines": 48
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config/opts/env.rs",
+      "lines": 31
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/forward.rs",
+      "lines": 41
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model/loader.rs",
-      "lines": 92
+      "lines": 81
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/loader/h.rs",
+      "lines": 8
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/loader/wrap.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/loader/wrap/uniform.rs",
+      "lines": 25
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/parallel.rs",
+      "lines": 58
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/sidecars.rs",
+      "lines": 51
     },
     {
       "file": "crates/trit-wspace/examples/bert6/norm.rs",
@@ -5088,15 +5508,55 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run.rs",
-      "lines": 130
+      "lines": 3
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/args.rs",
-      "lines": 41
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/args/parse.rs",
+      "lines": 59
     },
     {
       "file": "crates/trit-wspace/examples/bert6/run/data.rs",
       "lines": 33
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/diag.rs",
+      "lines": 51
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/embed_dump.rs",
+      "lines": 99
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/f32_base.rs",
+      "lines": 98
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/main_flow.rs",
+      "lines": 138
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/modes.rs",
+      "lines": 76
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/sidecar_svd.rs",
+      "lines": 68
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/weight_format.rs",
+      "lines": 4
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/weight_format/account.rs",
+      "lines": 71
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/weight_format/report.rs",
+      "lines": 73
     },
     {
       "file": "crates/trit-wspace/examples/bert6/scales.rs",
@@ -5108,7 +5568,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/sidecar_layer.rs",
-      "lines": 61
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sidecar_layer/sidecar.rs",
+      "lines": 67
     },
     {
       "file": "crates/trit-wspace/examples/bert6/stats.rs",
@@ -5116,7 +5580,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/sts.rs",
-      "lines": 149
+      "lines": 76
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sts/metrics.rs",
+      "lines": 86
     },
     {
       "file": "crates/trit-wspace/examples/bias_e2e/main.rs",
@@ -5475,6 +5943,10 @@
       "lines": 117
     },
     {
+      "file": "crates/trit-wspace/src/gptq/bits.rs",
+      "lines": 69
+    },
+    {
       "file": "crates/trit-wspace/src/gptq/inverse.rs",
       "lines": 84
     },
@@ -5585,6 +6057,10 @@
     {
       "file": "crates/trit-wspace/src/repair/softplus.rs",
       "lines": 9
+    },
+    {
+      "file": "crates/trit-wspace/src/residual.rs",
+      "lines": 345
     },
     {
       "file": "crates/trit-wspace/src/safetensors.rs",
@@ -5775,6 +6251,10 @@
       "lines": 172
     },
     {
+      "file": "crates/trit-wspace/tests/gptq_bits.rs",
+      "lines": 117
+    },
+    {
       "file": "crates/trit-wspace/tests/gptq_group.rs",
       "lines": 148
     },
@@ -5849,6 +6329,10 @@
     {
       "file": "crates/trit-wspace/tests/repair_scope.rs",
       "lines": 117
+    },
+    {
+      "file": "crates/trit-wspace/tests/residual.rs",
+      "lines": 182
     },
     {
       "file": "crates/trit-wspace/tests/safetensors.rs",
@@ -6129,6 +6613,74 @@
     {
       "file": "t3/crates/t3-sig/src/rule.rs",
       "lines": 634
+    },
+    {
+      "file": "verus/src/b3.rs",
+      "lines": 215
+    },
+    {
+      "file": "verus/src/b4.rs",
+      "lines": 317
+    },
+    {
+      "file": "verus/src/bits.rs",
+      "lines": 140
+    },
+    {
+      "file": "verus/src/bits/proofs.rs",
+      "lines": 226
+    },
+    {
+      "file": "verus/src/bulk.rs",
+      "lines": 582
+    },
+    {
+      "file": "verus/src/bulk/proofs.rs",
+      "lines": 402
+    },
+    {
+      "file": "verus/src/k3.rs",
+      "lines": 257
+    },
+    {
+      "file": "verus/src/k3_impl.rs",
+      "lines": 66
+    },
+    {
+      "file": "verus/src/l3.rs",
+      "lines": 247
+    },
+    {
+      "file": "verus/src/lib.rs",
+      "lines": 7
+    },
+    {
+      "file": "verus/src/table.rs",
+      "lines": 61
+    },
+    {
+      "file": "verus/tests/bridge.rs",
+      "lines": 67
+    },
+    {
+      "file": "verus/tests/bridge_algebra.rs",
+      "lines": 167
+    },
+    {
+      "file": "verus/tests/bridge_bits.rs",
+      "lines": 87
+    },
+    {
+      "file": "verus/tests/bridge_bulk.rs",
+      "lines": 106
+    },
+    {
+      "file": "verus/tests/common/mod.rs",
+      "lines": 41
+    },
+    {
+      "file": "verus/tests/refinement.rs",
+      "lines": 34
     }
   ]
 }

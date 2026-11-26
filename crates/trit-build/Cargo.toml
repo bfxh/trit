@@ -17,6 +17,7 @@ path = "src/main.rs"
 gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:naga"]
 
 [dependencies]
+trit-log.workspace = true
 trit-core.workspace = true
 trit-eval.workspace = true
 trit-circuit.workspace = true

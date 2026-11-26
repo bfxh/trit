@@ -163,7 +163,7 @@ mod tests {
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .ok()?;
-        eprintln!("GPU adapter: {}", adapter.get_info().name);
+        trit_log::error!("GPU adapter: {}", adapter.get_info().name);
         let limits = adapter.limits();
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -347,7 +347,7 @@ mod tests {
             queries.push(values.len() as u32); // 越界：内核必须给 0 而不是越界读
             let Some(out) = pollster::block_on(run_gpu(len, pos.len(), &pos, &neg, &queries))
             else {
-                eprintln!("没有可用 GPU adapter，跳过 GPU 对拍（表布局在 CPU 侧已校验）");
+                trit_log::warn!("没有可用 GPU adapter，跳过 GPU 对拍（表布局在 CPU 侧已校验）");
                 return;
             };
             for (code, value) in values.iter().enumerate() {

@@ -1,0 +1,11 @@
+[
+ {
+  "name": "rotate: 旋转退化为恒等",
+  "file": "scripts/wsp_classify_rotate.py",
+  "old": "    return np.eye(dim, dtype=np.float64) - 2.0 * np.outer(w, w)",
+  "new": "    return np.eye(dim, dtype=np.float64)",
+  "pkg": "scripts/wsp_classify_rotate.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

@@ -82,6 +82,9 @@
 | [WSP-LIMITS.md](research/WSP-LIMITS.md) | `trit-wspace` 未证栏汇总（每条给来源与补证所需） |
 | [WSP-E2E-REAL-ACT.md](research/WSP-E2E-REAL-ACT.md) | 真实激活校准：MiniLM 第 0 层三段的随机 vs 真实输入对照 |
 | [WSP-BERT6-RESULTS.md](research/WSP-BERT6-RESULTS.md) | MiniLM 完整 6 层：f32 对照与三值线性权重（随机输入方向翻转） |
+| [WSP-ALT.md](research/WSP-ALT.md) | MXQ 之外的替代路线：BIAS/SCALE 负结果、BUDGET 同字节结果、ROTATE 与排序 |
+| [WSP-MXQ-PLAN.md](research/WSP-MXQ-PLAN.md) | 字节预算内的层内混合位宽：group 3/4/5 分配器设计 |
+| [WSP-BUDGET-RESULTS.md](research/WSP-BUDGET-RESULTS.md) | 同字节预算分配：L12 int3 上 Spearman +0.0048，Pearson 不显著 |
 | [WSP-BLOCK-INDEX.md](research/WSP-BLOCK-INDEX.md) | WSP2 块索引与随机访问 |
 | [WSP-WRITE-LOCK.md](research/WSP-WRITE-LOCK.md) | CLI 并发写锁（`--out` / `--log` 分发前加锁） |
 | [WSP-TILE-EDIT.md](research/WSP-TILE-EDIT.md) | WSP1 tile 编辑：任意矩形块的事务编辑与审计 |
@@ -153,6 +156,8 @@
 | [WORK-BENCH.md](engineering/WORK-BENCH.md) | 工作任务产物基准：20 个文档/数据/表格/邮件/日历/文件整理/合规任务、15 类、81 条确定性检查、参考 81/81 与负例 20/20；原生 XLSX 公式、`-Candidates` 与 182/182 自测 |
 | [CMD-DRIVER.md](engineering/CMD-DRIVER.md) | PTC 命令行降错：plan 预检、argv 无 shell、逐步 verify、无盲重试、错误分类与摘要/本地回执分离；34/34 自测，work-bench 4 步 13/13、81/81 质量不变 |
 | [CI-CD.md](engineering/CI-CD.md) | CI/CD 与发布：开发侧 work-bench/PTC 质量门、agent-quality workflow、Release 质量前置与用户侧资产过滤、CI 预算规则 |
+| [VERIFICATION.md](engineering/VERIFICATION.md) | 主库三值语义的 Verus 验证锚点：K3 规格与代数律证明、3×3 完备对拍 `trit-core`、`scripts/verify.py` 统一入口（固定版本 + SHA-256）与 CI；覆盖范围与路线图 |
+| [LOGGING.md](engineering/LOGGING.md) | 统一运行时日志：`TRIT_LOG` 级别/前缀过滤、文本与 JSONL、文件输出；诊断走 `trit_log`、结果留 stdout 的口径与迁移现状 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |

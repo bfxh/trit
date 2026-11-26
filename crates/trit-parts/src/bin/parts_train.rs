@@ -32,7 +32,7 @@ fn main() {
     let args = match parse() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("参数错误: {e}");
+            trit_log::error!("参数错误: {e}");
             std::process::exit(2);
         }
     };
@@ -43,7 +43,7 @@ fn main() {
     let gpu = match Gpu::new() {
         Some(g) => g,
         None => {
-            eprintln!("没有可用的 GPU 适配器");
+            trit_log::warn!("没有可用的 GPU 适配器");
             std::process::exit(2);
         }
     };
@@ -66,7 +66,7 @@ fn main() {
         std::fs::create_dir_all(dir).ok();
         let p = dir.join("state.bin");
         if p.exists() {
-            println!("发现进程存档，自动续跑：{}", p.display());
+            trit_log::info!("发现进程存档，自动续跑：{}", p.display());
             resume_path = Some(p.clone());
         }
         save_path = Some(p);
@@ -76,7 +76,7 @@ fn main() {
     // 也可以是「场景的父目录」（其子目录各含 rgb/）。
     let paths = trit_parts::partsrun::expand_frames(&args.data, args.limit);
     if paths.is_empty() {
-        eprintln!("没有可用帧");
+        trit_log::warn!("没有可用帧");
         std::process::exit(2);
     }
 
@@ -90,8 +90,8 @@ fn main() {
         Some(p) => match trit_parts::state::load(p) {
             Ok((n, step, rng)) => {
                 match rng {
-                    Some(_) => println!("续跑自 {}（step {step}，RNG 已恢复）", p.display()),
-                    None => println!(
+                    Some(_) => trit_log::info!("续跑自 {}（step {step}，RNG 已恢复）", p.display()),
+                    None => trit_log::info!(
                         "续跑自 {}（step {step}；老存档无 RNG，取样顺序重排）",
                         p.display()
                     ),
@@ -101,7 +101,7 @@ fn main() {
                 n
             }
             Err(e) => {
-                eprintln!("断点读取失败: {e}");
+                trit_log::error!("断点读取失败: {e}");
                 std::process::exit(1);
             }
         },
@@ -114,7 +114,7 @@ fn main() {
                 if (args.width - 1.0).abs() > 1e-6 {
                     let s = |c| scaled_channels(c, args.width);
                     let (a, b, c) = (s(32), s(64), s(128));
-                    println!("宽度 {:.2}×，通道 {a} {b} {c}", args.width);
+                    trit_log::info!("宽度 {:.2}×，通道 {a} {b} {c}", args.width);
                 }
                 Net::random_w(args.seed, args.width)
                     .unwrap_or_else(|e| die(format!("--width 非法: {e}")))
@@ -128,7 +128,7 @@ fn main() {
             .expand_width(args.width)
             .unwrap_or_else(|e| die(format!("--width 非法: {e}")));
         resumed_step = 0;
-        println!(
+        trit_log::info!(
             "net2net：从 {} 扩展为宽度 {:.2}×（新通道 E=0，保持原输出）",
             src.display(),
             args.width
@@ -136,7 +136,7 @@ fn main() {
     }
     if args.depth_planes > 0 && net.depth_cout() == 0 {
         net.add_depth_head(args.depth_planes as u32, args.seed);
-        println!(
+        trit_log::info!(
             "独立深度头：{} 条平面（{} 级），输入 {} 通道、输出 {} 通道",
             args.depth_planes,
             trit_parts::planes::levels(args.depth_planes),
@@ -147,24 +147,22 @@ fn main() {
     net.head_lr_mult = args.head_lr;
     if args.unfreeze_last > 0 {
         net.freeze_until = net.layers.len().saturating_sub(args.unfreeze_last);
-        println!(
-            "只训练最后 {} 层（从第 {} 层起）",
-            args.unfreeze_last, net.freeze_until
-        );
+        let (last, from) = (args.unfreeze_last, net.freeze_until);
+        trit_log::info!("只训练最后 {last} 层（从第 {from} 层起）");
     }
     net.freeze_head = args.freeze_head;
     if args.freeze {
         net.freeze_until = net.layers.len() - 1;
-        println!("冻结骨干：只更新第 {} 层（深度头）", net.freeze_until);
+        trit_log::info!("冻结骨干：只更新第 {} 层（深度头）", net.freeze_until);
     }
     if args.residual {
         net.set_residual(true);
-        println!("块内残差：开（e1b/e2b/e3b/d2b/d1b）");
+        trit_log::info!("块内残差：开（e1b/e2b/e3b/d2b/d1b）");
     }
     net.upload_all(&gpu);
     let ch = net.head_cout() as usize;
     let w = plane_weights(k);
-    println!(
+    trit_log::info!(
         "帧 {}，k={k}，res={res}，lr={}，accum={}，opt={}，ste={:?}",
         paths.len(),
         args.lr,
@@ -192,7 +190,7 @@ fn main() {
         let mut s: Sample = match load_frame_sub(scene, file, k, &args.seg_sub) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("读帧失败: {e}");
+                trit_log::error!("读帧失败: {e}");
                 std::process::exit(1);
             }
         };
@@ -210,7 +208,7 @@ fn main() {
             ) {
                 Ok(v) => Some(v),
                 Err(e) => {
-                    eprintln!("读深度失败: {e}");
+                    trit_log::error!("读深度失败: {e}");
                     std::process::exit(1);
                 }
             }
@@ -334,7 +332,7 @@ fn main() {
                     }
                     _ => None,
                 };
-                println!(
+                trit_log::info!(
                     "  [固定帧] step {}  loss {:.4}  平面 {:?}  valid {:.4}  深度 {:?}",
                     step + 1,
                     ev.loss,
@@ -355,8 +353,8 @@ fn main() {
             && let Some(p) = &save_path
         {
             match trit_parts::state::save(&net, p, resumed_step + (step + 1) as u64, rng) {
-                Ok(()) => println!("  [断点] step {} 已存", step + 1),
-                Err(e) => eprintln!("  [断点] 保存失败: {e}"),
+                Ok(()) => trit_log::info!("  [断点] step {} 已存", step + 1),
+                Err(e) => trit_log::error!("  [断点] 保存失败: {e}"),
             }
         }
         if step % args.report == 0 || step + 1 == args.steps {
@@ -388,9 +386,9 @@ fn main() {
 
     if let Some(path) = &save_path {
         match trit_parts::state::save(&net, path, resumed_step + args.steps as u64, rng) {
-            Ok(()) => println!("断点已存 {}", path.display()),
+            Ok(()) => trit_log::info!("断点已存 {}", path.display()),
             Err(e) => {
-                eprintln!("断点保存失败: {e}");
+                trit_log::error!("断点保存失败: {e}");
                 std::process::exit(1);
             }
         }
@@ -406,7 +404,7 @@ fn main() {
             std::fs::create_dir_all(parent).ok();
         }
         m.save(tpm).unwrap_or_else(|e| {
-            eprintln!("导出部署包失败: {e}");
+            trit_log::error!("导出部署包失败: {e}");
             std::process::exit(1);
         });
         let n: usize = m.layers.iter().map(|l| l.q.len()).sum();
@@ -465,7 +463,7 @@ fn write_manifest(
     let fp = match trit_parts::partsrun::fingerprint_train(frames, &args.seg_sub) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("数据指纹失败: {e}");
+            trit_log::error!("数据指纹失败: {e}");
             std::process::exit(1);
         }
     };
@@ -542,13 +540,13 @@ fn write_manifest(
         std::fs::create_dir_all(parent).ok();
     }
     std::fs::write(path, body).unwrap_or_else(|e| {
-        eprintln!("写清单失败 {}: {e}", path.display());
+        trit_log::error!("写清单失败 {}: {e}", path.display());
         std::process::exit(1);
     });
     println!("清单 {}", path.display());
 }
 
 fn die(msg: String) -> ! {
-    eprintln!("{msg}");
+    trit_log::error!("{msg}");
     std::process::exit(1)
 }

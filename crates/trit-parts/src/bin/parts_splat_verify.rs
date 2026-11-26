@@ -85,7 +85,7 @@ fn mean_psnr(splats: &[trit_parts::splat::Splat], scene: &Path, frames: &[usize]
 
 fn read_manifest(p: &Path) -> Json {
     trit_learn::json::read_json(p).unwrap_or_else(|e| {
-        eprintln!("读不了清单 {e}");
+        trit_log::error!("读不了清单 {e}");
         std::process::exit(2);
     })
 }
@@ -119,7 +119,7 @@ fn main() {
     let fit_frames = list(config, "fit_frames");
     let eval_frames = list(config, "eval_frames");
     if fit_frames.is_empty() || eval_frames.is_empty() {
-        eprintln!("清单缺 fit_frames / eval_frames");
+        trit_log::error!("清单缺 fit_frames / eval_frames");
         std::process::exit(2);
     }
     let want_hash = data.get_str("hash").unwrap_or_default();
@@ -135,7 +135,7 @@ fn main() {
     all.sort_unstable();
     all.dedup();
     let fp = fingerprint_scene_frames_rgb(&scene, &all).unwrap_or_else(|e| {
-        eprintln!("语料指纹失败: {e}");
+        trit_log::error!("语料指纹失败: {e}");
         std::process::exit(2);
     });
     let ok_data = data.get_str("algo") == Some("sha256-content-v1")
@@ -149,7 +149,7 @@ fn main() {
         && want_sha == file_sha
         && (want_bytes_file < 0.0 || want_bytes_file == file_bytes);
     let splats = read_ply_3dgs(&ply).unwrap_or_else(|e| {
-        eprintln!("读 PLY 失败: {e}");
+        trit_log::error!("读 PLY 失败: {e}");
         std::process::exit(2);
     });
     let ok_count = want_count == splats.len() as f64 && !splats.is_empty();

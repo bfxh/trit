@@ -1,0 +1,10 @@
+[package]
+name = "trit-log"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "统一运行时日志：级别过滤、文本/JSONL 格式、终端或文件输出"
+
+[dependencies]

@@ -13,6 +13,7 @@ default = []
 gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:half"]
 
 [dependencies]
+trit-log.workspace = true
 serde_json = "1.0.154"
 wgpu = { version = "30", optional = true }
 pollster = { version = "0.4", optional = true }

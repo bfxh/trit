@@ -103,7 +103,7 @@ pub fn grid_for(prims: &[Primitive], cell: f32, margin: usize) -> Option<crate::
         [0, 1, 2].map(|a| (((hi[a] - lo[a]) / cell).ceil() as usize + 1 + 2 * margin).max(1));
     let total = dims[0].saturating_mul(dims[1]).saturating_mul(dims[2]);
     if total > 60_000_000 {
-        eprintln!("grid_for: 栅格过大 {dims:?}（{total} 体素），检查 scale/中心");
+        trit_log::error!("grid_for: 栅格过大 {dims:?}（{total} 体素），检查 scale/中心");
         return None;
     }
     Some(crate::mesh::Grid {

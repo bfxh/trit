@@ -1,15 +1,15 @@
 //! 权重加载：safetensors → `Bert`（从 `model.rs` 拆出，守住行数预算）。
 use crate::activation::NormKind;
-use crate::linear::{F32Linear, Linear, QuantLinear};
+use crate::linear::{F32Linear, Linear};
 use crate::model::{Bert, BertConfig, BertLayer};
 use trit_wspace::safetensors;
+mod h;
+mod wrap;
 
 pub(crate) fn load(file: &str, config: BertConfig) -> Bert {
     let (layers, hidden) = (config.layers, config.hidden);
     let (heads, eps) = (config.heads, config.eps);
-    let (quantize, activation, sidecar_rank) =
-        (config.quantize, config.activation, config.sidecar_rank);
-    let (gptq_dir, gptq_group) = (config.gptq_dir, config.gptq_group);
+    let activation = config.activation;
     let tensor = |name: &str| -> F32Linear {
         let weight =
             safetensors::read_tensor(file, name).unwrap_or_else(|e| panic!("读 {name} 失败：{e}"));
@@ -29,54 +29,43 @@ pub(crate) fn load(file: &str, config: BertConfig) -> Bert {
         let bias = safetensors::read_vector(file, &format!("{prefix}.bias")).expect("LN bias");
         NormKind::new(activation, weight, bias, eps)
     };
-    let load_h = |short: &str| -> Option<Vec<f32>> {
-        let dir = gptq_dir.as_ref()?;
-        let path = format!("{dir}/{short}.f32");
-        trit_wspace::activations::read_matrix(&path)
-            .ok()
-            .map(|(_, _, values)| values)
-    };
-    let wrap = |name: &str, short: &str| {
-        let linear = tensor(name);
-        if quantize {
-            Linear::Quant(QuantLinear::from(
-                &linear,
-                sidecar_rank,
-                load_h(short).as_deref(),
-                gptq_group,
-            ))
-        } else {
-            Linear::F32(linear)
-        }
+    let build = |name: &str, short: &str, layer: usize| -> Linear {
+        wrap::build(tensor(name), layer, short, &config)
     };
     let mut built = Vec::with_capacity(layers);
     for index in 0..layers {
         let prefix = format!("encoder.layer.{index}");
         built.push(BertLayer {
-            query: wrap(
+            query: build(
                 &format!("{prefix}.attention.self.query.weight"),
                 &format!("q{index}"),
+                index,
             ),
-            key: wrap(
+            key: build(
                 &format!("{prefix}.attention.self.key.weight"),
                 &format!("k{index}"),
+                index,
             ),
-            value: wrap(
+            value: build(
                 &format!("{prefix}.attention.self.value.weight"),
                 &format!("v{index}"),
+                index,
             ),
-            output: wrap(
+            output: build(
                 &format!("{prefix}.attention.output.dense.weight"),
                 &format!("o{index}"),
+                index,
             ),
             norm1: norm(&format!("{prefix}.attention.output.LayerNorm")),
-            intermediate: wrap(
+            intermediate: build(
                 &format!("{prefix}.intermediate.dense.weight"),
                 &format!("i{index}"),
+                index,
             ),
-            ffn_output: wrap(
+            ffn_output: build(
                 &format!("{prefix}.output.dense.weight"),
                 &format!("f{index}"),
+                index,
             ),
             norm2: norm(&format!("{prefix}.output.LayerNorm")),
             activation,

@@ -1,10 +1,13 @@
 //! MiniLM BERT 6 层的 f32 / 三值前向（只三值化线性权重，LN/GELU/softmax 保持 f32）。
 mod config;
+mod forward;
+mod loader;
+mod parallel;
+mod sidecars;
 use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
 use crate::gelu::gelu;
-pub(crate) use config::BertConfig;
-mod loader;
 use crate::linear::Linear;
+pub(crate) use config::{BertConfig, Budget};
 pub(crate) struct BertLayer {
     pub(crate) query: Linear,
     pub(crate) key: Linear,
@@ -24,9 +27,6 @@ pub(crate) struct Bert {
     pub(crate) scales: Option<Vec<LayerScales>>,
 }
 impl Bert {
-    pub(crate) fn load(file: &str, config: BertConfig) -> Self {
-        loader::load(file, config)
-    }
     pub(crate) fn set_scales(&mut self, scales: Vec<LayerScales>) {
         self.scales = Some(scales);
     }
@@ -39,36 +39,11 @@ impl Bert {
         seq: usize,
         capture: bool,
     ) -> (Vec<f32>, Vec<Vec<f32>>, Vec<Vec<f32>>) {
-        let mut output = Vec::with_capacity(batch * seq * self.hidden);
-        let (mut snapshots, mut layer_outputs) = (Vec::new(), Vec::new());
-        if capture {
-            snapshots = vec![Vec::new(); self.layers.len()];
-            layer_outputs = vec![Vec::new(); self.layers.len()];
+        let threads = parallel::threads();
+        if !capture && threads > 1 {
+            return parallel::forward(self, input, mask, batch, seq, threads);
         }
-        for (item, chunk) in input.chunks(seq * self.hidden).enumerate() {
-            let mut current = chunk.to_vec();
-            let item_mask = &mask[item * seq..(item + 1) * seq];
-            for (index, layer) in self.layers.iter().enumerate() {
-                let layer_scales = self.scales.as_ref().map(|all| &all[index]);
-                let captured = layer.forward(
-                    &mut current,
-                    item_mask,
-                    seq,
-                    self.hidden,
-                    self.heads,
-                    self.head_dim,
-                    layer_scales,
-                );
-                if capture {
-                    snapshots[index].extend_from_slice(&captured);
-                }
-                if capture {
-                    layer_outputs[index].extend_from_slice(&current);
-                }
-            }
-            output.extend_from_slice(&current);
-        }
-        (output, snapshots, layer_outputs)
+        forward::run(self, input, mask, batch, seq, capture)
     }
 }
 impl BertLayer {

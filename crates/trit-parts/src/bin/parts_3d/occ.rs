@@ -156,7 +156,7 @@ pub(crate) fn occ_cmd(argv: &[String]) {
     let nin = frames.len() * FPER + 1;
     let mut mlp = match &load_model {
         Some(p) => {
-            println!("加载模型 {}", p.display());
+            trit_log::info!("加载模型 {}", p.display());
             Mlp::load(p).unwrap_or_else(|e| fail(&e))
         }
         None => Mlp::new(nin, hid, seed).unwrap_or_else(|e| fail(&e)),
@@ -203,7 +203,7 @@ pub(crate) fn occ_cmd(argv: &[String]) {
             let k = pos.len().min(cap / 2).min(neg.len());
             samples.extend(pos.into_iter().take(k));
             samples.extend(neg.into_iter().take(k));
-            println!("train scene{idx:04}: 采样 {k}+{k}");
+            trit_log::info!("train scene{idx:04}: 采样 {k}+{k}");
         }
         if samples.is_empty() {
             fail("没有训练样本");
@@ -226,7 +226,7 @@ pub(crate) fn occ_cmd(argv: &[String]) {
 
         if let Some(p) = &save_model {
             mlp.save(p).unwrap_or_else(|e| fail(&e));
-            println!("模型已存 {}", p.display());
+            trit_log::info!("模型已存 {}", p.display());
         }
     } // if load_model.is_none()
 
@@ -349,7 +349,7 @@ pub(crate) fn occ_cmd(argv: &[String]) {
             rows_json.join(", ")
         );
         std::fs::write(p, body).unwrap_or_else(|e| fail(&format!("写 {}: {e}", p.display())));
-        println!("结果已写 {}", p.display());
+        trit_log::info!("结果已写 {}", p.display());
     }
 
     // A1 清单：模型 + 语料指纹 + 配置 + 读数（提取族）

@@ -68,7 +68,7 @@ fn hash(p: &Path) -> String {
 
 fn read(p: &Path) -> Json {
     trit_learn::json::read_json(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {e}");
+        trit_log::error!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -82,7 +82,7 @@ fn run(bin: &Path, args: &[String], what: &str) -> std::process::Output {
         .args(args)
         .output()
         .unwrap_or_else(|e| {
-            eprintln!("跑不了 {}: {e}", bin.display());
+            trit_log::error!("跑不了 {}: {e}", bin.display());
             std::process::exit(2);
         });
     println!("{what} 已跑（rc={:?}）", out.status.code());
@@ -363,7 +363,7 @@ fn main() {
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
     let vp = publish(&scene_dir, "scene", pass, custom.as_deref(), &body).unwrap_or_else(|e| {
-        eprintln!("{e}");
+        trit_log::error!("{e}");
         std::process::exit(2);
     });
     println!(

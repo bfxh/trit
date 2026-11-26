@@ -1,0 +1,5 @@
+config	balanced_logreg_accuracy	balanced_logreg_macro_f1	balanced_svc_accuracy	balanced_svc_macro_f1
+l6-f32	0.516459	0.490066	0.513168	0.485776
+l6-int3	0.512070	0.483218	0.506218	0.476248
+l6-int4	0.509876	0.482207	0.504023	0.476024
+l6-rescan	0.515362	0.486043	0.514265	0.484592

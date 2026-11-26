@@ -31,7 +31,7 @@ fn main() -> ExitCode {
             Some(value) => match value.parse() {
                 Ok(max_n) => max_n,
                 Err(_) => {
-                    eprintln!("--big 后面要跟个数：--big 24");
+                    trit_log::error!("--big 后面要跟个数：--big 24");
                     return ExitCode::from(2);
                 }
             },
@@ -58,7 +58,7 @@ fn main() -> ExitCode {
             .and_then(|value| value.parse().ok())
             .unwrap_or(3);
         if max_vars > 40 {
-            eprintln!("--fuzz-cnf 的 --nvars 上限取 40：穷举是 2^n，再大只是在等");
+            trit_log::error!("--fuzz-cnf 的 --nvars 上限取 40：穷举是 2^n，再大只是在等");
             return ExitCode::from(2);
         }
         return run_fuzz_cnf(cases, max_vars, clause_len);
@@ -74,7 +74,7 @@ fn main() -> ExitCode {
     let expr = match Parser::parse(&source) {
         Ok(expr) => expr,
         Err(error) => {
-            eprintln!("解析失败: {error}");
+            trit_log::error!("解析失败: {error}");
             return ExitCode::from(2);
         }
     };
@@ -87,7 +87,7 @@ fn main() -> ExitCode {
         match Parser::parse(&source) {
             Ok(constraint) => constraints.push(constraint),
             Err(error) => {
-                eprintln!("约束解析失败: {error}");
+                trit_log::error!("约束解析失败: {error}");
                 return ExitCode::from(2);
             }
         }
@@ -97,7 +97,7 @@ fn main() -> ExitCode {
         .map(parse_target)
         .transpose()
         .unwrap_or_else(|error| {
-            eprintln!("{error}");
+            trit_log::error!("{error}");
             std::process::exit(2);
         })
         .unwrap_or(Ternary::True);
@@ -172,7 +172,7 @@ fn main() -> ExitCode {
     if report.matches {
         ExitCode::SUCCESS
     } else {
-        eprintln!("MISMATCH");
+        trit_log::error!("MISMATCH");
         ExitCode::from(1)
     }
 }
@@ -181,7 +181,7 @@ fn run_policy(path: &str) -> ExitCode {
     let policy = match Policy::load(path) {
         Ok(policy) => policy,
         Err(error) => {
-            eprintln!("策略读取失败: {error}");
+            trit_log::error!("策略读取失败: {error}");
             return ExitCode::from(2);
         }
     };
@@ -276,7 +276,7 @@ fn run_policy(path: &str) -> ExitCode {
     if failures == 0 {
         ExitCode::SUCCESS
     } else {
-        eprintln!("MISMATCH: {failures} 条断言与穷举/BDD 不一致");
+        trit_log::error!("MISMATCH: {failures} 条断言与穷举/BDD 不一致");
         ExitCode::from(1)
     }
 }
@@ -302,10 +302,8 @@ fn run_fuzz_cnf(cases: usize, max_vars: usize, clause_len: usize) -> ExitCode {
             total += 1;
             if got.count != want {
                 failures += 1;
-                eprintln!(
-                    "MISMATCH nvars={nvars} DPLL={} 穷举={want} 子句={:?}",
-                    got.count, formula.clauses
-                );
+                let (dpll, clauses) = (got.count, formula.clauses);
+                trit_log::error!("MISMATCH nvars={nvars} DPLL={dpll} 穷举={want} 子句={clauses:?}");
             }
         }
     }
@@ -313,7 +311,7 @@ fn run_fuzz_cnf(cases: usize, max_vars: usize, clause_len: usize) -> ExitCode {
         println!("OK {total} 个随机 CNF 与 2^n 穷举逐一对账一致（最慢一次 {slowest}µs）");
         ExitCode::SUCCESS
     } else {
-        eprintln!("MISMATCH: {failures}/{total} 条计数不一致");
+        trit_log::error!("MISMATCH: {failures}/{total} 条计数不一致");
         ExitCode::from(1)
     }
 }
@@ -344,7 +342,7 @@ fn run_random(cases: usize) -> ExitCode {
                     }
                     if !report.matches {
                         failures += 1;
-                        eprintln!(
+                        trit_log::error!(
                             "MISMATCH n={n} alg={} target={target:?} expr={expr:?} dpll={} exhaustive={} bdd={:?}({})",
                             alg.as_str(),
                             report.dpll_count,

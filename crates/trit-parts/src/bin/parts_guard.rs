@@ -148,7 +148,7 @@ fn notify(title: &str, body: &str, quiet: bool) {
     }
     #[cfg(not(windows))]
     {
-        eprintln!("[notify] {title}: {body}");
+        trit_log::error!("[notify] {title}: {body}");
         let _ = Command::new("sh").args(["-c", "printf '\\a'"]).status();
     }
 }

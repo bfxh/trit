@@ -16,7 +16,7 @@ impl WgpuBackend {
         let gpu = Gpu::new().ok_or("没有可用的 GPU 适配器")?;
         let mut net = Net::from_tensors(t)?;
         net.upload_all(&gpu);
-        println!("[wgpu] 适配器：{}", gpu.adapter);
+        trit_log::info!("[wgpu] 适配器：{}", gpu.adapter);
         Ok(Self { gpu, net })
     }
 
@@ -25,7 +25,7 @@ impl WgpuBackend {
         let gpu = Gpu::new().ok_or("没有可用的 GPU 适配器")?;
         let mut net = Net::from_tpm(m);
         net.upload_all(&gpu);
-        println!("[wgpu] 适配器：{}", gpu.adapter);
+        trit_log::info!("[wgpu] 适配器：{}", gpu.adapter);
         Ok(Self { gpu, net })
     }
 

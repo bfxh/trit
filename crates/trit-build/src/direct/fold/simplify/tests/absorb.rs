@@ -1,0 +1,43 @@
+//! 吸收律的代数分派判据：K3/Ł3 落常量，B3 保留原式。
+
+use super::{lowered, simplified_alg};
+use crate::direct::emit;
+use crate::direct::ir::Op;
+use trit_core::Algebra;
+use trit_core::Parser;
+use trit_core::value::Ternary;
+
+/// 吸收律只在 K3/Ł3 落常量；B3 保留原式（`U & F = U` / `U | T = U`）。
+#[test]
+fn absorption_is_only_for_k3_and_lukasiewicz() {
+    for alg in [Algebra::Kleene, Algebra::Lukasiewicz] {
+        assert_eq!(
+            simplified_alg("a & 0", alg),
+            vec![Op::Const(Ternary::False)],
+            "{alg:?}"
+        );
+        assert_eq!(
+            simplified_alg("a | 1", alg),
+            vec![Op::Const(Ternary::True)],
+            "{alg:?}"
+        );
+    }
+    assert_eq!(simplified_alg("a & 0", Algebra::Bochvar), lowered("a & 0"));
+    assert_eq!(simplified_alg("a | 1", Algebra::Bochvar), lowered("a | 1"));
+}
+
+/// 吸收律的渲染差异：K3 是一条常量，B3 仍要算子表。
+#[test]
+fn absorbing_c_depends_on_the_algebra() {
+    for (source, table) in [("a & 0", "T_AND"), ("a | 1", "T_OR")] {
+        let expr = Parser::parse(source).expect("解析");
+        let vars = expr.variables();
+        let k3 = emit(&expr, &vars, Algebra::Kleene).expect("生成");
+        assert_eq!(k3.matches("    int8_t t").count(), 1, "{source}: {k3}");
+        assert!(!k3.contains("static const int8_t T_"), "{source}: {k3}");
+
+        let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
+        assert!(b3.contains(table), "{source} B3 应保留 {table}: {b3}");
+        assert!(b3.contains("vars[0]"), "{source}: {b3}");
+    }
+}

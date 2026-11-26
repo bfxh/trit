@@ -133,7 +133,7 @@ fn run() -> Result<i32, String> {
         let ttx = match std::fs::read(&ttx_path) {
             Ok(v) => v,
             Err(e2) => {
-                eprintln!("读不了 {}: {e2}", ttx_path.display());
+                trit_log::error!("读不了 {}: {e2}", ttx_path.display());
                 t.read_errors += 1;
                 continue;
             }
@@ -145,7 +145,7 @@ fn run() -> Result<i32, String> {
         let img = match load_png_rgba(&root.join(&e.name)) {
             Ok(v) => v,
             Err(e2) => {
-                eprintln!("{}: {e2}", e.name);
+                trit_log::error!("{}: {e2}", e.name);
                 t.read_errors += 1;
                 continue;
             }
@@ -154,7 +154,7 @@ fn run() -> Result<i32, String> {
             match measure(&img.rgba, img.width, img.height, &ttx, stride) {
                 Ok(v) => v,
                 Err(e2) => {
-                    eprintln!("{}: {e2}", e.name);
+                    trit_log::error!("{}: {e2}", e.name);
                     t.read_errors += 1;
                     continue;
                 }
@@ -176,7 +176,7 @@ fn run() -> Result<i32, String> {
             Ok(v) if v == ttx => {}
             Ok(_) => t.reencode_mismatch += 1,
             Err(e2) => {
-                eprintln!("重编码 {}: {e2}", e.name);
+                trit_log::error!("重编码 {}: {e2}", e.name);
                 t.read_errors += 1;
             }
         }
@@ -222,7 +222,7 @@ fn run() -> Result<i32, String> {
         t.checked
     );
     if t.read_errors > 0 {
-        eprintln!("读/解码失败 {} 个文件", t.read_errors);
+        trit_log::error!("读/解码失败 {} 个文件", t.read_errors);
     }
     println!(
         "{}",

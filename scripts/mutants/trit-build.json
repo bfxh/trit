@@ -17,7 +17,7 @@
  },
  {
   "name": "build: 缓存不比对产物哈希",
-  "file": "crates/trit-build/src/main.rs",
+  "file": "crates/trit-build/src/cache.rs",
   "old": "        if hash64(&bytes) != u64::from_str_radix(info.get(\"hash\")?.as_str()?, 16).ok()? {",
   "new": "        if false {",
   "pkg": "trit-build",
@@ -166,5 +166,511 @@
   "new": "        let rows = width * 64;",
   "pkg": "trit-build",
   "filter": "bitplan::tests::threaded_table_matches_single_thread"
+ },
+ {
+  "name": "netlist: BUF 不再别名输入",
+  "file": "crates/trit-build/src/direct/netlist.rs",
+  "old": "                self.signal(input)?",
+  "new": "                let index = self.signal(input)?;\n                self.push(Op::Not(index))",
+  "pkg": "trit-build",
+  "filter": "direct::netlist::tests::buf_is_an_alias_not_a_statement"
+ },
+ {
+  "name": "netlist: 重复驱动不报错",
+  "file": "crates/trit-build/src/direct/netlist.rs",
+  "old": "        if drivers.insert(name, gate).is_some() {",
+  "new": "        if false {",
+  "pkg": "trit-build",
+  "filter": "direct::netlist::tests::duplicate_driver_is_rejected"
+ },
+ {
+  "name": "netlist: Verilog 异或落成 Ł3 异或",
+  "file": "crates/trit-build/src/direct/netlist.rs",
+  "old": "                self.push(Op::Xor2(left, right))",
+  "new": "                self.push(Op::Xor(left, right))",
+  "pkg": "trit-build",
+  "filter": "direct::netlist::tests::verilog_xor_becomes_classic_xor2"
+ },
+ {
+  "name": "fold: Xor2 借用 Ł3 异或",
+  "file": "crates/trit-build/src/direct/fold.rs",
+  "old": "                .map(|(a, b)| GateKind::XorClassic.eval(&[a, b], alg)),",
+  "new": "                .map(|(a, b)| alg.strong_add(a, b)),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::tests::classic_xor2_constants_fold_like_the_gate_table"
+ },
+ {
+  "name": "fold: 折叠后不按根收孤儿",
+  "file": "crates/trit-build/src/direct/fold.rs",
+  "old": "prune_dead(kept, root)",
+  "new": "prune_dead(kept, 0)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::tests::all_constant_tree_collapses_to_one_const"
+ },
+ {
+  "name": "simplify: x & T 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    } else if consts[right] == Some(Ternary::True) {",
+  "new": "    } else if false {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
+ },
+ {
+  "name": "simplify: x | F 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    } else if consts[right] == Some(Ternary::False) {",
+  "new": "    } else if false {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
+ },
+ {
+  "name": "simplify: K3/Ł3 与吸收律失效",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    } else if !matches!(alg, Algebra::Bochvar)\n        && (consts[left] == Some(Ternary::False) || consts[right] == Some(Ternary::False))",
+  "new": "    } else if false",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::absorb::absorption_is_only_for_k3_and_lukasiewicz"
+ },
+ {
+  "name": "simplify: K3/Ł3 或吸收律失效",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    } else if !matches!(alg, Algebra::Bochvar)\n        && (consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True))",
+  "new": "    } else if false",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::absorb::absorption_is_only_for_k3_and_lukasiewicz"
+ },
+ {
+  "name": "simplify: 与幂等律不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    } else if left == right || consts[left] == Some(Ternary::True) {",
+  "new": "    } else if consts[left] == Some(Ternary::True) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::idem::idempotence_aliases_to_the_operand"
+ },
+ {
+  "name": "simplify: 或幂等律不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    } else if left == right || consts[left] == Some(Ternary::False) {",
+  "new": "    } else if consts[left] == Some(Ternary::False) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::idem::idempotence_aliases_to_the_operand"
+ },
+ {
+  "name": "cse: 结合链不重用前缀",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "        if let Some(&node) = memo.get(&key) {",
+  "new": "        if let Some(&node) = None::<&usize> {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::mirrored_associations_share_one_chain"
+ },
+ {
+  "name": "lattice: B3 守卫被绕过",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
+  "old": "    if matches!(alg, Algebra::Bochvar) {\n        return None;\n    }",
+  "new": "    if false {\n        return None;\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::lattice_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "lattice: K3/Ł3 吸收不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
+  "old": "    if chain::contains(kept, right, left, inner_or) {\n        return Some(left);\n    }",
+  "new": "    if false {\n        return Some(left);\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::lattice_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "xor2: X 不吸收",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        (Some(Ternary::Unknown), _) | (_, Some(Ternary::Unknown)) => {",
+  "new": "        (Some(Ternary::Unknown), Some(Ternary::Unknown)) => {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::false_is_identity_and_unknown_absorbs"
+ },
+ {
+  "name": "xor2: 0 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        (Some(Ternary::False), _) => resolve.push(right),",
+  "new": "        (Some(Ternary::False), Some(_)) => resolve.push(right),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::false_is_identity_and_unknown_absorbs"
+ },
+ {
+  "name": "xor2: 1 不取反",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        (Some(Ternary::True), _) => negate(resolve, kept, consts, right),",
+  "new": "        (Some(Ternary::True), _) => push_node(resolve, kept, consts, Op::Xor2(left, right)),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::true_turns_into_not_and_double_negation_cancels"
+ },
+ {
+  "name": "xor2: 双重否定不消",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        resolve.push(inner);",
+  "new": "        resolve.push(target);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::true_turns_into_not_and_double_negation_cancels"
+ },
+ {
+  "name": "connectives: B3 的 x=>T 未守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Bochvar) && consts[right] == Some(Ternary::True) {",
+  "new": "    if consts[right] == Some(Ternary::True) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::implication_constants_alias_or_fold"
+ },
+ {
+  "name": "connectives: B3 的 F=>x 未守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Bochvar) && consts[left] == Some(Ternary::False) {",
+  "new": "    if consts[left] == Some(Ternary::False) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::implication_constants_alias_or_fold"
+ },
+ {
+  "name": "connectives: Ł3 自蕴含不折叠",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if left == right {\n        if matches!(alg, Algebra::Lukasiewicz) {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Implies(left, right));",
+  "new": "    if left == right {\n        if false {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Implies(left, right));",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::self_implication_is_constant_only_in_lukasiewicz"
+ },
+ {
+  "name": "connectives: 否定形状不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Lukasiewicz)\n        && (is_not_of(kept, right, left) || is_not_of(kept, left, right))",
+  "new": "    if matches!(alg, Algebra::Lukasiewicz)\n        && (is_not_of(kept, right, left) || is_not_of(kept, left, right))",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::implication_constants_alias_or_fold"
+ },
+ {
+  "name": "connectives: Ł3 自等价不折叠",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if left == right {\n        if matches!(alg, Algebra::Lukasiewicz) {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Equiv(left, right));",
+  "new": "    if left == right {\n        if false {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Equiv(left, right));",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::equivalence_constants_alias_fold_or_stay"
+ },
+ {
+  "name": "connectives: Ł3 的 X<=>X 未守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Lukasiewicz)\n        && (consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown))",
+  "new": "    if consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::equivalence_constants_alias_fold_or_stay"
+ },
+ {
+  "name": "xor: K3/B3 的 T 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::True) {\n            resolve.push(right);\n            return;\n        }",
+  "new": "        if consts[left] == Some(Ternary::True) {\n            resolve.push(left);\n            return;\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: K3/B3 的 X 不吸收",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown) {",
+  "new": "        if consts[left] == Some(Ternary::Unknown) && consts[right] == Some(Ternary::Unknown) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: Ł3 的 F 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::False) {\n            resolve.push(right);\n            return;\n        }",
+  "new": "        if consts[left] == Some(Ternary::False) {\n            resolve.push(left);\n            return;\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: Ł3 的 T 不吸收",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True) {",
+  "new": "        if consts[left] == Some(Ternary::True) && consts[right] == Some(Ternary::True) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: Ł3 互补不折叠",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if is_complement(kept, left, right) {\n            push_const(resolve, kept, consts, Ternary::True);",
+  "new": "        if is_complement(kept, left, right) {\n            push_const(resolve, kept, consts, Ternary::False);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::lukasiewicz_complement_collapses_but_k3_and_bochvar_stay"
+ },
+ {
+  "name": "negation: 双重否定不消",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "old": "    if let Op::Not(target) = kept[inner] {\n        resolve.push(target);\n        return;\n    }",
+  "new": "    if let Op::Not(_target) = kept[inner] {\n        resolve.push(inner);\n        return;\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::negation::tests::double_negation_aliases_and_one_sided_inversion_stays"
+ },
+ {
+  "name": "negation: 单侧取反也回收",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation/de_morgan.rs",
+  "old": "    let right = not_operand(kept, *right)?;",
+  "new": "    let right = not_operand(kept, *right).unwrap_or(*right);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::negation::tests::double_negation_aliases_and_one_sided_inversion_stays"
+ },
+ {
+  "name": "negation: 对偶算子写反",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation/de_morgan.rs",
+  "old": "    Some(if dual {\n        Op::And(left, right)\n    } else {\n        Op::Or(left, right)\n    })",
+  "new": "    Some(if dual {\n        Op::Or(left, right)\n    } else {\n        Op::And(left, right)\n    })",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::negation::tests::both_inverted_operands_collapse_to_the_dual_operator"
+ },
+ {
+  "name": "cse: 结合链不展平",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "        Op::And(left, right) if !dual => {\n            collect(kept, left, dual, out);\n            collect(kept, right, dual, out);\n        }",
+  "new": "        Op::And(..) if !dual => {\n            out.push(index);\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::mirrored_associations_share_one_chain"
+ },
+ {
+  "name": "cse: 结合链叶子不排序",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "    leaves.sort_unstable();\n",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::mirrored_associations_share_one_chain"
+ },
+ {
+  "name": "cse: 重复叶子不去重",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "    leaves.dedup();\n",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::duplicate_leaves_collapse_by_idempotence"
+ },
+ {
+  "name": "cse: 对偶链写反",
+  "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
+  "old": "        kept.push(if dual {\n            Op::Or(acc, leaves[end - 1])\n        } else {\n            Op::And(acc, leaves[end - 1])\n        });",
+  "new": "        kept.push(if dual {\n            Op::And(acc, leaves[end - 1])\n        } else {\n            Op::Or(acc, leaves[end - 1])\n        });",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::assoc::dual::or_chain_keeps_dual_operator"
+ },
+ {
+  "name": "complement: B3 守卫被绕过",
+  "file": "crates/trit-build/src/direct/fold/simplify/complement.rs",
+  "old": "    if !matches!(alg, Algebra::Bochvar) {\n        return None;\n    }",
+  "new": "    if false {\n        return None;\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::complement::complement_elimination_is_b3_only_in_the_ir"
+ },
+ {
+  "name": "complement: 补元方向写反（取到第一个操作数）",
+  "file": "crates/trit-build/src/direct/fold/simplify/complement.rs",
+  "old": "        return Some((outer, second));",
+  "new": "        return Some((outer, first));",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::complement::complement_elimination_aliases_both_orders"
+ },
+ {
+  "name": "complement: 只认 outer 为 Not 的顺序",
+  "file": "crates/trit-build/src/direct/fold/simplify/complement.rs",
+  "old": "        _ => matches!(kept[inner], Op::Not(base) if base == outer),",
+  "new": "        _ => false,",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::complement::complement_elimination_aliases_both_orders"
+ },
+ {
+  "name": "complement: 与分支不查内层 Or",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "complement::pair(alg, kept, left, right, true)",
+  "new": "complement::pair(alg, kept, left, right, false)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::complement::complement_elimination_aliases_both_orders"
+ },
+ {
+  "name": "complement: 命中后仍新建节点",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    if left == other {",
+  "new": "    if false {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::complement::alias::complement_other_equal_to_outer_aliases"
+ },
+ {
+  "name": "lattice: 链吸收不递归",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+  "old": "        if a == needle || b == needle {\n            return true;\n        }\n        stack.push(a);\n        stack.push(b);",
+  "new": "        if a == needle || b == needle {\n            return true;\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::chain::chain_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "lattice: 链吸收只走左分支",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+  "old": "        stack.push(a);\n        stack.push(b);",
+  "new": "        stack.push(a);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::chain::chain_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "lattice: 链吸收跨异算子",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+  "old": "        let (a, b) = match (inner_or, kept[node]) {\n            (true, Op::Or(a, b)) | (false, Op::And(a, b)) => (a, b),\n            _ => continue,\n        };",
+  "new": "        let (a, b) = match kept[node] {\n            Op::Or(a, b) | Op::And(a, b) => (a, b),\n            _ => continue,\n        };",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::chain::cross_operator_nesting_stays"
+ },
+ {
+  "name": "cse: 公因子不提取",
+  "file": "crates/trit-build/src/direct/fold/cse.rs",
+  "old": "    // 提取公因子前先合并同构节点，命中后再压平新建的内层链。\n    let ops = factor::factor(ops);",
+  "new": "    // 提取公因子前先合并同构节点，命中后再压平新建的内层链。\n    let ops = { let _ = factor::factor; ops };",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::factor::common_and_factors_out_of_or"
+ },
+ {
+  "name": "cse: 公因子只认外层左操作数",
+  "file": "crates/trit-build/src/direct/fold/cse/factor.rs",
+  "old": "    for (shared, other) in [(l1, l2), (l2, l1)] {",
+  "new": "    for (shared, other) in [(l1, l2)] {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::factor::common_second_operand_factors"
+ },
+ {
+  "name": "cse: 公因子跨异算子",
+  "file": "crates/trit-build/src/direct/fold/cse/factor.rs",
+  "old": "        (true, Op::And(a, b)) | (false, Op::Or(a, b)) => Some((a, b)),",
+  "new": "        (true, Op::Or(a, b)) | (false, Op::And(a, b)) => Some((a, b)),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::factor::common_and_factors_out_of_or"
+ },
+ {
+  "name": "negchain: 非 Not 叶子也折叠",
+  "file": "crates/trit-build/src/direct/fold/negchain.rs",
+  "old": "        _ => false,",
+  "new": "        _ => {\n            leaves.push(index);\n            true\n        },",
+  "pkg": "trit-build",
+  "filter": "direct::fold::negchain::tests::mixed_operand_stays"
+ },
+ {
+  "name": "negchain: 对偶算子写反",
+  "file": "crates/trit-build/src/direct/fold/negchain.rs",
+  "old": "        Op::And(..) => (false, false),\n        Op::Or(..) => (true, true),",
+  "new": "        Op::And(..) => (false, true),\n        Op::Or(..) => (true, false),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::negchain::tests::triple_negation_chain_collapses_to_dual"
+ },
+ {
+  "name": "negchain: 叶子取 Not 节点而非基操作数",
+  "file": "crates/trit-build/src/direct/fold/negchain.rs",
+  "old": "        Op::Not(base) => {\n            leaves.push(base);\n            true\n        }",
+  "new": "        Op::Not(base) => {\n            leaves.push(index);\n            true\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::negchain::tests::triple_negation_chain_collapses_to_dual"
+ },
+ {
+  "name": "simplify: B3 毒值吸收绕过守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    (matches!(alg, Algebra::Bochvar)\n        && (left == Some(Ternary::Unknown) || right == Some(Ternary::Unknown)))",
+  "new": "    (true\n        && (left == Some(Ternary::Unknown) || right == Some(Ternary::Unknown)))",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
+ },
+ {
+  "name": "simplify: B3 毒值只认左操作数",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    (matches!(alg, Algebra::Bochvar)\n        && (left == Some(Ternary::Unknown) || right == Some(Ternary::Unknown)))",
+  "new": "    (matches!(alg, Algebra::Bochvar)\n        && (left == Some(Ternary::Unknown)))",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
+ },
+ {
+  "name": "simplify: B3 毒值写成 True",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    .then_some(Ternary::Unknown)",
+  "new": "    .then_some(Ternary::True)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
+ },
+ {
+  "name": "negation: 常量否定不折",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "old": "    if let Some(value) = consts[inner] {\n        push_const(resolve, kept, consts, !value);\n        return;\n    }",
+  "new": "    if let Some(_value) = consts[inner] {\n        push_node(resolve, kept, consts, Op::Not(inner));\n        return;\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::negation::tests::const_fold::constant_not_feeds_poison_into_the_parent"
+ },
+ {
+  "name": "cse: Xor2 链不展平",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "        Op::Xor2(left, right) if expanded.insert(index) => {\n            collect(kept, left, expanded, out);\n            collect(kept, right, expanded, out);\n        }",
+  "new": "        Op::Xor2(..) if expanded.insert(index) => {\n            out.push(index);\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::mirrored_xor_chains_share_one_chain"
+ },
+ {
+  "name": "cse: Xor2 链叶子不排序",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "    leaves.sort_unstable();\n",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::mirrored_xor_chains_share_one_chain"
+ },
+ {
+  "name": "cse: Xor2 重复叶子去重",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "    leaves.sort_unstable();\n",
+  "new": "    leaves.sort_unstable();\n    leaves.dedup();\n",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::duplicate_xor_leaves_are_not_deduplicated"
+ },
+ {
+  "name": "cse: Xor2 共享节点重复展开",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "        Op::Xor2(left, right) if expanded.insert(index) => {",
+  "new": "        Op::Xor2(left, right) => {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::mirrored_xor_chains_share_one_chain"
+ },
+ {
+  "name": "emit: 单用取反子式不内联",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
+  "new": "    if true {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
+ },
+ {
+  "name": "emit: 多用子式也内联",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
+  "new": "    if depth > MAX_INLINE_DEPTH || uses[index] == 0 || inlined[index] {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
+ },
+ {
+  "name": "emit: 内联后不重编号",
+  "file": "crates/trit-build/src/direct/emit.rs",
+  "old": "        names[index] = Some(next);",
+  "new": "        names[index] = Some(index);",
+  "pkg": "trit-build",
+  "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
+ },
+ {
+  "name": "inline: 深度不封顶",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
+  "new": "    if uses[index] != 1 || inlined[index] {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::depth_cap_keeps_deep_leaves_declared"
+ },
+ {
+  "name": "inline: 不递归下钻",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "            mark(uses, inlined, ops, left, depth + 1);\n            mark(uses, inlined, ops, right, depth + 1);",
+  "new": "            let _ = (left, right);",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::multilevel_single_use_cone_fits_one_statement"
  }
 ]
+
+

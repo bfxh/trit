@@ -12,9 +12,9 @@ pub(crate) struct Corpus {
 pub(crate) fn keep_layers() -> bool {
     std::env::var_os("TRIT_NO_LAYERS").is_none()
 }
-
 pub(crate) fn load(dir: &str) -> Corpus {
-    let big = 1usize << 27; // 全量 STS 67.8M 元素 > 默认 MAX_ELEMENTS（16.7M）
+    // 全量 STS 67.8M 元素 > 默认 MAX_ELEMENTS（16.7M）；SciFact 154.6M 元素，需更大上限。
+    let big = 1usize << 29;
     let (batch, seq, mask) = activations::read_mask(format!("{dir}/mask.u8")).expect("mask");
     let (input_rows, hidden, input) =
         activations::read_matrix_with_limit(format!("{dir}/input.f32"), big).expect("input");

@@ -150,7 +150,7 @@ fn textures_match(w: &Tx, g: &Tx) -> bool {
 
 fn read_manifest(p: &Path) -> Json {
     trit_learn::json::read_json(p).unwrap_or_else(|e| {
-        eprintln!("读不了清单 {e}");
+        trit_log::error!("读不了清单 {e}");
         std::process::exit(2);
     })
 }
@@ -213,11 +213,11 @@ fn main() {
     let want_tx = textures(manifest.get("textures"));
 
     let fp = fingerprint_scene_frames(&scene, &frames).unwrap_or_else(|e| {
-        eprintln!("语料指纹失败: {e}");
+        trit_log::error!("语料指纹失败: {e}");
         std::process::exit(2);
     });
     let model_sha = file_sha256(&model).unwrap_or_else(|e| {
-        eprintln!("模型哈希失败: {e}");
+        trit_log::error!("模型哈希失败: {e}");
         std::process::exit(2);
     });
     let ok_model = manifest.get_str("kind") == Some("extract-asset") && want_model == model_sha;
@@ -255,7 +255,7 @@ fn main() {
             .arg(format!("{normal_deg}"));
     }
     let out = cmd.output().unwrap_or_else(|e| {
-        eprintln!("跑不了 {}: {e}", bin.display());
+        trit_log::error!("跑不了 {}: {e}", bin.display());
         std::process::exit(2);
     });
     if !out.status.success() {

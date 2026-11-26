@@ -1,0 +1,33 @@
+dataset	depth	probe	class_weight	cv_metric	arm	accuracy	macro_f1	selected_C	test_sep	gap_accuracy_vs_f32	gap_accuracy_vs_int4	boot_delta_vs_f32	boot_ci_low_vs_f32	boot_ci_high_vs_f32
+sst2	l12	linear_svc	none	accuracy	f32	0.797913	0.797896	1.00	0.169130	+0.000000	-0.043932			
+sst2	l12	linear_svc	none	accuracy	int4	0.841845	0.841799	0.10	0.209133	+0.043932	+0.000000	+0.043783	+0.025261	+0.062603
+sst2	l12	linear_svc	none	accuracy	hybrid_rest_k4	0.840747	0.840706	0.10	0.205378	+0.042834	-0.001098			
+sst2	l12	linear_svc	none	accuracy	hybrid_rest_k16	0.841296	0.841268	1.00	0.201308	+0.043383	-0.000549	+0.043328	+0.024163	+0.062603
+sst2	l12	linear_svc	none	accuracy	hybrid_rest_k64	0.831960	0.831875	0.10	0.179510	+0.034047	-0.009885			
+sst2	l12	linear_svc	none	accuracy	hybrid_rest_k384	0.797913	0.797896	1.00	0.169130	+0.000000	-0.043932			
+sst2	l12	linear_svc	none	accuracy	hybrid_top_k4	0.803405	0.803348	1.00	0.172998	+0.005491	-0.038440			
+sst2	l12	linear_svc	none	accuracy	hybrid_top_k16	0.801208	0.801182	1.00	0.184927	+0.003295	-0.040637	+0.003187	-0.012081	+0.018671
+sst2	l12	linear_svc	none	accuracy	hybrid_top_k64	0.817683	0.817643	1.00	0.246265	+0.019769	-0.024163			
+sst2	l12	linear_svc	none	accuracy	hybrid_top_k384	0.841845	0.841799	0.10	0.209133	+0.043932	+0.000000			
+sst2	l12	linear_svc	none	accuracy	resid_full	0.829764	0.829715	1.00	0.177700	+0.031851	-0.012081	+0.031730	+0.010434	+0.052718
+sst2	l12	linear_svc	none	accuracy	resid_rest_k4	0.830313	0.830273	1.00	0.000000	+0.032400	-0.011532			
+sst2	l12	linear_svc	none	accuracy	resid_rest_k16	0.828666	0.828609	1.00	0.000000	+0.030752	-0.013180	+0.030625	+0.009885	+0.051620
+sst2	l12	linear_svc	none	accuracy	resid_rest_k64	0.827567	0.827421	1.00	0.000000	+0.029654	-0.014278			
+sst2	l12	linear_svc	none	accuracy	resid_rest_k384	0.499176	0.332967	0.01	0.000000	-0.298737	-0.342669			
+sst2	l12	linear_svc	none	accuracy	resid_top_k4	0.528281	0.502044	1.00	0.000000	-0.269632	-0.313564			
+sst2	l12	linear_svc	none	accuracy	resid_top_k16	0.582098	0.580151	1.00	0.000000	-0.215815	-0.259747			
+sst2	l12	linear_svc	none	accuracy	resid_top_k64	0.715541	0.715262	1.00	0.000000	-0.082372	-0.126304			
+sst2	l12	linear_svc	none	accuracy	resid_top_k384	0.829764	0.829715	1.00	0.000000	+0.031851	-0.012081			
+sst2	l12	linear_svc	none	accuracy	resid_row_l2	0.828666	0.828633	1.00	0.000000	+0.030752	-0.013180	+0.030636	+0.009336	+0.051620
+sst2	l12	linear_svc	none	accuracy	resid_sign	0.780890	0.780724	0.10	0.000000	-0.017024	-0.060956	-0.017188	-0.039539	+0.004942
+sst2	l12	linear_svc	none	accuracy	resid_norm	0.550247	0.541607	10.00	0.000000	-0.247666	-0.291598	-0.247831	-0.276771	-0.219110
+sst2	l12	linear_svc	none	accuracy	hybrid_rest_perm	0.717738	0.717441	0.10	0.000000	-0.080176	-0.124108			
+sst2	l12	linear_svc	none	accuracy	hybrid_rest_perm_class	0.870950	0.870946	0.10	0.000000	+0.073037	+0.029105			
+sst2	l12	linear_svc	none	accuracy	hybrid_rest_noclassmean	0.821527	0.821523	10.00	0.000000	+0.023613	-0.020319			
+sst2	l12	linear_svc	none	accuracy	resid_rest_noclassmean	0.499176	0.332967	0.01	0.000000	-0.298737	-0.342669	-0.298948	-0.327842	-0.270181
+sst2	l12	linear_svc	none	accuracy	hybrid_gauss_0.5	0.752334	0.752147	0.10	0.000000	-0.045579	-0.089511			
+sst2	l12	linear_svc	none	accuracy	hybrid_gauss_1	0.708402	0.708182	0.10	0.000000	-0.089511	-0.133443			
+sst2	l12	linear_svc	none	accuracy	hybrid_gauss_2	0.640308	0.639541	0.01	0.000000	-0.157606	-0.201538			
+sst2	l12	linear_svc	none	accuracy	hybrid_scale_0.5	0.842943	0.842909	1.00	0.000000	+0.045030	+0.001098			
+sst2	l12	linear_svc	none	accuracy	hybrid_scale_2	0.838550	0.838491	0.10	0.000000	+0.040637	-0.003295			
+sst2	l12	linear_svc	none	accuracy	hybrid_neg	0.822076	0.821967	10.00	0.000000	+0.024163	-0.019769			

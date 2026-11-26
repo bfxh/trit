@@ -63,7 +63,7 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(|| sibling_exe("parts-3d"));
     let manifest = trit_learn::json::read_json(&mpath).unwrap_or_else(|e| {
-        eprintln!("读不了清单 {e}");
+        trit_log::error!("读不了清单 {e}");
         std::process::exit(2);
     });
     let config = manifest.get("config").unwrap_or_else(|| usage());
@@ -89,7 +89,7 @@ fn main() {
     let want_closed = result.get("closed").and_then(Json::as_f64).unwrap_or(-1.0);
     let want_scenes = result.get("scenes").and_then(Json::as_f64).unwrap_or(-1.0);
     if frames.is_empty() || eval.is_empty() {
-        eprintln!("清单缺 frames / eval");
+        trit_log::error!("清单缺 frames / eval");
         std::process::exit(2);
     }
 
@@ -97,11 +97,11 @@ fn main() {
     ids.sort_unstable();
     ids.dedup();
     let fp = fingerprint_scenes(&renders, &scenes, &ids, &frames).unwrap_or_else(|e| {
-        eprintln!("语料指纹失败: {e}");
+        trit_log::error!("语料指纹失败: {e}");
         std::process::exit(2);
     });
     let model_sha = trit_core::fingerprint::file_sha256(&model).unwrap_or_else(|e| {
-        eprintln!("模型哈希失败: {e}");
+        trit_log::error!("模型哈希失败: {e}");
         std::process::exit(2);
     });
     let ok_model = manifest.get_str("kind") == Some("extract-occupancy")
@@ -147,7 +147,7 @@ fn main() {
         cmd.arg("--seal").arg(seal.to_string());
     }
     let out = cmd.output().unwrap_or_else(|e| {
-        eprintln!("跑不了 {}: {e}", bin.display());
+        trit_log::error!("跑不了 {}: {e}", bin.display());
         std::process::exit(2);
     });
     if !out.status.success() {
@@ -205,7 +205,7 @@ fn main() {
     // 只有写默认位置时才维护「PASS/reject 互斥」；--json-out 是旁路记录，不碰正式记录。
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
     let vp = publish_base(&model, pass, custom.as_deref(), &body).unwrap_or_else(|e| {
-        eprintln!("{e}");
+        trit_log::error!("{e}");
         std::process::exit(2);
     });
     println!(

@@ -1,0 +1,25 @@
+[package]
+name = "trit-verified"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Verus specifications and proofs for trit-core's three-valued semantics (verification anchor, not a runtime dependency)"
+
+[dependencies]
+vstd = "=0.0.0-2026-11-22-0344"
+
+[dev-dependencies]
+trit-core = { path = "../crates/trit-core" }
+trit-belnap = { path = "../crates/trit-belnap" }
+
+[package.metadata.verus]
+verify = true
+
+[workspace]
+# 独立 workspace：不并入主库 `cargo build/test`，验证由 scripts/verify.py 驱动。
+# 这样主库的 stable/MSRV 构建不引入 vstd，也不改变主库 Cargo.lock。
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(verus_only)',
+] }

@@ -93,7 +93,7 @@ fn run(paths: &[PathBuf], jsonl: bool, facts: bool, xref: bool, functions: bool)
                 }
             }
             Err(error) => {
-                eprintln!("读取失败 {}: {error}", path.display());
+                trit_log::error!("读取失败 {}: {error}", path.display());
                 failed = true;
                 continue;
             }
@@ -103,7 +103,7 @@ fn run(paths: &[PathBuf], jsonl: bool, facts: bool, xref: bool, functions: bool)
             if error.kind() == io::ErrorKind::BrokenPipe {
                 return ExitCode::SUCCESS;
             }
-            eprintln!("写 stdout 失败: {error}");
+            trit_log::error!("写 stdout 失败: {error}");
             return ExitCode::from(1);
         }
     }
@@ -242,14 +242,14 @@ fn run_collect(events: Option<&Path>, summary_only: bool) -> ExitCode {
         Some(path) if path.as_os_str() != "-" => match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(error) => {
-                eprintln!("读取事件流 {} 失败: {error}", path.display());
+                trit_log::error!("读取事件流 {} 失败: {error}", path.display());
                 return ExitCode::from(1);
             }
         },
         _ => {
             let mut buffer = String::new();
             if let Err(error) = io::Read::read_to_string(&mut io::stdin(), &mut buffer) {
-                eprintln!("读 stdin 失败: {error}");
+                trit_log::error!("读 stdin 失败: {error}");
                 return ExitCode::from(1);
             }
             buffer
@@ -268,17 +268,17 @@ fn run_collect(events: Option<&Path>, summary_only: bool) -> ExitCode {
             if error.kind() == io::ErrorKind::BrokenPipe {
                 return ExitCode::SUCCESS;
             }
-            eprintln!("写 stdout 失败: {error}");
+            trit_log::error!("写 stdout 失败: {error}");
             return ExitCode::from(1);
         }
     }
     if let Err(error) = out.flush()
         && error.kind() != io::ErrorKind::BrokenPipe
     {
-        eprintln!("写 stdout 失败: {error}");
+        trit_log::error!("写 stdout 失败: {error}");
         failed = true;
     }
-    eprintln!(
+    trit_log::error!(
         "采集：模块事件 {} / 唯一 {}（去重 {}）→ 分析 {}，不可读 {}，非 module 事件 {}，坏行 {}，{} 字节，{} ms",
         summary.module_events,
         summary.modules,
@@ -309,21 +309,21 @@ fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
     let rules_text = match std::fs::read_to_string(rules_path) {
         Ok(text) => text,
         Err(error) => {
-            eprintln!("读取规则 {} 失败: {error}", rules_path.display());
+            trit_log::error!("读取规则 {} 失败: {error}", rules_path.display());
             return ExitCode::from(1);
         }
     };
     let parsed = match yaraparse::parse_rules(&rules_text) {
         Ok(parsed) => parsed,
         Err(error) => {
-            eprintln!("规则解析失败：{error}");
+            trit_log::error!("规则解析失败：{error}");
             return ExitCode::from(1);
         }
     };
     let bytes = match std::fs::read(sample) {
         Ok(bytes) => bytes,
         Err(error) => {
-            eprintln!("读取样本 {} 失败: {error}", sample.display());
+            trit_log::error!("读取样本 {} 失败: {error}", sample.display());
             return ExitCode::from(1);
         }
     };
@@ -367,7 +367,7 @@ fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
         }
     }
     if let Err(error) = out.flush() {
-        eprintln!("写 stdout 失败: {error}");
+        trit_log::error!("写 stdout 失败: {error}");
         return ExitCode::from(1);
     }
     let hits = report
@@ -379,7 +379,7 @@ fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
         Some(offset) => format!("，入口点 {offset:#x}"),
         None => String::new(),
     };
-    eprintln!(
+    trit_log::error!(
         "sigscan：规则 {}（可评估 {}，不支持 {}），命中 {}；样本 {} 字节{entry_note}",
         report.rules.len(),
         rules.len(),

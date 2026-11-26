@@ -28,7 +28,7 @@ fn main() {
             "--adapter" => {
                 // 只用于打印适配器后退出
                 let g = Gpu::new().expect("GPU");
-                println!("使用适配器：{}", g.adapter);
+                trit_log::info!("使用适配器：{}", g.adapter);
                 return;
             }
             other => {
@@ -38,7 +38,7 @@ fn main() {
         }
     }
     let gpu = Gpu::new().expect("没有可用 GPU");
-    println!("使用适配器：{}", gpu.adapter);
+    trit_log::info!("使用适配器：{}", gpu.adapter);
     let t = Tensors::load(&dir).expect("权重");
     let mut net = Net::from_tensors(&t).expect("建网");
     net.upload_all(&gpu);
