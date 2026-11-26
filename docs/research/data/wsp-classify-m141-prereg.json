@@ -1,0 +1,153 @@
+{
+  "run": "M1.41",
+  "status": "preregistered_before_model_scores",
+  "created_at_local": "2026-11-26T23:54:39+08:00",
+  "title": "HateXplain domain-aware prior correction and fit-only threshold",
+  "parent": "M1.40",
+  "question": "M1.40 的 global target_prior 在 HateXplain 上伤害 accuracy；HateXplain 的 Gab/Twitter 两个来源的 hate 先验差异很大。把先验按域拆开后，global prior 的伤害是否消失，且 fit-only 阈值能否保留修正收益？",
+  "dataset": {
+    "name": "HateXplain",
+    "official_split": {
+      "train": 15383,
+      "val": 1922,
+      "test": 1924
+    },
+    "clean_rows": {
+      "fit": 17270,
+      "test": 1918
+    },
+    "label_mapping": {
+      "primary": "hatespeech=1; normal+offensive=0",
+      "note": "offensive→0 is retained from M1.40; three-class is not part of M1.41."
+    },
+    "source_field": "source",
+    "source_counts": {
+      "fit": {"gab": 9408, "twitter": 7862},
+      "test": {"gab": 1038, "twitter": 880}
+    },
+    "source_hate_counts": {
+      "fit": {"gab": 4719, "twitter": 617},
+      "test": {"gab": 516, "twitter": 78}
+    },
+    "source_hate_rates": {
+      "fit": {"gab": 0.501594, "twitter": 0.078479, "global": 0.308975},
+      "test": {"gab": 0.497110, "twitter": 0.088636, "global": 0.309698}
+    },
+    "hashes": {
+      "dataset_json_sha256": "63bb3340fee0ec469b09690d04cb68f7c187787dd8b83807f071892c084967fb",
+      "post_id_divisions_sha256": "c2fb0d89862e7897b11ea3e9380753f15a793482b4b70ad0532dfb1212212835"
+    },
+    "note": "test labels are used only for evaluation; thresholds never use test labels. Domain labels are metadata, not model inputs."
+  },
+  "modeling": {
+    "encoder": "frozen all-MiniLM-L12-v2 / all-MiniLM-L6-v2",
+    "seq_len": 64,
+    "depth_arms": {
+      "l12": ["f32", "r12"],
+      "l6": ["f32", "rescan"]
+    },
+    "probes": ["logreg", "linear_svc"],
+    "seeds": [7, 13, 19, 31, 43],
+    "c_grid": [0.01, 0.1, 1.0, 10.0],
+    "c_selection": "f32 only, 5-fold StratifiedKFold on fit, accuracy; f32 and quantized arm share C",
+    "probe_settings": {
+      "logreg": "LogisticRegression(C=c, max_iter=5000, solver=lbfgs, random_state=7)",
+      "linear_svc": "LinearSVC(C=c, max_iter=10000, random_state=7, tol=1e-4)"
+    },
+    "score": {
+      "logreg": "predict_proba[:,1]",
+      "linear_svc": "decision_function"
+    }
+  },
+  "rules": {
+    "default": {
+      "threshold": {"logreg": 0.5, "linear_svc": 0.0},
+      "uses_test_scores": false,
+      "uses_test_labels": false
+    },
+    "global_test_prior": {
+      "threshold": "quantile(all test scores, 1 - prior_fit_global)",
+      "prior": "prior_fit_global = 5336/17270 = 0.308975",
+      "uses_test_scores": true,
+      "uses_test_labels": false,
+      "note": "reproduces M1.40 target_prior"
+    },
+    "domain_test_prior": {
+      "threshold": "for each source g: quantile(test scores in g, 1 - prior_fit_g)",
+      "priors": {"gab": 0.501594, "twitter": 0.078479},
+      "uses_test_scores": true,
+      "uses_test_labels": false
+    },
+    "global_fit_prior": {
+      "threshold": "quantile(out-of-fold fit scores, 1 - prior_fit_global)",
+      "uses_test_scores": false,
+      "uses_test_labels": false,
+      "note": "fit-only inductive control"
+    },
+    "domain_fit_prior": {
+      "threshold": "for each source g: quantile(out-of-fold fit scores in g, 1 - prior_fit_g)",
+      "uses_test_scores": false,
+      "uses_test_labels": false,
+      "note": "deployable domain-aware rule; OOF scores come from the same 5 folds used for C selection"
+    }
+  },
+  "hypotheses": {
+    "H1_domain_misspecification": {
+      "statement": "Because fit Gab hate rate is 0.502 vs Twitter 0.078, one global prior threshold over-predicts Twitter and under-predicts Gab; global_test_prior accuracy is below default overall, with the largest loss on Twitter.",
+      "role": "secondary descriptive"
+    },
+    "H2_domain_correction": {
+      "statement": "domain_test_prior improves overall accuracy over global_test_prior, and improves Twitter accuracy over global_test_prior; Gab is expected to improve or stay neutral.",
+      "role": "primary"
+    },
+    "H3_inductive_threshold": {
+      "statement": "domain_fit_prior retains most of the domain_test_prior gain without using any test scores; if it does, the correction is deployable. If it loses the gain, the M1.40 target_prior effect was transductive.",
+      "role": "secondary"
+    },
+    "H4_candidate_effect": {
+      "statement": "Under domain-aware thresholds, the quantized arm minus f32 may change sign relative to M1.40, but this is exploratory and cannot upgrade R12/rescan.",
+      "role": "exploratory"
+    }
+  },
+  "primary_endpoint": {
+    "metric": "accuracy",
+    "scope": "overall (both domains, stratified bootstrap)",
+    "comparison": "domain_test_prior - global_test_prior",
+    "units": "depth x probe x seed; 2 depths x 2 probes x 5 seeds = 20 cells",
+    "bootstrap": "10,000 paired stratified bootstrap, resample n_gab and n_twitter within each domain, 95% percentile CI",
+    "verdict": {
+      "supported": "for each depth/probe family, >=4/5 positive CIs and 5-seed mean > 0",
+      "partially_supported": "one probe family meets supported, the other has >=2/5 positive CIs",
+      "rejected": "both probe families have <=1/5 positive CIs",
+      "otherwise": "inconclusive"
+    },
+    "note": "4 primary families (l12/logreg, l12/linear_svc, l6/logreg, l6/linear_svc); no candidate confirmation."
+  },
+  "secondary_endpoints": [
+    "per-domain accuracy for all rules (gab, twitter)",
+    "domain_test_prior - default overall and per domain",
+    "domain_fit_prior - domain_test_prior overall and per domain",
+    "macro-F1 for all rules (secondary metric)",
+    "quantized arm - f32 under domain_test_prior and domain_fit_prior, per domain and overall (exploratory)",
+    "predicted positive rate and threshold by rule/domain"
+  ],
+  "independence_and_boundaries": {
+    "seeds": "5 seeds share the same test texts and often the same C; they are not independent repeats.",
+    "effective_units": "domain x C x probe; report seed-level CIs but do not treat 5 seeds as 5 independent studies.",
+    "corpus": "single official HateXplain test, n=1,918; domain split is internal, not a third corpus.",
+    "labels": "offensive→0 is an external mapping boundary; three-class is not tested here.",
+    "candidate": "R12 and rescan were rejected in M1.40; M1.41 is a calibration/mechanism experiment, not a candidate rescue.",
+    "test_scores": "global_test_prior and domain_test_prior use unlabeled test scores (transductive); domain_fit_prior is the deployable control."
+  },
+  "artifacts": {
+    "scripts": ["docs/research/scripts/wsp_m141/domain_prior.py"],
+    "data": [
+      "docs/research/data/wsp-classify-m141-raw.tsv",
+      "docs/research/data/wsp-classify-m141-compare.tsv",
+      "docs/research/data/wsp-classify-m141-summary.tsv",
+      "docs/research/data/wsp-classify-m141-primary.tsv"
+    ],
+    "results": "docs/research/WSP-BUDGET-RESULTS.md"
+  },
+  "prereg_commit_policy": "This file is committed before running any model-score or accuracy computation. Data-source counts and hashes above are audit metadata only."
+}
