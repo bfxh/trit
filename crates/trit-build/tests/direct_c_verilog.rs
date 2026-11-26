@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const DESIGN: &str = "module m(input a, input b, input c, output y);\n  wire n, o, k, x;\n  nand g1 (n, a, b);\n  nor  g2 (o, a, c);\n  buf  g3 (k, c);\n  xnor g4 (x, a, b);\n  assign y = (n & k) | (o ^ x);\nendmodule\n";
+const DESIGN: &str = "module m(input a, input b, input c, output y);\n  wire n, o, k, x, z;\n  nand g1 (n, a, b);\n  nor  g2 (o, a, c);\n  buf  g3 (k, c);\n  xnor g4 (x, a, b);\n  assign z = 1'b1 & 1'b0;\n  assign y = (n & k) | (o ^ x) | z;\nendmodule\n";
 
 fn bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_trit-build"))

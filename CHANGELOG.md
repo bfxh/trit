@@ -2,6 +2,120 @@
 
 ## [Unreleased]
 
+### Added（第四十二轮：direct 直算常量折叠与恒等式化简）
+
+- `direct/fold.rs`：TTIR 线性 IR 的常量折叠 + 常量传播。操作数全是常量的节点直接按
+  `Algebra` 现算成 `Op::Const`，后续引用它的节点继续折；`Xor2` 走
+  `GateKind::XorClassic.eval`，不借用 `strong_add` 的表。
+- `direct/fold/simplify.rs`：常量驱动的恒等式化简。三种代数通用
+  `x ∧ T = x`、`x ∨ F = x`（别名到操作数）、`¬¬x = x`、`x ∧ x = x`、
+  `x ∨ x = x`（后两条是幂等律）。K3/Ł3 额外做吸收律 `x ∧ F = F`、`x ∨ T = T`。
+  别名通过 `resolve` 表压平，最后 `prune_dead` 统一收孤儿；不碰 `=>` / `<=>` 的常量律
+  （K3 与 Ł3 的蕴含表不同）。
+- 更正：`∧` / `∨` 在 K3/Ł3 是格序 min/max，`U ∧ U = U`、`U ∨ U = U`，所以幂等律三代数通用；
+  Ł3 的强合取 `⊗` 才有 `U ⊗ U = F`，不要与 `∧` 混淆。
+- 负结果：B3 的 U 传染，`U ∧ F = U`、`U ∨ T = U`，所以吸收律按代数分派，B3 保留原式；
+  `simplify/tests/absorb.rs` 用反例钉住。辅助函数拆到 `simplify/build.rs` 以守行数台账。
+- `direct/fold/cse.rs`：化简后再做一遍结构化 CSE，按「算子 + 已重映射子下标」合并；
+  交换律算子先排序，合并后暴露的 `x ∧ x` / `x ∨ x` 直接别名。`((a & 1) & b) | (a & b)`
+  由 **7→3 条语句**（K3/Ł3/B3 相同），语义与 `trit_eval` 全赋值对拍。
+- `direct/fold/simplify/lattice.rs`：格吸收律 `x ∧ (x ∨ y) = x`、`x ∨ (x ∧ y) = x`。
+  K3/Ł3 有效；B3 有反例 `F ∧ (F ∨ U) = U`，所以按代数分派、B3 保留原式。
+  K3/Ł3 的 `a & (a | b)` 化简后只剩一条取变量语句。
+- `direct/fold/simplify/xor2.rs`：`Xor2` 的常量律。按 `GateKind::XorClassic.eval` 的 3×3 表，
+  `x ^ 0 = x`、`x ^ 1 = ¬x`、`x ^ X = X` 三代数都成立；`x ^ x` 因 `X ^ X = X` 不化简。
+- `direct/fold/simplify/xor.rs`：三值强加 `⊕` 的常量律按代数分派：
+  K3/B3 的已知值按合取，做 `x ⊕ T = x`、`x ⊕ U = U`；`x ⊕ F` 不是单位元，保留；
+  Ł3 是饱和加法，做 `x ⊕ F = x`、`x ⊕ T = T`、`x ⊕ ¬x = T`；`x ⊕ U` 保留。
+- `direct/fold/simplify/negation.rs`：否定归一。`¬¬x = x` 之外，回收
+  `¬(¬a ∧ ¬b) = a ∨ b`、`¬(¬a ∨ ¬b) = a ∧ b`；只认两侧操作数都已经取反的形状，
+  4 个节点合并成 1 个。单侧取反仍要新建 `Not`，不减少节点，保留原式。
+- 判据：德摩根 3 代数 × 3×3 值逐格对拍；`!(!a & !b)` 的线性 IR **6→3 条语句**，
+  `direct.c` 631 B，不再注册 `T_NOT`。
+- `direct/fold/simplify/{absorb,complement}.rs`：B3 的补元消去
+  `x ∧ (¬x ∨ y) = x ∧ y`、`x ∨ (¬x ∧ y) = x ∨ y`。命中后重建 `x ∧ y` / `x ∨ y`，
+  不是别名到单个操作数；四种操作数顺序（`¬x` 在左/右、外层在左/右）都认。
+  只在 B3 开闸：K3/Ł3 的 `x = U` 反例是 `U ∧ (U ∨ F) = U ≠ U ∧ F = F`、
+  `U ∨ (U ∧ T) = U ≠ U ∨ T = T`。判据：B3 3×3 真值表、K3/Ł3 的 IR 逐节点保留、
+  正反顺序与渲染面；`a & (!a | b)` 线性 IR **5→3 条**，`direct.c` 636 B，
+  不再注册 `T_NOT` / `T_OR`。`simplify.rs` 的 And/Or 分支拆到 `absorb.rs` 只为行数预算，
+  规则顺序不变；补元检测单独放 `complement.rs`。
+- `direct/fold/simplify/lattice/chain.rs`：格吸收的同算子链传递。K3/Ł3 的
+  `x ∧ (x ∨ y ∨ z) = x`、`x ∨ (x ∧ y ∧ z) = x` 不再只认内层直接子节点；
+  `Or` 沿 `Or`、`And` 沿 `And` 迭代下钻，遇异算子停手，共享节点用 visited 集去重。
+  B3 仍由毒值守卫整条拦下。判据：K3/Ł3 3×3×3 逐格、左右嵌套与对偶、异算子反例；
+  `a & (a | b | c)` 线性 IR **6→1 条**、`direct.c` **395 B**、不注册算子表；
+  B3 同式仍 **6 条**、**806 B**，保留 `T_AND` / `T_OR`。
+- `direct/fold/cse/factor.rs`：反向分配提取公因子
+  `(a ∧ b) ∨ (a ∧ c) = a ∧ (b ∨ c)`、`(a ∨ b) ∧ (a ∨ c) = a ∨ (b ∧ c)`。
+  `∧` / `∨` 在三种代数下都是分配格，不依赖 `¬` 或排中律；只认两侧同算子节点里
+  直接相同的操作数，子式里埋着的公因子不猜。CSE 先用一遍合并同构节点，再提取、
+  再压平新建的内层链。判据：三代数全赋值对拍、公因子在左/右操作数与对偶形状、
+  异算子/不相交反例；`(a & b) | (a & c)` 线性 IR **6→5 条**、`direct.c` **767 B**；
+  B3 同式 5 条、**766 B**，仍保留 `T_AND` / `T_OR`。
+- `direct/fold/negchain.rs`：德摩根链归一。`¬(¬a ∧ ¬b ∧ ¬c) = a ∨ b ∨ c`、对偶式落
+  `And` 链；只在 `Not` 直接盖住同算子链且每个叶子都是 `Not` 时命中，任一叶子不是
+  `Not` 就整棵保留。这一步在恒等式化简之前跑，否则内层 `And(¬a, ¬b)` 会先被收成
+  `Or(a, b)`，外层就看不出原链。三代数 3×3×3 逐格对拍；`!(!a & !b & !c)` 线性 IR
+  **9→5 条**、`direct.c` **698 B**（K3）/ **699 B**（B3），不注册 `T_NOT`；B3 的
+  `U` 组合仍逐格相等。
+- `direct/fold/simplify/absorb.rs`：B3 毒值吸收 `x ∧ X = X`、`x ∨ X = X`。`U` 在 B3
+  沾上即传染；K3 的 `F ∧ U = F`、Ł3 的 `F ∧ U = F` / `T ∨ U = T` 都保留原式，所以只
+  在 B3 开闸。`a & X` / `a | X` 在 B3 从 3 条语句塌成一条 `Const`、`direct.c` **386 B**、
+  不注册 `T_AND` / `T_OR`；K3 同式仍是 3 条语句（**629 B** / **623 B**）。判据：三代数
+  形状对拍，K3/Ł3 反例钉住。
+- `direct/fold/simplify/negation.rs`：`Not(Const)` 在化简内即时折成 `Const`，让父节点本遍
+  就看到这个常量；否则父节点已经错过 B3 毒值吸收。B3 网表 `(~(a & 1'bx)) & b` 从
+  **3 条语句 / 550 B / `T_AND`** 收成 **1 条 `Const` / 308 B / 不注册表**；K3/Ł3 同式仍
+  6 条（758 B / 763 B），保留 `T_AND` + `T_NOT`；三种代数 `--verify-c` 均 9/9 行。
+  独立的 `refold` pass 因此没有剩余职责，已删除，管线回到 `simplify → CSE`；`de_morgan`
+  辅助拆到 `negation/de_morgan.rs` 只为守行数台账，德摩根行为不变。
+- `direct/verify.rs`：`--verify-c` 支持相对 `--out`。原先把相对的
+  `out_dir/direct_check` 传给已设 `current_dir(out_dir)` 的 `Command`，会再拼一次
+  目录而报 `No such file`；现在先 `canonicalize` 输出目录，回归判据
+  `direct_c.rs::verify_c_accepts_a_relative_out_dir`。
+- `direct/fold/cse/assoc.rs`：`And` / `Or` 的结合链规范化。把嵌套的同一算子展平成叶子、
+  去重、按 IR 下标排序，再重建为左深链；`((a & c) & b) | (a & (b & c))` 的线性 IR **8→5 条**，
+  `direct.c` 705 B，只注册 `T_AND`；镜像但叶子顺序不同的
+  `((b & c) & a) | (a & (b & c))` 也归一到同一条链。交换律、结合律与幂等律在三种代数下都成立。
+- `direct/fold/cse/xorchain.rs`：`Xor2`（Verilog 经典异或）的结合链共享。展平嵌套链、按 IR 下标
+  排序、重建左深链并共享前缀；**不做幂等去重**，因为 `x ^ x` 在 `x = U` 时仍是 `U`，不是 `F`。
+  展平时记录已展开的内部节点，`Xor2(y, y)` 里的 `y` 不会被展开两次。镜像链
+  `((a ^ b) ^ c) ^ (a ^ (b ^ c))` 从 **8→6 条语句**、`direct.c` **751→667 B**（K3），
+  B3 同式 **752→668 B**；三代数 `--verify-c` 均 27/27。为守行数，CSE 的单遍循环抽到 `cse/pass.rs`。
+- `direct/fold/simplify/connectives.rs`：`⇒` / `⇔` 的常量律按代数分派：
+  K3/Ł3 做 `x ⇒ T = T`、`F ⇒ x = T`；三代数共用 `T ⇒ x = x`、`x ⇔ T = x`；
+  Ł3 额外 `x ⇒ x = T`、`x ⇔ x = T`，K3/B3 额外 `x ⇒ ¬x = ¬x`、`¬x ⇒ x = x`、
+  `x ⇔ X = X`。B3 的 `X ⇒ T`、`F ⇒ X` 返回 `X`，保留原式。
+- 判据：`⇒` / `⇔` 的 3×3 表逐格对拍；K3/Ł3 的 `x ⇒ T`、`F ⇒ x` 落成一条 `Const`，
+  B3 在 `X ⇒ T`、`F ⇒ X` 上保留 `T_IMPL`；Ł3 的 `x ⇒ x` / `x ⇔ x` 塌成 `Const`，
+  K3/B3 保留原式；`x ⇔ U` 在 K3/B3 落成 `Const U`，Ł3 保留 `T_EQUIV`。
+- 判据：`⊕` 的 3×3 表逐格对拍；K3/B3 的 `x ⊕ T = x`、`x ⊕ X = X` 落成别名/常量，
+  `x ⊕ F` 保留 `T_XOR`；Ł3 的 `x ⊕ F = x`、`x ⊕ T = T`、`x ⊕ ¬x = T` 落成别名/常量，
+  变量 `x ⊕ X` 保留 `T_XOR`。渲染面 `a ^ 0` 在 K3 保留 `T_XOR`，在 Ł3 只剩一条取变量语句。
+- 判据：全常量树（`((1 & X) | !0) <=> (X => 0)`）在 K3/Ł3/B3 下都塌成 **一条 `Const`**，
+  生成物只有一条语句且不注册 `T_NOT` / `T_AND` 等算子表；混合树折叠前后对 3^n 全赋值
+  与 `trit_eval` 一致；`Xor2` 的 3×3 常量表逐格与 `GateKind::XorClassic` 一致。
+- 读数：同一 3 输入 Verilog 网表（`assign z = 1'b1 & 1'b0`）**16→14→12 条语句、
+  1331→1267→1203 B**（K3，折叠后接恒等式化简）；K3/Ł3 的 `a & 0` / `a | 1`
+  只剩一条常量语句，B3 仍保留 `T_AND` / `T_OR`；`a & a` / `a | a` 在三种代数下
+  都只剩一条取变量语句。12 变量 `direct --verify-c` 折叠前后
+  `direct.c` 同为 1418 B，531,441/531,441 行通过，墙钟 0.42→0.41 s、RSS 46172→46124 KB
+  （变量表达式不产常量节点）。
+- `BUILD_VERSION` 7 → 25：折叠、代数分派吸收律、幂等律、格吸收律（含同算子链传递）、
+  公因子提取、B3 补元消去、B3 毒值吸收、化简内常量否定、`Xor2` 常量律与结合链、
+  `⇒`/`⇔` 常量律、`⊕` 常量律、否定归一、德摩根链归一、结合链规范化与 CSE 都会改变
+  `direct.c` 的语句数，旧缓存失效。
+- 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算架构行、实测行与边界。
+
+诚实边界：折叠/化简只减少常量与单位元节点，不做代数恒等式全集、不重排算子；Verilog 侧
+同样只覆盖组合子集与单一选中输出，`Xor2` 做常量律与结合链共享，不去重、不做 `x ^ x`；`⇒`/`⇔` 不做
+`x ⇒ F = ¬x` 这类不减少节点的重写；`⊕` 只做单位元/吸收元，不做 `x ⊕ x`；二元德摩根
+只回收两侧都已取反的形状，三叶以上的链在化简前单独归一，但要求每个叶子都已经是
+`Not`，不猜子式里含取反；结合链规范化只做 `∧` / `∨`，不把 `⊕` / `^` / `⇔`
+当成可结合的算子；B3 的 `U` 只在 `∧` / `∨` 上直接吸收成 `X`，其他算子不把 `X`
+当普通常量推广；化简内只把 `Not(Const)` 折成常量，不把变量揣成常量，也不推广 `U`。
+
 ### Added（第四十一轮：direct 后端支持 Verilog 网表）
 
 - `direct.c` 不再只接 `.tri` 表达式：`.v` 组合网表也能 `--backend direct|both`。
