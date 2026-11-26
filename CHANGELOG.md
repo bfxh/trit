@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（第四十七轮：direct 单用节点递归内联）
+
+- `direct/emit/inline/plan.rs`：内联决策从「只沿 `Not` 的操作数锥」扩成「从每个会发射的
+  节点出发」——凡 `uses == 1` 的节点都并进父语句，沿单用操作数最多下钻 3 层。到深度
+  边界后该节点自己发射、子树重新计深度；扇出节点（`uses > 1`）仍单独落临时变量，不复制。
+  决策逻辑从 `inline.rs` 拆出，`inline.rs` 只留 C 表达式展开。
+- 读数（同机，`.tri` 源）：`(a & b) | c` 5→1 条、741→661 B；`((a & b) | c) & (d | e)`
+  9→1 条、876→716 B；`((a => b) <=> (!a | b)) ^ c` 6→2 条、853→773 B；11 变量混合式
+  17→11 条、1405→1273 B；`a & (b | (c & (d | (e & f))))` 11→3 条、946→784 B。
+- 判据：`cargo test -p trit-build` 129 单元 + 全部集成测试通过；新增
+  `single_use_binary_tree_collapses_into_root`，并把内联测试拆到 `inline/tests/{tree,fanout,depth}.rs`；
+  三代数 `--verify-c` 在 11 变量（3^11 = 177147 行）上逐行一致。
+- 边界：深度封顶仍是 3；只消除单用临时变量，不改变算子语义、表集合与 fail-closed 入参检查。
+  普通二元树也会塌缩，因此 `direct.c` 的语句数不再等于后序节点数。
+
 ### Fixed（第四十六轮：RE 边收割溢出与 TTX3 幽灵级）
 
 - `trit-re/functions/cfg`：x86 `E8`/`E9` 边收割的 `base + index` 改为 `checked_add`，节基址

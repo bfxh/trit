@@ -632,18 +632,18 @@
   "filter": "direct::fold::cse::tests::xorchain::mirrored_xor_chains_share_one_chain"
  },
  {
-  "name": "emit: 单用取反子式不内联",
-  "file": "crates/trit-build/src/direct/emit/inline.rs",
-  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
+  "name": "emit: 单用节点不内联",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "    if uses[index] != 1 || inlined[index] {",
   "new": "    if true {",
   "pkg": "trit-build",
   "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
  },
  {
   "name": "emit: 多用子式也内联",
-  "file": "crates/trit-build/src/direct/emit/inline.rs",
-  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
-  "new": "    if depth > MAX_INLINE_DEPTH || uses[index] == 0 || inlined[index] {",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "    if uses[index] != 1 || inlined[index] {",
+  "new": "    if uses[index] == 0 || inlined[index] {",
   "pkg": "trit-build",
   "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
  },
@@ -657,19 +657,19 @@
  },
  {
   "name": "inline: 深度不封顶",
-  "file": "crates/trit-build/src/direct/emit/inline.rs",
-  "old": "    if depth > MAX_INLINE_DEPTH || uses[index] != 1 || inlined[index] {",
-  "new": "    if uses[index] != 1 || inlined[index] {",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "    if depth > MAX_INLINE_DEPTH {\n        // 到边界就不再并进上一层；该节点自己发射，子树重新计深度。\n        mark_children(uses, inlined, ops, &ops[index], 1);\n        return;\n    }\n",
+  "new": "",
   "pkg": "trit-build",
-  "filter": "direct::emit::inline::tests::depth_cap_keeps_deep_leaves_declared"
+  "filter": "direct::emit::inline::tests::depth::depth_cap_keeps_deep_leaves_declared"
  },
  {
   "name": "inline: 不递归下钻",
-  "file": "crates/trit-build/src/direct/emit/inline.rs",
-  "old": "            mark(uses, inlined, ops, left, depth + 1);\n            mark(uses, inlined, ops, right, depth + 1);",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "            mark(uses, inlined, ops, left, depth);\n            mark(uses, inlined, ops, right, depth);",
   "new": "            let _ = (left, right);",
   "pkg": "trit-build",
-  "filter": "direct::emit::inline::tests::multilevel_single_use_cone_fits_one_statement"
+  "filter": "direct::emit::inline::tests::tree::multilevel_single_use_cone_fits_one_statement"
  }
 ]
 
