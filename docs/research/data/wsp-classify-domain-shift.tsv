@@ -1,0 +1,4 @@
+dataset	n_train	n_test	domain_auc	domain_acc	length_only_auc
+sst2	6920	1821	0.490853	0.648095	0.486653
+cola	8551	1043	0.686817	0.807380	0.506840
+hate	8985	2734	0.921051	0.853400	0.561306
