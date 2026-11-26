@@ -148,6 +148,105 @@
 - 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算行与未验证清单。
 
 诚实边界：仍只覆盖组合逻辑与单一选中输出；没有综合、时序/面积收敛与门级优化。
+### Changed（M1.45：Davidson 第三 hate 语料）
+
+- 预注册 `data/wsp-classify-m145-prereg.json`（commit `d1810448`）后，
+  把 Davidson et al. 2017 作为第三个 hate 语料做 descriptive transport。
+  原始 `24,783` 行；binary 映射 `hate -> 1`、`offensive+neither -> 0`；
+  去重 1 行、去 TweetEval/HateXplain 重叠 1 行；固定 stratified 80/20
+  `random_state=7`，fit `19,825`（`18,681/1,144`）、test `4,956`
+  （`4,671/285`），fit prior `0.057704918`、test prior
+  `0.057506053`。SHA256
+  `FCB8BC7C68120AE4AF04A5B9ACD58585513EDE11E1548EBF36A5C2040B6F6281`。
+- default 阈值（logreg 0.5 / SVC 0）下，Primary accuracy
+  `arm−f32`：L12 logreg `−0.0202pp`、L12 SVC `+0.1211pp`、
+  L6 logreg `−0.0202pp`、L6 SVC `−0.0605pp`；**四个 family 全部
+  0/5 正 CI**。macro-F1 点估计三负一微负（`−1.1665/−0.0192/
+  −1.2288/−0.9570pp`）。
+- 绝对 accuracy `0.942–0.945`，但预测正例率仅 `0.38–2.08%`，
+  hate recall `3.9–20.0%`，macro-F1 `0.52–0.63`；test 真实 hate
+  率 `5.75%`。**accuracy 被 94% 多数类撑高，第三语料仍不能升级
+  R12/rescan；default 阈值下的 accuracy 不能单独当保真证据。**
+- 新增 `docs/research/scripts/wsp_m145/prepare_davidson.py`、
+  `run_encode.ps1`、`davidson_probe.py`，以及
+  `data/wsp-classify-m145-prepare-summary.json`、`-raw.tsv`
+  （40 行、11 列）、`-compare.tsv`（40 行、14 列）、`-primary.tsv`
+  （4 行、7 列）。详见 `WSP-BUDGET-RESULTS.md` §11.45。
+
+### Changed（M1.43：HateXplain 三分类探索）
+
+- 在 M1.40 的同一批 HateXplain 清洗行与 embedding 上，只把二分类头换成
+  三分类：fit `7,011 normal / 5,336 hate / 4,923 offensive`，test
+  `777/594/547`；映射 `normal=0, hatespeech=1, offensive=2`。预注册
+  `data/wsp-classify-m143-prereg.json`（commit `3af46565`），
+  exploratory、不设 candidate verdict。
+- Primary（test 三分类 accuracy，`arm − f32`，10k paired bootstrap）：
+  L12 logreg `+0.1564pp`、L12 SVC `−0.3233pp`、L6 logreg
+  `+0.4692pp`、L6 SVC `+0.0730pp`；**四个 family 全部 0/5 正 CI**。
+- 绝对 accuracy：L12 `0.651199`（R12 `0.652763`）、L12 SVC
+  `0.649948`（R12 `0.646715`）、L6 `0.651721`（rescan `0.656413`）、
+  L6 SVC `0.648697`（rescan `0.649426`）。macro-F1 分别为
+  `−0.1668pp`、`−0.5666pp`、`+0.4505pp`、`−0.0193pp`。
+- `offensive` recall 只有 `0.354–0.426`，是主要错误来源；binary 的
+  `0.82` 主要来自 normal-vs-rest，不是 hate/offensive 细边界。
+  **三分类只作 exploratory，不能升级 R12/rescan。**
+- 新增 `docs/research/scripts/wsp_m143/three_class.py`、`merge_chunks.py`，
+  以及 `data/wsp-classify-m143-raw.tsv`（40 行、12 列）、
+  `-compare.tsv`（40 行、14 列）、`-primary.tsv`（4 行、7 列）。
+  详见 `WSP-BUDGET-RESULTS.md` §11.43。
+
+### Changed（M1.44：静态字节–质量 Pareto）
+
+- 把已发布的 actual artifact bytes 与 corrected true-f32 任务读数拼成
+  7 个指标的 Pareto 表：STS Pearson/Spearman、SciFact MRR@10/nDCG@10、
+  SST-2 accuracy、CoLA macro-F1、TweetEval-hate accuracy。分类只用
+  logreg，避免混 probe；不做新编码。
+- 成本：L12 f32 `84,934,656 B`、int3/R12 `10,782,720 B`、int4
+  `13,436,928 B`；L6 f32 `42,467,328 B`、int3/rescan `5,391,360 B`、
+  int4 `6,718,464 B`。int3/R12 是 f32 工件字节的 `12.69%`，int4 是
+  `15.82%`；这是工件字节比，不是 bit 比或延迟比。
+- 没有跨任务统一 winner：L12 STS Spearman 的 `R12` 在 10.78MB 上
+  `0.835411`，支配 f32/int4；L12 CoLA 的 `int4` 支配 f32
+  （`0.561151` vs `0.548644`）；L6 STS 的 `rescan` 在 5.39MB 上
+  `0.831304` 支配 f32；L6 Hate 的 `int3` 在 5.39MB 上 `0.550475`
+  支配 f32；L6 SciFact 的 `int4` 为 `0.573827`，高于 f32。
+- 新增 `docs/research/scripts/wsp_m144/cost_pareto.py`、
+  `data/wsp-classify-m144-pareto.tsv`（56 行、9 列）。详见
+  `WSP-BUDGET-RESULTS.md` §11.44。
+
+### Changed（M1.41/M1.42：域感知先验与 fit-only 阈值搬运）
+
+- M1.41 在 HateXplain 官方 `train+val`/`test` 上预注册比较
+  `global_test_prior` 与 `domain_test_prior`（按 Gab/Twitter 拆先验），
+  另加两个 OOF fit 阈值。fit 域先验 Gab `0.501594`、Twitter
+  `0.078479`；test `0.497110/0.088636`。5 seeds、2 probes、L12/L6，
+  仍冻结编码器，C 只由 f32 fit 内 5 折选。
+- M1.41 primary（`domain_test − global_test` overall accuracy）：
+  L12 logreg **5/5**（`+0.7821pp`）、L12 SVC **5/5**
+  （`+0.6569pp`）、L6 logreg **4/5**（`+0.6361pp`）supported；
+  L6 SVC **0/5**（`+0.3650pp`）rejected。域感知阈值相对 global 有效，
+  但绝对 accuracy 仍低于 default：`0.8154/0.8161`（L12）、
+  `0.8179/0.8144`（L6）vs `0.8233/0.8216`、`0.8227/0.8229`。
+  正例率 `0.3076` 几乎精确匹配 test 先验 `0.3097`，accuracy 仍更低：
+  **匹配先验不等于更优阈值。**
+- M1.42 在 TweetEval/hate（fit `8,985`、test `2,734`）上把
+  `target_prior` 换成 fit OOF 分位点。Primary（`global_fit_prior`
+  下 arm−f32）：L12 logreg **0/5**（`−1.7703pp`）、L12 SVC **0/5**
+  （`−1.5947pp`）、L6 logreg **0/5**（`+0.0219pp`）、L6 SVC
+  **1/5**（`+0.5779pp`），四个 family 全部 `not_retained`。
+  同脚本 `global_test_prior` 仍复现 M1.38 方向：L12
+  `+1.8288/+1.6825pp`、L6 `+2.8676/+2.5457pp`。
+- fit-only 阈值没有搬运先验：f32 预测正例率 `0.761–0.795`，
+  而 test 真实 hate 率约 `0.421`；absolute accuracy 比 test-prior
+  低 `7.3–11.0pp`。**M1.38 的 target_prior rescue 是 test 分数
+  分位点现象，不是可部署协议；candidate 线到此收口。**
+- 新增 `docs/research/scripts/wsp_m141/domain_prior.py`、
+  `wsp_m142/fit_only_threshold.py`，以及 `data/wsp-classify-m141-*`
+  （raw 1,200 行、compare 1,500 行、summary 240 行、compare-summary
+  300 行、primary 4 行）与 `data/wsp-classify-m142-*`（raw 240 行、
+  compare 300 行、primary 4 行）。详见 `WSP-BUDGET-RESULTS.md`
+  §11.41/§11.42。
+
 ### Changed（M1.40：HateXplain 第二个 hate 语料的预注册 confirmatory）
 
 - 在 HateXplain 官方 `train+val`/`test` 上预注册复验 M1.38/M1.39 的

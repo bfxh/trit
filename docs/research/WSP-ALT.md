@@ -8,6 +8,23 @@
 > `R12`/`rescan` 均 0/5 正 CI、被预注册判据判为 rejected，且
 > target_prior 的绝对 accuracy 低于 default；详见
 > `WSP-BUDGET-RESULTS.md` §11.40。
+> M1.41 进一步把 HateXplain 的先验按 Gab/Twitter 拆域：域感知阈值相对
+> global 在 3/4 个 probe family 上 supported，但仍低于 default
+> （`0.815/0.816` vs `0.823`，L6 `0.818/0.814` vs `0.822`），candidate
+> 没有被救回；M1.42 在 TweetEval/hate 上把阈值改成 fit-only 后，
+> M1.38 的 `+1.8~+2.9pp` candidate gain 没有保留，L12 翻负、L6 归零，
+> 四个 family 全部 `not_retained`。**target_prior 是 test 分数分位点的
+> transductive 现象，不是可部署协议；candidate 线收口。** 详见
+> `WSP-BUDGET-RESULTS.md` §11.41/§11.42。
+> M1.43 在 HateXplain 上换三分类（`normal/hate/offensive`）：四个
+> family 的 accuracy `arm−f32` 全部 0/5 正 CI，三分类 accuracy 只有
+> `0.649–0.656`，`offensive` recall `0.354–0.426`；binary 的 `0.82`
+> 主要来自 normal-vs-rest，**三分类 exploratory 不能升级 candidate**。
+> 详见 `WSP-BUDGET-RESULTS.md` §11.43。
+> M1.45 把 Davidson 作为第三 hate 语料：default 阈值下四个 family
+> accuracy 全部 0/5 正 CI；accuracy `0.942–0.945` 但 hate recall
+> `3.9–20.0%`、macro-F1 `0.52–0.63`，多数类把 accuracy 撑高。
+> **第三语料仍不能升级 candidate。** 详见 §11.45。
 > 详见 `WSP-BUDGET-RESULTS.md`。
 > 其余方案仍是草案。层内预演只覆盖 L12 第 0 层 `query/key/value`，不是全模型，
 > 也不是 STS。文中所有“误差下降”都是层内重建或层输出范数，不能直接当

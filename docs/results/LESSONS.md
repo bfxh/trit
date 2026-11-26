@@ -553,6 +553,49 @@
     的绝对 accuracy 并列，不能只报量化臂减 f32；否则会把“阈值工作点
     变差”误读成“量化没增益”或反之**（M1.40）。
 
+56. **“匹配边际先验”不是“校准”，更不是“提高 accuracy”**。M1.41 在
+    HateXplain 上把先验按 Gab/Twitter 拆域：`domain_test_prior` 的
+    overall 预测正例率 `0.3076` 几乎精确匹配 test 真实先验 `0.3097`，
+    相对 global 阈值也在 3/4 个 family 上 supported；但 f32 accuracy
+    仍低于 default（`0.8154/0.8161` vs `0.8233/0.8216`，L6
+    `0.8179/0.8144` vs `0.8227/0.8229`）。**先验匹配只对齐正例率，
+    不对齐排序/分数尺度；域拆开只能解释 global 的一部分伤害**（M1.41）。
+
+57. **用 test 分数分位点定的阈值是 transductive，不能换成 fit-only
+    就部署**。M1.42 在 TweetEval/hate 上把 M1.38 的 `target_prior`
+    从 test 分位点换成 fit OOF 分位点：L12 `R12` 从
+    `+1.83/+1.68pp` 翻成 `−1.77/−1.59pp`，L6 `rescan` 从
+    `+2.87/+2.55pp` 掉到 `+0.02/+0.58pp`，四个 family 全部
+    `not_retained`。fit-only 阈值落在 `0.464–0.467`（logreg）/
+    `−0.050`（SVC），预测正例率 `0.761–0.795`，而真实 hate 率
+    `0.421`。**OOF 分数分布与 test 分数分布不同，分位点不能搬运；
+    以后若继续，必须预注册 prior-free / inductive 的决策规则**（M1.42）。
+
+58. **成本–质量 frontier 是任务相关的，不能拿一个任务的 winner 推
+    部署配置**。M1.44 把 actual artifact bytes 与 corrected true-f32
+    读数拼表：L12 STS Spearman 的 `R12` 在 10.78MB 上 `0.835411`，
+    支配 f32/int4；L12 CoLA 的 `int4` 在 13.44MB 上 `0.561151`，
+    支配 f32；L6 STS 的 `rescan` 在 5.39MB 上 `0.831304`，支配 f32；
+    L6 Hate 的 `int3` 在 5.39MB 上 `0.550475`，支配 f32；L6 SciFact
+    则是 `int4` 最高。**同一个预算换任务就换 winner；最低字节有时
+    也是最高质量，但只对那个任务成立**（M1.44）。
+
+59. **二分类的 82% 不等于三分类的细边界**。HateXplain 三分类（M1.43）
+    accuracy 只有 `0.649–0.656`，`offensive` recall `0.354–0.426`；
+    L12 logreg 的 `R12` 点估计 `+0.156pp` 但 macro-F1 `−0.167pp`，
+    L6 logreg `rescan` `+0.469pp` 也只有 0/5 正 CI。**binary 的
+    normal-vs-rest 易分边界会把收益放大；要谈 hate/offensive 细边界，
+    必须单独跑三分类，且不能把三分类 exploratory 当 candidate rescue**
+    （M1.43）。
+
+60. **5.7% 先验上的 94% accuracy 是多数类幻觉**。Davidson 第三语料
+    （M1.45）default 阈值下 accuracy `0.942–0.945`，但预测正例率
+    `0.38–2.08%`、hate recall `3.9–20.0%`、macro-F1 `0.52–0.63`；
+    四个 family 的 accuracy `arm−f32` 全部 0/5 正 CI，macro-F1
+    三负一微负。**先验极低时 accuracy 近天花板不能当保真证据；
+    必须同时报 macro-F1、per-class recall 与 pred pos rate，且
+    第三语料仍不能升级 candidate**（M1.45）。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter
