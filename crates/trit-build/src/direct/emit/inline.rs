@@ -1,7 +1,6 @@
 //! 单用节点的表达式展开：调度在 `plan`，这里只负责把表达式拼成 C。
-//!
 //! 节点仍按后序发射；被标记为内联的节点不落临时变量，由父表达式递归展开。
-//! 全文只有一个二元调用时，不再生成 `trit_bin` helper，直接展开表索引。
+//! 二元调用是走 `trit_bin` helper 还是直接展开表索引，按整篇字节数择优。
 
 use super::super::code;
 use super::super::ir::Op;
@@ -16,7 +15,7 @@ pub(super) fn expr(
     names: &[Option<usize>],
     inlined: &[bool],
     index: usize,
-    direct_bin: bool,
+    inline_tables: bool,
 ) -> String {
     if !inlined[index] {
         return format!("t{}", names[index].expect("未内联的操作数先于父节点发射"));
@@ -24,16 +23,15 @@ pub(super) fn expr(
     match ops[index] {
         Op::Const(value) => code(value).to_string(),
         Op::Var(slot) => format!("vars[{slot}]"),
-        Op::And(left, right) => bin("T_AND", ops, names, inlined, left, right, direct_bin),
-        Op::Or(left, right) => bin("T_OR", ops, names, inlined, left, right, direct_bin),
-        Op::Xor(left, right) => bin("T_XOR", ops, names, inlined, left, right, direct_bin),
-        Op::Xor2(left, right) => bin("T_XOR2", ops, names, inlined, left, right, direct_bin),
-        Op::Implies(left, right) => bin("T_IMPL", ops, names, inlined, left, right, direct_bin),
-        Op::Equiv(left, right) => bin("T_EQUIV", ops, names, inlined, left, right, direct_bin),
-        Op::Not(inner) => format!("-({})", expr(ops, names, inlined, inner, direct_bin)),
+        Op::And(left, right) => bin("T_AND", ops, names, inlined, left, right, inline_tables),
+        Op::Or(left, right) => bin("T_OR", ops, names, inlined, left, right, inline_tables),
+        Op::Xor(left, right) => bin("T_XOR", ops, names, inlined, left, right, inline_tables),
+        Op::Xor2(left, right) => bin("T_XOR2", ops, names, inlined, left, right, inline_tables),
+        Op::Implies(left, right) => bin("T_IMPL", ops, names, inlined, left, right, inline_tables),
+        Op::Equiv(left, right) => bin("T_EQUIV", ops, names, inlined, left, right, inline_tables),
+        Op::Not(inner) => format!("-({})", expr(ops, names, inlined, inner, inline_tables)),
     }
 }
-
 fn bin(
     table: &str,
     ops: &[Op],
@@ -41,16 +39,18 @@ fn bin(
     inlined: &[bool],
     left: usize,
     right: usize,
-    direct_bin: bool,
+    inline_tables: bool,
 ) -> String {
-    let left = expr(ops, names, inlined, left, direct_bin);
-    let right = expr(ops, names, inlined, right, direct_bin);
-    if direct_bin {
+    let left = expr(ops, names, inlined, left, inline_tables);
+    let right = expr(ops, names, inlined, right, inline_tables);
+    call(table, left, right, inline_tables)
+}
+pub(super) fn call(table: &str, left: String, right: String, inline_tables: bool) -> String {
+    if inline_tables {
         format!("{table}[({left} + 1) * 3 + ({right} + 1)]")
     } else {
         format!("trit_bin({table}, {left}, {right})")
     }
 }
-
 #[cfg(test)]
 mod tests;

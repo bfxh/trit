@@ -244,7 +244,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 148
+      "lines": 98
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/body.rs",
+      "lines": 54
     },
     {
       "file": "crates/trit-build/src/direct/emit/format.rs",
@@ -268,7 +272,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/fanout.rs",
-      "lines": 24
+      "lines": 21
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/tree.rs",
@@ -276,7 +280,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests.rs",
-      "lines": 75
+      "lines": 72
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/tests/helper.rs",
+      "lines": 17
     },
     {
       "file": "crates/trit-build/src/direct/fold.rs",
@@ -359,8 +367,16 @@
       "lines": 92
     },
     {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
+      "lines": 56
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests.rs",
       "lines": 189
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests/negated.rs",
+      "lines": 129
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",

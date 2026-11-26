@@ -1,11 +1,9 @@
 //! `⇒` / `⇔` 常量律判据：oracle 是 `Algebra::implies` / `equiv` 的 3×3 表。
-
 use crate::direct::emit;
 use crate::direct::fold::fold;
 use crate::direct::ir::Op;
 use trit_core::value::Ternary;
 use trit_core::{Algebra, Parser};
-
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
 
@@ -187,3 +185,5 @@ fn simplified_connectives_emit_one_statement_without_tables() {
         assert!(!c.contains("static const int8_t T_"), "{source}: {c}");
     }
 }
+
+mod negated;

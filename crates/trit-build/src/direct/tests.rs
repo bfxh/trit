@@ -99,14 +99,14 @@ fn render_is_linear_not_a_truth_table() {
         source.contains("int8_t trit_direct(const int8_t *vars, unsigned nvars)"),
         "{source}"
     );
-    assert!(source.contains("trit_bin(T_AND"), "{source}");
+    assert!(source.contains("T_AND["), "{source}");
     assert!(source.contains("-("), "{source}");
     assert!(!source.contains("T_NOT"), "{source}");
     assert!(
         !source.contains("TRIT_TABLE"),
         "直算后端不该有 3^n 表：{source}"
     );
-    assert!(source.contains("return trit_bin("), "{source}");
+    assert!(source.contains("return T_OR["), "{source}");
 }
 
 #[test]

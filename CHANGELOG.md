@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（第五十一轮：direct 否定对偶化简与精确 helper 选择）
+
+- `direct/fold/simplify/connectives/negated.rs`：`⇒` 右侧为 `F` 时改 `¬左`，两侧都是
+  `Not` 时反证内层；`⇔` 任一侧为 `F` 时否定另一侧，两侧都是 `Not` 时去双层取反，
+  同一 `Not` 在 Ł3 折成常量 `T`。`is_not_of` 随之迁入，`connectives.rs` 保持 92 行。
+- `direct/emit.rs` / `direct/emit/body.rs` / `direct/emit/inline.rs`：二元调用不再按固定
+  节点数决定 helper，而是把「共用 `trit_bin`」与「全部展开表索引」两版函数体都渲染，
+  按整篇字节数选短者；语句右值在 helperless 版本也走表索引，不再引用不存在的 helper。
+- `direct_c_size.rs` 更新为 11 个 fixtures；读数（同机 CLI，K3；整个 `direct.c`）：
+  `a <=> 0` 442→347 B、`(!a) <=> (!b)` 455→449 B、`(!a) => (!b)` 445 B、
+  `(!(a & b)) => (!(c | d))` 671→582 B；`(a & b) | c` 641→545 B、
+  `((a & b) | c) & (d | e)` 696→614 B、混合式 753→664 B、11 变量 1133→1093 B、
+  深链 764→689 B。dense 12 项仍选 helper，保持 1430 B；若强推表索引会到 1446 B。
+- 判据：`cargo test -p trit-build` 138 单元（137 passed / 1 ignored）+ 全部集成测试通过；
+  三种代数穷举否定对偶；`negated.rs` 与 helper 选择均有形状断言；
+  `mutation_check --pkg trit-build` 90/90 caught（含 helperless 语句与三条对偶变异）。
+
 ### Added（第五十轮：direct 单二元调用展开）
 
 - `direct/emit.rs` / `direct/emit/inline.rs`：统计折叠后的二元节点；全文只有一个二元
