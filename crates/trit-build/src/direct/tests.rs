@@ -4,6 +4,9 @@ use super::*;
 use trit_core::Parser;
 use trit_eval::eval::{Assignment, eval};
 
+mod eval;
+use eval::eval_ops;
+
 /// 用 `trit_eval` 独立算 3×3 表：与生成物里的表逐格相同才算语义一致。
 #[test]
 fn generated_tables_match_eval() {
@@ -137,22 +140,4 @@ fn identical_subexpressions_are_computed_once() {
 
 fn code_of(value: Ternary) -> i8 {
     code(value)
-}
-
-fn eval_ops(ops: &[Op], values: &[Ternary], alg: Algebra) -> Ternary {
-    let mut registers: Vec<Ternary> = Vec::with_capacity(ops.len());
-    for op in ops {
-        let value = match op {
-            Op::Const(value) => *value,
-            Op::Var(index) => values[*index],
-            Op::Not(inner) => alg.not(registers[*inner]),
-            Op::And(left, right) => alg.and(registers[*left], registers[*right]),
-            Op::Or(left, right) => alg.or(registers[*left], registers[*right]),
-            Op::Xor(left, right) => alg.strong_add(registers[*left], registers[*right]),
-            Op::Implies(left, right) => alg.implies(registers[*left], registers[*right]),
-            Op::Equiv(left, right) => alg.equiv(registers[*left], registers[*right]),
-        };
-        registers.push(value);
-    }
-    *registers.last().expect("空 IR")
 }
