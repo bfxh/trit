@@ -1,6 +1,6 @@
 //! `direct.c` 字节数回归门：只设上界，优化缩小时同步下调。
 //!
-//! 样例覆盖单用链、扇出、取反、否定对偶、11 变量与深链；预算来自当前 CLI 产物，任何变大都要先解释。
+//! 样例覆盖单用链、扇出、取反、否定对偶、11 变量与深链；预算来自当前 CLI 产物，任何变大都要先解释；索引 3*l+r+4 每次少 14 B。
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -47,20 +47,20 @@ fn build(dir: &Path, name: &str, source: &str) -> usize {
 #[test]
 fn direct_c_bytes_stay_within_budget() {
     let fixtures = [
-        ("(a & b) | c", 545),
-        ("((a & b) | c) & (d | e)", 614),
-        ("((a => b) <=> (!a | b)) ^ c", 664),
+        ("(a & b) | c", 517),
+        ("((a & b) | c) & (d | e)", 558),
+        ("((a => b) <=> (!a | b)) ^ c", 622),
         (
             "(((a & b) | (c & d)) & ((e | f) ^ (g & h))) | !(i & (j | k))",
-            893,
+            753,
         ),
-        ("a & (b | (c & (d | (e & f))))", 649),
+        ("a & (b | (c & (d | (e & f))))", 579),
         ("!a", 347),
-        ("a & b", 448),
+        ("a & b", 434),
         ("a <=> 0", 347),
-        ("(!a) => (!b)", 445),
-        ("(!a) <=> (!b)", 449),
-        ("(!(a & b)) => (!(c | d))", 582),
+        ("(!a) => (!b)", 431),
+        ("(!a) <=> (!b)", 435),
+        ("(!(a & b)) => (!(c | d))", 540),
     ];
     let dir = scratch();
     for (index, (source, budget)) in fixtures.into_iter().enumerate() {

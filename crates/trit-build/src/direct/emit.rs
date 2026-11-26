@@ -1,8 +1,8 @@
 //! `direct.c` 的渲染：表由 `Algebra` 现算，节点按后序发语句。
 //!
 //! 单用节点在 `inline` 里决定是否并进父表达式（沿单用边展开，扇出即停），根节点由
-//! `return` 直接展开。二元调用先各写一版：共用 `trit_bin` helper，或全部展开成
-//! 表索引；两版只差这一处，最终按整篇字节数选短者，不再依赖固定调用阈值。
+//! `return` 直接展开。二元调用一律展开成 `T[...][3*l+r+4]` 表索引：紧凑索引每次调用
+//! 都比 `trit_bin` helper 调用短，helper 的固定声明无法摊销。
 
 use trit_core::Algebra;
 
@@ -14,12 +14,6 @@ use trit_circuit::GateKind;
 mod body;
 mod format;
 mod inline;
-
-const BIN_HELPER: &str = concat!(
-    "static inline int8_t trit_bin(const int8_t t[9], int8_t a, int8_t b) {\n",
-    "    return t[(a + 1) * 3 + (b + 1)];\n",
-    "}\n"
-);
 
 /// 表达式 → `direct.c` 全文。
 pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
@@ -74,24 +68,12 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
         push_table(&mut prefix, name, table);
     }
 
-    let mut with_helper = prefix.clone();
+    let mut text = prefix;
     if !binary_tables.is_empty() {
-        with_helper.push_str(BIN_HELPER);
-        with_helper.push('\n');
+        text.push('\n');
     }
-    with_helper.push_str(&body::body(&ops, vars, &inlined, false));
-
-    let mut without_helper = prefix;
-    if !binary_tables.is_empty() {
-        without_helper.push('\n');
-    }
-    without_helper.push_str(&body::body(&ops, vars, &inlined, true));
-
-    if without_helper.len() <= with_helper.len() {
-        without_helper
-    } else {
-        with_helper
-    }
+    text.push_str(&body::body(&ops, vars, &inlined));
+    text
 }
 
 #[cfg(test)]

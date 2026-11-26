@@ -672,14 +672,6 @@
   "filter": "direct::emit::inline::tests::tree::multilevel_single_use_cone_fits_one_statement"
  },
  {
-  "name": "emit: 总是保留 helper",
-  "file": "crates/trit-build/src/direct/emit.rs",
-  "old": "    if without_helper.len() <= with_helper.len() {",
-  "new": "    if false {",
-  "pkg": "trit-build",
-  "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
- },
- {
   "name": "negated: ⇔F 否定反侧",
   "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
   "old": "        negation::push(resolve, kept, consts, right);",
@@ -702,14 +694,6 @@
   "new": "        if false && matches!(alg, Algebra::Lukasiewicz) {",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::connectives::tests::negated::same_negated_equivalence_still_folds_only_in_lukasiewicz"
- },
- {
-  "name": "body: helperless 语句仍走 helper",
-  "file": "crates/trit-build/src/direct/emit/body.rs",
-  "old": "                inline::call(table, left, right, inline_tables)",
-  "new": "                inline::call(table, left, right, false)",
-  "pkg": "trit-build",
-  "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
  },
  {
   "name": "inline: 变量复用阈值失效（全部直写）",
@@ -742,5 +726,21 @@
   "new": "    if matches!(ops[index], Op::Var(_)) {",
   "pkg": "trit-build",
   "filter": "direct::emit::inline::tests::reuse::reused_constant_stays_inline"
+ },
+ {
+  "name": "inline: 表索引偏移少一",
+  "file": "crates/trit-build/src/direct/emit/inline.rs",
+  "old": "format!(\"{table}[3*{left}+{right}+4]\")",
+  "new": "format!(\"{table}[3*{left}+{right}+3]\")",
+  "pkg": "trit-build",
+  "filter": "single_use_and_is_inlined_into_not"
+ },
+ {
+  "name": "body: 与门错用或表",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
+  "old": "Op::And(left, right) => bin(\"T_AND\", *left, *right),",
+  "new": "Op::And(left, right) => bin(\"T_OR\", *left, *right),",
+  "pkg": "trit-build",
+  "filter": "shared_and_stays_a_separate_statement"
  }
 ]

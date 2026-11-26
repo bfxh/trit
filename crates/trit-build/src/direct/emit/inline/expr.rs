@@ -10,13 +10,7 @@ enum Frame {
     Not,
 }
 /// 展开一个可能已内联的节点；未内联节点取已经发射的 `tN`。
-pub(crate) fn expr(
-    ops: &[Op],
-    names: &[Option<usize>],
-    inlined: &[bool],
-    index: usize,
-    inline_tables: bool,
-) -> String {
+pub(crate) fn expr(ops: &[Op], names: &[Option<usize>], inlined: &[bool], index: usize) -> String {
     let mut work = vec![Frame::Visit(index)];
     let mut out = Vec::new();
     while let Some(frame) = work.pop() {
@@ -47,7 +41,7 @@ pub(crate) fn expr(
             Frame::Bin(table) => {
                 let right = out.pop().expect("二元表达式缺右操作数");
                 let left = out.pop().expect("二元表达式缺左操作数");
-                out.push(call(table, left, right, inline_tables));
+                out.push(call(table, left, right));
             }
             Frame::Not => {
                 let inner = out.pop().expect("取反表达式缺操作数");
@@ -81,7 +75,7 @@ mod tests {
         let inlined = vec![true; ops.len()];
         assert!(super::super::plan::targets(&ops).iter().all(|flag| *flag));
         let names = vec![None; ops.len()];
-        let source = expr(&ops, &names, &inlined, ops.len() - 1, true);
+        let source = expr(&ops, &names, &inlined, ops.len() - 1);
         assert!(source.starts_with("T_AND[") && source.ends_with(']'));
     }
 }

@@ -49,5 +49,5 @@ fn reused_constant_stays_inline() {
         Algebra::Kleene,
     );
     assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
-    assert!(source.contains("return T_OR[("), "{source}");
+    assert!(source.contains("return T_OR[3*"), "{source}");
 }

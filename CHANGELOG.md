@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Changed（第五十四轮：direct 表索引化简为 `3*l+r+4`，删除 helper）
+
+- `direct/emit/inline.rs`：二元调用的表索引从 `[(l+1)*3+(r+1)]` 改成 `[3*l+r+4]`；
+  两者代数等价，但新式每个展开调用固定少 14 B（括号与两个 `+1` 被吸收）。
+  `body.rs` 的语句右值与 `expr.rs` 的根展开共用同一写法，不再按 helper/表索引分叉。
+- `direct/emit.rs`：删除 `trit_bin` helper 与双函数体择优。紧凑索引每次调用的固定开销是
+  12 B（`T[3*l+r+4]`），helper 调用是 19 B（`trit_bin(T, l, r)`），直接索引恒短 7 B；
+  helper 还有约 90 B 声明，任何调用数都无法摊平，旧“按整篇字节数择优”实际总选表索引。
+  多调用测试改为断言 21 次调用全部内联、零 `trit_bin`。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 545→517 B、
+  `((a & b) | c) & (d | e)` 614→558 B、`((a => b) <=> (!a | b)) ^ c` 664→622 B、
+  11 变量混合式 893→753 B、深链 649→579 B、`a & b` 448→434 B、
+  `(!a) => (!b)` 445→431 B、`(!a) <=> (!b)` 449→435 B、
+  `(!(a & b)) => (!(c | d))` 582→540 B；`!a` 347 B、`a <=> 0` 347 B 不变；
+  12 变量 dense 样（11 次二元调用）995→841 B、8 变量高复用样（15 次调用）963→753 B。
+- 判据：`direct_c_size.rs` 11 个预算按新产物同步收紧（`!a` / `a <=> 0` 保持 347 B）；三代数 `--verify-c` 对 11 变量
+  （177147 行）、dense（531441 行）、高复用（19683 行）与深链（729 行）全过；
+  `cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+ 集成全绿；
+  `mutation_check --pkg trit-build` 93/93 caught（helper 两条变异换成表索引偏移与错表变异）；
+  clippy、fmt、rustdoc、docs、module budget、test surface 与 alloc guard 全绿。
+
 ### Added（第五十三轮：direct 单用内联取消深度封顶）
 
 - `direct/emit/inline/plan.rs`：删掉 `MAX_INLINE_DEPTH = 3`，凡 `uses == 1` 的非叶子节点
