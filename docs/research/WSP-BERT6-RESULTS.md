@@ -6,6 +6,15 @@ LayerNorm、GELU、残差都在 f32 里跑，只把线性权重三值化。目�
 1. 三值权重在**真实 transformer 链**上到底掉多少，而不是只掉在三段线性段上；
 2. 第 0 层单段 `output` 的“随机输入低估”结论，能不能外推到完整模型。
 
+> **M1.40 外部语料读数（2026-11-26）**：HateXplain 官方
+> `train+val`/`test` 的预注册 confirmatory 没有复现 M1.38/M1.39 的
+> `R12`/`rescan` 增益。L12 `R12` 的 logreg/SVC 是 `0/5`、`0/5`
+> （`+0.10/−0.29pp`），L6 `rescan` 是 `0/5`、`0/5`
+> （`−0.10/+0.35pp`）；两个候选都被预注册判据判为 rejected。
+> target_prior 在 HateXplain 上还把 f32 的绝对 accuracy 从约 `0.823`
+> 降到 `0.808/0.811`。这是第二个 hate 语料，不是 TweetEval 的切分；
+> 详见 `WSP-BUDGET-RESULTS.md` §11.40。
+
 ## 1. 协议
 
 - 模型：`sentence-transformers/all-MiniLM-L6-v2`（6 层、384 hidden、12 heads、1536 FFN）。
