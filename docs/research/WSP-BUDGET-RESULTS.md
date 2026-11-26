@@ -1,6 +1,19 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.38 完成（§11.38）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验。
+> 状态：M1.39 完成（§11.39）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验 + 预注册 Hate test 半分割 confirmatory。
+>
+> **M1.39 半分割 confirmatory（2026-11-26）**：在既有 TweetEval/hate
+> 官方 test 上预注册 50/50 分层半分割（split seed 101），一半 test 分数
+> 校准 target_prior、另一半标签评估，双向交叉；5 seeds × 2 probes ×
+> 4 臂 × 2 规则。Primary accuracy：L12 `R12` logreg 5/10 正
+> （`+1.90pp`）、SVC 4/10（`+1.62pp`），**inconclusive**；L6 `rescan`
+> logreg 10/10（`+2.82pp`）**confirmed**、SVC 7/10（`+2.45pp`）
+> **inconclusive**。Macro-F1 次要口径：L12 `R12` 5/10、4/10；
+> L6 `rescan` 两 probe 均 10/10。Default 0.5 下 L12 `R12` 仍 0 正 /
+> 5 负 / 5 跨（两 probe 均值 `−1.35/−1.44pp`）。**半分割没有确认
+> `R12`；`rescan` 只在 L6/target_prior/logreg accuracy 过预注册门槛。
+> target_prior 仍是 transductive；这是同一语料的标签半分割，不是
+> 新数据集，不能替代独立语料 confirmatory。**
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -5810,7 +5823,224 @@ WSPEMB/f32，未重新编码。
 - `data/wsp-classify-matched-prior-f32.tsv`（24 行、8 列：`dataset
   depth probe rule n_seeds mean_score min_score max_score`）。
 
+## 11.39 目标先验阈值的预注册半分割 confirmatory（M1.39）
+
+### 11.39.1 问题与预注册
+
+M1.38 的 6 个正 CI 全部来自同一批 Hate 官方 test 标签；5 个 seed 只是
+训练侧重复，阈值校准和评估使用同一批 test 分数。M1.39 问一个更窄、
+可预注册的问题：
+
+> 把 test 分数切成互斥的校准半与评估半后，M1.38 的 `R12` / `rescan`
+> target-prior 增益还能不能在新的一半标签上复现？
+
+预注册写在 `data/wsp-classify-m139-prereg.json`，在跑结果前单独提交
+（commit `d7b6c0d9`）。预注册固定：
+
+- 数据仍是 TweetEval/hate 官方 train/test，不重新编码、不换数据集；
+- test 用 `StratifiedKFold(n_splits=2, shuffle=True, random_state=101)`
+  做 50/50 分层半分割，两个方向 `A_to_B` / `B_to_A` 互为校准/评估；
+- 训练侧仍是冻结编码器 + 线性 probe（logreg / LinearSVC），每个
+  case/probe/seed 只在真 f32 的 train 内 5 折选 C，f32 与全部量化臂
+  共用该 C；seeds `7/13/19/31/43`；
+- `target_prior` 只用校准半的未标注 test 分数：阈值取
+  `quantile(scores_calib, 1 - prior_train)`，`prior_train = 0.420812`；
+  评估半标签只用于打分；
+- primary endpoint 是 accuracy，每个 candidate×probe 有 5 seeds×2
+  directions = 10 个 paired bootstrap CI（10k，95% 双侧）；
+- 判据：`>=8/10` 个 CI 整段 >0 为 **confirmed**，`<=3/10` 为
+  **rejected**，其余 **inconclusive**；看到结果后不改阈值；
+- macro-F1 是次要口径；default 0.5（logreg）/0（SVC）是阈值对照；
+  `int4`/`int3` 是弱控制，不进入 primary 判定。
+
+### 11.39.2 切分与口径
+
+两个半分割各有 `1,367` 条 test；A 半正例 `557`（`0.407462`），B 半
+正例 `558`（`0.408193`）。A→B 时用 A 的未标注分数校准、B 的标签评估；
+B→A 反过来。两半的正例率都与 train 先验 `0.420812` 接近，但**不是**
+用 test 真先验校准。
+
+| direction | eval n | eval pos | eval pos rate | calib n | calib pos | calib pos rate |
+|---|---:|---:|---:|---:|---:|---:|
+| `A_to_B` | 1,367 | 557 | `0.407462` | 1,367 | 558 | `0.408193` |
+| `B_to_A` | 1,367 | 558 | `0.408193` | 1,367 | 557 | `0.407462` |
+
+### 11.39.3 主读数：L6 `rescan` logreg confirmed，`R12` 未确认
+
+Primary accuracy（每个 candidate×probe 汇总 10 个 CI）：
+
+| case | probe | arm | n pos CI /10 | 5-seed×2-dir 均值 | min / max point | verdict |
+|---|---|---|---:|---:|---:|---|
+| Hate L12 | logreg | `R12` | 5 | `+1.9020pp` | `+1.5362 / +2.2677pp` | **inconclusive** |
+| Hate L12 | linear_svc | `R12` | 4 | `+1.6167pp` | `+0.2195 / +2.6335pp` | **inconclusive** |
+| Hate L6 | logreg | `rescan` | 10 | `+2.8237pp` | `+2.5604 / +4.0234pp` | **confirmed** |
+| Hate L6 | linear_svc | `rescan` | 7 | `+2.4506pp` | `+2.0483 / +3.0724pp` | **inconclusive** |
+
+代表性 CI（各 case 的 seed 7）：
+
+| case | probe | direction | f32 acc | arm acc | Δ | 95% CI |
+|---|---|---|---:|---:|---:|---:|
+| Hate L12 `R12` | logreg | A→B | `0.630578` | `0.653255` | `+2.2677pp` | `[+0.1463,+4.4623]pp` |
+| Hate L12 `R12` | logreg | B→A | `0.637893` | `0.653255` | `+1.5362pp` | `[−0.5121,+3.5845]pp` |
+| Hate L12 `R12` | linear_svc | A→B | `0.634967` | `0.661302` | `+2.6335pp` | `[+0.5121,+4.7549]pp` |
+| Hate L12 `R12` | linear_svc | B→A | `0.640088` | `0.650329` | `+1.0241pp` | `[−1.0241,+3.0724]pp` |
+| Hate L6 `rescan` | logreg | A→B | `0.637893` | `0.663497` | `+2.5604pp` | `[+0.3658,+4.7549]pp` |
+| Hate L6 `rescan` | logreg | B→A | `0.627652` | `0.667886` | `+4.0234pp` | `[+1.9020,+6.2180]pp` |
+| Hate L6 `rescan` | linear_svc | A→B | `0.637893` | `0.660571` | `+2.2677pp` | `[+0.0732,+4.3892]pp` |
+| Hate L6 `rescan` | linear_svc | B→A | `0.631309` | `0.662034` | `+3.0724pp` | `[+0.9510,+5.2670]pp` |
+
+`R12` 不是“被拒绝”，而是停在 inconclusive：A→B 半稳定正，B→A 半
+点估计仍正但 CI 跨 0；SVC 的 A→B 正、B→A 跨 0。L6 `rescan` 的 logreg
+在两半、5 seeds 全部正（10/10），SVC 的 A→B 有 2/5 正、B→A 5/5 正
+（合计 7/10）。按预注册判据，只有 L6 `rescan` logreg accuracy 过线。
+
+Macro-F1 次要口径（C 仍按 f32 accuracy 选，只换评分函数；2k bootstrap）：
+
+| case | probe | arm | n pos CI /10 | 均值 | verdict（次要） |
+|---|---|---|---:|---:|---|
+| Hate L12 | logreg | `R12` | 5 | `+1.9583pp` | inconclusive |
+| Hate L12 | linear_svc | `R12` | 4 | `+1.6795pp` | inconclusive |
+| Hate L6 | logreg | `rescan` | 10 | `+2.8345pp` | confirmed |
+| Hate L6 | linear_svc | `rescan` | 10 | `+2.5372pp` | confirmed |
+
+Macro-F1 把 L6 `rescan` 的 SVC 也推到 10/10；但 primary 是 accuracy，
+SVC accuracy 7/10，不能拿次要口径覆盖 primary。`R12` 在两个 metric
+上都停在 5/10、4/10。
+
+### 11.39.4 default 0.5 仍是负向，target_prior 只是把它翻到半稳定
+
+| case | probe | arm | default 均值（正/负/跨） | target 均值（正/负/跨） | target−default |
+|---|---|---|---:|---:|---:|
+| Hate L12 | logreg | `R12` | `−1.3533pp`（0/5/5） | `+1.9020pp`（5/0/5） | `+3.2553pp` |
+| Hate L12 | linear_svc | `R12` | `−1.4411pp`（0/5/5） | `+1.6167pp`（4/0/6） | `+3.0578pp` |
+| Hate L6 | logreg | `rescan` | `+1.0534pp`（4/0/6） | `+2.8237pp`（10/0/0） | `+1.7703pp` |
+| Hate L6 | linear_svc | `rescan` | `+0.6072pp`（0/0/10） | `+2.4506pp`（7/0/3） | `+1.8434pp` |
+
+这与 M1.38 的 full-test 读数方向一致：default 下 `R12` 仍是负向，
+target 下翻正；`rescan` default 本来弱正，target 把正 CI 数量抬上去。
+但半分割显示 `R12` 的翻正并不在两半都稳定，`rescan` 的 logreg 稳定、
+SVC 只在 B→A 半稳定。
+
+### 11.39.5 与 M1.38 的关系：点估计复现，CI 判定不稳
+
+M1.38 full-test 与 M1.39 半分割的 5-seed 均值：
+
+| case | probe | arm | M1.38 full-test | M1.39 半分割 | 差 |
+|---|---|---|---:|---:|---:|
+| Hate L12 | logreg | `R12` | `+1.8288pp` | `+1.9020pp` | `+0.0732pp` |
+| Hate L12 | linear_svc | `R12` | `+1.6825pp` | `+1.6167pp` | `−0.0658pp` |
+| Hate L6 | logreg | `rescan` | `+2.7213pp` | `+2.8237pp` | `+0.1024pp` |
+| Hate L6 | linear_svc | `rescan` | `+2.5457pp` | `+2.4506pp` | `−0.0951pp` |
+
+四个点估计都在 `±0.11pp` 内复现，但 CI 判定从“full-test 正”变成
+“半分割部分跨 0”。这不是样本量不够的另一种说法，而是**同一批
+test 文本被切开后，评估半只有 1,367 条，且两半的分数分布不同**：
+`R12` 的 A→B 平均 `+2.27pp`、B→A `+1.54pp`（logreg）；SVC 的
+A→B `+2.63pp`、B→A `+1.02pp`。L6 `rescan` 两半都正，logreg
+A→B `+2.56pp`、B→A `+4.02pp`，SVC `+2.27/+3.07pp`。
+
+因此 M1.38 的结论应改写成：
+
+- `R12` 的 target-prior 点估计在 Hate L12 上可复现，但**没有通过
+  预注册半分割 confirmatory**；仍是 conditional candidate，不是
+  benchmark 结论。
+- `rescan` 的 L6 target-prior 在 logreg accuracy 上通过预注册
+  confirmatory；SVC accuracy 7/10 未过线，但 macro-F1 10/10，
+  方向与幅度都复现。它是目前唯一有跨 probe/跨 metric 方向一致性的
+  候选，但 primary 仍只有一个 probe 过线。
+- default 0.5 的 0/36 主判决不变；target_prior 仍是 transductive、
+  后验选择的 exploratory 规则，不能写成可部署协议。
+
+### 11.39.6 有效独立性与边界
+
+预注册的 10 个 CI 不是 10 次独立复现：
+
+- 5 个 seed 共享同一批 test 文本；同一 C 下 logreg 的 5 个 seed 甚至
+  给出相同预测。L12 `R12` logreg 的 5 个 A→B 正 CI 实际上是**同一个
+  半分割**重复 5 次；L6 `rescan` logreg 的有效独立单元是 2 个方向 ×
+  2 个 C（1 和 10），4/4 方向×C 全正。
+- L12 `R12` SVC 的 C=`0.1` 在 A→B 正、B→A 跨 0；C=`1` 两方向都跨 0。
+  有效独立单元是 1/4 方向×C 正。
+- L6 `rescan` SVC 的 C=`0.1` 两方向都正，C=`1` A→B 跨 0、B→A 正；
+  有效独立单元 3/4。7/10 的计数被 3 个重复 seed 放大。
+
+所以“confirmed”只能按预注册的 10-CI 计数读，不能读成“10 次独立
+实验都成功”。半分割还共享同一批 test 文本、同一编码器、同一训练集；
+它只把**阈值校准分数**与**评估标签**分开，没有换语料，也没有换
+train/test 域。它比 M1.38 的 full-test 更严，但仍不是独立数据集
+confirmatory。
+
+### 11.39.7 判决
+
+1. **L12 `R12`：不升级。** default 0.5 仍是 0 正 / 5 负 / 5 跨；
+   target_prior 点估计 `+1.62–1.90pp`，但预注册半分割只有 5/10 和
+   4/10 正 CI，判 inconclusive。它可以继续作为“Hate-only、target_prior
+   条件下的候选”，不能写成“跨域量化增益”。
+2. **L6 `rescan`：保留为唯一通过 primary 的候选。** logreg accuracy
+   10/10（`+2.82pp`）confirmed；SVC accuracy 7/10（`+2.45pp`）
+   inconclusive，但 macro-F1 10/10。方向和幅度与 M1.38 的
+   `+2.55–2.72pp` 一致。仍限 L6、Hate、target_prior、线性 probe。
+3. **target_prior 仍是 exploratory。** 它不用 test 标签，但用未标注
+   test 分数做 transductive 分位；半分割也没有消除“同一语料”的
+   限制。不能当 benchmark headline，也不能当默认部署阈值。
+4. **下一步必须换语料。** 半分割已经把“同一 test 标签”的问题压到
+   最小；要继续 confirmatory，需要第二个 hate 数据集（如 HateXplain/
+   Davidson 的预注册二分类映射）重新编码，或预注册新的 train/test
+   域切分。继续在同一批 TweetEval/hate test 上换 seed/C/半分割，
+   只会增加选择自由度。
+
+### 11.39.8 复算与表
+
+脚本 `docs/research/scripts/wsp_m139/split_half_confirm.py` 复用
+`wsp_m138` 的 `cv_seed_stability.py` / `matched_c_full.py`。以下命令
+在仓库根执行；`TRIT_RESULTS` / `TRIT_GEOM_OUT` / `TRIT_DATA_DIR`
+含义同 §11.38.7。
+
+```bash
+export TRIT_RESULTS=/path/to/trit-results
+export TRIT_GEOM_OUT="$TRIT_RESULTS/geometry/corrected"
+
+# primary accuracy（240 行 raw、24 行 summary、4 行 primary）
+python docs/research/scripts/wsp_m139/split_half_confirm.py \
+  --depth both --seeds 7,13,19,31,43
+
+# 次要 macro-F1（C 仍按 f32 accuracy 选；2k bootstrap）
+python docs/research/scripts/wsp_m139/split_half_confirm.py \
+  --depth both --seeds 7,13,19,31,43 --metric macro_f1
+```
+
+表见：
+
+- `data/wsp-classify-m139-prereg.json`（预注册配置，跑前提交）；
+- `data/wsp-classify-m139-split.tsv`（2 行、7 列：`direction eval_n
+  eval_pos n_eval_pos_rate calib_n calib_pos n_calib_pos_rate`）；
+- `data/wsp-classify-m139-raw.tsv`（240 行、21 列：`dataset depth
+  probe arm metric seed rule direction C target_prior threshold eval_n
+  eval_pos_rate calib_pos_rate f32_score arm_score point_delta
+  boot_mean ci_low ci_high verdict`）；
+- `data/wsp-classify-m139-summary.tsv`（24 行、15 列：`dataset depth
+  probe arm metric rule n_eval_ci n_pos_ci n_neg_ci n_cross_ci
+  n_pos_point mean_delta sd_delta min_delta max_delta`）；
+- `data/wsp-classify-m139-primary.tsv`（4 行、11 列：`dataset depth
+  probe arm n_pos_ci n_eval_ci mean_delta sd_delta min_delta max_delta
+  verdict`）；
+- `data/wsp-classify-m139-raw-macro.tsv`（240 行、21 列，字段同上）；
+- `data/wsp-classify-m139-summary-macro.tsv`（24 行、15 列，字段同上）。
+
 ## 12. 下一步
+
+> **M1.39 读法**：M1.38 的 6/36 条件性正结果已过预注册半分割。
+> Primary accuracy：L6 `rescan` logreg 10/10 正（`+2.82pp`）confirmed；
+> L6 `rescan` SVC 7/10（`+2.45pp`）inconclusive，但 macro-F1 10/10；
+> L12 `R12` logreg 5/10（`+1.90pp`）、SVC 4/10（`+1.62pp`）均
+> inconclusive。Default 0.5 下 `R12` 仍是 0 正 / 5 负 / 5 跨，
+> `rescan` 只是弱正（logreg 4 正，SVC 0 正）。**结论：`R12` 不升级，
+> 继续当 Hate-only、target_prior 条件下的候选；`rescan` 是唯一在
+> L6 primary 至少一个 probe 过线的候选，但 SVC accuracy 未过线。
+> target_prior 仍是 transductive exploratory，不是默认协议。半分割
+> 只分开了校准分数与评估标签，没有换语料；下一步必须做第二个 hate
+> 数据集的预注册 confirmatory，不能继续在同一批 test 上换 seed/C/
+> 阈值。** 见 §11.39。
 
 > **M1.38 读法**：分类头的默认 0.5 官方 test headline 不变——36 个比较
 > 0 个量化档显著超过真 f32（0 正 / 41 负 / 139 跨），f32 仍是默认锚点。
