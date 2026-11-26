@@ -359,6 +359,10 @@
       "lines": 103
     },
     {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/poison.rs",
+      "lines": 25
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
       "lines": 63
     },

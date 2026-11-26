@@ -234,16 +234,16 @@
  {
   "name": "simplify: K3/Ł3 与吸收律失效",
   "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
-  "old": "    if !matches!(alg, Algebra::Bochvar)\n        && (consts[left] == Some(Ternary::False) || consts[right] == Some(Ternary::False))",
-  "new": "    if false",
+  "old": "    } else if !matches!(alg, Algebra::Bochvar)\n        && (consts[left] == Some(Ternary::False) || consts[right] == Some(Ternary::False))",
+  "new": "    } else if false",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::absorb::absorption_is_only_for_k3_and_lukasiewicz"
  },
  {
   "name": "simplify: K3/Ł3 或吸收律失效",
   "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
-  "old": "    if !matches!(alg, Algebra::Bochvar)\n        && (consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True))",
-  "new": "    if false",
+  "old": "    } else if !matches!(alg, Algebra::Bochvar)\n        && (consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True))",
+  "new": "    } else if false",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::absorb::absorption_is_only_for_k3_and_lukasiewicz"
  },
@@ -498,8 +498,8 @@
  {
   "name": "complement: 命中后仍新建节点",
   "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
-  "old": "fn push_and(\n    resolve: &mut Vec<usize>,\n    kept: &mut Vec<Op>,\n    consts: &mut Vec<Option<Ternary>>,\n    left: usize,\n    other: usize,\n) {\n    if left == other {",
-  "new": "fn push_and(\n    resolve: &mut Vec<usize>,\n    kept: &mut Vec<Op>,\n    consts: &mut Vec<Option<Ternary>>,\n    left: usize,\n    other: usize,\n) {\n    if false {",
+  "old": "    if left == other {",
+  "new": "    if false {",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::complement::alias::complement_other_equal_to_outer_aliases"
  },
@@ -574,5 +574,29 @@
   "new": "        Op::Not(base) => {\n            leaves.push(index);\n            true\n        }",
   "pkg": "trit-build",
   "filter": "direct::fold::negchain::tests::triple_negation_chain_collapses_to_dual"
+ },
+ {
+  "name": "simplify: B3 毒值吸收绕过守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    (matches!(alg, Algebra::Bochvar)\n        && (left == Some(Ternary::Unknown) || right == Some(Ternary::Unknown)))",
+  "new": "    (true\n        && (left == Some(Ternary::Unknown) || right == Some(Ternary::Unknown)))",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
+ },
+ {
+  "name": "simplify: B3 毒值只认左操作数",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    (matches!(alg, Algebra::Bochvar)\n        && (left == Some(Ternary::Unknown) || right == Some(Ternary::Unknown)))",
+  "new": "    (matches!(alg, Algebra::Bochvar)\n        && (left == Some(Ternary::Unknown)))",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
+ },
+ {
+  "name": "simplify: B3 毒值写成 True",
+  "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+  "old": "    .then_some(Ternary::Unknown)",
+  "new": "    .then_some(Ternary::True)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
  }
 ]

@@ -8,6 +8,7 @@ mod absorb;
 mod complement;
 mod idem;
 mod lattice;
+mod poison;
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
 #[test]
@@ -41,7 +42,6 @@ fn identity_laws_alias_to_the_operand() {
     assert_eq!(simplified("!(!a)"), vec![Op::Var(0)]);
     assert_eq!(simplified("(a & 1) | 0"), vec![Op::Var(0)]);
 }
-
 /// 渲染面：恒等式化简后只剩一条取变量语句，不注册算子表。
 #[test]
 fn simplified_c_has_one_statement_and_no_tables() {
