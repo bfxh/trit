@@ -598,5 +598,37 @@
   "new": "    if let Some(_value) = consts[inner] {\n        push_node(resolve, kept, consts, Op::Not(inner));\n        return;\n    }",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::negation::tests::const_fold::constant_not_feeds_poison_into_the_parent"
+ },
+ {
+  "name": "cse: Xor2 链不展平",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "        Op::Xor2(left, right) if expanded.insert(index) => {\n            collect(kept, left, expanded, out);\n            collect(kept, right, expanded, out);\n        }",
+  "new": "        Op::Xor2(..) if expanded.insert(index) => {\n            out.push(index);\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::mirrored_xor_chains_share_one_chain"
+ },
+ {
+  "name": "cse: Xor2 链叶子不排序",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "    leaves.sort_unstable();\n",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::mirrored_xor_chains_share_one_chain"
+ },
+ {
+  "name": "cse: Xor2 重复叶子去重",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "    leaves.sort_unstable();\n",
+  "new": "    leaves.sort_unstable();\n    leaves.dedup();\n",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::duplicate_xor_leaves_are_not_deduplicated"
+ },
+ {
+  "name": "cse: Xor2 共享节点重复展开",
+  "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+  "old": "        Op::Xor2(left, right) if expanded.insert(index) => {",
+  "new": "        Op::Xor2(left, right) => {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::xorchain::mirrored_xor_chains_share_one_chain"
  }
 ]

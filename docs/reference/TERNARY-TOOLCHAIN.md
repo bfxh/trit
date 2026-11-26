@@ -49,7 +49,7 @@
    ├── truth.csv      真值表（人读/对拍）
    ├── truth.tritbin  TRB2 v3：头 + 变量名 + 5 trit/字节 + GF(3) CRC-3
    ├── lookup.c       主机查表函数（交给 cc/rustc 编译 —— 边界示范）
-   ├── direct.c       主机直算函数（`--backend direct|both`：线性 IR + 交换律 CSE + 常量折叠/恒等式化简 + 化简内常量否定 + CSE + DCE；`.tri` 表达式与 Verilog 网表共用，不展开 3ⁿ 表）
+   ├── direct.c       主机直算函数（`--backend direct|both`：线性 IR + 交换律 CSE + 常量折叠/恒等式化简 + 化简内常量否定 + CSE（含 And/Or/Xor2 结合链）+ DCE；`.tri` 表达式与 Verilog 网表共用，不展开 3ⁿ 表）
    ├── design.v       双导轨 Verilog（K3/Ł3/B3 均支持）
    ├── design_tb.v    自检 testbench + expected.mem（`--verify-hdl`）
    ├── truth.wgsl     WGSL 查表内核 + truth.gpu.bin（2 bit/trit，`--emit-gpu`）
@@ -104,6 +104,7 @@ trit build demo.tri --out out --check  # 校验产物哈希
 | 直算格吸收链 | K3/Ł3 的格吸收沿同算子链传递：`Or` 沿 `Or`、`And` 沿 `And` 迭代找 `x`，遇异算子停手；`a & (a \| b \| c)` 线性 IR 6→1 条、`direct.c` 395 B、不注册算子表。B3 同式仍 6 条、806 B，保留两张表 |
 | 直算公因子提取 | 三代数共同的分配格反向式 `(a ∧ b) ∨ (a ∧ c) = a ∧ (b ∨ c)` 与对偶 `(a ∨ b) ∧ (a ∨ c) = a ∨ (b ∧ c)`；只认两侧同算子节点直接相同的操作数，子式里埋的因子不猜。`(a & b) \| (a & c)` 线性 IR 6→5 条、`direct.c` 767 B；B3 同式 5 条、766 B |
 | 直算 Xor2 常量律 | 按 `GateKind::XorClassic.eval`：`x ^ 0 = x`、`x ^ 1 = ¬x`、`x ^ X = X`；`x ^ x` 不化简（`X ^ X = X`）。Verilog `a ^ 1'b0` 只剩一条取变量语句、不注册 `T_XOR2` |
+| 直算 Xor2 结合链 | `Xor2` 三代数都结合（任一操作数为 `U` 即 `U`，全已知走布尔异或）：展平嵌套链、按下标排序、重建左深链并共享前缀；**不去重**，`x ^ x` 在 `x = U` 时仍是 `U`。展平记录已展开内部节点，`Xor2(y, y)` 不把 `y` 展两次；镜像链 `((a ^ b) ^ c) ^ (a ^ (b ^ c))` 从 8→6 条语句、`direct.c` 751→667 B（K3）、752→668 B（B3），三代数 `--verify-c` 27/27 |
 | 直算连接词常量律 | `⇒` / `⇔` 按代数分派：K3/Ł3 做 `x ⇒ T`、`F ⇒ x`；三代数共用 `T ⇒ x = x`、`x ⇔ T = x`；Ł3 额外 `x ⇒ x = T`、`x ⇔ x = T`，K3/B3 额外 `x ⇒ ¬x`、`¬x ⇒ x`、`x ⇔ X = X`；B3 的 `X ⇒ T`、`F ⇒ X` 保留原式 |
 | 直算强加常量律 | `⊕` 按代数分派：K3/B3 的已知值按合取，做 `x ⊕ T = x`、`x ⊕ X = X`；Ł3 是饱和加法，做 `x ⊕ F = x`、`x ⊕ T = T`、`x ⊕ ¬x = T`；变量 `x ⊕ X` 在 Ł3 保留 |
 | 直算否定归一 | `¬¬x = x` 与德摩根回收 `¬(¬a ∧ ¬b) = a ∨ b`、`¬(¬a ∨ ¬b) = a ∧ b`，三代数通用；只回收两侧都已取反的 4 节点形状为 1 节点，`!(!a & !b)` 的线性 IR 6→3 条语句、`direct.c` 631 B，单侧取反保留 |
@@ -334,7 +335,8 @@ iverilog 结构级仿真，没有综合/时序收敛；端到端构建仍被 19.
   两侧操作数都已取反的形状，单侧取反仍保留 `Not`；三叶以上的同算子链由化简前的
   `negchain` 整体归一，但要求每个叶子都已经是 `Not`，不猜子式里含取反；它在 CSE 之前跑，
   链遍历对同算子节点做 visited 去重，重复子式不会反复下钻，代价随当前外层 `Not` 的链节点线性；
-  结合链规范化只做 `∧` / `∨`，不把 `⊕` / `^` / `⇔` 当成可结合的算子。
+  结合链规范化：`∧` / `∨` 展平、去重、排序；Verilog `^`（`Xor2`）只展平、排序、共享前缀，
+  不去重；不把 `⊕` / `⇔` 当成可结合的算子。
 - e-graph 规则在 K3 下的完备性未证；规则库 18 条，没有 e-matching 索引。
 - `TRB2` 的 Python/JS 解码器未写；当前只有 Rust（`trb.rs`）与 C（`runtime/trit_runtime.c`）两份实现。
 - `design.v` 过了 iverilog 14 结构级仿真，但**没有综合、时序/面积收敛、门延迟模型**；

@@ -9,6 +9,7 @@ use trit_eval::eval::{Assignment, eval};
 
 mod assoc;
 mod factor;
+mod xorchain;
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 
 /// 合成 IR：两个同构的与式合并，外层 `Or(x, x)` 再按幂等律别名。
@@ -23,7 +24,6 @@ fn duplicate_and_idempotent_nodes_collapse() {
     ];
     assert_eq!(cse(ops), vec![Op::Var(0), Op::Var(1), Op::And(0, 1)]);
 }
-
 /// 真实表达式：`((a & 1) & b) | (a & b)` 化简后只剩 3 条语句，
 /// 且三种代数的全赋值结果都与 `trit_eval` 一致。
 #[test]

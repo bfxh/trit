@@ -248,7 +248,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse.rs",
-      "lines": 54
+      "lines": 25
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
@@ -261,6 +261,10 @@
     {
       "file": "crates/trit-build/src/direct/fold/cse/key.rs",
       "lines": 45
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/pass.rs",
+      "lines": 41
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests.rs",
@@ -281,6 +285,14 @@
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests/factor.rs",
       "lines": 96
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/xorchain.rs",
+      "lines": 58
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/xorchain.rs",
+      "lines": 49
     },
     {
       "file": "crates/trit-build/src/direct/fold/negchain.rs",
