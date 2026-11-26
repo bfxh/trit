@@ -342,5 +342,53 @@
   "new": "        resolve.push(target);",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::xor2::tests::true_turns_into_not_and_double_negation_cancels"
+ },
+ {
+  "name": "connectives: B3 的 x=>T 未守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Bochvar) && consts[right] == Some(Ternary::True) {",
+  "new": "    if consts[right] == Some(Ternary::True) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::implication_constants_alias_or_fold"
+ },
+ {
+  "name": "connectives: B3 的 F=>x 未守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Bochvar) && consts[left] == Some(Ternary::False) {",
+  "new": "    if consts[left] == Some(Ternary::False) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::implication_constants_alias_or_fold"
+ },
+ {
+  "name": "connectives: Ł3 自蕴含不折叠",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if left == right {\n        if matches!(alg, Algebra::Lukasiewicz) {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Implies(left, right));",
+  "new": "    if left == right {\n        if false {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Implies(left, right));",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::self_implication_is_constant_only_in_lukasiewicz"
+ },
+ {
+  "name": "connectives: 否定形状不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Lukasiewicz)\n        && (is_not_of(kept, right, left) || is_not_of(kept, left, right))",
+  "new": "    if matches!(alg, Algebra::Lukasiewicz)\n        && (is_not_of(kept, right, left) || is_not_of(kept, left, right))",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::implication_constants_alias_or_fold"
+ },
+ {
+  "name": "connectives: Ł3 自等价不折叠",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if left == right {\n        if matches!(alg, Algebra::Lukasiewicz) {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Equiv(left, right));",
+  "new": "    if left == right {\n        if false {\n            push_const(resolve, kept, consts, Ternary::True);\n        } else {\n            push_node(resolve, kept, consts, Op::Equiv(left, right));",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::equivalence_constants_alias_fold_or_stay"
+ },
+ {
+  "name": "connectives: Ł3 的 X<=>X 未守卫",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if !matches!(alg, Algebra::Lukasiewicz)\n        && (consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown))",
+  "new": "    if consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::equivalence_constants_alias_fold_or_stay"
  }
 ]

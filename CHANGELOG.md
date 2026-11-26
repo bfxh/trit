@@ -24,6 +24,13 @@
   K3/Ł3 的 `a & (a | b)` 化简后只剩一条取变量语句。
 - `direct/fold/simplify/xor2.rs`：`Xor2` 的常量律。按 `GateKind::XorClassic.eval` 的 3×3 表，
   `x ^ 0 = x`、`x ^ 1 = ¬x`、`x ^ X = X` 三代数都成立；`x ^ x` 因 `X ^ X = X` 不化简。
+- `direct/fold/simplify/connectives.rs`：`⇒` / `⇔` 的常量律按代数分派：
+  K3/Ł3 做 `x ⇒ T = T`、`F ⇒ x = T`；三代数共用 `T ⇒ x = x`、`x ⇔ T = x`；
+  Ł3 额外 `x ⇒ x = T`、`x ⇔ x = T`，K3/B3 额外 `x ⇒ ¬x = ¬x`、`¬x ⇒ x = x`、
+  `x ⇔ X = X`。B3 的 `X ⇒ T`、`F ⇒ X` 返回 `X`，保留原式。
+- 判据：`⇒` / `⇔` 的 3×3 表逐格对拍；K3/Ł3 的 `x ⇒ T`、`F ⇒ x` 落成一条 `Const`，
+  B3 在 `X ⇒ T`、`F ⇒ X` 上保留 `T_IMPL`；Ł3 的 `x ⇒ x` / `x ⇔ x` 塌成 `Const`，
+  K3/B3 保留原式；`x ⇔ U` 在 K3/B3 落成 `Const U`，Ł3 保留 `T_EQUIV`。
 - 判据：全常量树（`((1 & X) | !0) <=> (X => 0)`）在 K3/Ł3/B3 下都塌成 **一条 `Const`**，
   生成物只有一条语句且不注册 `T_NOT` / `T_AND` 等算子表；混合树折叠前后对 3^n 全赋值
   与 `trit_eval` 一致；`Xor2` 的 3×3 常量表逐格与 `GateKind::XorClassic` 一致。
@@ -33,12 +40,13 @@
   都只剩一条取变量语句。12 变量 `direct --verify-c` 折叠前后
   `direct.c` 同为 1418 B，531,441/531,441 行通过，墙钟 0.42→0.41 s、RSS 46172→46124 KB
   （变量表达式不产常量节点）。
-- `BUILD_VERSION` 7 → 13：折叠、代数分派吸收律、幂等律、格吸收律、`Xor2` 常量律与 CSE
-  都会改变 `direct.c` 的语句数，旧缓存失效。
+- `BUILD_VERSION` 7 → 14：折叠、代数分派吸收律、幂等律、格吸收律、`Xor2` 常量律、
+  `⇒`/`⇔` 常量律与 CSE 都会改变 `direct.c` 的语句数，旧缓存失效。
 - 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算架构行、实测行与边界。
 
 诚实边界：折叠/化简只减少常量与单位元节点，不做代数恒等式全集、不重排算子；Verilog 侧
-同样只覆盖组合子集与单一选中输出，`Xor2` 只做常量律，不做 `x ^ x`。
+同样只覆盖组合子集与单一选中输出，`Xor2` 只做常量律，不做 `x ^ x`；`⇒`/`⇔` 不做
+`x ⇒ F = ¬x` 这类不减少节点的重写。
 
 ### Added（第四十一轮：direct 后端支持 Verilog 网表）
 

@@ -7,6 +7,7 @@ use build::{push_binary, push_const, push_node};
 use trit_core::Algebra;
 use trit_core::value::Ternary;
 mod build;
+mod connectives;
 mod lattice;
 mod xor2;
 pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
@@ -71,16 +72,11 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
                 push_binary(&mut resolve, &mut kept, &mut consts, left, right, Op::Xor)
             }
             Op::Xor2(left, right) => xor2::push(&mut resolve, &mut kept, &mut consts, left, right),
-            Op::Implies(left, right) => push_binary(
-                &mut resolve,
-                &mut kept,
-                &mut consts,
-                left,
-                right,
-                Op::Implies,
-            ),
+            Op::Implies(left, right) => {
+                connectives::implies(&mut resolve, &mut kept, &mut consts, left, right, alg)
+            }
             Op::Equiv(left, right) => {
-                push_binary(&mut resolve, &mut kept, &mut consts, left, right, Op::Equiv)
+                connectives::equiv(&mut resolve, &mut kept, &mut consts, left, right, alg)
             }
         }
     }
