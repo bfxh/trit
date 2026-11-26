@@ -390,5 +390,45 @@
   "new": "    if consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown)",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::connectives::tests::equivalence_constants_alias_fold_or_stay"
+ },
+ {
+  "name": "xor: K3/B3 的 T 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::True) {\n            resolve.push(right);\n            return;\n        }",
+  "new": "        if consts[left] == Some(Ternary::True) {\n            resolve.push(left);\n            return;\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: K3/B3 的 X 不吸收",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown) {",
+  "new": "        if consts[left] == Some(Ternary::Unknown) && consts[right] == Some(Ternary::Unknown) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: Ł3 的 F 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::False) {\n            resolve.push(right);\n            return;\n        }",
+  "new": "        if consts[left] == Some(Ternary::False) {\n            resolve.push(left);\n            return;\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: Ł3 的 T 不吸收",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True) {",
+  "new": "        if consts[left] == Some(Ternary::True) && consts[right] == Some(Ternary::True) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::unit_and_absorbing_constants_follow_the_algebra"
+ },
+ {
+  "name": "xor: Ł3 互补不折叠",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        if is_complement(kept, left, right) {\n            push_const(resolve, kept, consts, Ternary::True);",
+  "new": "        if is_complement(kept, left, right) {\n            push_const(resolve, kept, consts, Ternary::False);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor::tests::lukasiewicz_complement_collapses_but_k3_and_bochvar_stay"
  }
 ]

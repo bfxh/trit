@@ -260,7 +260,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/build.rs",
-      "lines": 42
+      "lines": 29
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
@@ -289,6 +289,14 @@
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice.rs",
       "lines": 85
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/xor/tests.rs",
+      "lines": 123
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",

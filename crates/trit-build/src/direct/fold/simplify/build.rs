@@ -27,16 +27,3 @@ pub(super) fn push_node(
     kept.push(op);
     consts.push(None);
 }
-
-pub(super) fn push_binary(
-    resolve: &mut Vec<usize>,
-    kept: &mut Vec<Op>,
-    consts: &mut Vec<Option<Ternary>>,
-    left: usize,
-    right: usize,
-    build: fn(usize, usize) -> Op,
-) {
-    let left = resolve[left];
-    let right = resolve[right];
-    push_node(resolve, kept, consts, build(left, right));
-}

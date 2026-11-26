@@ -3,12 +3,13 @@
 //! K3/Ł3 额外 `x ∧ F = F`、`x ∨ T = T`、`x ∧ (x ∨ y) = x`；B3 的 U 传染保留原式。
 use super::super::ir::Op;
 use super::super::lower::prune_dead;
-use build::{push_binary, push_const, push_node};
+use build::{push_const, push_node};
 use trit_core::Algebra;
 use trit_core::value::Ternary;
 mod build;
 mod connectives;
 mod lattice;
+mod xor;
 mod xor2;
 pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     if ops.is_empty() {
@@ -69,7 +70,7 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
                 }
             }
             Op::Xor(left, right) => {
-                push_binary(&mut resolve, &mut kept, &mut consts, left, right, Op::Xor)
+                xor::push(&mut resolve, &mut kept, &mut consts, left, right, alg)
             }
             Op::Xor2(left, right) => xor2::push(&mut resolve, &mut kept, &mut consts, left, right),
             Op::Implies(left, right) => {
@@ -80,7 +81,6 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
             }
         }
     }
-
     let root = *resolve.last().expect("非空 IR");
     prune_dead(kept, root)
 }

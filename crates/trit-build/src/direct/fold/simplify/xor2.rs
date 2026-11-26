@@ -30,7 +30,7 @@ pub(super) fn push(
     }
 }
 
-fn negate(
+pub(super) fn negate(
     resolve: &mut Vec<usize>,
     kept: &mut Vec<Op>,
     consts: &mut Vec<Option<Ternary>>,
