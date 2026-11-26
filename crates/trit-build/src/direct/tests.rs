@@ -116,7 +116,7 @@ fn variable_order_is_respected() {
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
     // 后序：b 先取 vars[1]，a 取 vars[0]；两个单用输入并进根返回。
     assert!(
-        source.contains("return T_AND[(vars[1] + 1) * 3 + (vars[0] + 1)];"),
+        source.contains("return T_AND[3*vars[1]+vars[0]+4];"),
         "{source}"
     );
     assert!(!source.contains("trit_bin("), "{source}");
@@ -130,7 +130,7 @@ fn identical_subexpressions_are_computed_once() {
     assert_eq!(ops.len(), 4, "CSE 没生效：{ops:?}");
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
     assert_eq!(
-        source.matches("T_AND[(").count(),
+        source.matches("T_AND[3*").count(),
         1,
         "同一个与式只该算一次：{source}"
     );

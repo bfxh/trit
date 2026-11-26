@@ -1,10 +1,10 @@
-//! `direct.c` 函数体：同一棵 IR 分别按 helper 调用与表索引展开，由 `render` 选短者。
+//! `direct.c` 函数体：二元调用直接展开 `3*l+r+4` 表索引。
 
 use super::super::code;
 use super::super::ir::Op;
 use super::inline;
 
-pub(super) fn body(ops: &[Op], vars: &[String], inlined: &[bool], inline_tables: bool) -> String {
+pub(super) fn body(ops: &[Op], vars: &[String], inlined: &[bool]) -> String {
     let mut text = String::new();
     text.push_str("int8_t trit_direct(const int8_t *vars, unsigned nvars) {\n");
     if !vars.is_empty() {
@@ -22,11 +22,11 @@ pub(super) fn body(ops: &[Op], vars: &[String], inlined: &[bool], inline_tables:
         }
         names[index] = Some(next);
         let bin = |table: &str, left, right| {
-            let left = inline::expr(ops, &names, inlined, left, inline_tables);
-            let right = inline::expr(ops, &names, inlined, right, inline_tables);
+            let left = inline::expr(ops, &names, inlined, left);
+            let right = inline::expr(ops, &names, inlined, right);
             format!(
                 "    int8_t t{next} = {};\n",
-                inline::call(table, left, right, inline_tables)
+                inline::call(table, left, right)
             )
         };
         let line = match op {
@@ -34,7 +34,7 @@ pub(super) fn body(ops: &[Op], vars: &[String], inlined: &[bool], inline_tables:
             Op::Var(slot) => format!("    int8_t t{next} = vars[{slot}];\n"),
             Op::Not(inner) => format!(
                 "    int8_t t{next} = -({});\n",
-                inline::expr(ops, &names, inlined, *inner, inline_tables)
+                inline::expr(ops, &names, inlined, *inner)
             ),
             Op::And(left, right) => bin("T_AND", *left, *right),
             Op::Or(left, right) => bin("T_OR", *left, *right),
@@ -47,7 +47,7 @@ pub(super) fn body(ops: &[Op], vars: &[String], inlined: &[bool], inline_tables:
         next += 1;
     }
     text.push_str("    return ");
-    let root = inline::expr(ops, &names, inlined, ops.len() - 1, inline_tables);
+    let root = inline::expr(ops, &names, inlined, ops.len() - 1);
     text.push_str(&root);
     text.push_str(";\n}\n");
     text

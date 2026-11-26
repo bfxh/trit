@@ -12,8 +12,5 @@ fn fanout_stops_the_descent() {
     );
     assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
     assert!(source.contains("int8_t t0 = T_AND["), "{source}");
-    assert!(
-        source.contains("return T_OR[(t0 + 1) * 3 + (t0 + 1)];"),
-        "{source}"
-    );
+    assert!(source.contains("return T_OR[3*t0+t0+4];"), "{source}");
 }

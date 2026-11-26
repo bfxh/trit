@@ -18,7 +18,7 @@ fn single_use_and_is_inlined_into_not() {
         "单用锥与根节点都直接展开，不留临时语句：{source}"
     );
     assert!(
-        source.contains("return -(T_AND[(vars[0] + 1) * 3 + (vars[1] + 1)]);"),
+        source.contains("return -(T_AND[3*vars[0]+vars[1]+4]);"),
         "{source}"
     );
     assert!(!source.contains("trit_bin("), "{source}");
@@ -42,7 +42,7 @@ fn shared_and_stays_a_separate_statement() {
     );
     assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
     assert!(source.contains("int8_t t0 = T_AND["), "{source}");
-    assert!(source.contains("return T_AND[(-(t0)"), "{source}");
+    assert!(source.contains("return T_AND[3*-(t0)"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(!source.contains("int8_t t1 ="), "{source}");
 }
@@ -54,7 +54,7 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
         Algebra::Kleene,
     );
     assert!(
-        or_source.contains("-(T_OR[(vars[0] + 1) * 3 + (vars[1] + 1)])"),
+        or_source.contains("-(T_OR[3*vars[0]+vars[1]+4])"),
         "{or_source}"
     );
     assert!(!or_source.contains("trit_bin("), "{or_source}");
@@ -64,9 +64,9 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
         Algebra::Kleene,
     );
     assert!(
-        xor_source.contains("-(T_XOR2[(vars[0] + 1) * 3 + (vars[1] + 1)])"),
+        xor_source.contains("-(T_XOR2[3*vars[0]+vars[1]+4])"),
         "{xor_source}"
     );
     assert!(!xor_source.contains("trit_bin("), "{xor_source}");
 }
-mod helper;
+mod many;
