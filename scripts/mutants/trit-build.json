@@ -678,6 +678,14 @@
   "new": "            let _ = (left, right);",
   "pkg": "trit-build",
   "filter": "direct::emit::inline::tests::tree::multilevel_single_use_cone_fits_one_statement"
+ },
+ {
+  "name": "emit: 单二元调用不展开",
+  "file": "crates/trit-build/src/direct/emit.rs",
+  "old": ".count()\n        == 1;",
+  "new": ".count()\n        == 0;",
+  "pkg": "trit-build",
+  "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
  }
 ]
 

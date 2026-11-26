@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（第五十轮：direct 单二元调用展开）
+
+- `direct/emit.rs` / `direct/emit/inline.rs`：统计折叠后的二元节点；全文只有一个二元
+  调用时不再生成 `trit_bin` helper，调用点直接展开成
+  `T_NAME[(左 + 1) * 3 + (右 + 1)]`。两个及以上调用仍共用 helper；`format.rs`
+  承接表与代数名的固定片段。
+- `direct_c_size.rs` 增加 `a & b` 预算，覆盖单调用路径；module budget 1684 文件，debt=0。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`a & b` 557→448 B、`a | b` 551→442 B、
+  `a => b` 555→446 B、`a <=> b` 558→449 B、`a ^ b` 555→446 B；`a & b | c` 仍是
+  两个调用，保持 641 B。单调用样例省掉 109 B 的 helper。
+- 判据：`cargo test -p trit-build` 130 单元 + 全部集成测试通过；单调用/多调用形状断言
+  分别覆盖；三代数 `--verify-c` 单算子与 11 变量 3^11 行逐行一致；
+  `mutation_check --pkg trit-build` 86/86 caught。
+
 ### Added（第四十九轮：direct 取反去表与字节回归门）
 
 - `direct/emit.rs` / `direct/emit/inline.rs`：`Not` 不再生成 `T_NOT[3]` 与 `trit_not()`，
