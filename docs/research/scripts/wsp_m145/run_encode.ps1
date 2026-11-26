@@ -3,11 +3,12 @@
 # renames the pure-f32 dump, then deletes the chunk to stay within disk.
 $ErrorActionPreference = 'Stop'
 $root = 'D:\trit-results\davidson'
-$py = 'C:\Users\lbx13\AppData\Local\Programs\Python\Python314\python.exe'
-$repo = 'C:\Users\lbx13\Projects\trit-tml\third_party\trit'
+$py = (Get-Command python -ErrorAction Stop).Source
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $bert6 = Join-Path $repo 'target\release\examples\bert6.exe'
-$l12 = 'C:\Users\lbx13\.cache\huggingface\hub\models--sentence-transformers--all-MiniLM-L12-v2\snapshots\a50ef00143b4d5391434df20ae11632588ac25be'
-$l6 = 'C:\Users\lbx13\.cache\huggingface\hub\models--sentence-transformers--all-MiniLM-L6-v2\snapshots\1110a243fdf4706b3f48f1d95db1a4f5529b4d41'
+$homeDir = [Environment]::GetFolderPath('UserProfile')
+$l12 = Join-Path $homeDir '.cache\huggingface\hub\models--sentence-transformers--all-MiniLM-L12-v2\snapshots\a50ef00143b4d5391434df20ae11632588ac25be'
+$l6 = Join-Path $homeDir '.cache\huggingface\hub\models--sentence-transformers--all-MiniLM-L6-v2\snapshots\1110a243fdf4706b3f48f1d95db1a4f5529b4d41'
 $chunks = Join-Path $root 'chunks-l12-1500'
 $texts = Join-Path $root 'texts-l12.json'
 $emb12 = Join-Path $root 'emb12'
