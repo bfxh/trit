@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed（M1.27：残差矩阵严格复核）
+
+- `scripts/wsp_classify_residual.py` 的 test 侧类均值/组内置换不再使用
+  `y_test`：默认用 f32 base probe 的预测标签构造严格对照；新增
+  `--legacy-controls` 仅供复现 M1.23 旧表（旧的 oracle 构造会泄漏 test 标签）。
+- 用真 f32 / 真 bits4 重跑 SST-2 L12 的 32 臂残差矩阵：真 f32 下没有合法
+  残差臂超过 f32，`hybrid_rest_k16` 为 `−0.006590`（旧表 ternary 基线为
+  `+0.039539`）；`noclassmean` 的 `+0.023064` 是 test 标签泄漏，严格模式
+  `−0.007139`；`perm_class` 的 `+0.007688` 也是标签依赖，严格模式
+  `−0.018671`。新增 `docs/research/data/wsp-classify-residual-sst2-l12-strict.tsv`
+  与 `wsp-classify-residual-control-audit.tsv`，结果写入 §11.27。
+- `docs/results/LESSONS.md` 新增第 41–42 条：test 标签对照是 oracle；
+  换基线后必须逐臂重跑。
+
 ### Added（第四十轮：TriVec 整向量等价的 Verus 证明）
 
 - 新增 `verus/src/bulk.rs`：位切片向量 `TriVec` 的 spec/exec。`view(len, ones, unknowns)`
