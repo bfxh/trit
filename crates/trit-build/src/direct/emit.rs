@@ -1,8 +1,8 @@
 //! `direct.c` 的渲染：表由 `Algebra` 现算，节点按后序发语句。
 //!
-//! 取反子式的内联决策与表达式展开在 `inline`：`Not(x)` 的 `x` 只被这一处引用时，
-//! `x` 不再单独落临时变量，沿单用操作数递归并进父语句；扇出节点仍单独成变量，
-//! 网表扇出不复制。内联后临时变量重编号为连续 `t0..tn`。
+//! 单用节点的内联决策与表达式展开在 `inline`：节点只被这一处引用时，不再单独落
+//! 临时变量，沿单用操作数递归并进父语句（深度 3）；扇出节点仍单独成变量，网表
+//! 扇出不复制。内联后临时变量重编号为连续 `t0..tn`。
 
 use trit_core::Algebra;
 
@@ -41,7 +41,7 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
     text.push_str("; 变量顺序 = ");
     text.push_str(&vars.join(","));
     text.push_str(" */\n");
-    text.push_str("/* 直算：节点顺序发语句，单用取反并句；不展开 3^n 表。 */\n");
+    text.push_str("/* 直算：节点顺序发语句，单用节点并句；不展开 3^n 表。 */\n");
     text.push_str("#include <stdint.h>\n\n");
 
     if uses_not {
