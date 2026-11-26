@@ -1,17 +1,13 @@
-//! 常量驱动的恒等式化简：单位律、对合律、幂等律三代数通用；吸收律按代数分派。
+//! 常量驱动的恒等式化简：单位律、对合律、幂等律三代数通用；吸收律与格吸收律按代数分派。
 //! `x ∧ T = x`、`x ∨ F = x`、`¬¬x = x`、`x ∧ x = x`、`x ∨ x = x` 三种代数都成立；
-//! K3/Ł3 额外 `x ∧ F = F`、`x ∨ T = T`，B3 的 U 传染保留原式；`=>` / `<=>` 常量律不做，
-//! 规则由 `tests.rs` 对 3 代数 × 3 值穷举。
-
-use trit_core::Algebra;
-use trit_core::value::Ternary;
-
+//! K3/Ł3 额外 `x ∧ F = F`、`x ∨ T = T`、`x ∧ (x ∨ y) = x`；B3 的 U 传染保留原式。
 use super::super::ir::Op;
 use super::super::lower::prune_dead;
 use build::{push_binary, push_const, push_node};
-
+use trit_core::Algebra;
+use trit_core::value::Ternary;
 mod build;
-
+mod lattice;
 pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     if ops.is_empty() {
         return ops;
@@ -45,6 +41,8 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
                         || consts[right] == Some(Ternary::False))
                 {
                     push_const(&mut resolve, &mut kept, &mut consts, Ternary::False);
+                } else if let Some(alias) = lattice::absorbed(alg, &kept, left, right, true) {
+                    resolve.push(alias);
                 } else if left == right || consts[left] == Some(Ternary::True) {
                     resolve.push(right);
                 } else if consts[right] == Some(Ternary::True) {
@@ -59,6 +57,8 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
                     && (consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True))
                 {
                     push_const(&mut resolve, &mut kept, &mut consts, Ternary::True);
+                } else if let Some(alias) = lattice::absorbed(alg, &kept, left, right, false) {
+                    resolve.push(alias);
                 } else if left == right || consts[left] == Some(Ternary::False) {
                     resolve.push(right);
                 } else if consts[right] == Some(Ternary::False) {

@@ -294,5 +294,21 @@
   "new": "        if let Op::And(left, right) | Op::Or(left, right) = op\n            && false",
   "pkg": "trit-build",
   "filter": "direct::fold::cse::tests::duplicate_and_idempotent_nodes_collapse"
+ },
+ {
+  "name": "lattice: B3 守卫被绕过",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
+  "old": "    if matches!(alg, Algebra::Bochvar) {\n        return None;\n    }",
+  "new": "    if false {\n        return None;\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::lattice_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "lattice: K3/Ł3 吸收不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
+  "old": "    if contains(kept, right, left, inner_or) {\n        return Some(left);\n    }",
+  "new": "    if false {\n        return Some(left);\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::lattice_absorption_aliases_to_the_operand"
  }
 ]
