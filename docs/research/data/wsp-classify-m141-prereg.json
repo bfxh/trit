@@ -113,7 +113,8 @@
     "metric": "accuracy",
     "scope": "overall (both domains, stratified bootstrap)",
     "comparison": "domain_test_prior - global_test_prior",
-    "units": "depth x probe x seed; 2 depths x 2 probes x 5 seeds = 20 cells",
+    "primary_arm": "f32",
+    "units": "depth x probe x seed; 2 depths x 2 probes x 5 seeds = 20 cells; quantized arms are secondary",
     "bootstrap": "10,000 paired stratified bootstrap, resample n_gab and n_twitter within each domain, 95% percentile CI",
     "verdict": {
       "supported": "for each depth/probe family, >=4/5 positive CIs and 5-seed mean > 0",
