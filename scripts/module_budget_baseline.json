@@ -2692,7 +2692,19 @@
     },
     {
       "file": "crates/trit-machines/src/ca.rs",
-      "lines": 235
+      "lines": 192
+    },
+    {
+      "file": "crates/trit-machines/src/ca/limits.rs",
+      "lines": 100
+    },
+    {
+      "file": "crates/trit-machines/src/ca/metrics.rs",
+      "lines": 34
+    },
+    {
+      "file": "crates/trit-machines/src/ca/rule.rs",
+      "lines": 35
     },
     {
       "file": "crates/trit-machines/src/graded.rs",
@@ -2704,11 +2716,15 @@
     },
     {
       "file": "crates/trit-machines/src/main.rs",
-      "lines": 204
+      "lines": 203
     },
     {
       "file": "crates/trit-machines/src/snn.rs",
-      "lines": 481
+      "lines": 474
+    },
+    {
+      "file": "crates/trit-machines/src/snn/stats.rs",
+      "lines": 28
     },
     {
       "file": "crates/trit-machines/src/vm.rs",
@@ -2717,6 +2733,10 @@
     {
       "file": "crates/trit-machines/tests/cli.rs",
       "lines": 68
+    },
+    {
+      "file": "crates/trit-machines/tests/limits.rs",
+      "lines": 61
     },
     {
       "file": "crates/trit-machines/tests/vm_empty_stack.rs",
