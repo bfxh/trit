@@ -21,5 +21,5 @@ fn depth_cap_keeps_deep_leaves_declared() {
     );
     assert_eq!(source.matches("    int8_t t").count(), 2, "{source}");
     assert!(source.contains("int8_t t0 = vars[0];"), "{source}");
-    assert!(source.contains("return trit_not("), "{source}");
+    assert!(source.contains("return -("), "{source}");
 }

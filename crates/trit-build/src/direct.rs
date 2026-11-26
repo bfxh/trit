@@ -3,10 +3,11 @@
 //! 和 `lookup.c` 是同一条边界上的两种产物：
 //! - `lookup.c` 把 3^n 真值表整块塞进 C，运行时一次索引；
 //! - `direct.c` 把表达式或 Verilog 组合网表**降成线性 IR**（每个节点一条 `int8_t tN = ...;`），
-//!   常量折叠 / 恒等式化简（含格吸收链、公因子提取、德摩根链、常量否定、Xor2 结合链与 B3 补元/毒值吸收）后再做 CSE，出口过一遍死代码消除；运行时按节点顺序算，不展开 3^n 表。取反子式在渲染时沿单用操作数递归并进父语句（从取反的操作数算起最多 3 层），扇出即停。
+//!   常量折叠 / 恒等式化简（含格吸收链、公因子提取、德摩根链、常量否定、Xor2 结合链与 B3 补元/毒值吸收）后再做 CSE，出口过一遍死代码消除；运行时按节点顺序算，不展开 3^n 表。取反直接写一元负号 `-(...)`；单用节点在渲染时递归并进父语句（从父节点算起最多 3 层），扇出即停。
 //!
-//! 语义不靠手写 C 算子保证：六张 3×3/3 表由 [`Algebra`] 现算，测试再拿
-//! `trit_eval::eval` 逐赋值对拍。生成物仍需 C 工具链编译 —— 这与
+//! 语义不靠手写 C 算子保证：取反用 `-x` 是因为三种代数都有 `¬F=T / ¬X=X / ¬T=F`，
+//! 六个二元 3×3 表由 [`Algebra`] 现算，测试再拿 `trit_eval::eval` 逐赋值对拍。
+//! 生成物仍需 C 工具链编译 —— 这与
 //! `docs/reference/TERNARY-TOOLCHAIN.md` §7「不做二进制后端」一致。
 //!
 //! 函数签名与 `lookup.c` 的 `trit_lookup` 平行：
@@ -35,14 +36,6 @@ fn code(value: Ternary) -> i8 {
         Ternary::Unknown => 0,
         Ternary::True => 1,
     }
-}
-
-fn unary_table(alg: Algebra, function: fn(Algebra, Ternary) -> Ternary) -> [i8; 3] {
-    let mut table = [0i8; 3];
-    for (index, value) in VALUES.iter().enumerate() {
-        table[index] = code(function(alg, *value));
-    }
-    table
 }
 
 fn binary_table(alg: Algebra, function: fn(Algebra, Ternary, Ternary) -> Ternary) -> [i8; 9] {
