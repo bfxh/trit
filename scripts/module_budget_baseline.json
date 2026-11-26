@@ -240,7 +240,15 @@
     },
     {
       "file": "crates/trit-build/src/direct.rs",
-      "lines": 216
+      "lines": 87
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit.rs",
+      "lines": 222
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/tests.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-build/src/direct/fold.rs",
