@@ -256,11 +256,15 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline.rs",
-      "lines": 56
+      "lines": 19
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/expr.rs",
+      "lines": 87
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
-      "lines": 68
+      "lines": 62
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests.rs",

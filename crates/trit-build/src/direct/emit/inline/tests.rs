@@ -1,4 +1,4 @@
-//! 单用内联的边界：单用才并、扇出即停、深度封顶。
+//! 单用内联的边界：单用才并、扇出即停、深链不封顶。
 
 use super::super::render;
 use crate::direct::ir::Op;

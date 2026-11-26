@@ -656,14 +656,6 @@
   "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
  },
  {
-  "name": "inline: 深度不封顶",
-  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
-  "old": "    if depth > MAX_INLINE_DEPTH {\n        mark_children(uses, inlined, ops, &ops[index], 1);\n        return;\n    }\n",
-  "new": "",
-  "pkg": "trit-build",
-  "filter": "direct::emit::inline::tests::depth::depth_cap_keeps_the_boundary_node_declared"
- },
- {
   "name": "emit: 根节点仍落临时变量",
   "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
   "old": "    inlined[ops.len() - 1] = true;",
@@ -672,10 +664,10 @@
   "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
  },
  {
-  "name": "inline: 不递归下钻",
+  "name": "inline: 不下钻子节点",
   "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
-  "old": "            mark(uses, inlined, ops, left, depth);\n            mark(uses, inlined, ops, right, depth);",
-  "new": "            let _ = (left, right);",
+  "old": "    match *op {\n        Op::Const(_) | Op::Var(_) => {}\n        Op::Not(inner) => stack.push(inner),\n        Op::And(left, right)\n        | Op::Or(left, right)\n        | Op::Xor(left, right)\n        | Op::Xor2(left, right)\n        | Op::Implies(left, right)\n        | Op::Equiv(left, right) => {\n            stack.push(left);\n            stack.push(right);\n        }\n    }\n",
+  "new": "    let _ = (op, stack);\n",
   "pkg": "trit-build",
   "filter": "direct::emit::inline::tests::tree::multilevel_single_use_cone_fits_one_statement"
  },
