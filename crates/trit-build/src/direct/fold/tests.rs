@@ -8,7 +8,7 @@ use trit_eval::eval::{Assignment, eval};
 
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
-
+mod factor;
 /// `Xor2` 来自 Verilog 网表，必须按 `GateKind::XorClassic` 的表折，不能走 `alg.strong_add`。
 #[test]
 fn classic_xor2_constants_fold_like_the_gate_table() {

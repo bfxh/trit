@@ -8,7 +8,7 @@ use trit_core::{Algebra, Parser, value::Ternary};
 use trit_eval::eval::{Assignment, eval};
 
 mod assoc;
-
+mod factor;
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 
 /// 合成 IR：两个同构的与式合并，外层 `Or(x, x)` 再按幂等律别名。

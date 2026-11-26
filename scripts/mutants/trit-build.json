@@ -526,5 +526,29 @@
   "new": "        let (a, b) = match kept[node] {\n            Op::Or(a, b) | Op::And(a, b) => (a, b),\n            _ => continue,\n        };",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::lattice::chain::cross_operator_nesting_stays"
+ },
+ {
+  "name": "cse: 公因子不提取",
+  "file": "crates/trit-build/src/direct/fold/cse.rs",
+  "old": "    // 提取公因子前先合并同构节点，命中后再压平新建的内层链。\n    let ops = factor::factor(ops);",
+  "new": "    // 提取公因子前先合并同构节点，命中后再压平新建的内层链。\n    let ops = { let _ = factor::factor; ops };",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::factor::common_and_factors_out_of_or"
+ },
+ {
+  "name": "cse: 公因子只认外层左操作数",
+  "file": "crates/trit-build/src/direct/fold/cse/factor.rs",
+  "old": "    for (shared, other) in [(l1, l2), (l2, l1)] {",
+  "new": "    for (shared, other) in [(l1, l2)] {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::factor::common_second_operand_factors"
+ },
+ {
+  "name": "cse: 公因子跨异算子",
+  "file": "crates/trit-build/src/direct/fold/cse/factor.rs",
+  "old": "        (true, Op::And(a, b)) | (false, Op::Or(a, b)) => Some((a, b)),",
+  "new": "        (true, Op::Or(a, b)) | (false, Op::And(a, b)) => Some((a, b)),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::cse::tests::factor::common_and_factors_out_of_or"
  }
 ]

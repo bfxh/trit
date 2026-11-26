@@ -248,11 +248,19 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse.rs",
-      "lines": 86
+      "lines": 54
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/assoc.rs",
       "lines": 57
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/factor.rs",
+      "lines": 70
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/key.rs",
+      "lines": 45
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests.rs",
@@ -269,6 +277,10 @@
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/dual.rs",
       "lines": 25
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests/factor.rs",
+      "lines": 96
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
@@ -357,6 +369,10 @@
     {
       "file": "crates/trit-build/src/direct/fold/tests.rs",
       "lines": 135
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/tests/factor.rs",
+      "lines": 37
     },
     {
       "file": "crates/trit-build/src/direct/ir.rs",
@@ -449,6 +465,10 @@
     {
       "file": "crates/trit-build/tests/direct_c.rs",
       "lines": 139
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_relative.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-build/tests/direct_c_verilog.rs",

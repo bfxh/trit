@@ -8,25 +8,25 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-
 /// 生成 C 驱动器，用 `cc` 编译 `direct.c` + 驱动器，逐行读 `truth.csv` 对拍。
 /// 需要 C 编译器（`CC` / `cc` / `gcc` / `clang` 任一）；没有就明确报错，不静默跳过。
 pub(crate) fn verify(out_dir: &Path, vars: &[String], expected_rows: usize) -> Result<String> {
+    // 相对 `--out` 传给 `current_dir(out_dir)` 后再拼可执行路径会重复目录，先绝对化。
+    let out_dir = out_dir
+        .canonicalize()
+        .with_context(|| format!("解析输出目录 {} 失败", out_dir.display()))?;
     let driver_path = out_dir.join("direct_check.c");
     fs::write(&driver_path, driver_source(vars.len()))
         .with_context(|| format!("写 {} 失败", driver_path.display()))?;
-    let exe = out_dir.join(if cfg!(windows) {
+    let exe_name = if cfg!(windows) {
         "direct_check.exe"
     } else {
         "direct_check"
-    });
-    let exe_name = exe
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("可执行文件名非法")?;
+    };
+    let exe = out_dir.join(exe_name);
     let compiler = find_compiler()?;
     let output = Command::new(&compiler)
-        .current_dir(out_dir)
+        .current_dir(&out_dir)
         .args([
             "-O2",
             "-std=c99",
@@ -44,7 +44,7 @@ pub(crate) fn verify(out_dir: &Path, vars: &[String], expected_rows: usize) -> R
         );
     }
     let run = Command::new(&exe)
-        .current_dir(out_dir)
+        .current_dir(&out_dir)
         .arg("truth.csv")
         .output()
         .with_context(|| format!("运行 {} 失败", exe.display()))?;
