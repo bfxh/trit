@@ -1,7 +1,6 @@
 //! `direct.c` 字节数回归门：只设上界，优化缩小时同步下调。
 //!
-//! 样例覆盖单用链、扇出、取反、11 变量和深链；预算来自当前 CLI 产物。
-//! 任何让生成物变大的改动都必须先解释，再更新预算。
+//! 样例覆盖单用链、扇出、取反、11 变量和深链；预算来自当前 CLI 产物，任何变大都要先解释。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,6 +60,7 @@ fn direct_c_bytes_stay_within_budget() {
         ),
         ("a & (b | (c & (d | (e & f))))", 764),
         ("!a", 348),
+        ("a & b", 448),
     ];
     let dir = scratch();
     for (index, (source, budget)) in fixtures.into_iter().enumerate() {
