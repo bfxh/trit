@@ -594,6 +594,18 @@ OOF train 上 30 个 CI 里 2 个显著正向、0 个负向、28 个跨 0。
 不能把 OOF 弱正向搬到 test。**`rescan` 不是纯噪声，但也不是可发布
 增益；f32 继续是默认锚点。**（§11.36）。
 
+M1.37 把 nested CV 扩到全部 6 个 `dataset×depth`、两个 probe、
+5 个 outer seed，共 180 个 OOF CI：**5 正 / 52 负 / 123 跨**；
+36 个比较里 4 个出现过正 CI、15 个出现过负 CI、17 个全跨。
+正向全部在 Hate：L12 `R12`（2/5 logreg +1/5 SVC）与 L6
+`rescan`/`int3`（各 1/5 logreg）。但 Hate L12 `R12` 在官方 test
+上是 5/5 显著负向（OOF `+0.68pp` vs test `−1.35pp`），是方向反转；
+Hate L6 的两个弱候选在 test 上点正但 5/5 CI 跨 0。Hate 的
+OOF/test f32 差约 `20–22pp`，test 内部 5 折仍有 `0.751–0.764`，
+说明是跨域迁移，不是标签噪声。**OOF 全矩阵没有改变主判决：官方
+test 上 0 个量化档显著超过 f32；`R12` 的 OOF 正向是跨域不成立的
+候选，`rescan` 仍只是弱候选。**（§11.37）。
+
 ## 6. WSP-MXQ 在新排序里的位置
 
 MXQ 仍然成立，但不再是第一枪：

@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Changed（M1.37：nested CV 全矩阵与 OOF/test 分布差）
+
+- 把 M1.36 的 nested CV 扩到 6 个 `dataset×depth`、两个 probe、
+  5 个 outer seed：每个 outer-train 内 5 折只在真 f32 上选 C，
+  f32 与全部量化臂共用；官方 test 不参与选 C/训练/评分。
+  共 180 个 OOF paired CI。
+- 总读数：**5 个显著正向、52 个显著负向、123 个跨 0**；
+  36 个比较里 4 个出现过正 CI、15 个出现过负 CI、17 个全跨，
+  没有任何比较同时出现正负 CI。正向全部在 Hate。
+- 5 个正向：Hate L12 `R12` logreg seed 7/13（`+0.924/+1.024pp`）
+  与 SVC seed 13（`+0.879pp`）；Hate L6 logreg `rescan` seed 7
+  （`+0.857pp`）、`int3` seed 43（`+0.790pp`）。
+- Hate L12 `R12` 在 OOF 5-seed 均值 logreg `+0.6767pp`、SVC
+  `+0.6477pp`，但官方 test 上 logreg `−1.3533pp`、SVC
+  `−1.4411pp`，两个 probe 都 5/5 显著负向：OOF 正向与 test 负向
+  方向相反，不能升级。
+- Hate L6 `rescan` OOF 均值 `+0.5899pp`、5/5 点正、1/5 CI 显著；
+  test 均值 `+1.0534pp` 但 5/5 CI 跨 0，仍是弱候选。
+- Hate 的 OOF/test f32 差约 `19.8–21.7pp`；Hate test 内部 5 折
+  f32 为 `0.763934/0.751205`，说明 test 标签可学，差距是跨域
+  迁移，不是标签错位或噪声。Hate test 读数应标为跨域读数。
+- SST-2/CoLA 的 24 个比较没有正 CI；52 个负 CI 全部来自
+  SST-2（46）与 CoLA（6）。OOF 在 train 分布内能分辨量化损失，
+  官方 test 的样本量/分布未能分辨；不改变“没有量化档超过 f32”。
+- 判决：官方 test 上 0 个量化档显著超过真 f32；`R12` 的 OOF
+  正向是跨域不成立的候选，`rescan` 仍只是弱候选；f32 继续是
+  默认锚点。分类头这条线可以收口。
+- 新增 `docs/research/data/wsp-classify-nested-cv-matrix.tsv`
+  （180 行）、`wsp-classify-nested-cv-matrix-summary.tsv`（36 行）、
+  `wsp-classify-nested-vs-test.tsv`（36 行）、
+  `wsp-classify-oof-test-gap.tsv`（6 行）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.37 与 §12 读法。
+
 ### Changed（M1.36：nested CV 复验 Hate L6 边界格）
 
 - 对 M1.35 最接近正向的 Hate L6 `logreg rescan` 做 nested CV：
