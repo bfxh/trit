@@ -5,14 +5,12 @@
 //! 算不出常量就原样保留。
 //!
 //! 折叠后仍保留每条指令的下标（只替换算子，不删除节点），最后用
-//! `prune_dead` 统一收孤儿。这样根恒为最后一条，渲染器不用改。
-
+//! `prune_dead` 统一收孤儿；化简后再走一遍 CSE，合并重新出现的同构子式。
+use super::{ir::Op, lower::prune_dead};
 use trit_circuit::GateKind;
 use trit_core::Algebra;
 use trit_core::value::Ternary;
-
-use super::ir::Op;
-use super::lower::prune_dead;
+mod cse;
 mod simplify;
 pub(super) fn fold(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     if ops.is_empty() {
@@ -48,7 +46,8 @@ pub(super) fn fold(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
         kept.push(out);
     }
     let root = kept.len() - 1;
-    simplify::simplify(prune_dead(kept, root), alg)
+    let ops = simplify::simplify(prune_dead(kept, root), alg);
+    cse::cse(ops)
 }
 
 #[cfg(test)]

@@ -97,7 +97,7 @@ trit build demo.tri --out out --check  # 校验产物哈希
 | 变量名 | v3 存原名，`--decode` 重建的 CSV 表头与原表一致；v2 回退 `v0..vN` |
 | 主机对拍 | `lookup.c` 用 gcc 编译后 27/27 行与 `truth.csv` 一致 |
 | 直算对拍 | `direct.c`（`--backend direct --verify-c`）用 cc 编译后 **531,441/531,441** 行与 `truth.csv` 一致（12 变量，本机 0.9 s） |
-| 直算 IR 优化 | 交换律规范化后镜像子式共用一个节点；`prune_dead` 压缩孤儿并重编号；12 变量仍 **531,441/531,441** 行通过 |
+| 直算 IR 优化 | 交换律规范化后镜像子式共用一个节点；化简后再按结构 CSE 合并重新出现的同构子式；`prune_dead` 压缩孤儿并重编号；`((a & 1) & b) \| (a & b)` 由 7→3 条语句；12 变量仍 **531,441/531,441** 行通过 |
 | Verilog 直算 | `.v` 源也能开 `--backend direct` 或 `both`：从选中输出反向 DFS，只降扇入锥（其它输出不进 IR）；`NAND/NOR` 落 `Not(And/Or)`、`BUF` 直接别名、`XOR2` 单独一张表；K3/Ł3/B3 各 27/27 行 cc 对拍 |
 | 直算常量折叠 | 操作数全是常量的节点按 `Algebra` 现算（`Xor2` 按 `GateKind::XorClassic`），折叠后再 `prune_dead`；全常量树只剩一条 `Const` 语句，`direct.c` 不再注册任何算子表 |
 | 直算恒等式化简 | 三种代数通用 `x ∧ T = x`、`x ∨ F = x`、`¬¬x = x`、`x ∧ x = x`、`x ∨ x = x`；K3/Ł3 额外做吸收律 `x ∧ F = F`、`x ∨ T = T`，B3 因 `U ∧ F = U` 保留原式。别名压平后 DCE；同一 3 输入网表 16→14→12 条语句、1331→1267→1203 B（K3） |

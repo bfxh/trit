@@ -244,7 +244,15 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold.rs",
-      "lines": 55
+      "lines": 54
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse.rs",
+      "lines": 88
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/cse/tests.rs",
+      "lines": 89
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
