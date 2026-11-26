@@ -1,5 +1,4 @@
 //! `Xor2` 常量律判据：oracle 是 `GateKind::XorClassic.eval` 的 3×3 表。
-
 use super::super::simplify;
 use crate::direct::emit_netlist;
 use crate::direct::fold::fold;
@@ -7,10 +6,8 @@ use crate::direct::ir::Op;
 use trit_circuit::{GateKind, parse_verilog};
 use trit_core::Algebra;
 use trit_core::value::Ternary;
-
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
-
 #[test]
 fn classic_xor_table_supports_the_constant_laws() {
     for alg in ALGS {
@@ -97,30 +94,28 @@ fn same_operand_stays_xor2() {
 
 #[test]
 fn netlist_xor_with_constants_does_not_register_xor2_table() {
-    for (design, expects_not) in [
-        (
-            "module m(input a, output y);\n  assign y = a ^ 1'b0;\nendmodule\n",
-            false,
-        ),
-        (
-            "module m(input a, output y);\n  assign y = a ^ 1'b1;\nendmodule\n",
-            true,
-        ),
+    for design in [
+        "module m(input a, output y);\n  assign y = a ^ 1'b0;\nendmodule\n",
+        "module m(input a, output y);\n  assign y = a ^ 1'b1;\nendmodule\n",
     ] {
         let circuit = parse_verilog(design).expect("解析");
-        let vars = circuit
+        let vars: Vec<String> = circuit
             .inputs
             .iter()
-            .map(|signal| signal.name().to_string())
-            .collect::<Vec<_>>();
+            .map(|s| s.name().to_string())
+            .collect();
         let c = emit_netlist(&circuit, "y", &vars, Algebra::Kleene).expect("生成");
         assert_eq!(
             c.matches("    int8_t t").count(),
-            1,
-            "单用输入与取反都并进根语句：{design}: {c}"
+            0,
+            "单用输入与取反都并进根返回：{design}: {c}"
         );
         assert!(!c.contains("T_XOR2"), "{design}: {c}");
-        assert_eq!(c.contains("T_NOT"), expects_not, "{design}: {c}");
+        assert!(!c.contains("T_NOT"), "{design}: {c}");
+        assert!(
+            c.contains("return -(") || c.contains("return vars[0];"),
+            "{design}: {c}"
+        );
     }
 }
 

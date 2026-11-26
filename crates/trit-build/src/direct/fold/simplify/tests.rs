@@ -42,16 +42,16 @@ fn identity_laws_alias_to_the_operand() {
     assert_eq!(simplified("!(!a)"), vec![Op::Var(0)]);
     assert_eq!(simplified("(a & 1) | 0"), vec![Op::Var(0)]);
 }
-/// 渲染面：恒等式化简后只剩一条取变量语句，不注册算子表。
+/// 渲染面：恒等式化简后根节点直接返回变量，不落临时语句、不注册算子表。
 #[test]
 fn simplified_c_has_one_statement_and_no_tables() {
     for source in ["a & 1", "a | 0", "!(!a)"] {
         let expr = Parser::parse(source).expect("解析");
         let vars = expr.variables();
         let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-        assert_eq!(c.matches("    int8_t t").count(), 1, "{source}: {c}");
+        assert_eq!(c.matches("    int8_t t").count(), 0, "{source}: {c}");
         assert!(!c.contains("static const int8_t T_"), "{source}: {c}");
-        assert!(c.contains("vars[0]"), "{source}: {c}");
+        assert!(c.contains("return vars[0];"), "{source}: {c}");
     }
 }
 

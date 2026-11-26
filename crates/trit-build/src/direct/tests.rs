@@ -42,17 +42,15 @@ fn generated_tables_match_eval() {
                 );
             }
         }
-        let not_expr = Parser::parse("!a").expect("解析");
-        let table = unary_table(alg, Algebra::not);
-        for (index, value) in VALUES.iter().enumerate() {
-            let mut assignment = Assignment::new();
-            assignment.set("a".to_string(), *value);
-            assert_eq!(
-                table[index],
-                code_of(eval(&not_expr, &assignment, alg)),
-                "{alg:?} !{} 不一致",
-                code(*value)
-            );
+    }
+}
+
+/// 三种代数的 `not` 在 -1/0/1 上都等价于算术取负；这是 C 侧写 `-x` 的依据。
+#[test]
+fn negation_is_unary_minus_in_every_algebra() {
+    for alg in [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar] {
+        for value in VALUES {
+            assert_eq!(code(alg.not(value)), -code(value), "{alg:?} {value:?}");
         }
     }
 }
@@ -93,7 +91,7 @@ fn lowered_ir_matches_eval_for_every_assignment() {
     }
 }
 
-/// 渲染出来的形状：函数签名/无 3^n 表/每个节点一条语句。
+/// 渲染出来的形状：函数签名/无 3^n 表/根节点直接返回。
 #[test]
 fn render_is_linear_not_a_truth_table() {
     let expr = Parser::parse("a & b | !c").expect("解析");
@@ -104,12 +102,13 @@ fn render_is_linear_not_a_truth_table() {
         "{source}"
     );
     assert!(source.contains("trit_bin(T_AND"), "{source}");
-    assert!(source.contains("trit_not("), "{source}");
+    assert!(source.contains("-("), "{source}");
+    assert!(!source.contains("T_NOT"), "{source}");
     assert!(
         !source.contains("TRIT_TABLE"),
         "直算后端不该有 3^n 表：{source}"
     );
-    assert!(source.contains("return t"), "{source}");
+    assert!(source.contains("return trit_bin("), "{source}");
 }
 
 #[test]
@@ -117,9 +116,9 @@ fn variable_order_is_respected() {
     let expr = Parser::parse("b & a").expect("解析");
     let vars = vec!["a".to_string(), "b".to_string()];
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-    // 后序：b 先取 vars[1]，a 取 vars[0]；两个单用输入并进根语句。
+    // 后序：b 先取 vars[1]，a 取 vars[0]；两个单用输入并进根返回。
     assert!(
-        source.contains("int8_t t0 = trit_bin(T_AND, vars[1], vars[0]);"),
+        source.contains("return trit_bin(T_AND, vars[1], vars[0]);"),
         "{source}"
     );
 }

@@ -2,19 +2,18 @@
 //!
 //! 单用节点的内联决策与表达式展开在 `inline`：节点只被这一处引用时，不再单独落
 //! 临时变量，沿单用操作数递归并进父语句（深度 3）；扇出节点仍单独成变量，网表
-//! 扇出不复制。内联后临时变量重编号为连续 `t0..tn`。
+//! 扇出不复制。根节点直接由 `return` 展开，也不再落临时变量。
 
 use trit_core::Algebra;
 
 use super::ir::Op;
-use super::{binary_table, code, gate_table, unary_table};
+use super::{binary_table, code, gate_table};
 use trit_circuit::GateKind;
 
 mod inline;
 
 /// 表达式 → `direct.c` 全文。
 pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
-    let mut uses_not = false;
     let mut uses_and = false;
     let mut uses_or = false;
     let mut uses_xor = false;
@@ -23,14 +22,13 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
     let mut uses_equiv = false;
     for op in &ops {
         match op {
-            Op::Not(_) => uses_not = true,
             Op::And(_, _) => uses_and = true,
             Op::Or(_, _) => uses_or = true,
             Op::Xor(_, _) => uses_xor = true,
             Op::Xor2(_, _) => uses_xor2 = true,
             Op::Implies(_, _) => uses_implies = true,
             Op::Equiv(_, _) => uses_equiv = true,
-            Op::Const(_) | Op::Var(_) => {}
+            Op::Not(_) | Op::Const(_) | Op::Var(_) => {}
         }
     }
     let inlined = inline::targets(&ops);
@@ -44,10 +42,6 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
     text.push_str("/* 直算：节点顺序发语句，单用节点并句；不展开 3^n 表。 */\n");
     text.push_str("#include <stdint.h>\n\n");
 
-    if uses_not {
-        push_table(&mut text, "T_NOT", &unary_table(alg, Algebra::not));
-        text.push_str("static inline int8_t trit_not(int8_t a) { return T_NOT[a + 1]; }\n");
-    }
     let mut binary_tables = Vec::new();
     if uses_and {
         binary_tables.push(("T_AND", binary_table(alg, Algebra::and)));
@@ -98,7 +92,7 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
             Op::Const(value) => format!("    int8_t t{next} = {};\n", code(*value)),
             Op::Var(slot) => format!("    int8_t t{next} = vars[{slot}];\n"),
             Op::Not(inner) => format!(
-                "    int8_t t{next} = trit_not({});\n",
+                "    int8_t t{next} = -({});\n",
                 inline::expr(&ops, &names, &inlined, *inner)
             ),
             Op::And(left, right) => format!(
@@ -135,8 +129,8 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
         text.push_str(&line);
         next += 1;
     }
-    text.push_str("    return t");
-    text.push_str(&names[ops.len() - 1].expect("根节点一定发语句").to_string());
+    text.push_str("    return ");
+    text.push_str(&inline::expr(&ops, &names, &inlined, ops.len() - 1));
     text.push_str(";\n}\n");
     text
 }

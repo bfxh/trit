@@ -240,11 +240,11 @@
     },
     {
       "file": "crates/trit-build/src/direct.rs",
-      "lines": 87
+      "lines": 80
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 167
+      "lines": 161
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline.rs",
@@ -256,7 +256,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests.rs",
-      "lines": 24
+      "lines": 21
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/depth.rs",
@@ -268,11 +268,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/tree.rs",
-      "lines": 46
+      "lines": 44
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests.rs",
-      "lines": 76
+      "lines": 75
     },
     {
       "file": "crates/trit-build/src/direct/fold.rs",
@@ -432,7 +432,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/xor2/tests.rs",
-      "lines": 134
+      "lines": 129
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests.rs",
@@ -468,7 +468,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/tests.rs",
-      "lines": 143
+      "lines": 142
     },
     {
       "file": "crates/trit-build/src/direct/tests/eval.rs",
@@ -541,6 +541,10 @@
     {
       "file": "crates/trit-build/tests/direct_c_relative.rs",
       "lines": 42
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_size.rs",
+      "lines": 74
     },
     {
       "file": "crates/trit-build/tests/direct_c_verilog.rs",

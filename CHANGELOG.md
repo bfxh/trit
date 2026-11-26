@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Added（第四十九轮：direct 取反去表与字节回归门）
+
+- `direct/emit.rs` / `direct/emit/inline.rs`：`Not` 不再生成 `T_NOT[3]` 与 `trit_not()`，
+  直接写一元负号 `-(<子式>)`。依据是三种代数的 `not` 在 `-1/0/1` 上都等价于算术取负
+  （`¬F=T`、`¬X=X`、`¬T=F`）；新增 `negation_is_unary_minus_in_every_algebra` 直接断言。
+  解析/折叠/CSE 与根节点直返形状不变，`lookup.c` 不受影响。
+- 新增 `crates/trit-build/tests/direct_c_size.rs`：六个样例（单用链、扇出、取反、11 变量、
+  深链）对 CLI 生成的 `direct.c` 设字节上界，任一变大即失败；新增文件已登记 module budget
+  （1683 文件，debt=0）。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`!a` 466→348 B、1→0 条临时语句；11 变量混合式
+  1251→1133 B、10 条不变；`(a & b) | c`、`((a & b) | c) & (d | e)`、深链和
+  `((a => b) <=> (!a | b)) ^ c` 不变（这些式子经 egraph/折叠后没有存活的 `Not`）。
+  含存活取反的文件统一少 118 B（`T_NOT` 三字节表 + helper + 空行）。
+- 判据：`cargo test -p trit-build` 130 单元 + 全部集成测试通过；新增字节门通过；
+  三代数 `--verify-c` 在 11 变量（3^11 = 177147 行）上逐行一致；
+  `mutation_check --pkg trit-build` 85/85 caught。
+- 边界：只去掉 direct 后端的取反表；三类代数的 `not` 映射相同是这次去表的前提，
+  未把二元算子改成手写公式。
+
+### Added（第四十八轮：direct 根节点直返）
+
+- `direct/emit/inline/plan.rs`：根节点也标记为不发射，`direct.c` 直接写成 `return <根表达式>;`，
+  不再先落 `tN` 再 `return tN`。其余单用内联规则、深度 3 封顶、扇出节点单独落变量均不变；
+  `nvars` 不足仍按 X fail-closed 返回 0。
+- 读数（同机，`.tri` 源；字节数为整个 `direct.c`）：`(a & b) | c` 661→641 B、1→0 条临时语句；
+  `((a & b) | c) & (d | e)` 716→696 B、1→0 条；`((a => b) <=> (!a | b)) ^ c` 773→753 B、2→1 条；
+  11 变量混合式 1273→1251 B、11→10 条；深链 `a & (b | (c & (d | (e & f))))` 784→764 B、3→2 条；
+  `!a` 486→466 B、1→0 条。
+- 判据：`cargo test -p trit-build` 129 单元 + 全部集成测试通过；既有语句数断言同步改为
+  「根不落临时语句」，并增加根 `return` 形状断言；三代数 `--verify-c` 在 11 变量
+  （3^11 = 177147 行）上逐行一致；`mutation_check --pkg trit-build` 85/85 caught。
+- 边界：只改变根节点的落盘形状，不改变表达式语义、算子表集合与函数入口检查。
+
 ### Added（第四十七轮：direct 单用节点递归内联）
 
 - `direct/emit/inline/plan.rs`：内联决策从「只沿 `Not` 的操作数锥」扩成「从每个会发射的

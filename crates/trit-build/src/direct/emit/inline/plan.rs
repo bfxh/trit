@@ -1,8 +1,7 @@
 //! 内联决策：单用节点从最近的发射父节点起，最多并进 3 层。
-//!
 //! 这里不再只沿 `Not` 的操作数锥走：任何只被引用一次的节点都可以不落临时变量，
-//! 由父语句的 C 表达式递归展开。扇出节点（`uses > 1`）仍单独发语句；根节点
-//! 天然是发射点。深度封顶避免一条语句被单用长链撑成超长表达式。
+//! 由父语句的 C 表达式递归展开。扇出节点仍单独发语句；根节点由 `return` 直接展开。
+//! 深度封顶避免一条语句被单用长链撑成超长表达式。
 
 use crate::direct::ir::Op;
 
@@ -28,6 +27,7 @@ pub(crate) fn targets(ops: &[Op]) -> Vec<bool> {
         }
     }
     let mut inlined = vec![false; ops.len()];
+    inlined[ops.len() - 1] = true;
     for (index, op) in ops.iter().enumerate() {
         // 只从会发射的节点起算；单用节点会在某个发射父节点的表达式里展开。
         if uses[index] == 1 {
