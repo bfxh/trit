@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.23 完成（STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断）。
+> 状态：M1.24 完成（§11.24）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照。
 > 逐块 `3→4` 全量表（72 块 × 1,379 对）已跑完；把 `3→2` 供体表和 `3→4` 升级表合起来做同字节重排，得到 `R12`：6 int2 / 54 int3 / 12 int4，
 > 总字节仍 `10,782,720 B`，全量 Pearson `0.833671`、Spearman `0.835411`。
 > 相对 `F5F7V7` `+0.003287 / +0.006733`；Spearman 50k CI
@@ -3739,6 +3739,83 @@ CoLA 加 `--class-weight balanced --cv-metric macro_f1`；L6 把 texts/emb
 SST-2 L12 的 SVC 复验 `data/wsp-classify-residual-svc.tsv`（32 行），
 几何表 `data/wsp-classify-residual-geometry.tsv`（12 行：6 组 × train/test）。
 
+## 11.24 直接量化代理：负对照（M1.24）
+
+### 11.24.1 问题与口径
+
+M1.23 的残差 `r = x_int4 − x_f32` 有一个容易过度解释的读法：既然残差带
+类别条件偏置，是不是 **任何** 均匀 int4 舍入都会产生这种偏置？M1.24 做一个
+更窄的负对照：
+
+```text
+x_f32  →  直接对 x 做 per-group 对称 int4 RTN  →  q
+r_direct = q − x
+```
+
+`q` 和 `r_direct` 都只由冻结的 f32 embedding 决定，不经过编码器权重。
+量化器与 `linear/uniform.rs` 一致：每组 `scale = max|x| / 7`，
+`q = round(x/scale)` 截到 `±7`，反量化回 f32。组大小取 `1 / 32 / 384`：
+`1` 是逐元素（退化为精确，残差只有浮点误差），`32` 是当前权重默认，
+`384` 是逐行。
+
+6 个数据集-深度、logreg、同样 train 内 5 折选 C；CoLA 仍用 balanced +
+macro-F1 选 C。bootstrap 10k 只重采样 test，固定各 arm 的 probe。
+
+### 11.24.2 直接量化不产生类条件偏置
+
+主表 `data/wsp-classify-direct-quant.tsv`（18 行：6 组 × 3 个 group）。
+摘要（accuracy；SST-2/CoLA 的 chance 约 0.50，hate 的多数类基线是 0.592）：
+
+| 数据集/深度 | group | f32 | q | 直接残差 | 残差 macro-F1 | 残差/f32 类均值 | 残差 margin/f32 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SST-2 L12 | 1 | 0.800110 | 0.800110 | 0.499176 | 0.332967 | 0.000 | +0.0000 |
+| SST-2 L12 | 32 | 0.800110 | 0.787479 | 0.499176 | 0.332967 | 0.0331 | +0.0002 |
+| SST-2 L12 | 384 | 0.800110 | 0.768259 | 0.499176 | 0.332967 | 0.0557 | +0.0017 |
+| SST-2 L6 | 32 | 0.797913 | 0.785832 | 0.499725 | 0.335200 | 0.0289 | +0.0003 |
+| CoLA L12 | 32 | 0.574305 | 0.571429 | 0.542665 | 0.520100 | 0.0502 | +0.0025 |
+| CoLA L6 | 32 | 0.583893 | 0.577181 | 0.488974 | 0.462900 | 0.0600 | −0.0032 |
+| Hate L12 | 32 | 0.576445 | 0.574250 | 0.592173 | 0.371900 | 0.0131 | +0.0013 |
+| Hate L6 | 32 | 0.546818 | 0.530358 | 0.592173 | 0.371900 | 0.0138 | +0.0005 |
+
+读法：
+
+- **q 本身没有增益**：SST-2 L12 直接量化后 `0.800110 → 0.787479`（g32）、
+  `→ 0.768259`（g384）；SST-2 L6、CoLA、hate 也大多持平或略降。直接对
+  最终 embedding 做 int4 不会复制 M1.23 的 `+4pp`。
+- **直接残差单独不可分**：SST-2/CoLA 的残差 probe 在 `0.499–0.543`，
+  基本是 chance；hate 的 `0.592` 正好是多数类基线（test 1619/1115），
+  macro-F1 只有 `0.372`，不是类别信号。group=1 的残差几乎是零（浮点
+  误差），它的 `0.499` 也是 chance。
+- **残差类均值有一点几何量，但不投到 probe 上**：`resid/f32` 从 g1 的
+  `0` 升到 g384 的 `0.056–0.081`，可是在 f32 probe 上的 margin 比只有
+  `−0.008` 到 `+0.005`。这和 M1.23 的 SST-2 L12 `1.208×` 差了两个数量级。
+- **bootstrap 方向也不支持正增益（§11.24）**：SST-2 L12 q−f32 在 g32 是
+  `−0.012631 [−0.024163,−0.001098]`、g384 是
+  `−0.031968 [−0.046142,−0.017573]`；残差−f32 全为负或跨 0。
+
+### 11.24.3 结论与边界
+
+**M1.23 的类别条件偏置不是“对最终 embedding 做 int4 舍入”就能复现的。**
+直接量化的残差既没有足够大的类均值，也没有落在 f32 probe 方向上的正投影；
+它更像高频舍入残差，单独 probe 接近 chance。因此 M1.23 的偏置依赖
+**权重量化误差在编码器里的传播路径**，不是输出端量化的普适性质。
+
+边界：这是 representation-level surrogate，不是权重 per-group/absmean 的
+因果消融；`q` 的量化器与 `linear/uniform.rs` 同公式，但作用对象是 embedding，
+不是权重。只跑 logreg；一个 seed；bootstrap 只重采样 test；group=1 是退化
+端点（残差只有浮点误差），只作为 sanity check。weight per-group sweep 在
+本机 CPU 上单档 20+ 分钟仍未完成，已停，不写成结论；absmean 也未测。
+
+复算：
+
+```bash
+python scripts/wsp_classify_direct_quant.py \
+  --texts sst2/data-l12/texts.json \
+  --f32 'sst2/emb12/l12-pure-f32-*.f32' \
+  --groups 1,32,384 --bootstrap 1 --bootstrap-iters 10000 \
+  --out sst2/direct-l12.json
+```
+
 ## 12. 下一步
 
 - **逐块 `3→2`/`3→4` 与第二模型 L6 都已完成（§8/§9/§11）**：不要再重复跑
@@ -3810,6 +3887,13 @@ SST-2 L12 的 SVC 复验 `data/wsp-classify-residual-svc.tsv`（32 行），
   验证已够，不要再继续调 `R12`；接受“BUDGET 只在 STS 相关性上有效”，
   把 `R12` 留在 STS in-domain，不进运行时默认。若以后还要做，应该换更强
   probe（但当前用户口径排除 MLP）或新的任务族，而不是重复第三数据集。
+- **M1.24 直接量化负对照（§11.24）**：对 f32 embedding 本身做
+  group=1/32/384 的均匀 int4，`q` 没有增益、直接残差单独 probe 在
+  chance/多数类基线，残差 margin 比只有 `−0.008` 到 `+0.005`。
+  这说明 M1.23 的类别条件偏置不是输出端 int4 舍入的普适性质，而依赖
+  权重量化误差在编码器里的传播路径。该实验仍是 representation-level
+  代理，不是权重量化器的因果消融；weight per-group sweep 在本机 CPU
+  上跑不动，未写成结论。
 - **重扫选择器已落库，且 5 折交叉拟合已把“选择”留出（§11.6/§11.7）**：
   `wsp_budget_rescan.py` 能从两张表生成严格同字节候选；L6 全量 `6/24/6` 是
   `0.831304 / 0.824457`（高于 int4 点估计），但这是 in-sample。5 折 × 2 种子

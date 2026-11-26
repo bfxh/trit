@@ -392,6 +392,18 @@
     `data/wsp-classify-residual.tsv` / `wsp-classify-residual-geometry.tsv`，
     正文见 `WSP-BUDGET-RESULTS.md` §11.23。
 
+36. **输出端 int4 舍入 ≠ 权重路径 int4 量化**。M1.23 的残差带类别条件
+    偏置，很容易被读成“任何 int4 舍入都会这样”。M1.24 直接把 f32
+    embedding 做 group=1/32/384 的均匀 int4：SST-2 L12 的 `q` 从
+    `0.800110` 降到 `0.787479`（g32）/`0.768259`（g384）；直接残差单独
+    probe 在 chance/多数类基线（SST-2/CoLA `0.499–0.543`，hate `0.592`
+    是多数类基线、macro-F1 只有 `0.372`），残差在 f32 probe 上的 margin
+    比只有 `−0.008` 到 `+0.005`。**同一个量化公式，作用在权重上会经
+    12 层传播出类条件偏置；作用在最终 embedding 上只留下高频舍入残差。**
+    教训：讨论“量化残差”先分清作用对象；输出端量化只能当负对照，不能
+    替代权重量化器的因果消融。表见 `data/wsp-classify-direct-quant.tsv`，
+    正文见 §11.24。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter
