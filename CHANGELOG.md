@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（第五十二轮：direct 叶子临时变量消除）
+
+- `direct/emit/inline/plan.rs`：变量/常量叶子不再无条件落 `int8_t tN = vars[i];`；变量复用
+  ≤5 次直接重写 `vars[i]`，≥6 次保留一条读取（临时语句约 25 B，每次引用省 5 B，
+  6 次才回本）。常量叶子总是直接重写。非叶子仍按单用/深度 3 规则内联。
+- 读数（同机 CLI，K3；整个 `direct.c`）：11 变量混合式 1093→893 B、深链 689→669 B、
+  dense 12 项 1430→1254 B；`(a & b) | c` 545 B、`((a & b) | c) & (d | e)` 614 B、
+  混合式 664 B、`!a` 347 B、`a & b` 448 B、`a <=> 0` 347 B、`(!a) => (!b)` 445 B、
+  `(!a) <=> (!b)` 449 B、`(!(a & b)) => (!(c | d))` 582 B 不变。
+- 判据：`direct_c_size.rs` 的 11 变量与深链预算收紧到 893 / 669 B；新增
+  `tests/reuse.rs` 锁住 6 次复用的变量仍只读一次；三代数 `--verify-c` 对 11 变量与
+  dense 全过。`cargo test -p trit-build` 140 单元（139 passed / 1 ignored）+ 集成测试通过；
+  `mutation_check --pkg trit-build` 94/94 caught（含叶子直写、复用阈值与常量直写变异）。
+
 ### Added（第五十一轮：direct 否定对偶化简与精确 helper 选择）
 
 - `direct/fold/simplify/connectives/negated.rs`：`⇒` 右侧为 `F` 时改 `¬左`，两侧都是

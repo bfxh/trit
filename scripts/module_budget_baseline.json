@@ -272,7 +272,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/fanout.rs",
-      "lines": 21
+      "lines": 19
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/tests/reuse.rs",
+      "lines": 53
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/tree.rs",
