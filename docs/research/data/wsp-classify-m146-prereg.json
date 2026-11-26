@@ -48,7 +48,7 @@
     "probes": ["logreg", "linear_svc"],
     "seeds": [7, 13, 19, 31, 43],
     "c_grid": [0.01, 0.1, 1.0, 10.0],
-    "c_selection": "f32 only, 5-fold StratifiedKFold on fit, unweighted accuracy; C is selected once per corpus/depth/probe/seed and shared by unweighted, balanced, and quantized arms",
+    "c_selection": "f32 only, seed 7, 5-fold StratifiedKFold on fit, unweighted accuracy; C is selected once per corpus/depth/probe and shared by all seeds, rules, and arms",
     "probe_settings": {
       "unweighted": {
         "logreg": "LogisticRegression(C=c, max_iter=5000, solver=lbfgs, random_state=7)",
