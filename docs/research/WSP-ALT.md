@@ -555,6 +555,13 @@ M1.31 又把 CoLA/hate 的 L12/L6 全部量化臂在同一 per-arm 5 折选 C
 `R12`/`int3`/`int4` 多处 CI 整段为负。CoLA/hate 没有复现 SST-2 的
 `int4` 正向，`R12`/`rescan` 也没有分类增益（§11.31）。
 
+M1.32 把 CoLA/hate 的 L6 官方 `l6-int4` 与全量 true bits4 逐行对齐：
+9,594 / 11,719 行余弦都是 `1.00000000`，max abs diff `1.64e-7 /
+1.53e-7`，所有行 ≤`1e-6`。把 `true-bits4` 补进分类矩阵后，CoLA L6
+`−0.94pp`、hate L6 `−1.55pp`（logreg）的方向不变，hate 的 CI 仍整段
+为负。M1.30 的 512 行抽检升级为全量，M1.31 的 L6 读数无需修改
+（§11.32）。
+
 ## 6. WSP-MXQ 在新排序里的位置
 
 MXQ 仍然成立，但不再是第一枪：

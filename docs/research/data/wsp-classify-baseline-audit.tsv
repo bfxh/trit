@@ -58,8 +58,28 @@ sst2	l6	accuracy_svc	delta	true-bits4	official-int4	0.000000	0.000000	0.000000	L
 cola	l6	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.81e-07;n=9594;M1.30_full
 cola	l6	provenance	official_pure_f32_vs_ternary	official-pure-f32	true-ternary	0.463824			cos_min=0.194986;cos_max=0.669567;max_abs_diff=0.325793;n=9594;M1.30_full
 cola	l6	provenance	official_int4_vs_true_f32	official-int4	true-f32	0.955514			cos_min=0.839514;cos_max=0.975569;max_abs_diff=0.112572;n=9594;M1.30_full
-cola	l6	provenance	official_int4_vs_true_bits4	official-int4	true-bits4	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.26e-07;n=512;M1.30_first_chunk
+cola	l6	provenance	official_int4_vs_true_bits4	official-int4	true-bits4	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.64e-07;n=9594;M1.32_full
 hate	l6	provenance	official_pure_f32_vs_true_f32	official-pure-f32	true-f32	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.91e-07;n=11719;M1.30_full
 hate	l6	provenance	official_pure_f32_vs_ternary	official-pure-f32	true-ternary	0.378651			cos_min=0.043444;cos_max=0.619112;max_abs_diff=0.447816;n=11719;M1.30_full
 hate	l6	provenance	official_int4_vs_true_f32	official-int4	true-f32	0.953085			cos_min=0.849936;cos_max=0.973675;max_abs_diff=0.106138;n=11719;M1.30_full
-hate	l6	provenance	official_int4_vs_true_bits4	official-int4	true-bits4	1.000000			cos_min=0.99999994;cos_max=1.00000024;max_abs_diff=1.38e-07;n=512;M1.30_first_chunk
+hate	l6	provenance	official_int4_vs_true_bits4	official-int4	true-bits4	1.000000			cos_min=0.99999988;cos_max=1.00000024;max_abs_diff=1.53e-07;n=11719;M1.32_full
+cola	l6	macro_f1	arm	true-f32		0.553124			C=1.0,logreg,M1.32
+cola	l6	macro_f1	arm	true-bits4		0.543789			C=1.0,logreg,M1.32
+cola	l6	macro_f1	arm	official-int4		0.543789			C=1.0,logreg,M1.32
+cola	l6	macro_f1	delta	true-bits4	true-f32	-0.009351	-0.027439	0.008747	logreg,M1.32
+cola	l6	macro_f1	delta	true-bits4	official-int4	0.000000	0.000000	0.000000	logreg,M1.32
+cola	l6	macro_f1	arm	true-f32		0.549910			C=0.1,LinearSVC,M1.32
+cola	l6	macro_f1	arm	true-bits4		0.548644			C=1.0,LinearSVC,M1.32
+cola	l6	macro_f1	arm	official-int4		0.548644			C=1.0,LinearSVC,M1.32
+cola	l6	macro_f1	delta	true-bits4	true-f32	-0.001357	-0.023225	0.020539	LinearSVC,M1.32
+cola	l6	macro_f1	delta	true-bits4	official-int4	0.000000	0.000000	0.000000	LinearSVC,M1.32
+hate	l6	accuracy	arm	true-f32		0.546086			C=1.0,logreg,M1.32
+hate	l6	accuracy	arm	true-bits4		0.530724			C=10.0,logreg,M1.32
+hate	l6	accuracy	arm	official-int4		0.531090			C=10.0,logreg,M1.32
+hate	l6	accuracy	delta	true-bits4	true-f32	-0.015452	-0.025238	-0.005852	logreg,M1.32
+hate	l6	accuracy	delta	true-bits4	official-int4	-0.000368	-0.002560	0.001829	logreg,M1.32
+hate	l6	accuracy	arm	true-f32		0.546452			C=0.1,LinearSVC,M1.32
+hate	l6	accuracy	arm	true-bits4		0.529261			C=1.0,LinearSVC,M1.32
+hate	l6	accuracy	arm	official-int4		0.529261			C=1.0,LinearSVC,M1.32
+hate	l6	accuracy	delta	true-bits4	true-f32	-0.017248	-0.027067	-0.007681	LinearSVC,M1.32
+hate	l6	accuracy	delta	true-bits4	official-int4	0.000000	0.000000	0.000000	LinearSVC,M1.32

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed（M1.32：L6 int4 全量逐位复刻）
+
+- 用 `all-MiniLM-L6-v2` 读取官方 `chunks-l6-1500`，全量生成 CoLA/hate
+  的 true bits4（`l6-cola-bits4.npy`、`l6-tweet-hate-bits4.npy`）。
+- CoLA 9,594 / hate 11,719 行的官方 `l6-int4` 与 true bits4 全部逐行
+  对齐：余弦 `1.00000000`（min/max `0.99999988/1.00000024`），max abs
+  diff `1.64e-7 / 1.53e-7`，所有行 ≤`1e-6`。M1.30 的 512 行抽检升级
+  为全量。
+- 把 `true-bits4` 补进 L6 分类矩阵：CoLA logreg macro `−0.94pp`
+  （CI 跨 0）、LinearSVC `−0.14pp`（CI 跨 0）；hate logreg accuracy
+  `−1.55pp`（CI `[−2.52,−0.59]`）、LinearSVC `−1.72pp`
+  （CI `[−2.71,−0.77]`）。没有任何一格转正，M1.31 的 L6 结论不变。
+- hate logreg 的 true bits4 与官方 int4 有 11/2,734 条预测翻转，净
+  accuracy 只差 1 条（`−0.000368`，CI 跨 0）；CoLA 与 hate SVC 的
+  逐条预测完全相同。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 的两条 L6
+  provenance 行从 `n=512` 更新为全量，并新增 20 行 true-bits4 分类
+  读数；`WSP-BUDGET-RESULTS.md` 新增 §11.32。
+
 ### Fixed（M1.31：CoLA/hate 全臂矩阵）
 
 - 用同一套 per-arm 5 折选 C（C 网格 `0.01/0.1/1/10`）+ test 只评一次 +
@@ -29,10 +48,10 @@
   （`1.91e-7`）；对真 ternary 只有 `0.463824` / `0.378651`。因此
   CoLA/hate L6 的 `l6-pure-f32` 是真 f32，不是 ternary。
 - 官方 `l6-int4` 首 512 行与真 bits4 逐位一致（max abs diff
-  `1.26e-7` / `1.38e-7`）；全量 `official int4 vs true f32` 余弦为
-  `0.955514` / `0.953085`，与正常 f32→bits4 距离同量级。M1.14/M1.15
-  的 L6 分类结论无需重算；SST-2 是唯一 L12 与 L6 的 `pure-f32` 都
-  错标成 ternary 的数据集。
+  `1.26e-7` / `1.38e-7`；M1.32 已补成全量，见上）；全量
+  `official int4 vs true f32` 余弦为 `0.955514` / `0.953085`，与正常
+  f32→bits4 距离同量级。M1.14/M1.15 的 L6 分类结论无需重算；SST-2 是
+  唯一 L12 与 L6 的 `pure-f32` 都错标成 ternary 的数据集。
 - `docs/research/data/wsp-classify-baseline-audit.tsv` 新增 8 行
   CoLA/hate L6 provenance 读数；`WSP-BUDGET-RESULTS.md` 新增 §11.30，
   修正 §11.28.3/§11.28.4 的 L6 边界与 §12 读法；

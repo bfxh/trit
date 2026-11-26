@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.31 完成（§11.31）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
+> 状态：M1.32 完成（§11.32）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -83,8 +83,8 @@
 > int4，int3/R12/rescan 也是 ternary 基线的恢复（§11.29）。
 > **M1.30 L6 标签收口**：CoLA/hate 的 L6 `l6-pure-f32` 已用全量
 > 9,594 / 11,719 条逐行确认是真 f32（余弦 `1.00000000`，max abs diff
-> `1.8e-7 / 1.9e-7`），不是 ternary；官方 `l6-int4` 在 512 行上与真
-> bits4 逐位一致。SST-2 是唯一 L12 与 L6 的 `pure-f32` 都错标成 ternary
+> `1.8e-7 / 1.9e-7`），不是 ternary；官方 `l6-int4` 在 512 行上已与真
+> bits4 逐位一致，M1.32 又补成全量（§11.32）。SST-2 是唯一 L12 与 L6 的 `pure-f32` 都错标成 ternary
 > 的数据集；CoLA/hate 的 L6 分类结论无需重算（§11.30）。
 > **M1.31 CoLA/hate 全臂矩阵**：用同一套 5 折选 C + test 只评一次 +
 > 10k paired bootstrap，把 CoLA/hate 的 L12/L6 全部量化臂相对真 f32
@@ -93,6 +93,12 @@
 > （macro-F1 `+1.24pp` / `+1.20pp`），但 CI 跨 0；其余 CoLA L6、
 > hate L12/L6 全为负或零，hate 的 `int3`/`R12`/`int4` 多处 CI 整段
 > 为负。SST-2 的 `int4` 正向不是跨任务规律（§11.31）。
+> **M1.32 L6 全量 bits4 收口**：CoLA/hate 的 L6 官方 `l6-int4` 已用
+> 全量 9,594 / 11,719 行与真 bits4 逐行对齐（余弦 `1.00000000`，
+> max abs diff `1.64e-7 / 1.53e-7`，全部行 ≤`1e-6`）。把 `true-bits4`
+> 作为独立臂重跑后，CoLA L6 `−0.94pp`、hate L6 `−1.55pp`（logreg）
+> 的结论不变，hate 的 CI 仍整段为负。M1.30 的 512 行抽检升级为全量，
+> L6 不再有“官方 int4 只验证了首块”的边界（§11.32）。
 
 
 ## 1. 结论先行
@@ -3887,7 +3893,7 @@ python scripts/wsp_classify_direct_quant.py \
 > 的 `f32` 是真 f32，压缩结论保留；见 §11.26。
 > **M1.28 追加**：本节 SST-2 L6 的 `f32` 也是 ternary；L6 的 `1.15× /
 > 93.7° / 0.33×` 等读数同属 ternary→4-bit，不能当 f32→int4。CoLA/hate
-> L6 倾向真 f32，未全量确认；见 §11.28。
+> L6 在 M1.32 已全量确认是真 f32 且 bits4 全量对齐；见 §11.32。
 
 ### 11.25.1 问题与口径
 
@@ -4042,7 +4048,8 @@ M1.12–M1.25 的 SST-2 结论都建立在 `sst2/emb12/l12-pure-f32-*.f32`
 因此修正范围不是“所有数据集”，而是 **SST-2 的 f32 基线**（M1.28 后确认
 包括 L12 与 L6）。这也解释了为什么“正向只在 SST-2 出现”：SST-2 的 f32
 标签被换成了更差的 ternary，CoLA/hate 的 L12 没有；CoLA/hate L6 的
-`l6-pure-f32` 与 `l6-int4` 余弦约 `0.95`，倾向真 f32，但未全量逐位复刻。
+`l6-pure-f32` 与 `l6-int4` 余弦约 `0.95`，倾向真 f32；M1.30/M1.32 已
+补齐全量 f32/bits4 逐位验证（§11.30/§11.32）。
 
 ### 11.26.2 溯源方法
 
@@ -4149,11 +4156,11 @@ SST-2 类均值方向/PCA/旋转/剂量读数、M1.23–M1.25 的 SST-2 残差�
 都应改读成“ternary→4-bit 的恢复”，不能再写成“f32→int4 的类别条件
 偏置”。CoLA/hate 的 L12 臂仍是真 f32→4-bit，相关结论保留；SST-2 L6
 已在 §11.28 确认为 ternary，L6 的旧 `int4−f32` 也要按 ternary→4-bit
-读；CoLA/hate L6 未全量逐位复刻，暂不作为结论。
+读；CoLA/hate L6 在 M1.30/M1.32 已补齐全量，结论见 §11.30/§11.32。
 
 边界：PyTorch 复刻是独立实现，不是 Rust 逐位复刻；f32/f64 累加差异在
 `2e-7` 量级，足以判定标签和 `0.001` 级差值，但不能当位级等价。
-M1.28 已重算 SST-2 L6；CoLA/hate L6 未全量复刻；只跑 logreg +
+M1.28 已重算 SST-2 L6；M1.30/M1.32 已补 CoLA/hate L6 全量；只跑 logreg +
 LinearSVC，没有 MLP、没有 encoder 微调、没有 MNLI。历史表里 SST-2 L12/L6
 的 `f32` 列一律按 ternary 读；需要真 f32 时用 §11.26/§11.28 的读数，
 SST-2 全臂见 §11.29。
@@ -4482,7 +4489,8 @@ M1.28.3 只做了 `official pure vs official int4` 的余弦诊断（CoLA
 
 结论：**CoLA 与 hate 的 L6 `l6-pure-f32` 都是真 f32，不是 ternary。**
 官方 `l6-int4` 与真 f32 的全量余弦分别只有 `0.955514` / `0.953085`，
-是正常的 f32→bits4 距离；首 512 行与真 bits4 逐位一致。因此
+是正常的 f32→bits4 距离；首 512 行与真 bits4 逐位一致，M1.32 已补成
+全量（§11.32）。因此
 M1.14/M1.15 的 L6 基线无需重算，SST-2 是唯一 L12 和 L6 的 `pure-f32`
 都被错标成 ternary 的数据集。
 
@@ -4520,9 +4528,9 @@ M1.14/M1.15 的 L6 基线无需重算，SST-2 是唯一 L12 和 L6 的 `pure-f32
 `0.99999976`（pure vs ternary）形成清晰对照。因此不是“部分行像
 f32”或“混合输出”，而是全量 f32。
 
-`official int4` 的 512 行首块与真 bits4 逐位比较：
+`official int4` 的 512 行首块与真 bits4 逐位比较（M1.32 已补全量，见 §11.32）：
 
-| 数据集（512 行） | 余弦均值 | 余弦范围 | max abs diff |
+| 数据集（M1.30 首块 512 行） | 余弦均值 | 余弦范围 | max abs diff |
 |---|---:|---:|---:|
 | CoLA `l6-int4` vs 真 bits4 | `1.00000000` | `0.99999988–1.00000024` | `1.26e-7` |
 | Hate `l6-int4` vs 真 bits4 | `1.00000000` | `0.99999994–1.00000024` | `1.38e-7` |
@@ -4540,9 +4548,9 @@ SST-2 真 f32 vs 真 bits4 的 `0.948531` 同量级，且首块逐位一致，
 - **CoLA/hate L6 分类结果不需要重算**：基线标签没有变化，M1.14/M1.15
   的 L6 读数继续有效；不能把 SST-2 的 `int4−f32≈+0.04` 外推到这两个
   数据集。
-- 边界：本节只做标签判定；全量生成真 f32/ternary，未全量生成 bits4；
-  bits4 用首 512 行逐位验证。只涉及线性 probe 的基线，不做 MLP、
-  不做 encoder 微调、不做 MNLI。
+- 边界：本节只做标签判定；全量生成真 f32/ternary，bits4 用首 512 行
+  逐位验证。M1.32 已补全量 bits4 并补跑分类臂（§11.32）。只涉及线性
+  probe 的基线，不做 MLP、不做 encoder 微调、不做 MNLI。
 
 复算材料：`data/wsp-classify-baseline-audit.tsv` 新增 CoLA/hate L6
 provenance 行；原始读数见上表，脚本在实验目录未入库。
@@ -4565,10 +4573,11 @@ per-arm 5 折选 C 不可直接拼表。M1.31 用同一套流程重跑：
   `l6-tweet-hate-f32.npy`。官方 `pure-f32` 与真 f32 只差 `2.1e-7`
   量级，但分类预测会有 0–5 条翻转，因此以真 f32 为锚点，不用官方
   `pure-f32` 代替。
-- 臂：`true-bits4`（仅 L12）、`official-pure-f32`、`official-int3`、
-  `official-int4`、`official-r12`（L12）/`official-rescan-k2`（CoLA L6）/
-  `official-rescan`（hate L6）。L6 的官方 `int4` 已由 M1.30 在 512 行上
-  与真 bits4 逐位对齐；L12 的 `true-bits4` 是独立生成的全量臂。
+- 臂：`true-bits4`（M1.31 仅 L12；M1.32 补 L6）、`official-pure-f32`、
+  `official-int3`、`official-int4`、`official-r12`（L12）/
+  `official-rescan-k2`（CoLA L6）/ `official-rescan`（hate L6）。L6 的
+  官方 `int4` 已由 M1.32 全量逐行确认与真 bits4 一致（§11.32）；L12 的
+  `true-bits4` 是 M1.31 独立生成的全量臂。
 
 ### 11.31.2 CoLA L12（主指标 macro-F1）
 
@@ -4609,7 +4618,8 @@ CoLA L12 的 `int4`/`true bits4` 点估计为正，是四个组合里唯一“�
 CoLA L6 没有任何量化臂转正：logreg 的 `int3/int4/rescan` 都在 `−0.59pp`
 到 `−1.25pp` 之间，SVC 的 `rescan` 只有 `+0.004pp`、等于零；所有 CI
 都跨 0。官方 `pure-f32` 与真 f32 的 logreg 差值 `+0.40pp` 也只是
-舍入导致的预测翻转，不是 f32 内部的“增益”。
+舍入导致的预测翻转，不是 f32 内部的“增益”。M1.32 补跑全量
+`true-bits4` 后，CoLA L6 与官方 `int4` 逐条预测相同（§11.32）。
 
 ### 11.31.4 Hate L12（主指标 accuracy）
 
@@ -4671,12 +4681,82 @@ Hate L6 的 `int4` 在两个 probe 上都是显著负向：logreg `−1.51pp`
   5 折选 C，故 `int4−f32` 从 `−0.37pp` 变为 `−0.88pp`。两表方向一致，
   但只能各自引用，不能混算。
 - 边界：只跑 logreg + LinearSVC；没有 MLP、没有 encoder 微调、没有
-  MNLI。L12 有独立 true bits4；L6 的 bits4 臂是官方 `int4`（M1.30
-  512 行逐位对齐，未做全量 bits4 生成）。
+  MNLI。L12 有独立 true bits4；L6 的 bits4 臂在 M1.31 用官方 `int4`，
+  M1.32 已全量确认该文件就是真 bits4 并补跑 true-bits4，结论不变
+  （§11.32）。
 
 完整 80 行见 `data/wsp-classify-cola-hate-full-arms.tsv`；原始评测 JSON
 为 `cola-l12-full-arms-eval.json`、`cola-l6-full-arms-eval.json`、
 `hate-l12-full-arms-eval.json`、`hate-l6-full-arms-eval.json`。
+
+## 11.32 L6 int4 全量逐位复刻与 true-bits4 分类臂（M1.32）
+
+### 11.32.1 目标与做法
+
+M1.30 只验证了 CoLA/hate L6 官方 `l6-int4` 的前 512 行；M1.31 的 L6
+`int4` 臂因此仍带“官方 int4 只抽检首块”的边界。M1.32 把这条边界补成
+全量：
+
+- 用 `all-MiniLM-L6-v2` 读取官方同一批 `chunks-l6-1500` 的
+  `input.f32` / `mask.u8`，按官方 4-bit 量化路径（`bits=4`、`group=32`、
+  半远离零取整、clamp ±7）重新前向，生成全量 true bits4。
+- CoLA 9,594 行、hate 11,719 行全部逐行比对官方 `l6-int4` 与 true bits4；
+  同时比对两边到真 f32 的距离，确认 4-bit 量化本身没有变。
+- 把 `true-bits4` 作为独立臂补进 M1.31 的 L6 分类矩阵，仍用 per-arm
+  5 折选 C、test 只评一次、10k paired bootstrap、logreg + LinearSVC。
+
+### 11.32.2 全量逐位对齐
+
+| dataset | n | official int4 vs true bits4 余弦 | max abs diff | 行数 ≤`1e-6` | official int4 vs true f32 余弦 |
+|---|---:|---:|---:|---:|---:|
+| CoLA | 9,594 | `1.00000000` | `1.64e-7` | 9,594 / 9,594 | `0.95551401` |
+| Hate | 11,719 | `1.00000000` | `1.53e-7` | 11,719 / 11,719 | `0.95308453` |
+
+两套的余弦 min/max 都是 `0.99999988 / 1.00000024`，逐行 max abs 的
+p99 分别为 `1.15e-7` / `1.12e-7`。这说明官方 `l6-int4` 不是只在前 512
+行对齐，后面也没有换量化路径或掉回 ternary；M1.30 的抽检可以升级为
+全量结论。
+
+### 11.32.3 L6 分类矩阵（true-bits4 独立臂）
+
+| dataset | probe | arm | C | accuracy | macro-F1 | Δ vs true f32（主指标） | 95% CI |
+|---|---|---|---:|---:|---:|---:|---:|
+| CoLA | logreg | true f32 | 1 | `0.577181` | `0.553124` | — | — |
+| CoLA | logreg | true bits4 | 1 | `0.568552` | `0.543789` | `−0.009351` | `[−0.027439,+0.008747]` |
+| CoLA | logreg | official int4 | 1 | `0.568552` | `0.543789` | `−0.009351` | `[−0.027439,+0.008747]` |
+| CoLA | linear_svc | true f32 | 0.1 | `0.573346` | `0.549910` | — | — |
+| CoLA | linear_svc | true bits4 | 1 | `0.573346` | `0.548644` | `−0.001357` | `[−0.023225,+0.020539]` |
+| CoLA | linear_svc | official int4 | 1 | `0.573346` | `0.548644` | `−0.001357` | `[−0.023225,+0.020539]` |
+| Hate | logreg | true f32 | 1 | `0.546086` | `0.534408` | — | — |
+| Hate | logreg | true bits4 | 10 | `0.530724` | `0.516371` | `−0.015452` | `[−0.025238,−0.005852]` |
+| Hate | logreg | official int4 | 10 | `0.531090` | `0.516935` | `−0.015084` | `[−0.024872,−0.005486]` |
+| Hate | linear_svc | true f32 | 0.1 | `0.546452` | `0.534505` | — | — |
+| Hate | linear_svc | true bits4 | 1 | `0.529261` | `0.514096` | `−0.017248` | `[−0.027067,−0.007681]` |
+| Hate | linear_svc | official int4 | 1 | `0.529261` | `0.514096` | `−0.017248` | `[−0.027067,−0.007681]` |
+
+CoLA 的 `true-bits4` 与官方 `int4` 在两个 probe 上逐条预测完全相同；
+hate 的 LinearSVC 也完全相同，logreg 有 11/2,734 条预测翻转，净 accuracy
+只差 1 条（`−0.000368`，CI `[−0.002560,+0.001829]`）。这点差异来自
+`1.5e-7` 量级的 embedding 舍入，不是标签或量化路径错误。
+
+### 11.32.4 结论
+
+- **全量溯源闭合**：CoLA/hate 的 L6 官方 `int4` 就是真 bits4，M1.31 的
+  L6 `int4` 臂不再依赖 512 行抽检。L12 已在 M1.26 全量对齐；至此
+  SST-2 / CoLA / hate × L12 / L6 六个格子的官方 `int4` 都有全量逐位
+  证据。
+- **分类结论不变**：CoLA L6 true bits4 相对真 f32 为 `−0.94pp`（logreg）
+  /`−0.14pp`（SVC），CI 都跨 0；hate L6 为 `−1.55pp`（logreg）
+  /`−1.72pp`（SVC），两个 CI 都整段为负。`true-bits4` 没有把任何一格
+  从负向救回正向。
+- **M1.31 的 L6 数字不需要改**：官方 int4 与 true bits4 的预测几乎相同，
+  hate logreg 的 1 条净差异不改变方向；M1.31 表里的 `−1.51pp`/`−1.72pp`
+  仍是有效读数。
+- 边界：仍只跑 logreg + LinearSVC，冻结编码器，不做 MLP、不做微调、
+  不碰 MNLI；全量 bits4 只验证官方 4-bit 路径，不改变 M1.31 的全臂口径。
+
+`data/wsp-classify-baseline-audit.tsv` 的两条 L6 provenance 行已从
+`n=512` 更新为全量，并新增 20 行 L6 true-bits4 分类读数。
 
 ## 12. 下一步
 
@@ -4699,6 +4779,13 @@ Hate L6 的 `int4` 在两个 probe 上都是显著负向：logreg `−1.51pp`
 > `int4`/bits4 只有 `+1.24pp/+0.93pp` 点估计且 CI 跨 0，hate 的
 > `R12`/`int3`/`int4` 多处 CI 整段为负。SST-2 的 `int4` 正向没有跨到
 > 这两个任务；`R12`/`rescan` 也没有分类增益。见 §11.31。
+>
+> **M1.32 读法**：CoLA/hate 的 L6 官方 `l6-int4` 已全量 9,594 / 11,719
+> 行确认真 bits4（余弦 `1.00000000`，max abs diff `1.6e-7 / 1.5e-7`，
+> 全部行 ≤`1e-6`）。把 `true-bits4` 补进 L6 分类矩阵后，CoLA `−0.94pp`
+> （logreg macro）、hate `−1.55pp`（logreg accuracy）的方向不变，
+> hate 的 CI 仍整段为负。M1.30 的 512 行抽检已升级为全量，M1.31 的
+> L6 `int4` 数字不需要改。见 §11.32。
 
 - **M1.26 基线审计已完成（§11.26）**：SST-2 L12 的 `l12-pure-f32` 是
   ternary，真实 f32→int4 为 `−0.001503`（CI `[−0.012081,+0.008786]`），
