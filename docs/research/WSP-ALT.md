@@ -538,6 +538,10 @@ SST-2 L6 的 `l6-pure-f32` 在 M1.28 全量复核后确认也是 ternary，不�
 f32；L6 真 f32→int4 为 `−0.004964`，旧 `+0.0060` 不作数。上面所有
 SST-2 L6 的 f32/残差读数也应按 ternary→4-bit 读，不是 f32→4-bit。详见
 `WSP-BUDGET-RESULTS.md` §11.26/§11.28。
+M1.29 又把 L12 的 `int3`/`R12` 和 L6 的 `int3`/`rescan-k2` 在真 f32
+上重跑：没有任何量化档超过真 f32；L12 `int3`/`R12` 的 CI 整段为负，
+L6 三个量化档 CI 都跨 0。M1.12 的“量化增益”不只是 int4，int3/R12/
+rescan 也都是 ternary 锚点伪影（§11.29）。
 
 ## 6. WSP-MXQ 在新排序里的位置
 
