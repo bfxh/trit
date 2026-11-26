@@ -165,6 +165,33 @@
 - 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算行与未验证清单。
 
 诚实边界：仍只覆盖组合逻辑与单一选中输出；没有综合、时序/面积收敛与门级优化。
+### Changed（M1.40：HateXplain 第二个 hate 语料的预注册 confirmatory）
+
+- 在 HateXplain 官方 `train+val`/`test` 上预注册复验 M1.38/M1.39 的
+  L12 `R12` 与 L6 `rescan`。清洗后 fit `17,270`、test `1,918`；
+  primary 是 `hatespeech=1`、`normal+offensive=0`，test 先验 `0.309698`。
+  仍冻结编码器、只训练线性 probe；C 只由 f32 的 fit 内 5 折选，量化臂
+  共用；target_prior 只用未标注 test 分数。
+- Primary accuracy（full test、matched-C、5 seeds `7/13/19/31/43`）：
+  L12 `R12` logreg **0/5**（`+0.1043pp`）、SVC **0/5**（`−0.2920pp`）；
+  L6 `rescan` logreg **0/5**（`−0.1043pp`）、SVC **0/5**（`+0.3545pp`）。
+  两个候选都被预注册判据判为 **rejected**；macro-F1 和 default 0.5
+  也全部 0/5，所有 CI 都跨 0。
+- target_prior 在该语料上没有绝对增益：f32 accuracy 从 default 的
+  `0.823` 降到 `0.808/0.811`，量化臂也降 `0.80–1.09pp`；预测正例率
+  从 `0.2388–0.2607` 抬到 `0.3092`。半分割诊断 8 个 cell 全部 0 正，
+  方向仍翻符号。
+- 判决：**M1.38/M1.39 的 `+1.6~+2.8pp` 没有跨语料复现；`R12` 和
+  `rescan` 都不能升级，target_prior 也不能当默认协议。HateXplain
+  test 有 54% Gab、`offensive→0` 映射，是外部边界；但“没有复现”
+  是明确结论。**
+- 新增 `docs/research/scripts/wsp_m140/prepare_hatexplain.py`、
+  `make_chunk_inputs.py`、`hatexplain_target_prior.py`，以及
+  `data/wsp-classify-m140-prereg.json`、`-prepare-summary.json`、
+  `-raw.tsv`（160 行、20 列）、`-summary.tsv`（32 行、15 列）、
+  `-primary.tsv`（4 行、8 列）、`-split-half.tsv`（40 行、12 列）、
+  `-vs-default.tsv`（20 行、12 列）。
+
 ### Changed（M1.39：Hate 目标先验的预注册半分割 confirmatory）
 
 - 在既有 TweetEval/hate 官方 test 上预注册 50/50 标签分层半分割

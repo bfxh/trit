@@ -540,6 +540,19 @@
     不能靠同一 test 换 seed/C/半分割完成；半分割只证明“没有完全依赖
     同一批标签”，要证明可迁移必须换第二个数据集或预注册新的域切分**（M1.39）。
 
+55. **换语料做 confirmatory 时，先检查“目标先验阈值是否仍然赚 accuracy”**。
+    M1.40 在 HateXplain 官方 `train+val`/`test` 上预注册复验 M1.38/M1.39
+    的两个候选。test 先验 `0.3097`，target_prior 把预测正例率从 default 的
+    `0.2388–0.2607` 抬到 `0.3092`，几乎精确匹配先验；但 f32 的绝对 accuracy
+    从 `0.823` 降到 `0.808`（L12）/`0.811`（L6），量化臂也降
+    `0.80–1.09pp`。同一 working point 下，`R12` 两个 probe 是
+    `+0.1043/−0.2920pp`、`rescan` 是 `−0.1043/+0.3545pp`，四个 cell
+    全部 0/5 正 CI，预注册判为 rejected。**“匹配先验”不等于“提高
+    accuracy”；`target_prior` 在旧语料上是相对 arm 的 rescuer，换语料后
+    可能整体更差。新语料 confirmatory 必须把 target_prior 与 default
+    的绝对 accuracy 并列，不能只报量化臂减 f32；否则会把“阈值工作点
+    变差”误读成“量化没增益”或反之**（M1.40）。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter

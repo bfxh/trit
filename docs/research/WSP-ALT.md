@@ -4,6 +4,10 @@
 > **端到端负结果，不进 PR**。BUDGET 的 M1 已在 `feat/wsp-budget` 跑完严格同字节
 > 全量；M1.1 用同字节块交换得到 `I10`；M1.2 把 Q3/K4 的 int4 升级移到 K10/K11，
 > 得到 `K10K11`，对纯 int3 双指标 10k CI 都过 0，但对 v6e 的 Spearman CI 仍跨 0。
+> M1.40 已在第二个 hate 语料 HateXplain 上做预注册 confirmatory：
+> `R12`/`rescan` 均 0/5 正 CI、被预注册判据判为 rejected，且
+> target_prior 的绝对 accuracy 低于 default；详见
+> `WSP-BUDGET-RESULTS.md` §11.40。
 > 详见 `WSP-BUDGET-RESULTS.md`。
 > 其余方案仍是草案。层内预演只覆盖 L12 第 0 层 `query/key/value`，不是全模型，
 > 也不是 STS。文中所有“误差下降”都是层内重建或层输出范数，不能直接当
@@ -794,3 +798,26 @@ I10，没有单一候选同时赢两边。M1.6 的 L6 第二模型进一步说�
 不能按层号直接搬，L6 上三个投影都低于纯 int3，输出端对齐的 R12 尾段也只
 统计中性；L6 重扫可以做到 `0.828687 / 0.821084`，但对 int4 的 CI 仍跨 0。
 下一步是做模型无关的选择规则或按模型重扫，再谈 MXQ 或更大预算。**
+
+## 12. M1.40：HateXplain 第二 hate 语料 confirmatory
+
+M1.40 把 M1.38/M1.39 的 L12 `R12` / L6 `rescan` 搬到第二个 hate 语料
+HateXplain，按官方 `train+val`/`test` 预注册复验。清洗后 fit `17,270`、
+test `1,918`；primary 是 `hatespeech=1`、`normal+offensive=0`，test 先验
+`0.309698`。仍冻结编码器、只训练线性 probe，C 只由 f32 的 fit 内 5 折选，
+量化臂共用 C。
+
+Primary accuracy（full test、target_prior、5 seeds）：
+
+| candidate | logreg | linear_svc |
+|---|---:|---:|
+| L12 `R12` | `0/5`，`+0.1043pp` | `0/5`，`−0.2920pp` |
+| L6 `rescan` | `0/5`，`−0.1043pp` | `0/5`，`+0.3545pp` |
+
+两个候选都被预注册判据判为 **rejected**；macro-F1 和 default 0.5 也
+全部 0/5，四个 cell 的 CI 全部跨 0。更关键的是 target_prior 在该语料上
+把 f32 的绝对 accuracy 从 default 的约 `0.823` 降到 `0.808`（L12）/
+`0.811`（L6），量化臂也降 `0.80–1.09pp`；匹配先验把预测正例率抬到
+`0.3092`，但 accuracy 反而下降。**匹配先验不是 accuracy 的免费增益，
+M1.38/M1.39 的条件性正结果没有跨语料复现。** 边界与复算见
+`WSP-BUDGET-RESULTS.md` §11.40。
