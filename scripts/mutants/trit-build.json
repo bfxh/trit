@@ -282,7 +282,7 @@
  {
   "name": "lattice: K3/Ł3 吸收不别名",
   "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
-  "old": "    if contains(kept, right, left, inner_or) {\n        return Some(left);\n    }",
+  "old": "    if chain::contains(kept, right, left, inner_or) {\n        return Some(left);\n    }",
   "new": "    if false {\n        return Some(left);\n    }",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::lattice::lattice_absorption_aliases_to_the_operand"
@@ -502,5 +502,29 @@
   "new": "fn push_and(\n    resolve: &mut Vec<usize>,\n    kept: &mut Vec<Op>,\n    consts: &mut Vec<Option<Ternary>>,\n    left: usize,\n    other: usize,\n) {\n    if false {",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::complement::alias::complement_other_equal_to_outer_aliases"
+ },
+ {
+  "name": "lattice: 链吸收不递归",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+  "old": "        if a == needle || b == needle {\n            return true;\n        }\n        stack.push(a);\n        stack.push(b);",
+  "new": "        if a == needle || b == needle {\n            return true;\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::chain::chain_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "lattice: 链吸收只走左分支",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+  "old": "        stack.push(a);\n        stack.push(b);",
+  "new": "        stack.push(a);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::chain::chain_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "lattice: 链吸收跨异算子",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+  "old": "        let (a, b) = match (inner_or, kept[node]) {\n            (true, Op::Or(a, b)) | (false, Op::And(a, b)) => (a, b),\n            _ => continue,\n        };",
+  "new": "        let (a, b) = match kept[node] {\n            Op::Or(a, b) | Op::And(a, b) => (a, b),\n            _ => continue,\n        };",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::tests::lattice::chain::cross_operator_nesting_stays"
  }
 ]

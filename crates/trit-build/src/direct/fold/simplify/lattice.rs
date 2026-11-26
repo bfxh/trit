@@ -6,6 +6,7 @@
 use trit_core::Algebra;
 
 use crate::direct::ir::Op;
+mod chain;
 
 pub(super) fn absorbed(
     alg: Algebra,
@@ -17,19 +18,11 @@ pub(super) fn absorbed(
     if matches!(alg, Algebra::Bochvar) {
         return None;
     }
-    if contains(kept, right, left, inner_or) {
+    if chain::contains(kept, right, left, inner_or) {
         return Some(left);
     }
-    if contains(kept, left, right, inner_or) {
+    if chain::contains(kept, left, right, inner_or) {
         return Some(right);
     }
     None
-}
-
-fn contains(kept: &[Op], index: usize, needle: usize, inner_or: bool) -> bool {
-    match (inner_or, kept[index]) {
-        (true, Op::Or(a, b)) => a == needle || b == needle,
-        (false, Op::And(a, b)) => a == needle || b == needle,
-        _ => false,
-    }
 }

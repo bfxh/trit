@@ -3,9 +3,9 @@
 use super::{lowered, simplified_alg};
 use crate::direct::emit;
 use crate::direct::ir::Op;
-use trit_core::Algebra;
-use trit_core::Parser;
 use trit_core::value::Ternary;
+use trit_core::{Algebra, Parser};
+mod chain;
 
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];

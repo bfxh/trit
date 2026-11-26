@@ -296,7 +296,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
-      "lines": 35
+      "lines": 28
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
+      "lines": 29
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
@@ -329,6 +333,10 @@
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice.rs",
       "lines": 85
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice/chain.rs",
+      "lines": 103
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
