@@ -283,6 +283,14 @@
       "lines": 96
     },
     {
+      "file": "crates/trit-build/src/direct/fold/negchain.rs",
+      "lines": 92
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/negchain/tests.rs",
+      "lines": 136
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
       "lines": 57
     },
@@ -377,6 +385,10 @@
     {
       "file": "crates/trit-build/src/direct/ir.rs",
       "lines": 21
+    },
+    {
+      "file": "crates/trit-build/src/direct/ir/remap.rs",
+      "lines": 20
     },
     {
       "file": "crates/trit-build/src/direct/lower.rs",

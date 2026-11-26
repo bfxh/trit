@@ -550,5 +550,29 @@
   "new": "        (true, Op::Or(a, b)) | (false, Op::And(a, b)) => Some((a, b)),",
   "pkg": "trit-build",
   "filter": "direct::fold::cse::tests::factor::common_and_factors_out_of_or"
+ },
+ {
+  "name": "negchain: 非 Not 叶子也折叠",
+  "file": "crates/trit-build/src/direct/fold/negchain.rs",
+  "old": "        _ => false,",
+  "new": "        _ => {\n            leaves.push(index);\n            true\n        },",
+  "pkg": "trit-build",
+  "filter": "direct::fold::negchain::tests::mixed_operand_stays"
+ },
+ {
+  "name": "negchain: 对偶算子写反",
+  "file": "crates/trit-build/src/direct/fold/negchain.rs",
+  "old": "        Op::And(..) => (false, false),\n        Op::Or(..) => (true, true),",
+  "new": "        Op::And(..) => (false, true),\n        Op::Or(..) => (true, false),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::negchain::tests::triple_negation_chain_collapses_to_dual"
+ },
+ {
+  "name": "negchain: 叶子取 Not 节点而非基操作数",
+  "file": "crates/trit-build/src/direct/fold/negchain.rs",
+  "old": "        Op::Not(base) => {\n            leaves.push(base);\n            true\n        }",
+  "new": "        Op::Not(base) => {\n            leaves.push(index);\n            true\n        }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::negchain::tests::triple_negation_chain_collapses_to_dual"
  }
 ]
