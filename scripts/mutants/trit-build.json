@@ -192,12 +192,12 @@
   "filter": "direct::netlist::tests::verilog_xor_becomes_classic_xor2"
  },
  {
-  "name": "fold: 常量节点不参与折叠",
-  "file": "crates/trit-build/src/direct/fold.rs",
+  "name": "refold: 常量节点不参与回折",
+  "file": "crates/trit-build/src/direct/fold/refold.rs",
   "old": "            Op::Const(value) => Some(value),",
   "new": "            Op::Const(_) => None,",
   "pkg": "trit-build",
-  "filter": "direct::fold::tests::all_constant_tree_collapses_to_one_const"
+  "filter": "direct::fold::refold::tests::refold_closes_not_of_collapsed_constant"
  },
  {
   "name": "fold: Xor2 借用 Ł3 异或",
@@ -598,5 +598,21 @@
   "new": "    .then_some(Ternary::True)",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
+ },
+ {
+  "name": "refold: 不折常量 Not",
+  "file": "crates/trit-build/src/direct/fold/refold.rs",
+  "old": "            Op::Not(inner) => values[inner].map(|value| alg.not(value)),",
+  "new": "            Op::Not(_) => None,",
+  "pkg": "trit-build",
+  "filter": "direct::fold::refold::tests::true_const::refold_folds_not_of_true_constant"
+ },
+ {
+  "name": "fold: 跳过化简后回折",
+  "file": "crates/trit-build/src/direct/fold.rs",
+  "old": "    cse::cse(refold::refold(ops, alg))",
+  "new": "    cse::cse(ops)",
+  "pkg": "trit-build",
+  "filter": "direct::fold::refold::tests::refold_closes_not_of_collapsed_constant"
  }
 ]

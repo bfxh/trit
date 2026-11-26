@@ -291,6 +291,18 @@
       "lines": 136
     },
     {
+      "file": "crates/trit-build/src/direct/fold/refold.rs",
+      "lines": 49
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/refold/tests.rs",
+      "lines": 19
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/refold/tests/true_const.rs",
+      "lines": 13
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
       "lines": 57
     },
