@@ -1133,6 +1133,12 @@ bootstrap 只重采样 test，不能当独立多重检验。详见
 > `l6-int4` 是真 bits4，两者可直接当成 ternary→4-bit。L6 真 f32→int4
 > 为 `−0.004964`（logreg）/`−0.006079`（SVC），CI 都跨 0；旧
 > `int4−f32≈+0.0060` 不作数。详见 `WSP-BUDGET-RESULTS.md` §11.28。
+>
+> **M1.29 追加**：把 L12 的 `int3`/`R12` 和 L6 的 `int3`/`rescan-k2`
+> 也在真 f32 上重跑，所有量化档都低于真 f32。L12 `int3` 为 `−1.97pp`、
+> `R12` 为 `−2.30pp`（两个 CI 整段为负）；L6 的 `int3/int4/rescan`
+> 为 `−0.33/−0.50/−0.83pp`（CI 都跨 0）。旧表里非 int4 的量化“增益”
+> 也是 ternary 锚点伪影。详见 `WSP-BUDGET-RESULTS.md` §11.29。
 
 M1.23 直接看 `r = x_int4 − x_f32`。SST-2 L12 上只用 `r` 训练同一个线性
 probe 就有 `0.832510`，比 f32 `0.800110` 高 `+3.23pp`，接近 int4
