@@ -5755,21 +5755,35 @@ Hate 有效。
 
 ### 11.38.7 复算
 
+M1.38 的 5 个脚本已入库到 `docs/research/scripts/wsp_m138/`：`hate_domain_audit.py`、
+`matched_prior_full.py`、`make_matched_prior_tsv.py`，以及它们依赖的
+`cv_seed_stability.py`、`matched_c_full.py`。以下命令在仓库根执行；默认读
+`./trit-results`，可用 `TRIT_RESULTS` 指向实际 embedding 根，`TRIT_GEOM_OUT`
+覆盖中间 JSON/f32 目录，`TRIT_DATA_DIR` 控制 TSV 输出目录，
+`TRIT_L12_TOKENIZER` 覆盖 tokenizer id/路径。
+
 ```bash
+export TRIT_RESULTS=/path/to/trit-results   # 默认 ./trit-results
+export TRIT_DATA_DIR=docs/research/data     # 默认仓库 docs/research/data
+
 # 域分类器、长度分桶、双向迁移、f32 阈值敏感性
-python geometry/hate_domain_audit.py
+python docs/research/scripts/wsp_m138/hate_domain_audit.py
 
 # 6 个 case 的 target-prior 全臂矩阵（每 case 60 行）
-python geometry/matched_prior_full.py --dataset sst2 --depth l12
-python geometry/matched_prior_full.py --dataset sst2 --depth l6
-python geometry/matched_prior_full.py --dataset cola --depth l12
-python geometry/matched_prior_full.py --dataset cola --depth l6
-python geometry/matched_prior_full.py --dataset hate --depth l12
-python geometry/matched_prior_full.py --dataset hate --depth l6
+python docs/research/scripts/wsp_m138/matched_prior_full.py --dataset sst2 --depth l12
+python docs/research/scripts/wsp_m138/matched_prior_full.py --dataset sst2 --depth l6
+python docs/research/scripts/wsp_m138/matched_prior_full.py --dataset cola --depth l12
+python docs/research/scripts/wsp_m138/matched_prior_full.py --dataset cola --depth l6
+python docs/research/scripts/wsp_m138/matched_prior_full.py --dataset hate --depth l12
+python docs/research/scripts/wsp_m138/matched_prior_full.py --dataset hate --depth l6
 
 # 合并 360 行 raw、72 行 summary、36 行 default 对照、24 行 f32
-python geometry/make_matched_prior_tsv.py
+python docs/research/scripts/wsp_m138/make_matched_prior_tsv.py
 ```
+
+本次已在原结果上重跑域审计与 matched-prior 汇总两条链路，8 张 TSV 的
+SHA256 与仓库文件一致；`matched_prior_full.py` 的重跑仍沿用同一批
+WSPEMB/f32，未重新编码。
 
 表见：
 

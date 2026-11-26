@@ -64,6 +64,10 @@
   `wsp-classify-matched-prior-vs-default.tsv`（36 行）、
   `wsp-classify-matched-prior-f32.tsv`（24 行）；`WSP-BUDGET-RESULTS.md`
   新增 §11.38、§12 读法，并给 §11.15/§11.35/§11.37 补阈值注记。
+- 复算脚本入库 `docs/research/scripts/wsp_m138/`（5 个文件，含
+  `cv_seed_stability.py` / `matched_c_full.py` 依赖）；支持
+  `TRIT_RESULTS` / `TRIT_GEOM_OUT` / `TRIT_DATA_DIR` /
+  `TRIT_L12_TOKENIZER`。已在原结果上复算 8 张 TSV，SHA256 全部一致。
 
 ### Changed（M1.37：nested CV 全矩阵与 OOF/test 分布差）
 
