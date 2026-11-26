@@ -96,11 +96,11 @@ fn render_is_linear_not_a_truth_table() {
     let vars = expr.variables();
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
     assert!(
-        source.contains("int8_t trit_direct(const int8_t *vars, unsigned nvars)"),
+        source.contains("int8_t trit_direct(const int8_t *v, unsigned n)"),
         "{source}"
     );
     assert!(source.contains("T_AND["), "{source}");
-    assert!(source.contains("-("), "{source}");
+    assert!(source.contains("-v["), "{source}");
     assert!(!source.contains("T_NOT"), "{source}");
     assert!(
         !source.contains("TRIT_TABLE"),
@@ -114,11 +114,8 @@ fn variable_order_is_respected() {
     let expr = Parser::parse("b & a").expect("解析");
     let vars = vec!["a".to_string(), "b".to_string()];
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-    // 后序：b 先取 vars[1]，a 取 vars[0]；两个单用输入并进根返回。
-    assert!(
-        source.contains("return T_AND[3*vars[1]+vars[0]+4];"),
-        "{source}"
-    );
+    // 后序：b 先取 v[1]，a 取 v[0]；两个单用输入并进根返回。
+    assert!(source.contains("return T_AND[3*v[1]+v[0]+4];"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
 }
 

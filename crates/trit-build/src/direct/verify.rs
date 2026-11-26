@@ -89,7 +89,7 @@ fn driver_source(nvars: usize) -> String {
         "#include <stdint.h>\n\
          #include <stdio.h>\n\
          #include <stdlib.h>\n\n\
-         int8_t trit_direct(const int8_t *vars, unsigned nvars);\n\n\
+         int8_t trit_direct(const int8_t *v, unsigned n);\n\n\
          int main(int argc, char **argv) {{\n\
          \x20   if (argc != 2) {{ fprintf(stderr, \"usage: %s truth.csv\\n\", argv[0]); return 2; }}\n\
          \x20   FILE *file = fopen(argv[1], \"r\");\n\

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Changed（第五十五轮：direct 生成 C 词法压缩）
+
+- `direct/emit/format/table.rs`：运算符表声明从 `static const int8_t T_AND[9] = { -1, -1, ..., };`
+  改成 `static const int8_t T_AND[]={-1,-1,...};`：省掉显式长度、等号两侧空格、每项前空格与
+  末尾逗号，每张表固定少 14 B；表值仍由 `Algebra` 现算，语义不变。
+- `direct/emit/body.rs` / `inline/expr.rs`：生成函数参数从 `vars` / `nvars` 缩短为 `v` / `n`
+  （C 参数名不是 ABI），变量叶子写 `v[i]`；每次变量引用少 3 B，`n` 的两处各少 4 B。
+- `direct/emit/format.rs`：`Not` 直接写 `-expr`，只在子表达式本身以 `-` 开头时补括号，
+  避免拼成 `--` 记号；每个存活取反少 2 B。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 517→469 B、
+  `((a & b) | c) & (d | e)` 558→504 B、混合式 622→560 B、11 变量 753→665 B、
+  深链 579→522 B、`a & b` 434→403 B、`(!a) => (!b)` 431→398 B、
+  `(!a) <=> (!b)` 435→404 B、`(!(a & b)) => (!(c | d))` 540→487 B、
+  `!a` / `a <=> 0` 347→331 B；12 变量 dense 842→739 B、8 变量高复用 753→687 B。
+- 判据：`direct_c_size.rs` 11 个预算按新产物收紧；三代数 `--verify-c` 对 11 变量
+  （177147 行）、dense（531441 行）、高复用（19683 行）与深链（729 行）全过；
+  `cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+ 集成全绿；
+  `mutation_check --pkg trit-build` 95/95 caught（新增表值加一、取反丢负号两条）；
+  clippy、fmt、rustdoc、docs、module budget、test surface 与 alloc guard 全绿。
+
 ### Changed（第五十四轮：direct 表索引化简为 `3*l+r+4`，删除 helper）
 
 - `direct/emit/inline.rs`：二元调用的表索引从 `[(l+1)*3+(r+1)]` 改成 `[3*l+r+4]`；

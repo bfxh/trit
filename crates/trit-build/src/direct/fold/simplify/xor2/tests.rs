@@ -113,7 +113,7 @@ fn netlist_xor_with_constants_does_not_register_xor2_table() {
         assert!(!c.contains("T_XOR2"), "{design}: {c}");
         assert!(!c.contains("T_NOT"), "{design}: {c}");
         assert!(
-            c.contains("return -(") || c.contains("return vars[0];"),
+            c.contains("return -") || c.contains("return v[0];"),
             "{design}: {c}"
         );
     }

@@ -742,5 +742,21 @@
   "new": "Op::And(left, right) => bin(\"T_OR\", *left, *right),",
   "pkg": "trit-build",
   "filter": "shared_and_stays_a_separate_statement"
+ },
+ {
+  "name": "format: 表值整体加一",
+  "file": "crates/trit-build/src/direct/emit/format/table.rs",
+  "old": "|value| value.to_string()",
+  "new": "|value| (*value + 1).to_string()",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_verilog_every_row"
+ },
+ {
+  "name": "format: 取反丢负号",
+  "file": "crates/trit-build/src/direct/emit/format.rs",
+  "old": "        format!(\"-{inner}\")",
+  "new": "        format!(\"{inner}\")",
+  "pkg": "trit-build",
+  "filter": "single_use_and_is_inlined_into_not"
  }
 ]
