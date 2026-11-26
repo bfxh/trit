@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+### Changed（M1.38：Hate 域/阈值分解与目标先验阈值复验）
+
+- 对 Hate 的 20–22pp 差距做三组拆分：train/test 文本域分类器、
+  token 长度分桶、目标先验阈值；再把同一阈值规则套到 M1.35 的
+  全部 36 个 matched-C 比较。仍冻结编码器，只训练线性 probe。
+- 域分类器（词 1–2 gram TF-IDF，5 折内重拟合）：Hate AUC `0.921051`、
+  acc `0.853400`；SST-2 `0.490853/0.648095`；CoLA `0.686817/0.807380`。
+  Hate 的长度单特征 AUC 只有 `0.561306`；test `>64` token 占 `12.77%`
+  （train `4.50%`），但 f32 的 `>64` 与 `≤64` 准确率只差 `1.12pp`。
+  **长度/截断不是 20pp 主因，文本域迁移才是。**
+- f32 logreg（C=1）Hate test：L12 默认 0.5 `0.574250`、预测正例率
+  `0.734089`；target-prior（目标分数分位匹配 train 先验 `0.420812`，
+  不用 test 标签）`0.634236`、预测正例率 `0.420995`（回收 `6.00pp`）。
+  L6 默认 `0.546086`、预测正例 `0.750549`；target-prior `0.633504`
+  （回收 `8.74pp`）。校准后仍差 L12 `12.97pp`、L6 `11.77pp`。
+  `test_prior`/`oracle` 用 test 标签，仅诊断（`0.635699/0.645208`、
+  `0.634967/0.646306`）。
+- 双向迁移：Hate L12 train OOF `0.771998`、test 内部 `0.763934`、
+  train→test `0.574250`、test→train `0.623484`；L6 为
+  `0.762671/0.751205/0.546086/0.614135`。两个方向都远低于 in-domain，
+  不是单一方向标签错位。
+- 全臂复验：36 个比较、5 seed、180 CI。默认阈值 **0 正 / 41 负 /
+  139 跨**，36 个比较 0 个出现正 CI，与 M1.35 一致；target_prior
+  **23 正 / 30 负 / 127 跨**，6 个比较出现正 CI，全部在 Hate，SST-2/
+  CoLA 仍 0 正。default→target 为 `6 gain / 30 same / 0 loss`。
+- 6 个正比较：Hate L12 `R12` logreg 5/5（`+1.83pp`）、SVC 4/5；
+  Hate L6 `rescan` logreg 5/5（`+2.72pp`）、SVC 5/5（`+2.55pp`）；
+  Hate L6 `int4` SVC 3/5（`+1.10pp`）、`int3` logreg 1/5
+  （`+1.39pp`）。`R12`/`rescan` 的 test AUC 也高于 f32（L12 约
+  `+1.2–1.5pp`，L6 约 `+2.8–3.7pp`），不是纯阈值伪影。
+- 判决：**默认 0.5 的官方 test 主判决不变（0/36 正，f32 锚点）；
+  target_prior 只给出 Hate-only、后验校准的条件性候选，不能写成
+  量化普遍增益。** M1.37 的“R12 跨域不成立”应加“默认阈值”限定；
+  但 target_prior 是 transductive、非预注册规则，`R12`/`rescan` 仍不能
+  直接发布，需预注册独立数据/切分 confirmatory test。
+- 新增 `wsp-classify-domain-shift.tsv`（3 行）、
+  `wsp-classify-hate-transfer.tsv`（8 行）、
+  `wsp-classify-hate-threshold.tsv`（8 行）、
+  `wsp-classify-hate-length-buckets.tsv`（6 行）、
+  `wsp-classify-matched-prior-raw.tsv`（360 行）、
+  `wsp-classify-matched-prior-summary.tsv`（72 行）、
+  `wsp-classify-matched-prior-vs-default.tsv`（36 行）、
+  `wsp-classify-matched-prior-f32.tsv`（24 行）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.38、§12 读法，并给 §11.15/§11.35/§11.37 补阈值注记。
+
 ### Changed（M1.37：nested CV 全矩阵与 OOF/test 分布差）
 
 - 把 M1.36 的 nested CV 扩到 6 个 `dataset×depth`、两个 probe、
