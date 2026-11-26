@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Fixed（第四十六轮：RE 边收割溢出与 TTX3 幽灵级）
+
+- `trit-re/functions/cfg`：x86 `E8`/`E9` 边收割的 `base + index` 改为 `checked_add`，节基址
+  贴近 `u64::MAX` 时跳过溢出位置而不是在 debug 构建里 panic（#707）。ARM64 分支已在
+  第四十轮硬化，本轮只补齐同族 x86 位点；测试模块拆到 `cfg/tests.rs`，新增
+  `edges_from_near_u64_max_are_skipped_not_panicking`。
+- `trit-texture/ttx3`：`Ttx3Archive::parse` 在构造视图前调用 `levels::validate_chain`：
+  每级复用 `validate_dims`（零尺寸/非法边长在 `tile_grid` 之前拒绝），相邻级尺寸不得增大
+  或完全相同，级目录偏移必须等于编码端封闭布局（头部 + 级目录 + 逐级瓦片目录与载荷）。
+  因此 `level_count` 谎报时多读出的“级条目”（实际是瓦片目录字节）会在解析期被拒绝，
+  不再生成幽灵级（#708）。新增 `tests/ttx3_ghost.rs` 4 条：零尺寸、相同/增大尺寸、
+  谎报级数，以及“宽不变、高继续减半”的非方形合法链防误杀。
+- 判据：`cargo test -p trit-re -p trit-texture` 137 + 62 单元及全部集成测试通过；
+  `clippy -D warnings`、`fmt --check`、`RUSTDOCFLAGS=-D warnings cargo doc`、
+  `module_budget`、`test_surface`（3831 条）、`docs_hygiene`、`alloc_guard` 干净；
+  `mutation_check --pkg trit-re --pkg trit-texture` 58/58 捕获、0 存活。
+- 边界：TTX3 的级目录账本按编码端封闭布局对账；手写档案若故意在尾部追加字节仍可解析，
+  但级目录偏移不再能指向任意文件内位置。级链规则只允许“宽或高不增、且不同时相等”，
+  覆盖标准减半链与宽先到瓦片下限的链。
+
 ### Fixed（第四十五轮：机器入口的资源上界）
 
 - `trit-machines/ca`：`run` / `survey` 返回 `Result`，入口先按 `width/steps` 预算校验；历史格子、

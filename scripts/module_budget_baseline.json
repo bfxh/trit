@@ -4540,7 +4540,11 @@
     },
     {
       "file": "crates/trit-re/src/functions/cfg.rs",
-      "lines": 518
+      "lines": 343
+    },
+    {
+      "file": "crates/trit-re/src/functions/cfg/tests.rs",
+      "lines": 193
     },
     {
       "file": "crates/trit-re/src/functions/cooccurrence.rs",
@@ -5123,6 +5127,10 @@
       "lines": 122
     },
     {
+      "file": "crates/trit-texture/src/ttx3/levels.rs",
+      "lines": 56
+    },
+    {
       "file": "crates/trit-texture/src/ttx3/mod.rs",
       "lines": 609
     },
@@ -5157,6 +5165,10 @@
     {
       "file": "crates/trit-texture/tests/ttx3_alias_policy.rs",
       "lines": 258
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx3_ghost.rs",
+      "lines": 72
     },
     {
       "file": "crates/trit-texture/tests/ttx3_hostile_parse.rs",
