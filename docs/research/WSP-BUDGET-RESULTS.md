@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.36 完成（§11.36）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子。
+> 状态：M1.37 完成（§11.37）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵与 OOF/test 分布差审计。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -5156,6 +5156,11 @@ f32 自己在 test 上从 C=1 的 `0.546086` 掉到 `0.533285`，而 rescan
   nested CV。只有 3 个数据集、2 个深度、2 个线性头；没有 MLP、没有
   encoder 微调、没有 MNLI。不能把“matched-C 无正向”外推成“任何量化
   格式在任何任务上都不可能有益”。
+- **M1.37 追加的跨域提醒**：Hate 的官方 test 相对 train 有约
+  `20–22pp` 的 f32 差距，test 内部 5 折仍有 `0.751–0.764`；因此
+  §11.35 的 Hate test 读数是跨域读数。Hate L12 `R12` 在 OOF 上正向、
+  test 上 5/5 负向，说明该臂的量化效应不跨域；不能把 §11.35 的
+  Hate 负向当作 in-domain 量化损失的上界（§11.37）。
 
 ### 11.35.7 复算
 
@@ -5320,6 +5325,161 @@ rescan_delta`）与 `data/wsp-classify-nested-cv-hate-l6-summary.tsv`
 （6 行数据、14 列，含 `n_pos_verdict/n_neg_verdict/n_cross/n_pos_point/
 mean_delta/sd_delta/min_delta/max_delta/C_by_seed`）。
 
+## 11.37 nested CV 全矩阵：OOF 正向只在 Hate，且与官方 test 反向（M1.37）
+
+### 11.37.1 问题
+
+M1.36 只对 Hate L6 一个格子做了 nested CV：OOF 里 2 个显著正向、
+0 个显著负向。它留下两个未决问题：
+
+1. 这个弱正向是 Hate L6 独有，还是其他 `dataset×depth` 也有？
+2. M1.35 的官方 test matched-C 是 0 正 / 41 负 / 139 跨；如果 OOF
+   出现正向，应该信 OOF 还是信 test？
+
+M1.37 把 M1.36 的 nested CV 口径扩到全部 6 个 `dataset×depth`、
+两个 probe、5 个 outer seed，得到 180 个 OOF CI；再把同一批比较与
+M1.35 的 official test 并排，专门看“OOF 正向是否能在 test 上留下
+同号证据”。
+
+### 11.37.2 口径
+
+- 数据：SST-2、CoLA、TweetEval hate 的 L12/L6；每个 case 只用
+  train 做 outer/inner CV，官方 test 不参与选 C、训练或评分。
+- outer：`StratifiedKFold(5, shuffle=True, random_state=outer_seed)`，
+  outer seed `7/13/19/31/43`；每个 outer seed 生成一套覆盖全部 train
+  的 OOF 预测。
+- inner：每个 outer-train 内再做
+  `StratifiedKFold(5, shuffle=True, random_state=7)`，只在 **真 f32**
+  上选 C；f32 与全部量化臂共用该 C，在 outer-train 上重训，预测
+  outer-val。C grid `(0.01,0.1,1.0,10.0)`。
+- probe：`logreg` 与 `linear_svc`。SST-2/hate 用 accuracy、无类别
+  权重；CoLA 用 balanced + macro-F1。
+- 每个 `case×probe×outer_seed×arm` 对 f32 做 10k paired bootstrap
+  （同一组 OOF 重采样索引同时用于臂与 f32）：`6 case ×2 probe ×
+  5 seed ×3 arm = 180` 个 CI。`C_by_fold` 与 `fold_deltas` 落在原始表，
+  便于复核。
+- 这是 nested procedure 的 OOF 读数，不是官方 test 读数；两者的样本
+  量、分布和 C 选择都不同，不能直接拼成一张显著性表。
+
+### 11.37.3 总读数：5 正 / 52 负 / 123 跨 0
+
+180 个 CI 的判决：
+
+| 判决 | 个数 |
+|---|---:|
+| CI 整段 `>0` | **5** |
+| CI 整段 `<0` | **52** |
+| CI 跨 0 | **123** |
+| 合计 | **180** |
+
+按 36 个比较汇总：**4 个比较出现过正 CI，15 个出现过负 CI，
+17 个全跨 0**；没有任何比较同时出现正和负 CI。正向全部集中在
+Hate，SST-2/CoLA 的 24 个比较没有任何正 CI：
+
+| case | OOF 正/负/跨 | test 正/负/跨 | f32 OOF | f32 test（C=1） | test−OOF |
+|---|---|---:|---:|---:|---:|
+| SST-2 L12 | 0/21/9 | 0/20/10 | `0.829350` | `0.842943` | `+1.36pp` |
+| SST-2 L6 | 0/25/5 | 0/0/30 | `0.806965` | `0.811642` | `+0.47pp` |
+| CoLA L12 | 0/5/25 | 0/0/30 | `0.569747` | `0.549921` | `−1.98pp` |
+| CoLA L6 | 0/1/29 | 0/5/25 | `0.546212` | `0.553124` | `+0.69pp` |
+| Hate L12 | 3/0/27 | 0/16/14 | `0.771998` | `0.574250` | `−19.78pp` |
+| Hate L6 | 2/0/28 | 0/0/30 | `0.762671` | `0.546086` | `−21.66pp` |
+
+- SST-2/CoLA 的 OOF 负向明显多于 test：OOF 的 n 更大、C 由内层
+  选择，能分辨 `−0.5` 到 `−1.5pp` 的量化损失；test 的 n 小，很多
+  CI 跨 0。这些负向不是新增益，也不改变“没有量化档超过 f32”。
+- Hate 的方向相反：OOF 没有负向，反而有 5 个正向；test 却有 16 个
+  负向。Hate L12 的 `R12` 是最明显的反向格。
+
+5 个显著正向的具体读数：
+
+| case | probe | arm | outer seed | Δ | 95% CI |
+|---|---|---|---|---:|---:|
+| Hate L12 | logreg | R12 | 7 | `+0.009238`（`+0.924pp`） | `[+0.002671,+0.016027]` |
+| Hate L12 | logreg | R12 | 13 | `+0.010239`（`+1.024pp`） | `[+0.003673,+0.016694]` |
+| Hate L12 | linear_svc | R12 | 13 | `+0.008792`（`+0.879pp`） | `[+0.002115,+0.015248]` |
+| Hate L6 | logreg | rescan | 7 | `+0.008570`（`+0.857pp`） | `[+0.001558,+0.015582]` |
+| Hate L6 | logreg | int3 | 43 | `+0.007902`（`+0.790pp`） | `[+0.001336,+0.014580]` |
+
+### 11.37.4 OOF 正向与 test 反向：Hate 是跨域读数
+
+Hate L12 的 `R12` 在 OOF 与 test 上方向相反：
+
+- OOF logreg `R12` 5-seed 均值 `+0.6767pp`（sd `0.3015pp`），
+  5/5 点估计为正，2/5 CI 显著正；SVC `R12` 均值 `+0.6477pp`
+  （sd `0.1785pp`），5/5 点正，1/5 CI 显著正。
+- 同一比较在官方 matched-C test 上：logreg 均值 `−1.3533pp`、
+  SVC `−1.4411pp`，两个 probe 都是 **5/5 CI 整段为负**（M1.35）。
+- OOF 的正向与 test 的负向相差约 `2pp`，不是“样本量不够”能解释的；
+  这是同一批文本在 train 内与官方 test 上的方向翻转。
+
+原因不是标签错位或 embedding 错配：Hate L12 的真 f32 在官方 test
+上同样只有 `0.574250`，而 train OOF 是 `0.771998`；对 Hate test 做
+内部 5 折（固定 C=1，只用于诊断标签可学性，不参与选 C 或最终结论），
+f32 为 `0.763934`（范围 `0.762620–0.765909`）。test 标签本身是可学的，
+`0.574` 是 train→test 迁移失败，不是标签噪声。Hate L6 同向：
+OOF `0.762671`、test `0.546086`、test 内部 5 折 `0.751205`。
+
+因此，**Hate 的官方 test 在这套切分上是跨域读数**；M1.31/M1.35/
+M1.36 的 Hate test 数字仍可作为“跨域 test 上的相对比较”，但不能
+当作 in-domain 量化损失的上界，也不能把 Hate OOF 的正向直接搬到
+test。SST-2/CoLA 的 OOF 与 test 差距只有 `−1.98` 到 `+1.36pp`，
+没有出现 Hate 这种 20pp 级迁移差。
+
+### 11.37.5 判决
+
+- **OOF 全矩阵没有改变分类头的主判决：官方 test 上 0 个量化档
+  显著超过真 f32。** M1.37 的 5 个正 CI 全部在 Hate，且：
+  - Hate L12 `R12` 在 test 上是 5/5 显著负向，属于反向，不能升级；
+  - Hate L6 `rescan`/`int3` 在 test 上点估计为正但 5/5 CI 跨 0，
+    仍只是弱候选。
+- **OOF 也不是“量化无损”的证据。** 52 个负 CI 全部来自 SST-2/CoLA
+  （SST-2 46、CoLA 6；Hate 0）；其中 SST-2 L6 25 个、CoLA L12 5 个、
+  CoLA L6 1 个。量化在这些 case 的 train 分布内会掉点，只是官方 test
+  的样本量/分布没有把同样的损失分辨出来。
+- **Hate L6 `rescan` 仍是最接近的弱候选，但不能发布。** 它的 OOF
+  5-seed 均值 `+0.5899pp`、5/5 点正、1/5 CI 显著；官方 matched-C
+  test 均值 `+1.0534pp` 但 5/5 CI 跨 0。点方向在两种口径下同号，
+  但没有任何一个 test CI 整段为正。
+- **Hate L12 `R12` 是新的 OOF-only 候选，必须降级为“跨域不成立”。**
+  它在 OOF 的 2/5 logreg +1/5 SVC CI 显著，但 test 5/5 负向；这比
+  “不显著”更强，因为它给出了相反方向的证据。
+- **分类头这条线可以收口。** 继续加 seed、加 C 或换 probe 不会改变
+  “官方 test 无正向”的主结论；若还要继续，应做预注册的新数据集或
+  新切分 confirmatory test，而不是在同一批 Hate train 上再调 C。
+- 边界：5 个 outer seed 不是独立重复；bootstrap 只重采样 OOF，
+  不覆盖训练方差；只训练线性 probe，冻结编码器；没有 MLP、没有
+  encoder 微调、没有 MNLI；OOF 与 test 的样本量和分布不同，不能
+  把 180 个 OOF CI 与 180 个 test CI 混成一张表。
+
+### 11.37.6 复算
+
+```bash
+# 6 个 case，每个跑 2 probe ×5 outer seed，落盘 30 行
+python geometry/nested_cv_matrix.py --dataset sst2 --depth l12
+python geometry/nested_cv_matrix.py --dataset sst2 --depth l6
+python geometry/nested_cv_matrix.py --dataset cola --depth l12
+python geometry/nested_cv_matrix.py --dataset cola --depth l6
+python geometry/nested_cv_matrix.py --dataset hate --depth l12
+python geometry/nested_cv_matrix.py --dataset hate --depth l6
+
+# 合并 180 个 CI、36 行汇总、36 行 test 对照、6 行 OOF/test 差距
+python geometry/make_nested_matrix_tsv.py
+python geometry/make_nested_vs_test_tsv.py
+```
+
+表见 `data/wsp-classify-nested-cv-matrix.tsv`（180 行数据、17 列：
+`dataset depth probe arm metric outer_seed inner_seed n_oof f32_score
+arm_score point_delta boot_mean ci_low ci_high verdict C_by_fold
+fold_deltas`）、`data/wsp-classify-nested-cv-matrix-summary.tsv`
+（36 行数据、17 列，含 `n_pos_ci/n_neg_ci/n_cross_ci/n_pos_point/
+any_positive/mean_point/sd_point/min_point/max_point/mean_boot/
+C_by_seed`）、`data/wsp-classify-nested-vs-test.tsv`（36 行数据、
+18 列，含 `test_n_pos/test_n_neg/test_n_cross/oof_n_pos/oof_n_neg/
+oof_n_cross/conflict`）与 `data/wsp-classify-oof-test-gap.tsv`
+（6 行数据、16 列，含 `f32_oof_mean/test_f32_c1/
+test_internal_cv_mean/oof_test_gap_pp`）。
+
 ## 12. 下一步
 
 > **M1.28 读法**：本节及历史 §11.12–§11.25 中所有 SST-2 的 `f32` 读数
@@ -5382,6 +5542,18 @@ mean_delta/sd_delta/min_delta/max_delta/C_by_seed`）。
 > `0.761–0.767`，官方 test 只有 `0.533–0.556`，约 `21pp` 分布差，
 > 不能把 OOF 弱正向搬到 test。**`rescan` 不是纯噪声，但也不是可
 > 发布增益；f32 继续是默认锚点。** 见 §11.36。
+>
+> **M1.37 读法**：把 nested CV 扩到全部 6 个 `dataset×depth`、两个
+> probe、5 个 outer seed，共 180 个 OOF CI：5 个显著正向、52 个
+> 显著负向、123 个跨 0；36 个比较里 4 个出现过正 CI、15 个出现过
+> 负 CI、17 个全跨。正向全部在 Hate：L12 `R12`（2/5 logreg +1/5
+> SVC）与 L6 `rescan`/`int3`（各 1/5 logreg）。但 Hate L12 `R12`
+> 在官方 test 上是 5/5 显著负向（OOF `+0.68pp` vs test `−1.35pp`），
+> 属于方向反转；Hate L6 `rescan`/`int3` 在 test 上点正但 5/5 CI
+> 跨 0。Hate 的 OOF/test f32 差约 `20–22pp`，test 内部 5 折仍有
+> `0.751–0.764`，说明是跨域迁移，不是标签噪声。**OOF 全矩阵没有
+> 改变主判决：官方 test 上 0 个量化档显著超过 f32；`R12` 的 OOF
+> 正向是跨域不成立的候选，`rescan` 仍只是弱候选。** 见 §11.37。
 
 - **M1.26 基线审计已完成（§11.26）**：SST-2 L12 的 `l12-pure-f32` 是
   ternary，真实 f32→int4 为 `−0.001503`（CI `[−0.012081,+0.008786]`），

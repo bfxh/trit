@@ -1189,6 +1189,18 @@ bootstrap 只重采样 test，不能当独立多重检验。详见
 > 约 `21pp` 分布差，不能把 OOF 弱正向搬到 test。**`rescan` 不是
 > 纯噪声，但也不是可发布增益；f32 继续是默认锚点。** 详见
 > `WSP-BUDGET-RESULTS.md` §11.36。
+>
+> **M1.37 追加**：nested CV 全矩阵。6 个 `dataset×depth` ×2 probe ×
+> 5 outer seed，180 个 OOF CI：5 个显著正向、52 个显著负向、123 个
+> 跨 0；36 个比较里 4 个出现过正 CI、15 个出现过负 CI、17 个全跨。
+> 正向全部在 Hate：L12 `R12`（2/5 logreg +1/5 SVC）与 L6
+> `rescan`/`int3`（各 1/5 logreg）。但 Hate L12 `R12` 在官方 test
+> 上是 5/5 显著负向（OOF `+0.68pp` vs test `−1.35pp`），方向反转；
+> Hate L6 两个弱候选在 test 上点正但 5/5 CI 跨 0。Hate 的 OOF/test
+> f32 差约 `20–22pp`，test 内部 5 折仍有 `0.751–0.764`，是跨域
+> 迁移而非标签噪声。**OOF 全矩阵没有改变主判决：官方 test 上 0
+> 个量化档显著超过 f32；`R12` 的 OOF 正向是跨域不成立的候选，
+> `rescan` 仍只是弱候选。** 详见 `WSP-BUDGET-RESULTS.md` §11.37。
 
 M1.23 直接看 `r = x_int4 − x_f32`。SST-2 L12 上只用 `r` 训练同一个线性
 probe 就有 `0.832510`，比 f32 `0.800110` 高 `+3.23pp`，接近 int4
