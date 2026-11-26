@@ -478,6 +478,15 @@
     个比较；0 个显著正、9 个显著负、27 个跨 0。判决要报完整分母和
     三类计数，不能只挑最好的臂（M1.33）。
 
+49. **per-arm C 选择会制造假显著，量化对比要用 matched-C 或 nested CV**。
+    M1.33 的 36 个判决只用一个 CV seed；M1.34 换 5 个 seed 后发现
+    Hate L6 `logreg int3` 在 4/5 seed 显著正向（`+1.71pp`），原因是
+    f32 选 C=10、int3 选 C=1；matched-C 的 C=1/10 下只有
+    `+0.44pp/+0.15pp` 且 CI 跨 0。同一机制也让 `int4` 的“显著负向”
+    在 seed 43 翻正。**per-arm C 的显著性不能当量化增益/损失证据；
+    必须报 matched-C 控制，并把 `delta` 标明是点估计还是 bootstrap
+    均值**（M1.34）。
+
 ## 4. 工程经验
 
 - **`enable f16;` 是模块级开关**：放进共享着色器，会让不支持 `SHADER_F16` 的 adapter

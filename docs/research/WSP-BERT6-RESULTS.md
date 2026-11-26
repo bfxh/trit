@@ -1164,6 +1164,14 @@ bootstrap 只重采样 test，不能当独立多重检验。详见
 > SST-2 L12 的 `int3`/`R12`、hate L12 的 `R12`、hate L6 的 `int4`
 > 都是显著负向。分类头继续用 f32 锚点，不提升任何量化档。详见
 > `WSP-BUDGET-RESULTS.md` §11.33。
+>
+> **M1.34 追加**：M1.33 的 `0/9/27` 只是 seed 7 的 C 选择结果。5 个
+> CV seed 下 29/36 点估计同号、7 个翻号；9 个负向只有 6 个在 5/5
+> seed 仍为负。Hate L6 `logreg int3` 在 4/5 seed 变显著正向
+> （`+1.71pp`），但 matched-C 的 C=1/10 下只有 `+0.44pp/+0.15pp`
+> 且 CI 跨 0，是 f32 选 C=10、int3 选 C=1 的错配。分类头仍用 f32
+> 锚点，但分类头结论必须带“seed 7 条件”。详见
+> `WSP-BUDGET-RESULTS.md` §11.34。
 
 M1.23 直接看 `r = x_int4 − x_f32`。SST-2 L12 上只用 `r` 训练同一个线性
 probe 就有 `0.832510`，比 f32 `0.800110` 高 `+3.23pp`，接近 int4
