@@ -19,6 +19,10 @@ matched to the residual standard deviation, and residual scaling.
 Only a linear probe is trained; the encoder is frozen.  The C-selection
 protocol is the same as the classification head (5-fold inside train).
 
+Test-side class-mean controls use the base f32 probe's prediction, never the
+true test label.  Pass ``--legacy-controls`` only to reproduce the M1.23
+oracle table, whose controls leaked ``y_test``.
+
 Example:
   python scripts/wsp_classify_residual.py \
     --texts sst2/data-l12/texts.json \
@@ -177,6 +181,7 @@ def evaluate(
     cv_metric="accuracy",
     bootstrap=0,
     bootstrap_iters=10000,
+    strict_controls=True,
 ):
     texts = json.loads(Path(texts_path).read_text(encoding="utf-8"))["texts"]
     train_idx, test_idx, y_train, y_test = CE._labels(texts)
@@ -230,13 +235,35 @@ def evaluate(
     class_mean_train = {
         label: rest_train[y_train == label].mean(axis=0) for label in (0, 1)
     }
-    class_mean_test = {
-        label: rest_test[y_test == label].mean(axis=0) for label in (0, 1)
-    }
+    if strict_controls:
+        # Use a label-free proxy at test time: the base f32 probe's prediction.
+        # No true test label may enter the feature construction.
+        base_c, _ = CE._select_c(
+            f32_train, y_train, seed, cv_grid, probe, cv_metric, class_weight
+        )
+        base_model, base_scaler = CE._probe(
+            f32_train, y_train, seed, base_c, False, probe, class_weight
+        )
+        proxy_test = base_model.predict(
+            base_scaler.transform(f32_test) if base_scaler is not None else f32_test
+        )
+    else:
+        proxy_test = y_test
     centered_train = rest_train - np.vstack(
         [class_mean_train[label] for label in y_train]
     )
-    centered_test = rest_test - np.vstack([class_mean_test[label] for label in y_test])
+    if strict_controls:
+        centered_test = rest_test - np.vstack(
+            [class_mean_train[label] for label in proxy_test]
+        )
+    else:
+        # M1.23 oracle path: test class means are estimated from true test labels.
+        class_mean_test = {
+            label: rest_test[y_test == label].mean(axis=0) for label in (0, 1)
+        }
+        centered_test = rest_test - np.vstack(
+            [class_mean_test[label] for label in y_test]
+        )
     arms["hybrid_rest_noclassmean"] = (
         f32_train + centered_train,
         f32_test + centered_test,
@@ -252,7 +279,9 @@ def evaluate(
         False,
     )
     class_perm = _within_class_permutation(y_train, rng)
-    class_perm_test = _within_class_permutation(y_test, rng)
+    class_perm_test = _within_class_permutation(
+        proxy_test if strict_controls else y_test, rng
+    )
     arms["hybrid_rest_perm_class"] = (
         f32_train + rest_train[class_perm],
         f32_test + rest_test[class_perm_test],
@@ -356,6 +385,7 @@ def evaluate(
         "probe": probe,
         "class_weight": class_weight,
         "cv_metric": cv_metric,
+        "strict_controls": bool(strict_controls),
         "primary_k": int(primary_k),
         "ks": [int(k) for k in ks],
         "n_train": int(len(y_train)),
@@ -411,6 +441,7 @@ def self_test():
             primary_k=16,
             bootstrap=0,
         )
+    assert result["strict_controls"] is True
     arms = result["arms"]
     assert arms["int4"]["accuracy"] > 0.8
     assert arms["hybrid_rest_k16"]["accuracy"] > arms["f32"]["accuracy"] + 0.05
@@ -454,6 +485,13 @@ def parse_args():
     parser.add_argument("--cv-grid", default="0.01,0.1,1,10")
     parser.add_argument("--bootstrap", type=int, default=0)
     parser.add_argument("--bootstrap-iters", type=int, default=10000)
+    parser.add_argument(
+        "--legacy-controls",
+        action="store_true",
+        help="reproduce M1.23's oracle controls, which use true test labels in "
+        "the test-side class-mean construction (label leakage; not a valid "
+        "control)",
+    )
     parser.add_argument("--out", default="")
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args()
@@ -483,6 +521,7 @@ def main():
         cv_metric=args.cv_metric,
         bootstrap=args.bootstrap,
         bootstrap_iters=args.bootstrap_iters,
+        strict_controls=not args.legacy_controls,
     )
     Path(args.out).write_text(
         json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"

@@ -1,0 +1,9 @@
+dataset	depth	direction	n_train	n_eval	accuracy
+hate	l12	train_oof	8985	8985	0.771998
+hate	l12	test_internal_oof	2734	2734	0.763934
+hate	l12	train_to_test	8985	2734	0.574250
+hate	l12	test_to_train	2734	8985	0.623484
+hate	l6	train_oof	8985	8985	0.762671
+hate	l6	test_internal_oof	2734	2734	0.751205
+hate	l6	train_to_test	8985	2734	0.546086
+hate	l6	test_to_train	2734	8985	0.614135

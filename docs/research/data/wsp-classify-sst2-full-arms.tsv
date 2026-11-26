@@ -1,0 +1,65 @@
+dataset	depth	probe	kind	arm	against	selected_C	accuracy	macro_f1	delta	ci_low	ci_high
+sst2	l12	logreg	arm	true-f32		1.0	0.842943	0.842904			
+sst2	l12	logreg	arm	true-bits4		10.0	0.841296	0.841212			
+sst2	l12	logreg	arm	official-pure-f32		10.0	0.797913	0.797875			
+sst2	l12	logreg	arm	official-int3		1.0	0.823174	0.823109			
+sst2	l12	logreg	arm	official-int4		10.0	0.840198	0.840113			
+sst2	l12	logreg	arm	official-r12		10.0	0.819879	0.819788			
+sst2	l12	logreg	delta	true-bits4	true-f32				-0.001503	-0.012081	0.008786
+sst2	l12	logreg	delta	official-pure-f32	true-f32				-0.044833	-0.064250	-0.025261
+sst2	l12	logreg	delta	official-int3	true-f32				-0.019732	-0.035146	-0.004942
+sst2	l12	logreg	delta	official-int4	true-f32				-0.002625	-0.013180	0.007688
+sst2	l12	logreg	delta	official-r12	true-f32				-0.022967	-0.038440	-0.007688
+sst2	l12	logreg	delta	official-int4	official-int3				0.017107	0.001647	0.032400
+sst2	l12	logreg	delta	official-r12	official-int3				-0.003235	-0.017024	0.010434
+sst2	l12	logreg	delta	official-r12	official-int4				-0.020341	-0.035695	-0.004942
+sst2	l12	logreg	delta	official-int4	official-pure-f32				0.042207	0.023064	0.061505
+sst2	l12	logreg	delta	true-bits4	official-int4				0.001123	-0.001647	0.004393
+sst2	l12	linear_svc	arm	true-f32		0.1	0.842943	0.842918			
+sst2	l12	linear_svc	arm	true-bits4		0.1	0.841845	0.841799			
+sst2	l12	linear_svc	arm	official-pure-f32		1.0	0.797913	0.797896			
+sst2	l12	linear_svc	arm	official-int3		10.0	0.818781	0.818680			
+sst2	l12	linear_svc	arm	official-int4		0.1	0.841845	0.841799			
+sst2	l12	linear_svc	arm	official-r12		0.1	0.814388	0.814327			
+sst2	l12	linear_svc	delta	true-bits4	true-f32				-0.001040	-0.010434	0.008237
+sst2	l12	linear_svc	delta	official-pure-f32	true-f32				-0.044823	-0.064250	-0.025810
+sst2	l12	linear_svc	delta	official-int3	true-f32				-0.024053	-0.040088	-0.008237
+sst2	l12	linear_svc	delta	official-int4	true-f32				-0.001040	-0.010434	0.008237
+sst2	l12	linear_svc	delta	official-r12	true-f32				-0.028556	-0.043932	-0.013180
+sst2	l12	linear_svc	delta	official-int4	official-int3				0.023014	0.007688	0.038440
+sst2	l12	linear_svc	delta	official-r12	official-int3				-0.004502	-0.019220	0.010434
+sst2	l12	linear_svc	delta	official-r12	official-int4				-0.027516	-0.042834	-0.012630
+sst2	l12	linear_svc	delta	official-int4	official-pure-f32				0.043783	0.025261	0.062603
+sst2	l12	linear_svc	delta	true-bits4	official-int4				0.000000	0.000000	0.000000
+sst2	l6	logreg	arm	true-f32		1.0	0.811642	0.811576			
+sst2	l6	logreg	arm	true-bits4		1.0	0.806700	0.806620			
+sst2	l6	logreg	arm	official-pure-f32		10.0	0.795717	0.795678			
+sst2	l6	logreg	arm	official-int3		1.0	0.808347	0.808264			
+sst2	l6	logreg	arm	official-int4		1.0	0.806700	0.806620			
+sst2	l6	logreg	arm	official-rescan-k2		1.0	0.803405	0.803285			
+sst2	l6	logreg	delta	true-bits4	true-f32				-0.004964	-0.013729	0.003844
+sst2	l6	logreg	delta	official-pure-f32	true-f32				-0.015775	-0.035695	0.004393
+sst2	l6	logreg	delta	official-int3	true-f32				-0.003291	-0.017573	0.010983
+sst2	l6	logreg	delta	official-int4	true-f32				-0.004964	-0.013729	0.003844
+sst2	l6	logreg	delta	official-rescan-k2	true-f32				-0.008296	-0.024163	0.007139
+sst2	l6	logreg	delta	official-int4	official-int3				-0.001673	-0.016474	0.012630
+sst2	l6	logreg	delta	official-rescan-k2	official-int3				-0.005005	-0.019769	0.009336
+sst2	l6	logreg	delta	official-rescan-k2	official-int4				-0.003332	-0.019220	0.012081
+sst2	l6	logreg	delta	official-int4	official-pure-f32				0.010811	-0.009336	0.030752
+sst2	l6	logreg	delta	true-bits4	official-int4				0.000000	0.000000	0.000000
+sst2	l6	linear_svc	arm	true-f32		0.1	0.811093	0.811038			
+sst2	l6	linear_svc	arm	true-bits4		0.1	0.805052	0.805006			
+sst2	l6	linear_svc	arm	official-pure-f32		10.0	0.802306	0.802285			
+sst2	l6	linear_svc	arm	official-int3		1.0	0.809445	0.809344			
+sst2	l6	linear_svc	arm	official-int4		0.1	0.805052	0.805006			
+sst2	l6	linear_svc	arm	official-rescan-k2		0.1	0.802856	0.802760			
+sst2	l6	linear_svc	delta	true-bits4	true-f32				-0.006079	-0.014827	0.002746
+sst2	l6	linear_svc	delta	official-pure-f32	true-f32				-0.008571	-0.028556	0.011532
+sst2	l6	linear_svc	delta	official-int3	true-f32				-0.001632	-0.016474	0.013180
+sst2	l6	linear_svc	delta	official-int4	true-f32				-0.006079	-0.014827	0.002746
+sst2	l6	linear_svc	delta	official-rescan-k2	true-f32				-0.008268	-0.024163	0.007139
+sst2	l6	linear_svc	delta	official-int4	official-int3				-0.004447	-0.019769	0.010983
+sst2	l6	linear_svc	delta	official-rescan-k2	official-int3				-0.006636	-0.021980	0.008237
+sst2	l6	linear_svc	delta	official-rescan-k2	official-int4				-0.002189	-0.017573	0.013180
+sst2	l6	linear_svc	delta	official-int4	official-pure-f32				0.002492	-0.017573	0.023064
+sst2	l6	linear_svc	delta	true-bits4	official-int4				0.000000	0.000000	0.000000

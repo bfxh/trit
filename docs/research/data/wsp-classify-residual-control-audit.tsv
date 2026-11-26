@@ -1,0 +1,6 @@
+dataset	depth	arm	m1_23_accuracy	m1_23_gap_vs_f32	legacy_accuracy	strict_accuracy	legacy_gap_vs_f32	strict_gap_vs_f32	note
+sst2	l12	f32	0.800110	+0.000000	0.844591	0.844591	+0.000000	+0.000000	anchor
+sst2	l12	int4	0.840198	+0.040088	0.840198	0.840198	-0.004393	-0.004393	anchor
+sst2	l12	hybrid_rest_k16	0.839649	+0.039539	0.838001	0.838001	-0.006590	-0.006590	primary residual arm
+sst2	l12	hybrid_rest_noclassmean	0.807798	+0.007688	0.867655	0.837452	+0.023064	-0.007139	legacy uses true test labels; strict uses base-probe prediction
+sst2	l12	hybrid_rest_perm_class	0.873696	+0.073586	0.852279	0.825920	+0.007688	-0.018671	legacy permutes within true test classes; strict within predicted classes

@@ -20,6 +20,276 @@
 - 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算行与未验证清单。
 
 诚实边界：仍只覆盖组合逻辑与单一选中输出；没有综合、时序/面积收敛与门级优化。
+### Changed（M1.38：Hate 域/阈值分解与目标先验阈值复验）
+
+- 对 Hate 的 20–22pp 差距做三组拆分：train/test 文本域分类器、
+  token 长度分桶、目标先验阈值；再把同一阈值规则套到 M1.35 的
+  全部 36 个 matched-C 比较。仍冻结编码器，只训练线性 probe。
+- 域分类器（词 1–2 gram TF-IDF，5 折内重拟合）：Hate AUC `0.921051`、
+  acc `0.853400`；SST-2 `0.490853/0.648095`；CoLA `0.686817/0.807380`。
+  Hate 的长度单特征 AUC 只有 `0.561306`；test `>64` token 占 `12.77%`
+  （train `4.50%`），但 f32 的 `>64` 与 `≤64` 准确率只差 `1.12pp`。
+  **长度/截断不是 20pp 主因，文本域迁移才是。**
+- f32 logreg（C=1）Hate test：L12 默认 0.5 `0.574250`、预测正例率
+  `0.734089`；target-prior（目标分数分位匹配 train 先验 `0.420812`，
+  不用 test 标签）`0.634236`、预测正例率 `0.420995`（回收 `6.00pp`）。
+  L6 默认 `0.546086`、预测正例 `0.750549`；target-prior `0.633504`
+  （回收 `8.74pp`）。校准后仍差 L12 `12.97pp`、L6 `11.77pp`。
+  `test_prior`/`oracle` 用 test 标签，仅诊断（`0.635699/0.645208`、
+  `0.634967/0.646306`）。
+- 双向迁移：Hate L12 train OOF `0.771998`、test 内部 `0.763934`、
+  train→test `0.574250`、test→train `0.623484`；L6 为
+  `0.762671/0.751205/0.546086/0.614135`。两个方向都远低于 in-domain，
+  不是单一方向标签错位。
+- 全臂复验：36 个比较、5 seed、180 CI。默认阈值 **0 正 / 41 负 /
+  139 跨**，36 个比较 0 个出现正 CI，与 M1.35 一致；target_prior
+  **23 正 / 30 负 / 127 跨**，6 个比较出现正 CI，全部在 Hate，SST-2/
+  CoLA 仍 0 正。default→target 为 `6 gain / 30 same / 0 loss`。
+- 6 个正比较：Hate L12 `R12` logreg 5/5（`+1.83pp`）、SVC 4/5；
+  Hate L6 `rescan` logreg 5/5（`+2.72pp`）、SVC 5/5（`+2.55pp`）；
+  Hate L6 `int4` SVC 3/5（`+1.10pp`）、`int3` logreg 1/5
+  （`+1.39pp`）。`R12`/`rescan` 的 test AUC 也高于 f32（L12 约
+  `+1.2–1.5pp`，L6 约 `+2.8–3.7pp`），不是纯阈值伪影。
+- 判决：**默认 0.5 的官方 test 主判决不变（0/36 正，f32 锚点）；
+  target_prior 只给出 Hate-only、后验校准的条件性候选，不能写成
+  量化普遍增益。** M1.37 的“R12 跨域不成立”应加“默认阈值”限定；
+  但 target_prior 是 transductive、非预注册规则，`R12`/`rescan` 仍不能
+  直接发布，需预注册独立数据/切分 confirmatory test。
+- 新增 `wsp-classify-domain-shift.tsv`（3 行）、
+  `wsp-classify-hate-transfer.tsv`（8 行）、
+  `wsp-classify-hate-threshold.tsv`（8 行）、
+  `wsp-classify-hate-length-buckets.tsv`（6 行）、
+  `wsp-classify-matched-prior-raw.tsv`（360 行）、
+  `wsp-classify-matched-prior-summary.tsv`（72 行）、
+  `wsp-classify-matched-prior-vs-default.tsv`（36 行）、
+  `wsp-classify-matched-prior-f32.tsv`（24 行）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.38、§12 读法，并给 §11.15/§11.35/§11.37 补阈值注记。
+
+### Changed（M1.37：nested CV 全矩阵与 OOF/test 分布差）
+
+- 把 M1.36 的 nested CV 扩到 6 个 `dataset×depth`、两个 probe、
+  5 个 outer seed：每个 outer-train 内 5 折只在真 f32 上选 C，
+  f32 与全部量化臂共用；官方 test 不参与选 C/训练/评分。
+  共 180 个 OOF paired CI。
+- 总读数：**5 个显著正向、52 个显著负向、123 个跨 0**；
+  36 个比较里 4 个出现过正 CI、15 个出现过负 CI、17 个全跨，
+  没有任何比较同时出现正负 CI。正向全部在 Hate。
+- 5 个正向：Hate L12 `R12` logreg seed 7/13（`+0.924/+1.024pp`）
+  与 SVC seed 13（`+0.879pp`）；Hate L6 logreg `rescan` seed 7
+  （`+0.857pp`）、`int3` seed 43（`+0.790pp`）。
+- Hate L12 `R12` 在 OOF 5-seed 均值 logreg `+0.6767pp`、SVC
+  `+0.6477pp`，但官方 test 上 logreg `−1.3533pp`、SVC
+  `−1.4411pp`，两个 probe 都 5/5 显著负向：OOF 正向与 test 负向
+  方向相反，不能升级。
+- Hate L6 `rescan` OOF 均值 `+0.5899pp`、5/5 点正、1/5 CI 显著；
+  test 均值 `+1.0534pp` 但 5/5 CI 跨 0，仍是弱候选。
+- Hate 的 OOF/test f32 差约 `19.8–21.7pp`；Hate test 内部 5 折
+  f32 为 `0.763934/0.751205`，说明 test 标签可学，差距是跨域
+  迁移，不是标签错位或噪声。Hate test 读数应标为跨域读数。
+- SST-2/CoLA 的 24 个比较没有正 CI；52 个负 CI 全部来自
+  SST-2（46）与 CoLA（6）。OOF 在 train 分布内能分辨量化损失，
+  官方 test 的样本量/分布未能分辨；不改变“没有量化档超过 f32”。
+- 判决：官方 test 上 0 个量化档显著超过真 f32；`R12` 的 OOF
+  正向是跨域不成立的候选，`rescan` 仍只是弱候选；f32 继续是
+  默认锚点。分类头这条线可以收口。
+- 新增 `docs/research/data/wsp-classify-nested-cv-matrix.tsv`
+  （180 行）、`wsp-classify-nested-cv-matrix-summary.tsv`（36 行）、
+  `wsp-classify-nested-vs-test.tsv`（36 行）、
+  `wsp-classify-oof-test-gap.tsv`（6 行）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.37 与 §12 读法。
+
+### Changed（M1.36：nested CV 复验 Hate L6 边界格）
+
+- 对 M1.35 最接近正向的 Hate L6 `logreg rescan` 做 nested CV：
+  outer 5 折 ×5 个 outer seed（`7/13/19/31/43`），inner 5 折只在
+  真 f32 上选 C，f32 与 `int3`/`int4`/`rescan` 共用；两个 probe，
+  30 个 OOF paired CI，50 个 outer fold 点差值。
+- 结果：**2 个显著正向、0 个显著负向、28 个跨 0**。两个正向都在
+  `logreg`：`rescan` seed 7 `+0.857pp`，CI `[+0.156,+1.558]pp`；
+  `int3` seed 43 `+0.790pp`，CI `[+0.134,+1.458]pp`。SVC `0/15`。
+- `rescan` 与 `int3` 在 10/10 outer seed 点估计为正；`int4` 9/10。
+  但 `rescan` 只有 1/10 CI 显著、`int3` 1/10、`int4` 0/10；50 个
+  fold 中 `rescan` 正/负/零为 `20/5/0`（logreg）与 `19/5/1`（SVC）。
+- OOF f32 accuracy `0.761–0.767`，官方 test `0.533–0.556`，约
+  `21pp` 分布差；OOF 的 `+0.44–+0.59pp` 弱正向不能搬到官方 test。
+- 判决：`rescan` 不是纯噪声，点方向在两种口径下都未出现负 CI；但
+  30 个 CI 只有 2 个刚过 0，SVC 0/5，不能升级为可发布增益。f32 继续
+  是默认锚点；`rescan` 只保留为弱候选。
+- 新增 `docs/research/data/wsp-classify-nested-cv-hate-l6-raw.tsv`
+  （30 行）、`wsp-classify-nested-cv-hate-l6-folds.tsv`（50 行）、
+  `wsp-classify-nested-cv-hate-l6-summary.tsv`（6 行）；
+  `WSP-BUDGET-RESULTS.md` 新增 §11.36 与 §12 读法。
+
+### Changed（M1.35：matched-C 全矩阵）
+
+- 把 M1.34 的 matched-C 控制扩到全部 36 个比较：每个
+  `dataset×depth×probe×seed` 只在真 f32 上做 5 折选 C，f32 与
+  `true-bits4`/`int3`/`int4`/`R12`/`rescan` 共用这个 C，test 固定，
+  10k paired bootstrap；5 个 seed，共 180 个 CI。
+- 结果：**0 个显著正向、41 个显著负向、139 个跨 0**；36 个比较里
+  没有任何一个在 5 个 seed 出现过正向 CI。
+- M1.34 的 Hate L6 `logreg int3` 4/5 显著正向消失：共同 C 下 seed 7
+  为 `+0.44pp`、其余 seed 为 `+0.15pp`，5/5 CI 跨 0，确认是 per-arm
+  C 错配。
+- 41 个负向集中在 11 个比较：SST-2 L12 四个 `int3`/`R12`、Hate L12
+  的 `R12`/SVC `int3`/SVC `R12` 都是 5/5 负向，Hate L12 SVC
+  `true-bits4` 1/5；CoLA L6 的 logreg `rescan` 3/5 负向，SVC
+  `int3`/`int4` 各 1/5。
+- 最接近正向的是 Hate L6 `logreg rescan` 在 C=10：
+  `+1.3168pp`，CI `[−0.0366,+2.6701]pp`，仍跨 0；C=0.1/1 也不显著。
+  它是 rescan 对坏 C 更稳，不是上限超过 f32。
+- 判决：matched-C 全矩阵仍没有量化档显著超过真 f32；f32 继续是
+  默认锚点。`int3`/`int4`/`R12`/`rescan` 既没有稳定增益，也在共同 C
+  下出现 41 个显著负向，不能写成“量化只是无损”。
+- 新增 `docs/research/data/wsp-classify-matched-c-raw.tsv`（180 行）、
+  `wsp-classify-matched-c-summary.tsv`（36 行），`WSP-BUDGET-RESULTS.md`
+  新增 §11.35 与 §12 读法。
+
+### Changed（M1.34：C 选择敏感性）
+
+- 对 M1.33 的 36 个比较重跑 5 个 CV seed（`7/13/19/31/43`），每个 arm
+  独立重选 C，test 固定：29/36 点估计同号，7 个翻号。
+- M1.33 的 9 个显著负向里只有 6 个在 5/5 seed 仍为负；Hate L6 两个
+  `int4` 臂不再稳定负向（logreg seed 43 变 `+1.17pp` 全正 CI）。
+- Hate L6 `logreg int3` 在 seed 13/19/31/43 变显著正向
+  `+1.7191pp`（CI `[+0.003658,+0.031090]`），但 matched-C 控制下
+  C=1 为 `+0.44pp`、C=10 为 `+0.15pp`，CI 都跨 0；4/5 显著正向是
+  f32 选 C=10、int3 选 C=1 的错配，不是量化增益。
+- 修正 M1.33 口径：其 `delta` 是 bootstrap 均值，不是点估计；
+  CoLA L6 SVC `rescan-k2` 的 `+0.000042` 是 boot mean，点估计
+  `−0.000038`，5 seed 点估计全负、均值 `−0.011901`。
+- 判决：M1.33 的 `0/9/27` 只是 seed 7 条件读数；matched-C 下仍无
+  量化档稳定超过 f32。引用分类头结论必须带“seed 7 条件”。
+- 新增 `wsp-classify-cv-seed-stability.tsv`（180 行）、
+  `wsp-classify-cv-seed-summary.tsv`（36 行）、
+  `wsp-classify-cv-seed-ci.tsv`（120 行）、
+  `wsp-classify-hate-l6-common-c.tsv`（9 行）。
+
+### Changed（M1.33：分类头跨任务判决）
+
+- 把 SST-2/CoLA/hate 的 L12/L6 线性头结果按“每个量化档只计一次”
+  合成 36 个 `dataset×depth×probe×arm` 比较：0 个 CI 整段 `>0`，
+  9 个整段 `<0`，27 个跨 0。
+- 显著负向集中在 SST-2 L12 的 `int3`/`R12`（两个 probe 都负）、
+  hate L12 的 `R12` 与 SVC `int3`、hate L6 的 `int4`（两个 probe 都负）。
+- 最大正向点估计仍是 CoLA L12 的 `int4` `+1.20pp`（logreg macro，
+  CI `[−0.007385,+0.031764]`），不显著；CoLA L6 没有转正。
+- SST-2 L12 的 `true-bits4` 是 `−0.10pp`（SVC）/`−0.15pp`（logreg），
+  CI 跨 0；历史 `+4.22pp` 是 ternary→4-bit 恢复，不是 f32→int4。
+- 判决：分类头没有可提升的量化档，f32 继续是默认锚点；`int3`/`int4`/
+  `R12`/`rescan` 都不因“可能正则化”被提升。
+- 新增 `docs/research/data/wsp-classify-cross-task-verdict.tsv`（36 行），
+  `WSP-BUDGET-RESULTS.md` 新增 §11.33 与 §12 读法。
+
+### Fixed（M1.32：L6 int4 全量逐位复刻）
+
+- 用 `all-MiniLM-L6-v2` 读取官方 `chunks-l6-1500`，全量生成 CoLA/hate
+  的 true bits4（`l6-cola-bits4.npy`、`l6-tweet-hate-bits4.npy`）。
+- CoLA 9,594 / hate 11,719 行的官方 `l6-int4` 与 true bits4 全部逐行
+  对齐：余弦 `1.00000000`（min/max `0.99999988/1.00000024`），max abs
+  diff `1.64e-7 / 1.53e-7`，所有行 ≤`1e-6`。M1.30 的 512 行抽检升级
+  为全量。
+- 把 `true-bits4` 补进 L6 分类矩阵：CoLA logreg macro `−0.94pp`
+  （CI 跨 0）、LinearSVC `−0.14pp`（CI 跨 0）；hate logreg accuracy
+  `−1.55pp`（CI `[−2.52,−0.59]`）、LinearSVC `−1.72pp`
+  （CI `[−2.71,−0.77]`）。没有任何一格转正，M1.31 的 L6 结论不变。
+- hate logreg 的 true bits4 与官方 int4 有 11/2,734 条预测翻转，净
+  accuracy 只差 1 条（`−0.000368`，CI 跨 0）；CoLA 与 hate SVC 的
+  逐条预测完全相同。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 的两条 L6
+  provenance 行从 `n=512` 更新为全量，并新增 20 行 true-bits4 分类
+  读数；`WSP-BUDGET-RESULTS.md` 新增 §11.32。
+
+### Fixed（M1.31：CoLA/hate 全臂矩阵）
+
+- 用同一套 per-arm 5 折选 C（C 网格 `0.01/0.1/1/10`）+ test 只评一次 +
+  10k paired bootstrap，重跑 CoLA/hate 的 L12/L6 全臂；CoLA 用
+  balanced + macro-F1，hate 用无权重 + accuracy；logreg 与 LinearSVC
+  都跑。
+- 结论：四个数据集×深度组合里没有任何量化臂显著超过真 f32。CoLA
+  L12 的 `int4`/`true bits4` 是唯一正向点估计（logreg macro
+  `+1.24pp/+1.20pp`，SVC `+0.93pp`），CI 都跨 0；CoLA L6 全为负或
+  零；hate L12 的 `R12` 为 `−1.36pp`（两个 probe 的 CI 都不含 0），
+  SVC `int3` 为 `−1.76pp`（CI 整段为负）；hate L6 的 `int4` 为
+  `−1.51pp`（logreg）/`−1.72pp`（SVC），两个 CI 都不含 0。
+- M1.15 hate L12 主表是固定 `C=1`，M1.31 是 per-arm 选 C：
+  `int4−f32` 从 `−0.37pp` 变为 `−0.88pp`，方向一致但不能混表。
+- 新增 `docs/research/data/wsp-classify-cola-hate-full-arms.tsv`（80 行），
+  `WSP-BUDGET-RESULTS.md` 新增 §11.31 与 §12 读法；`WSP-ALT.md`/
+  `WSP-BERT6-RESULTS.md` 追加 M1.31 结论。
+
+### Fixed（M1.30：CoLA/hate L6 基线标签收口）
+
+- 用 `all-MiniLM-L6-v2` 读取官方同一批 `chunks-l6-1500` 的
+  `input.f32`/`mask.u8`，全量生成真 f32 与真 ternary，并与官方
+  `l6-pure-f32-*.f32` 逐行比较：CoLA 9,594 条的余弦均值 `1.00000000`
+  （max abs diff `1.81e-7`），hate 11,719 条为 `1.00000000`
+  （`1.91e-7`）；对真 ternary 只有 `0.463824` / `0.378651`。因此
+  CoLA/hate L6 的 `l6-pure-f32` 是真 f32，不是 ternary。
+- 官方 `l6-int4` 首 512 行与真 bits4 逐位一致（max abs diff
+  `1.26e-7` / `1.38e-7`；M1.32 已补成全量，见上）；全量
+  `official int4 vs true f32` 余弦为 `0.955514` / `0.953085`，与正常
+  f32→bits4 距离同量级。M1.14/M1.15 的 L6 分类结论无需重算；SST-2 是
+  唯一 L12 与 L6 的 `pure-f32` 都错标成 ternary 的数据集。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 新增 8 行
+  CoLA/hate L6 provenance 读数；`WSP-BUDGET-RESULTS.md` 新增 §11.30，
+  修正 §11.28.3/§11.28.4 的 L6 边界与 §12 读法；
+  `WSP-ALT.md`/`WSP-BERT6-RESULTS.md` 追加 M1.30 结论。
+
+### Fixed（M1.29：SST-2 全臂矩阵复核）
+
+- 把 L12 的 `int3`/`R12` 和 L6 的 `int3`/`rescan-k2` 也改为相对真 f32
+  重跑。L12 logreg：真 f32 `0.842943`、官方 int3 `0.823174`
+  （`−0.019732`，CI `[−0.035146,−0.004942]`）、官方 int4 `0.840198`
+  （`−0.002625`，CI 跨 0）、官方 R12 `0.819879`（`−0.022967`，
+  CI `[−0.038440,−0.007688]`）。L12 `int3`/`R12` 的 CI 整段为负。
+- L6 logreg：真 f32 `0.811642`、官方 int3 `0.808347`（`−0.003291`）、
+  官方 int4 `0.806700`（`−0.004964`）、官方 rescan `0.803405`
+  （`−0.008296`），三个 CI 都跨 0。没有任何量化档超过真 f32。
+- 新增 `docs/research/data/wsp-classify-sst2-full-arms.tsv`（64 行，
+  L12/L6 × logreg/LinearSVC 的 arm 与 delta）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.29，并修正 §11.12/§12 的读法。
+- M1.12 的旧 `+2.36pp`（L12 int3）、`+1.48pp`（L12 R12）、
+  `+0.38pp`（L6 rescan）等正差值都是 ternary 锚点造成的；L12
+  `int4−int3=+1.71pp`（CI 全正）仍是真实档内排序，但不能写成“超过 f32”。
+
+### Fixed（M1.28：SST-2 L6 基线标签）
+
+- 用 `all-MiniLM-L6-v2` 全量生成真 f32 / 真 bits4 / 真 ternary，并与官方
+  `l6-pure-f32-c*.f32` / `l6-int4-c*.f32` 逐行核对：官方 `l6-pure-f32`
+  与 L6 真 ternary 余弦 `0.99999976`（max abs diff `1.17e-3`），与真 f32
+  只有 `0.373686`；官方 `l6-int4` 与真 bits4 的 max abs diff 为
+  `1.83e-7`。M1.26 的“L6 未发现 ternary”作废，SST-2 L6 的 `f32` 标签
+  同样是 ternary。
+- 重算 L6 分类头（train 6,920 / test 1,821，冻结编码器 + 线性 probe，
+  5 折选 C，10k paired bootstrap）：真 f32 / 真 bits4 / 官方 ternary /
+  官方 int4 的 logreg accuracy 为 `0.811642 / 0.806700 / 0.795717 /
+  0.806700`；真 bits4−真 f32 为 `−0.004964`（CI `[−0.013729,+0.003844]`），
+  官方 int4−官方 ternary 为 `+0.010811`（CI `[−0.009336,+0.030752]`），
+  真 bits4−官方 int4 为 `0`（逐条预测相同）。SVC 同向：真差值
+  `−0.006079`（CI `[−0.014827,+0.002746]`），官方差值 `+0.002492`
+  （CI `[−0.017573,+0.023064]`）。L6 的旧 `int4−f32≈+0.0060` 也是
+  ternary→4-bit 恢复，不是 int4 超过真 f32。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 的 L6 行改为全量
+  读数并补 15 行（provenance、arm、logreg/SVC delta），共 56 行；
+  `WSP-BUDGET-RESULTS.md` 新增 §11.28，并修正 §11.26 的 L6 边界与 §12
+  的读法；`WSP-BERT6-RESULTS.md` §3.16.25 追加 M1.28 修正。
+- `docs/results/LESSONS.md` 新增第 43–44 条：5 条样本不能给标签定性；
+  标签错误可能在同一数据集的多个深度重复。
+
+### Fixed（M1.27：残差矩阵严格复核）
+
+- `scripts/wsp_classify_residual.py` 的 test 侧类均值/组内置换不再使用
+  `y_test`：默认用 f32 base probe 的预测标签构造严格对照；新增
+  `--legacy-controls` 仅供复现 M1.23 旧表（旧的 oracle 构造会泄漏 test 标签）。
+- 用真 f32 / 真 bits4 重跑 SST-2 L12 的 32 臂残差矩阵：真 f32 下没有合法
+  残差臂超过 f32，`hybrid_rest_k16` 为 `−0.006590`（旧表 ternary 基线为
+  `+0.039539`）；`noclassmean` 的 `+0.023064` 是 test 标签泄漏，严格模式
+  `−0.007139`；`perm_class` 的 `+0.007688` 也是标签依赖，严格模式
+  `−0.018671`。新增 `docs/research/data/wsp-classify-residual-sst2-l12-strict.tsv`
+  与 `wsp-classify-residual-control-audit.tsv`，结果写入 §11.27。
+- `docs/results/LESSONS.md` 新增第 41–42 条：test 标签对照是 oracle；
+  换基线后必须逐臂重跑。
 
 ### Added（第四十轮：TriVec 整向量等价的 Verus 证明）
 
@@ -1277,6 +1547,74 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
   - 边界：主表 logreg，SST-2 L12 有 SVC 全 32 arm 复验，其余五组没有
     SVC；一个 seed；bootstrap 只重采样 test；残差是量化算子的确定性函数，
     本文是观测性拆解，不是因果证明。
+
+- **直接量化代理负对照（M1.24）**：新增
+  `scripts/wsp_classify_direct_quant.py`，对冻结 f32 embedding 直接做
+  group=1/32/384 的对称 int4 RTN，比较 `q`、`r=q−x` 和 f32 的线性
+  probe。带 `--self-test` 和 2 条 mutation 锚点（残差方向取反 / group=1
+  被强制成 per-row）。
+  - SST-2 L12：`q` 从 `0.800110` 降到 `0.787479`（g32）/`0.768259`
+    （g384）；直接残差单独 probe 在 `0.499176`（chance）。
+  - 6 组 × 3 group：残差 probe 在 chance/多数类基线（hate `0.592` 是
+    多数类基线，macro-F1 `0.372`）；残差/f32 类均值 `0–0.081`，但在
+    f32 probe 上的 margin 比只有 `−0.008` 到 `+0.005`。
+  - 结论：M1.23 的类别条件偏置不能由输出端 int4 舍入复现，依赖权重量化
+    误差在编码器里的传播路径；这是 representation-level 负对照，不是
+    权重量化器的因果消融。
+  - 表：`wsp-classify-direct-quant.tsv`（18 行：6 组 × 3 group）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.24、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.26、`LESSONS.md` 第 36 条。
+  - 边界：logreg；一个 seed；bootstrap 只重采样 test；weight per-group
+    sweep 在本机 CPU 上单档 20+ 分钟未完成，已停，不写成结论。
+
+- **残差线性算子与数据集特异几何（M1.25）**：新增
+  `scripts/wsp_classify_residual_linear.py`，只在 train 上拟合
+  `r ≈ (x−μ)W+r_μ`，在 test 上评估 `R²`、余弦、类均值放大/角度和
+  跨数据集迁移；可选 `--probe` 把 SST-2 残差拆成 `r_hat`/`r_perp` 再
+  probe。带 `--self-test` 和 2 条 mutation 锚点（残差方向取反 / 预测忘记
+  加回残差均值）。
+  - 六组 test `R²` 0.42–0.52，shuffled `R²` −0.04 到 −0.09；残差有
+    42–52% 的方差可由 f32 embedding 线性预测。
+  - 类均值响应数据集特异：SST-2 L12 放大 `1.52×`、旋转 `86.1°`，L6
+    `1.15×`、`93.7°`；CoLA/hate 压缩到 `0.21–0.23×`、旋转 `99°–108°`。
+  - 跨数据集不迁移：SST-2 算子用到 CoLA/hate 的 `R²` 是
+    `−43.4/−36.5`（L12），反过来只有 `0.016–0.031`。
+  - SST-2 残差分解：L12 `r_hat` 0.7935 / `r_perp` 0.6310；L6 0.8040 /
+    0.5837。
+  - 结论：SST-2 的正向可由“类均值方向落在被放大的方向”描述，但没有
+    一个跨数据集共同算子；这是线性代理，不是权重量化器的因果消融。
+  - 表：`wsp-classify-residual-linear.tsv`（24 行）、
+    `wsp-classify-residual-linear-probe.tsv`（6 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.25、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.27、`LESSONS.md` 第 37 条。
+  - 边界：ridge α=0.1 固定、无 CV；只读最终 384 维 embedding；无
+    bootstrap CI；一个 seed；只跑 logreg；cross-transfer 用目标数据集
+    自己的截距。
+
+- **基线标签审计与 SST-2 修正（M1.26）**：逐位核对发现 SST-2 L12
+  的 `sst2/emb12/l12-pure-f32-*.f32` 不是 f32，而是 `bert6`
+  `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出（首 5 条与 tiny bits2
+  余弦 `1.0`，与真 f32 余弦 `0.279–0.382`）。`l12-int4` 与真 4-bit
+  只差 `1.83e-7`；CoLA/hate 的 `l12-pure-f32` 才是真 f32（只差 `2.1e-7`）。
+  - 真 f32 `0.842943`、真 int4 `0.841296`，差值 `−0.001503`
+    （CI `[−0.012081,+0.008786]`）；官方 ternary `0.797913`、官方
+    int4 `0.840198`，`+0.042207`（CI `[+0.023064,+0.061505]`）是
+    2-bit→4-bit 恢复，不是 int4 超过 f32。
+  - 几何反转：真 f32→int4 残差类均值 `0.191×`、`cos −0.353`；
+    M1.23 的 `1.594× / +0.068` 属于 ternary→4-bit。CoLA/Hate 也是
+    压缩（`0.250/0.220×`、`cos −0.473/−0.301`），没有 SST-2 特异放大。
+  - CoLA 真 f32→int4 macro-F1 `+0.012073`（CI 跨 0）；Hate
+    `−0.002560`（CI 跨 0）。当时判断只有 SST-2 的 L12 f32 基线坏了，
+    CoLA/hate 旧结论保留；SST-2 L6 首 5 条与真 f32 余弦 `0.97–0.99`，
+    未发现同错。**M1.28 后作废：L6 也是 ternary，见上条 M1.28 条目。**
+  - 表：`docs/research/data/wsp-classify-baseline-audit.tsv`（M1.26 时 41 行，
+    M1.28 后 56 行）。
+    文档：`WSP-BUDGET-RESULTS.md` §11.26（§11.12–§11.25 加修正横幅）、
+    `WSP-ALT.md` §5.5、`WSP-BERT6-RESULTS.md` §3.16.25、
+    `LESSONS.md` 第 38–40 条。
+  - 边界：PyTorch 复刻是独立实现，f32/f64 累加差异在 `2e-7` 量级，
+    不是 Rust 位级等价；只跑 logreg + LinearSVC，无 MLP、无 encoder
+    微调、无 MNLI。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出
