@@ -19,7 +19,7 @@ use crate::{
 };
 
 mod layout;
-
+mod levels;
 /// 容器魔数。
 pub const MAGIC: [u8; 4] = *b"TTX3";
 /// 头部字节数：magic(4) + flags(u16) + reserved(u16) + level_count(u8) +
@@ -414,8 +414,7 @@ struct ArchiveLevel {
 
 impl<'a> Ttx3Archive<'a> {
     /// 解析头部与级目录，并在解析期对账瓦片载荷区间归属/disjoint 与政策副本数
-    /// （见 `layout` 模块）；瓦片 CRC 仍是 [`Ttx3Archive::decode_tile`] /
-    /// [`Ttx3Archive::verify`] 的活，逐瓦片惰性校验。
+    /// （见 `layout` / `levels` 模块）；瓦片 CRC 仍逐瓦片惰性校验。
     pub fn parse(bytes: &'a [u8]) -> Result<Self, TextureError> {
         if bytes.len() < HEADER_BYTES || bytes[0..4] != MAGIC {
             return Err(TextureError::Ttx3Magic);
@@ -456,6 +455,7 @@ impl<'a> Ttx3Archive<'a> {
                 dir_offset,
             });
         }
+        levels::validate_chain(bytes.len(), &levels)?;
         layout::validate(bytes, &levels)?;
         Ok(Self { bytes, levels })
     }
