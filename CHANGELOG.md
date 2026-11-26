@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Changed（M1.35：matched-C 全矩阵）
+
+- 把 M1.34 的 matched-C 控制扩到全部 36 个比较：每个
+  `dataset×depth×probe×seed` 只在真 f32 上做 5 折选 C，f32 与
+  `true-bits4`/`int3`/`int4`/`R12`/`rescan` 共用这个 C，test 固定，
+  10k paired bootstrap；5 个 seed，共 180 个 CI。
+- 结果：**0 个显著正向、41 个显著负向、139 个跨 0**；36 个比较里
+  没有任何一个在 5 个 seed 出现过正向 CI。
+- M1.34 的 Hate L6 `logreg int3` 4/5 显著正向消失：共同 C 下 seed 7
+  为 `+0.44pp`、其余 seed 为 `+0.15pp`，5/5 CI 跨 0，确认是 per-arm
+  C 错配。
+- 41 个负向集中在 11 个比较：SST-2 L12 四个 `int3`/`R12`、Hate L12
+  的 `R12`/SVC `int3`/SVC `R12` 都是 5/5 负向，Hate L12 SVC
+  `true-bits4` 1/5；CoLA L6 的 logreg `rescan` 3/5 负向，SVC
+  `int3`/`int4` 各 1/5。
+- 最接近正向的是 Hate L6 `logreg rescan` 在 C=10：
+  `+1.3168pp`，CI `[−0.0366,+2.6701]pp`，仍跨 0；C=0.1/1 也不显著。
+  它是 rescan 对坏 C 更稳，不是上限超过 f32。
+- 判决：matched-C 全矩阵仍没有量化档显著超过真 f32；f32 继续是
+  默认锚点。`int3`/`int4`/`R12`/`rescan` 既没有稳定增益，也在共同 C
+  下出现 41 个显著负向，不能写成“量化只是无损”。
+- 新增 `docs/research/data/wsp-classify-matched-c-raw.tsv`（180 行）、
+  `wsp-classify-matched-c-summary.tsv`（36 行），`WSP-BUDGET-RESULTS.md`
+  新增 §11.35 与 §12 读法。
+
 ### Changed（M1.34：C 选择敏感性）
 
 - 对 M1.33 的 36 个比较重跑 5 个 CV seed（`7/13/19/31/43`），每个 arm
