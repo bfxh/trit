@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed（M1.31：CoLA/hate 全臂矩阵）
+
+- 用同一套 per-arm 5 折选 C（C 网格 `0.01/0.1/1/10`）+ test 只评一次 +
+  10k paired bootstrap，重跑 CoLA/hate 的 L12/L6 全臂；CoLA 用
+  balanced + macro-F1，hate 用无权重 + accuracy；logreg 与 LinearSVC
+  都跑。
+- 结论：四个数据集×深度组合里没有任何量化臂显著超过真 f32。CoLA
+  L12 的 `int4`/`true bits4` 是唯一正向点估计（logreg macro
+  `+1.24pp/+1.20pp`，SVC `+0.93pp`），CI 都跨 0；CoLA L6 全为负或
+  零；hate L12 的 `R12` 为 `−1.36pp`（两个 probe 的 CI 都不含 0），
+  SVC `int3` 为 `−1.76pp`（CI 整段为负）；hate L6 的 `int4` 为
+  `−1.51pp`（logreg）/`−1.72pp`（SVC），两个 CI 都不含 0。
+- M1.15 hate L12 主表是固定 `C=1`，M1.31 是 per-arm 选 C：
+  `int4−f32` 从 `−0.37pp` 变为 `−0.88pp`，方向一致但不能混表。
+- 新增 `docs/research/data/wsp-classify-cola-hate-full-arms.tsv`（80 行），
+  `WSP-BUDGET-RESULTS.md` 新增 §11.31 与 §12 读法；`WSP-ALT.md`/
+  `WSP-BERT6-RESULTS.md` 追加 M1.31 结论。
+
 ### Fixed（M1.30：CoLA/hate L6 基线标签收口）
 
 - 用 `all-MiniLM-L6-v2` 读取官方同一批 `chunks-l6-1500` 的
