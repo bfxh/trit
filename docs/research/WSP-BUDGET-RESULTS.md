@@ -1,6 +1,6 @@
 # WSP-BUDGET：同字节预算分配与块交换（L12 / STS 1,379 对）
 
-> 状态：M1.37 完成（§11.37）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵与 OOF/test 分布差审计。
+> 状态：M1.38 完成（§11.38）；STS 全量 + SciFact 检索 + SST-2/CoLA/TweetEval-hate 线性 probe / 线性 SVM + 几何/剂量/交叉迁移/残差诊断 + 直接量化负对照 + 残差线性算子 + nested CV 全矩阵 + Hate 域/阈值审计与目标先验阈值全臂复验。
 >
 > **M1.26 基线审计（2026-11-26）**：SST-2 L12 的 `l12-pure-f32` 实为
 > `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出，不是 f32；§11.12–§11.25
@@ -105,6 +105,19 @@
 > 点估计仍是 CoLA L12 的 int4 `+1.20pp`（CI 跨 0）；SST-2 L12 的
 > `int3`/`R12`、hate L12 的 `R12`、hate L6 的 `int4` 都是显著负向。
 > 分类头没有可提升的量化档，f32 继续是默认锚点（§11.33）。
+> **M1.38 域/阈值审计**：Hate 的 train→test 文本域分类器 AUC `0.921`
+> （SST-2 `0.491`、CoLA `0.687`），长度单特征只有 `0.561`，长度分桶
+> 准确率 `0.577/0.574/0.567/0.500`，>64 token 与 ≤64 只差 `1.13pp`：
+> 20–22pp 差距的主因是文本域迁移，不是截断。把默认 0.5 阈值改成
+> “目标分数分位匹配 train 先验”（不用 test 标签），Hate L12 f32
+> `0.574→0.634`、L6 `0.546→0.634`；20pp 里约 `6–9pp` 是阈值漂移，
+> 校准后仍差 `12–13pp`。全臂 36 比较在默认阈值下仍是 0 正 / 41 负 /
+> 139 跨；目标先验阈值下变成 23 正 / 30 负 / 127 跨，6 个比较出现
+> 正 CI，全部在 Hate：L12 `R12` logreg 5/5（`+1.83pp`）、SVC 4/5；
+> L6 `rescan` 两 probe 5/5（`+2.55/+2.72pp`），`int4` SVC 3/5、
+> `int3` logreg 1/5。SST-2/CoLA 仍 0 正。**默认 0.5 的官方 test 主判决
+> 不变（f32 锚点）；目标先验阈值只给出 Hate-only、后验校准的条件性
+> 候选，不能当通用量化增益。** 见 §11.38。
 
 
 ## 1. 结论先行
@@ -2661,6 +2674,13 @@ L12 `int4−f32` 的跨数据集汇总（候选−基线；SST-2 无权重、CoL
   232 条与 train 重叠的文本，不能直接等同官方榜单读数；结论不能外推到平衡/
   多分类/NLI/生成任务。
 
+> **M1.38 追加（口径与跨域）**：本节主表是 per-arm C；fixed C=1 只是敏感性，
+> 不能与 M1.31 的 per-arm CV 表或 M1.35 的 matched-C 表直接拼。Hate 的 test
+> 还是跨域读数（域分类器 AUC `0.921`、长度单特征 `0.561`；20pp 里约
+> `6–9pp` 是目标域阈值漂移，校准后仍差 `12–13pp`），所以本节数字只能当
+> “历史 per-arm C + 默认 0.5 阈值 + 跨域 test”的参考，不能当 in-domain
+> 量化损失上界。M1.38 的 target_prior 全臂复验见 §11.38。
+
 ### 11.15.6 复算
 
 ```bash
@@ -5134,6 +5154,12 @@ f32 自己在 test 上从 C=1 的 `0.546086` 掉到 `0.533285`，而 rescan
 的 `0.564740` 虽然高于 f32，但 Δ 只有 `+0.009144`、CI 仍跨 0。
 **结论是“rescan 对坏 C 更稳”，不是“rescan 在共同 C 下超过 f32”。**
 
+> **M1.38 追加（阈值条件）**：上表三个 C 都还是默认 0.5 阈值。把决策阈值换成
+> “目标分数分位匹配 train 先验”（不用 test 标签）后，Hate L6 `rescan` 在
+> logreg/SVC 各 5/5 显著正（均值 `+2.72/+2.55pp`），L12 `R12` logreg 也
+> 5/5 正（`+1.83pp`）。因此“rescan 对坏 C 更稳”仍成立，但它不是排序上限；
+> 默认阈值下的“不显著”不能当成“没有排序增益”。见 §11.38。
+
 ### 11.35.6 判决
 
 - **matched-C 全矩阵仍是 0 个显著正向。** M1.34 的“Hate L6 `logreg
@@ -5161,6 +5187,14 @@ f32 自己在 test 上从 C=1 的 `0.546086` 掉到 `0.533285`，而 rescan
   §11.35 的 Hate test 读数是跨域读数。Hate L12 `R12` 在 OOF 上正向、
   test 上 5/5 负向，说明该臂的量化效应不跨域；不能把 §11.35 的
   Hate 负向当作 in-domain 量化损失的上界（§11.37）。
+
+> **M1.38 追加（阈值条件）**：Hate 的 20–22pp 差距不是长度/截断（域分类器
+> AUC `0.921`、长度单特征 `0.561`），其中约 `6–9pp` 是默认 0.5 阈值在目标域
+> 上漂移；校准到 train 先验的目标分数分位后，f32 L12 `0.574→0.634`、
+> L6 `0.546→0.634`，校准后仍差 `12–13pp`。全臂 36 比较在 target_prior 下
+> 出现 6 个正 CI（全部 Hate），但默认 0.5 仍是 0/36。故本节的“0 正向”
+> 是默认阈值 headline，不是“排序上没有任何正向”；`R12`/`rescan` 只能
+> 记为条件性候选，不能升级为默认。见 §11.38。
 
 ### 11.35.7 复算
 
@@ -5452,6 +5486,15 @@ test。SST-2/CoLA 的 OOF 与 test 差距只有 `−1.98` 到 `+1.36pp`，
   encoder 微调、没有 MNLI；OOF 与 test 的样本量和分布不同，不能
   把 180 个 OOF CI 与 180 个 test CI 混成一张表。
 
+> **M1.38 追加（阈值条件）**：本节把 Hate L12 `R12` 判为“OOF-only、跨域
+> 不成立”，这个判决只在默认 0.5 阈值下成立。把阈值改成目标分数分位匹配
+> train 先验（不用 test 标签）后，`R12` L12 logreg 5/5 正（`+1.83pp`）、
+> SVC 4/5 正，test AUC `0.6999/0.7034` 也高于 f32 `0.6859/0.6886`；
+> Hate L6 `rescan` 两 probe 各 5/5 正（`+2.55/+2.72pp`）。这不是“方向反了”
+> 而是“默认阈值把排序增益压成 accuracy 负向”；但 target_prior 是 transductive、
+> 后验选择的规则，只能记为条件性候选，不能升级为默认。默认 0.5 的 0/36
+> 主判决不变。见 §11.38。
+
 ### 11.37.6 复算
 
 ```bash
@@ -5480,7 +5523,293 @@ oof_n_cross/conflict`）与 `data/wsp-classify-oof-test-gap.tsv`
 （6 行数据、16 列，含 `f32_oof_mean/test_f32_c1/
 test_internal_cv_mean/oof_test_gap_pp`）。
 
+## 11.38 Hate 20pp 差距的域/阈值分解与目标先验阈值复验（M1.38）
+
+### 11.38.1 问题
+
+M1.37 把 Hate 的官方 test 判为跨域读数，但还没有回答三件事：
+
+1. 20–22pp 的 f32 差距是文本域迁移，还是 test 更长、12.8% 超过 64
+   token 的截断混杂？M1.15 只记了长度统计，没有把长度与错误类型分开。
+2. 差距里有多少是排序能力损失，有多少只是 0.5 决策阈值在目标域上
+   漂移？M1.35/M1.37 的 test 读数都用默认阈值；如果目标域分数整体
+   偏移，accuracy 会被阈值压低，而 AUC/排序不一定坏。
+3. M1.35/M1.37 的“0 个显著正向”是否阈值条件的结论？如果换成不用
+   test 标签的目标先验阈值，量化臂是否仍全部不胜？
+
+M1.38 先做域分类器与长度分桶，再把 f32 的 20pp 差距拆成“阈值”与
+“校准后残差”，最后把同一套目标先验阈值套到全部 36 个比较上。仍是
+冻结编码器 + 线性 probe（logreg / LinearSVC），没有 MLP、没有 encoder
+微调、没有 MNLI。
+
+### 11.38.2 域分类器与长度诊断
+
+域分类器只判断“这句话来自 train 还是 test”，不碰 hate 标签：
+
+- 词 1–2 gram TF-IDF，`min_df=2`、`max_features=200000`、`sublinear_tf`；
+  5 折 StratifiedKFold（seed 7），vectorizer 在每折内重新 fit，避免把
+  测试词表提前并入；
+- 线性 logistic，`class_weight=balanced`；报 AUC 与 accuracy；
+- 另做“只看长度”的 logistic，作为长度混杂的对照。
+
+| dataset | n_train | n_test | 域分类器 AUC | 域分类器 acc | 长度单特征 AUC |
+|---|---:|---:|---:|---:|---:|
+| SST-2 | 6,920 | 1,821 | `0.490853` | `0.648095` | `0.486653` |
+| CoLA | 8,551 | 1,043 | `0.686817` | `0.807380` | `0.506840` |
+| Hate | 8,985 | 2,734 | `0.921051` | `0.853400` | `0.561306` |
+
+Hate 的 train/test 文本几乎可以被词袋线性分开（AUC `0.921`）；SST-2
+接近随机（`0.491`），CoLA 有中等 topic 差（`0.687`）。长度单特征在
+三个数据集都接近随机（`0.487/0.507/0.561`），所以 Hate 的 `0.921`
+主要不是“test 更长”造成的。CoLA 的 `0.687` 也没有对应 20pp 级
+accuracy 差（§11.37 的 CoLA f32 OOF/test 差只有 `−1.98` 到 `+0.69pp`），
+说明域分类器 AUC 是迁移的**相关诊断**，不是充分条件；Hate 是唯一
+同时出现高 AUC 与 20pp 差距的 case。
+
+Hate 的 token 长度（tokenizer 不截断）：
+
+| split | n | mean | p50 | p95 | max | >64 token |
+|---|---:|---:|---:|---:|---:|---:|
+| train | 8,985 | `31.84` | 29 | 63 | 112 | `4.50%` |
+| test | 2,734 | `36.59` | 32 | 77 | 141 | `12.77%` |
+
+test 确实更长，但把 f32 logreg（C=1）的 test 预测按长度分桶后，准确率
+几乎不随长度变化：
+
+| test 长度桶 | n | accuracy | 真实正例率 | 预测正例率 | mean tokens |
+|---|---:|---:|---:|---:|---:|
+| `<=32` | 1,440 | `0.577083` | `0.406944` | `0.764583` | `22.08` |
+| `33–64` | 945 | `0.573545` | `0.431746` | `0.720635` | `44.12` |
+| `65–96` | 337 | `0.566766` | `0.356083` | `0.646884` | `74.89` |
+| `>96` | 12 | `0.500000` | `0.083333` | `0.583333` | `109.25` |
+| `<=64` | 2,385 | `0.575681` | `0.416771` | `0.747170` | `30.81` |
+| `>64` | 349 | `0.564470` | `0.346705` | `0.644699` | `76.07` |
+
+`>64` 与 `<=64` 的 accuracy 只差 `1.12pp`，远小于 20pp；长度桶内
+accuracy 也都在 `0.50–0.58`。因此在这个 probe 上，**截断/长度不是
+20pp 差距的主因**。这里没有做 seq128 重编码；长度分桶与长度单特征
+AUC 只否定了“长度是主要解释”，没有证明“换 seq128 一定没有帮助”。
+
+### 11.38.3 20pp 差距的分解：阈值约 6–9pp，校准后仍差 12–13pp
+
+先固定 f32 logreg（C=1）在 Hate test 上，比较四种决策规则。所有规则
+都只用于诊断，不参与 M1.35 的 matched-C 选 C：
+
+- `0.5`：默认阈值；
+- `train_score_prior`：在 **train 分数**上取 `1−train 先验` 分位，
+  再套到 test；只用 train，不看 test 分布（只作诊断，未进主表）；
+- `target_prior`：在 **test 分数**上取 `1−train 先验` 分位，再套到
+  test；使用未标注 test 分数，不使用 test 标签；
+- `test_prior` / `oracle`：分别用 test 标签的先验/最优阈值，只作诊断
+  上界，不进入任何结论。
+
+| depth | rule | threshold | pred positive | accuracy | macro-F1 | test AUC |
+|---|---|---:|---:|---:|---:|---:|
+| L12 | `0.5` | `0.500000` | `0.734089` | `0.574250` | `0.565499` | `0.685903` |
+| L12 | `target_prior` | `0.763184` | `0.420995` | `0.634236` | `0.623194` | `0.685903` |
+| L12 | `test_prior`（诊断） | `0.770360` | `0.407827` | `0.635699` | `0.622883` | `0.685903` |
+| L12 | `oracle`（诊断） | `0.801236` | `0.352963` | `0.645208` | `0.623675` | `0.685903` |
+| L6 | `0.5` | `0.500000` | `0.750549` | `0.546086` | `0.534408` | `0.671841` |
+| L6 | `target_prior` | `0.755415` | `0.420995` | `0.633504` | `0.622441` | `0.671841` |
+| L6 | `test_prior`（诊断） | `0.764180` | `0.407827` | `0.634967` | `0.622126` | `0.671841` |
+| L6 | `oracle`（诊断） | `0.834838` | `0.272129` | `0.646306` | `0.605943` | `0.671841` |
+
+关键点：
+
+- 默认 0.5 下模型把 test 预测成 `73–75%` 正例，而 train 先验是
+  `42.08%`、test 真先是 `40.78%`；这不是标签先验差（train/test 只差
+  `1.31pp`），而是目标域分数整体抬高，0.5 阈值落到了过预测区。
+- 只在 **train 分数**上取分位（`train_score_prior`）修不好：train 分数
+  与 test 分数分布不同；**必须在目标分数上取分位**，才把预测正例率压回
+  `0.421`。这个规则只用未标注 test 分数，不用 test 标签，但它是
+  transductive 的；不能当成普通 benchmark 的默认协议。
+- `target_prior` 把 L12 从 `0.574250` 提到 `0.634236`（`+6.00pp`），
+  L6 从 `0.546086` 提到 `0.633504`（`+8.74pp`）；`test_prior` 与它
+  几乎相同（`0.635699/0.634967`），`oracle` 也只再高约 `1.1–1.3pp`。
+
+把 test 内部 5 折 f32（固定 C=1，诊断用）当 in-domain 参照：
+
+| case | in-domain（test 5 折） | 默认 0.5 | target-prior | 阈值回收 | 校准后残差 |
+|---|---:|---:|---:|---:|---:|
+| Hate L12 | `0.763934` | `0.574250` | `0.634236` | `+6.00pp` | `−12.97pp` |
+| Hate L6 | `0.751205` | `0.546086` | `0.633504` | `+8.74pp` | `−11.77pp` |
+
+也就是说，`19.0–20.5pp` 的 test 内部差距里，约 `6–9pp` 是阈值漂移，
+校准后仍有 `12–13pp` 的残差；残差里包含排序质量下降（AUC 作为代理
+为 `0.686/0.672`，低于 in-domain accuracy `0.764/0.751`，但 AUC 与
+accuracy 不是同一尺度，不能把 `7.8pp` 直接相加）。OOF 视角同样：
+L12 OOF `0.771998`、L6 `0.762671`，对 target-prior 的残差为
+`13.78/12.92pp`，与 test 内部参照同量级。
+
+### 11.38.4 全臂目标先验阈值复验
+
+把 M1.35 的 matched-C 原样保留（每个 `dataset×depth×probe×seed` 只在
+真 f32 上做 5 折选 C，f32 与全部量化臂共用），只改决策阈值：
+
+- `default`：logreg 0.5 / SVC 0；与 M1.35 完全同口径；
+- `target_prior`：每个臂在 **自己的 test 分数**上取 `1−train 先验`
+  分位，预测 `score >= q`；预测正例率被压到 `0.420995`，不用 test
+  标签。
+
+6 个 case、2 probe、5 seed、36 个比较，共 360 个 CI（每规则 180 个）：
+
+| rule | 正 CI | 负 CI | 跨 0 | 36 个比较中出现过正 CI |
+|---|---:|---:|---:|---:|
+| `default` | 0 | 41 | 139 | 0 |
+| `target_prior` | 23 | 30 | 127 | 6 |
+
+`default` 与 M1.35 逐项一致（0 正 / 41 负 / 139 跨）。`target_prior`
+的 6 个正比较全部在 Hate，SST-2/CoLA 的 24 个比较仍是 0 个正 CI；
+按 case 的 CI 分布：
+
+| case | default 正/负/跨 | target_prior 正/负/跨 |
+|---|---:|---:|
+| SST-2 L12 | 0/20/10 | 0/20/10 |
+| SST-2 L6 | 0/0/30 | 0/0/30 |
+| CoLA L12 | 0/0/30 | 0/0/30 |
+| CoLA L6 | 0/5/25 | 0/10/20 |
+| Hate L12 | 0/16/14 | 9/0/21 |
+| Hate L6 | 0/0/30 | 14/0/16 |
+
+默认→target 的 36 行对照是 `6 gain / 30 same / 0 loss`：没有任何比较从
+正 CI 变成负 CI，也没有把某个比较的负向“修成”正向；6 个 gain 就是
+上表 Hate 的 6 个比较。
+
+Hate 的 6 个正比较：
+
+| case | probe | arm | 正 CI / 5 | 5-seed 均值 | 代表 CI |
+|---|---|---|---:|---:|---:|
+| Hate L12 | logreg | `R12` | 5/5 | `+1.8288pp` | `[+0.3292,+3.2928]pp` |
+| Hate L12 | linear_svc | `R12` | 4/5 | `+1.6825pp` | `[+0.4023,+3.3650]pp`（seed 13 为 `+0.8047pp`、CI 跨 0） |
+| Hate L6 | logreg | `rescan` | 5/5 | `+2.7213pp` | `[+1.1339,+4.1697]pp`（seed 7 为 `[+1.5362,+4.6086]pp`） |
+| Hate L6 | linear_svc | `rescan` | 5/5 | `+2.5457pp` | `[+0.9510,+4.0234]pp`（seed 7/13 为 `[+1.1339,+4.1331]pp`） |
+| Hate L6 | linear_svc | `int4` | 3/5 | `+1.0973pp` | `[+0.2560,+2.2677]pp`（seed 7/13 为 `+0.8778pp`、CI 跨 0） |
+| Hate L6 | logreg | `int3` | 1/5 | `+1.3899pp` | `[+0.1463,+3.2196]pp`（仅 seed 7；其余 4 seed 为 `+1.3168pp`、CI 跨 0） |
+
+绝对分数与排序诊断（f32 同阈值规则）：
+
+| case | probe | arm | f32 | arm | Δ | test AUC（arm vs f32） |
+|---|---|---|---:|---:|---:|---:|
+| Hate L12 | logreg | `R12` | `0.634236` | `0.652524` | `+0.018288` | `0.6999` vs `0.6859` |
+| Hate L12 | linear_svc | `R12` | `0.637162` | `0.656181` | `+0.019020` | `0.7034` vs `0.6886` |
+| Hate L6 | logreg | `rescan` | `0.631309–0.633504` | `0.657644–0.664228` | 均值 `+0.027213` | `0.6994–0.7094` vs `0.6627–0.6718` |
+| Hate L6 | linear_svc | `rescan` | `0.631309–0.634967` | `0.656181–0.661302` | 均值 `+0.025457` | `0.7014–0.7083` vs `0.6645–0.6728` |
+
+`R12` 与 `rescan` 的 target-prior 增益不是纯阈值伪影：test AUC 也高于
+f32（L12 `R12` 约 `+1.2–1.5pp`，L6 `rescan` 约 `+2.8–3.7pp`）。`int4`
+SVC 的 AUC/accuracy 只有 `3/5`，`int3` logreg 只有 `1/5`，是弱候选；
+不能把 6 个正比较当成 6 个独立候选：`R12` 两个 probe 是同一臂，
+`rescan` 两个 probe 也是同一臂。
+
+SST-2/CoLA 在 target_prior 下没有正 CI；CoLA L6 的负 CI 反而从 5 个
+增到 10 个，说明目标先验阈值不是“普适提分”，它只对分数漂移严重的
+Hate 有效。
+
+### 11.38.5 与 M1.37 的关系
+
+- M1.37 的默认 0.5 test 读数不变：Hate L12 `R12` 仍 5/5 负向、Hate L6
+  `rescan`/`int3` 仍 5/5 跨 0；官方 test 的 headline 仍是“0 个显著
+  正向，f32 锚点”。
+- 但 M1.37 把 `R12` 判为“OOF-only、跨域不成立”是**默认阈值条件**的。
+  target_prior 下 `R12` L12 logreg 5/5 正（`+1.83pp`）、SVC 4/5 正，
+  且 test AUC `0.6999/0.7034` 高于 f32 `0.6859/0.6886`；Hate L6
+  `rescan` 也从默认阈值下的“点正、5/5 跨 0”变成两个 probe 5/5 正。
+  这与 M1.37 的 OOF 正向（`R12 +0.68pp`、`rescan +0.59pp`）方向一致，
+  不再是“OOF 正、test 负”的纯方向翻转；默认阈值下的负向主要是阈值
+  漂移，不是排序能力完全反向。
+- 这不把 `R12`/`rescan` 升级为默认：target_prior 是后验选择的
+  transductive 阈值规则，只在 Hate 出现正 CI，SST-2/CoLA 没有；
+  `int4`/`int3` 仍只有 3/5、1/5。它们是**条件性候选**，不是通用
+  量化增益。
+- M1.15 的旧表仍是“per-arm C + 默认阈值 + 跨域 test”的历史口径，不能
+  与 M1.31 的 per-arm CV 表或 M1.35 的 matched-C 表拼接；M1.15 的
+  fixed C=1 敏感性也不能当主表。M1.38 的 target_prior 复验只在
+  matched-C 表上改阈值，不改变 C 选择口径。
+
+### 11.38.6 判决
+
+- **默认 0.5 的官方 test 主判决不变：0/36 个量化档显著超过真 f32；
+  41 个负 CI；f32 继续是默认锚点。** M1.35/M1.37 的这组读数仍是
+  benchmark headline。
+- **Hate 的 20–22pp 差距不是长度/截断，也不是标签噪声；主因是文本域
+  迁移 + 目标域阈值漂移。** 域分类器 AUC `0.921`、长度单特征 `0.561`、
+  长度分桶 accuracy 基本持平；校准阈值可回收 `6–9pp`，校准后仍差
+  `12–13pp`。
+- **target_prior 下 6/36 个比较出现正 CI，全部在 Hate：`R12` L12 与
+  `rescan` L6 是最强的两个条件性候选；`int4` SVC 3/5、`int3` logreg
+  1/5 只是弱信号。** SST-2/CoLA 的 24 个比较仍 0 正，所以这不是
+  “量化普遍提升线性分类”的新证据。
+- **`R12`/`rescan` 不能因这次复验直接发布。** 阈值规则是看到 0.5
+  阈值漂移后选的，5 个 seed 共享同一批 test 标签，target_prior 还是
+  transductive 的；需要预注册的独立数据集/切分和固定阈值规则做
+  confirmatory test。继续在同一批 Hate 上换 seed/C/阈值只会增加
+  后验选择，不会增加独立证据。
+- **分类头这条线可以收口，但收口口径要改成“默认阈值无正向；目标
+  先验阈值下有 Hate-only 条件性候选”。** 不再把 `R12` 写成“跨域
+  不成立”，也不再把它写成“已证超过 f32”；两者都过度了。
+- 边界：域分类器是词袋线性代理，不做 topic/句法/标注；长度桶用 L12
+  tokenizer，没有 seq128 重编码；target_prior 使用未标注 test 分数，
+  是 transductive 校准；5 个 seed 不是独立重复；bootstrap 只重采样
+  test，不覆盖训练与阈值选择方差；只有 3 个数据集、2 个深度、2 个
+  线性头；没有 MLP、没有 encoder 微调、没有 MNLI。
+
+### 11.38.7 复算
+
+```bash
+# 域分类器、长度分桶、双向迁移、f32 阈值敏感性
+python geometry/hate_domain_audit.py
+
+# 6 个 case 的 target-prior 全臂矩阵（每 case 60 行）
+python geometry/matched_prior_full.py --dataset sst2 --depth l12
+python geometry/matched_prior_full.py --dataset sst2 --depth l6
+python geometry/matched_prior_full.py --dataset cola --depth l12
+python geometry/matched_prior_full.py --dataset cola --depth l6
+python geometry/matched_prior_full.py --dataset hate --depth l12
+python geometry/matched_prior_full.py --dataset hate --depth l6
+
+# 合并 360 行 raw、72 行 summary、36 行 default 对照、24 行 f32
+python geometry/make_matched_prior_tsv.py
+```
+
+表见：
+
+- `data/wsp-classify-domain-shift.tsv`（3 行、6 列：`dataset n_train
+  n_test domain_auc domain_acc length_only_auc`）；
+- `data/wsp-classify-hate-transfer.tsv`（8 行、6 列：`dataset depth
+  direction n_train n_eval accuracy`）；
+- `data/wsp-classify-hate-threshold.tsv`（8 行、8 列：`depth rule
+  threshold n pred_positive_rate accuracy macro_f1 test_auc`）；
+- `data/wsp-classify-hate-length-buckets.tsv`（6 行、6 列：`bin n
+  accuracy positive_rate pred_positive_rate mean_tokens`）；
+- `data/wsp-classify-matched-prior-raw.tsv`（360 行、18 列：`dataset
+  depth probe arm metric seed rule C threshold target_prior
+  pred_pos_rate f32_score arm_score point_delta boot_mean ci_low ci_high
+  verdict`）；
+- `data/wsp-classify-matched-prior-summary.tsv`（72 行、18 列：`dataset
+  depth probe arm metric rule n_seeds n_pos_ci n_neg_ci n_cross_ci
+  n_pos_point any_positive mean_point sd_point min_point max_point
+  mean_boot mean_threshold`）；
+- `data/wsp-classify-matched-prior-vs-default.tsv`（36 行、16 列：`dataset
+  depth probe arm metric default_n_pos default_n_neg default_n_cross
+  default_any_positive default_mean_point target_n_pos target_n_neg
+  target_n_cross target_any_positive target_mean_point flip`）；
+- `data/wsp-classify-matched-prior-f32.tsv`（24 行、8 列：`dataset
+  depth probe rule n_seeds mean_score min_score max_score`）。
+
 ## 12. 下一步
+
+> **M1.38 读法**：分类头的默认 0.5 官方 test headline 不变——36 个比较
+> 0 个量化档显著超过真 f32（0 正 / 41 负 / 139 跨），f32 仍是默认锚点。
+> Hate 的 20–22pp 差距已经拆开：文本域迁移是主因（域分类器 AUC `0.921`），
+> 长度/截断不是（长度单特征 `0.561`，`>64` 与 `≤64` 准确率只差 `1.12pp`）；
+> 默认阈值漂移贡献约 `6–9pp`，校准后仍有 `12–13pp` 残差。把阈值改成
+> “目标分数分位匹配 train 先验”（不用 test 标签）后，36 个比较里 6 个出现
+> 正 CI，全部在 Hate：L12 `R12`（logreg 5/5、SVC 4/5）和 L6 `rescan`
+> （两 probe 5/5）是条件性候选，`int4` SVC 3/5、`int3` logreg 1/5 只是弱信号；
+> SST-2/CoLA 仍 0 正。**不要把这 6 个正比较写成“量化普遍增益”，也不要
+> 再把 `R12` 写成“跨域不成立”；正确口径是“默认阈值无正向，目标先验阈值下
+> 有 Hate-only 条件性候选”。** 下一步应做预注册的独立数据集/切分和固定
+> 阈值规则，停止在同一批 Hate 上换 seed/C/阈值。见 §11.38。
 
 > **M1.28 读法**：本节及历史 §11.12–§11.25 中所有 SST-2 的 `f32` 读数
 > （L12 与 L6）都应视为 ternary 基线；`int4−f32` 正向是 ternary→4-bit
