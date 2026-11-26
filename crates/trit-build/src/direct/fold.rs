@@ -3,14 +3,14 @@
 //! 这里只做「有常量就现算」，算不出常量就原样保留。
 //!
 //! 折叠后仍保留每条指令的下标（只替换算子，不删除节点），最后用
-//! `prune_dead` 统一收孤儿；化简前先做德摩根链归一，化简后再回折常量并走 CSE 合并同构子式。
+//! `prune_dead` 统一收孤儿；化简前先做德摩根链归一，化简内的 `Not(Const)` 即时折常量，
+//! 最后走 CSE 合并同构子式。
 use super::{ir::Op, lower::prune_dead};
 use trit_circuit::GateKind;
 use trit_core::Algebra;
 use trit_core::value::Ternary;
 mod cse;
 mod negchain;
-mod refold;
 mod simplify;
 pub(super) fn fold(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     if ops.is_empty() {
@@ -48,7 +48,7 @@ pub(super) fn fold(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     let root = kept.len() - 1;
     let ops = negchain::collapse(prune_dead(kept, root));
     let ops = simplify::simplify(ops, alg);
-    cse::cse(refold::refold(ops, alg))
+    cse::cse(ops)
 }
 #[cfg(test)]
 mod tests;

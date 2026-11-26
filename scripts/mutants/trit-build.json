@@ -192,14 +192,6 @@
   "filter": "direct::netlist::tests::verilog_xor_becomes_classic_xor2"
  },
  {
-  "name": "refold: 常量节点不参与回折",
-  "file": "crates/trit-build/src/direct/fold/refold.rs",
-  "old": "            Op::Const(value) => Some(value),",
-  "new": "            Op::Const(_) => None,",
-  "pkg": "trit-build",
-  "filter": "direct::fold::refold::tests::refold_closes_not_of_collapsed_constant"
- },
- {
   "name": "fold: Xor2 借用 Ł3 异或",
   "file": "crates/trit-build/src/direct/fold.rs",
   "old": "                .map(|(a, b)| GateKind::XorClassic.eval(&[a, b], alg)),",
@@ -417,7 +409,7 @@
  },
  {
   "name": "negation: 单侧取反也回收",
-  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation/de_morgan.rs",
   "old": "    let right = not_operand(kept, *right)?;",
   "new": "    let right = not_operand(kept, *right).unwrap_or(*right);",
   "pkg": "trit-build",
@@ -425,7 +417,7 @@
  },
  {
   "name": "negation: 对偶算子写反",
-  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation/de_morgan.rs",
   "old": "    Some(if dual {\n        Op::And(left, right)\n    } else {\n        Op::Or(left, right)\n    })",
   "new": "    Some(if dual {\n        Op::Or(left, right)\n    } else {\n        Op::And(left, right)\n    })",
   "pkg": "trit-build",
@@ -600,19 +592,11 @@
   "filter": "direct::fold::simplify::tests::poison::poison_absorbs_and_or_only_in_bochvar"
  },
  {
-  "name": "refold: 不折常量 Not",
-  "file": "crates/trit-build/src/direct/fold/refold.rs",
-  "old": "            Op::Not(inner) => values[inner].map(|value| alg.not(value)),",
-  "new": "            Op::Not(_) => None,",
+  "name": "negation: 常量否定不折",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "old": "    if let Some(value) = consts[inner] {\n        push_const(resolve, kept, consts, !value);\n        return;\n    }",
+  "new": "    if let Some(_value) = consts[inner] {\n        push_node(resolve, kept, consts, Op::Not(inner));\n        return;\n    }",
   "pkg": "trit-build",
-  "filter": "direct::fold::refold::tests::true_const::refold_folds_not_of_true_constant"
- },
- {
-  "name": "fold: 跳过化简后回折",
-  "file": "crates/trit-build/src/direct/fold.rs",
-  "old": "    cse::cse(refold::refold(ops, alg))",
-  "new": "    cse::cse(ops)",
-  "pkg": "trit-build",
-  "filter": "direct::fold::refold::tests::refold_closes_not_of_collapsed_constant"
+  "filter": "direct::fold::simplify::negation::tests::const_fold::constant_not_feeds_poison_into_the_parent"
  }
 ]

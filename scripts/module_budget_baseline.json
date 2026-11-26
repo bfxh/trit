@@ -291,18 +291,6 @@
       "lines": 136
     },
     {
-      "file": "crates/trit-build/src/direct/fold/refold.rs",
-      "lines": 49
-    },
-    {
-      "file": "crates/trit-build/src/direct/fold/refold/tests.rs",
-      "lines": 19
-    },
-    {
-      "file": "crates/trit-build/src/direct/fold/refold/tests/true_const.rs",
-      "lines": 13
-    },
-    {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
       "lines": 57
     },
@@ -336,11 +324,23 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
-      "lines": 54
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/de_morgan.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/negation/tests.rs",
       "lines": 89
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/tests/const_emit.rs",
+      "lines": 30
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/tests/const_fold.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests.rs",

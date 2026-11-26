@@ -8,7 +8,8 @@ use trit_core::{Algebra, Parser};
 
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
-
+mod const_emit;
+mod const_fold;
 #[test]
 fn de_morgan_holds_for_every_algebra_and_value_pair() {
     for alg in ALGS {
@@ -28,7 +29,6 @@ fn de_morgan_holds_for_every_algebra_and_value_pair() {
         }
     }
 }
-
 #[test]
 fn double_negation_aliases_and_one_sided_inversion_stays() {
     assert_eq!(

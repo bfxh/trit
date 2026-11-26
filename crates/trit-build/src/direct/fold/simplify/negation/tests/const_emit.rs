@@ -1,9 +1,10 @@
-//! 常量回折判据：B3 的 `!(a & X)` 在化简后才出现 `Not(Const U)`，回折必须把它收成一条常量。
+//! 端到端判据：化简内的 `Not(Const)` 必须让根节点直接落常量，不再依赖后续 pass。
+
 use crate::direct::emit;
 use trit_core::{Algebra, Parser};
-mod true_const;
+
 #[test]
-fn refold_closes_not_of_collapsed_constant() {
+fn constant_not_sheds_tables_in_bochvar_only() {
     let expr = Parser::parse("!(a & X)").expect("解析");
     let vars = expr.variables();
     let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
@@ -16,4 +17,14 @@ fn refold_closes_not_of_collapsed_constant() {
         assert!(c.contains("T_NOT"), "{alg:?}: {c}");
         assert!(c.contains("T_AND"), "{alg:?}: {c}");
     }
+}
+
+#[test]
+fn k3_not_of_true_constant_folds_to_false() {
+    let expr = Parser::parse("!(a | 1)").expect("解析");
+    let vars = expr.variables();
+    let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
+    assert_eq!(c.matches("    int8_t t").count(), 1, "{c}");
+    assert!(c.contains("int8_t t0 = -1"), "{c}");
+    assert!(!c.contains("T_NOT"), "{c}");
 }
