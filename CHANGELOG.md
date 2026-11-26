@@ -2,6 +2,71 @@
 
 ## [Unreleased]
 
+### Added（第四十七轮：direct 单用节点递归内联）
+
+- `direct/emit/inline/plan.rs`：内联决策从「只沿 `Not` 的操作数锥」扩成「从每个会发射的
+  节点出发」——凡 `uses == 1` 的节点都并进父语句，沿单用操作数最多下钻 3 层。到深度
+  边界后该节点自己发射、子树重新计深度；扇出节点（`uses > 1`）仍单独落临时变量，不复制。
+  决策逻辑从 `inline.rs` 拆出，`inline.rs` 只留 C 表达式展开。
+- 读数（同机，`.tri` 源）：`(a & b) | c` 5→1 条、741→661 B；`((a & b) | c) & (d | e)`
+  9→1 条、876→716 B；`((a => b) <=> (!a | b)) ^ c` 6→2 条、853→773 B；11 变量混合式
+  17→11 条、1405→1273 B；`a & (b | (c & (d | (e & f))))` 11→3 条、946→784 B。
+- 判据：`cargo test -p trit-build` 129 单元 + 全部集成测试通过；新增
+  `single_use_binary_tree_collapses_into_root`，并把内联测试拆到 `inline/tests/{tree,fanout,depth}.rs`；
+  三代数 `--verify-c` 在 11 变量（3^11 = 177147 行）上逐行一致。
+- 边界：深度封顶仍是 3；只消除单用临时变量，不改变算子语义、表集合与 fail-closed 入参检查。
+  普通二元树也会塌缩，因此 `direct.c` 的语句数不再等于后序节点数。
+
+### Fixed（第四十六轮：RE 边收割溢出与 TTX3 幽灵级）
+
+- `trit-re/functions/cfg`：x86 `E8`/`E9` 边收割的 `base + index` 改为 `checked_add`，节基址
+  贴近 `u64::MAX` 时跳过溢出位置而不是在 debug 构建里 panic（#707）。ARM64 分支已在
+  第四十轮硬化，本轮只补齐同族 x86 位点；测试模块拆到 `cfg/tests.rs`，新增
+  `edges_from_near_u64_max_are_skipped_not_panicking`。
+- `trit-texture/ttx3`：`Ttx3Archive::parse` 在构造视图前调用 `levels::validate_chain`：
+  每级复用 `validate_dims`（零尺寸/非法边长在 `tile_grid` 之前拒绝），相邻级尺寸不得增大
+  或完全相同，级目录偏移必须等于编码端封闭布局（头部 + 级目录 + 逐级瓦片目录与载荷）。
+  因此 `level_count` 谎报时多读出的“级条目”（实际是瓦片目录字节）会在解析期被拒绝，
+  不再生成幽灵级（#708）。新增 `tests/ttx3_ghost.rs` 4 条：零尺寸、相同/增大尺寸、
+  谎报级数，以及“宽不变、高继续减半”的非方形合法链防误杀。
+- 判据：`cargo test -p trit-re -p trit-texture` 137 + 62 单元及全部集成测试通过；
+  `clippy -D warnings`、`fmt --check`、`RUSTDOCFLAGS=-D warnings cargo doc`、
+  `module_budget`、`test_surface`（3831 条）、`docs_hygiene`、`alloc_guard` 干净；
+  `mutation_check --pkg trit-re --pkg trit-texture` 58/58 捕获、0 存活。
+- 边界：TTX3 的级目录账本按编码端封闭布局对账；手写档案若故意在尾部追加字节仍可解析，
+  但级目录偏移不再能指向任意文件内位置。级链规则只允许“宽或高不增、且不同时相等”，
+  覆盖标准减半链与宽先到瓦片下限的链。
+
+### Fixed（第四十五轮：机器入口的资源上界）
+
+- `trit-machines/ca`：`run` / `survey` 返回 `Result`，入口先按 `width/steps` 预算校验；历史格子、
+  单次周期扫描、整片 2187 条规则的总扫描量分别设上限。`ca --width 40000 --steps 5000`
+  （#704 的 2 亿格历史复现）在分配前报 `规模超限`，不再 OOM。
+- `trit-machines/snn`：`Network::random` 改为 `Result`，分配 `size × size` 权重矩阵前检查
+  `MAX_NEURONS`；`snn` / `graded` CLI 的 4097 神经元输入在构造前报错（#705 / #706）。
+- `trit-data/rewrite_kill`：Windows 夹具超时 2→10s、wrapper 睡眠 10→60s、PID 等待 5→10s。
+  本机 Windows GNU 连跑 4 次通过（约 10.5s/次），缓解冷启动时“孙进程 PID 未落盘”的假红。
+- 判据：`cargo test -p trit-machines` 24 单元 + 4 CLI + 3 资源上界全过；`clippy -D warnings`、
+  `fmt --check`、`module_budget` 干净。
+- 边界：超时夹具只在 Windows 上执行，Linux 门禁不覆盖；需 Windows CI 复核。
+
+### Added（第四十四轮：direct 取反锥递归内联）
+
+- `direct/emit/inline.rs`：把取反内联的决策与表达式展开从 `emit.rs` 拆出。`Not` 的操作数单用时
+  并进父语句，并沿它的单用操作数继续下钻（从 `Not` 的操作数算起最多 3 层）；命中扇出（被引用
+  两次及以上）或超出深度即停，该节点仍单独落临时变量。
+- 渲染侧统一用 `inline::expr` 展开操作数：已内联的递归成 C 表达式，未内联的取已发射的 `tN`。
+  因此 `Not(Var)` 不再固定「取变量 + 取反」两条，单用时并成 `trit_not(vars[0])` 一条；
+  `Not(And(Var, Var))` 也整棵并成一条。内联后临时变量仍连续重编号 `t0..tn`。
+- 不内联 `Not` 自身到它的父语句：下钻只发生在 `Not` 的操作数锥内；普通 `And` / `Or` 树即使
+  单用也不整树塌缩。
+- 读数（K3 / B3，同机对照 main `a6fc77bd`）：单门 `nand g(y,a,b)` 3→1 条、732→692 B
+  （B3 731→691 B）；单门 `not g(y,a)` 2→1 条、506→486 B（B3 507→487 B）；`~((a | b) & c)`
+  5→1 条、862→782 B（B3 861→781 B）；`a ^ 1'b1` 2→1 条、506→486 B；混合 `nand/nor/xnor`
+  网表 9→9 条、1113→1113 B（K3，a/b/c 有扇出，不命中，按 0 收益记账）。
+- 判据：三代数 × 5 个样例 `--verify-c` 全过（27/27、9/9、3/3 行）；新增四条渲染判据
+  （单用变量、扇出停、深度封顶、三层单用锥一条语句），lib 124→128 passed。
+
 ### Added（第四十三轮：direct 渲染内联单用取反子式）
 
 - `direct/emit.rs`：把 `direct.c` 的渲染从 `direct.rs` 拆出。节点仍按后序发语句，但单用取反子式内联：

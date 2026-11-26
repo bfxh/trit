@@ -1,9 +1,6 @@
-//! 派发闸门：每个被选中的任务都必须已有同 epoch、`Prepared` 的意图。
-
 use crate::{Attempt, Effect, Error, Ledger, Selection, TaskSpec};
 /// 派发闸门：每个被选中的任务都必须已有**同 epoch、Prepared** 的意图。
-///
-/// 约定：一个任务的单个外部效果用任务 ID 作为 operation ID；多效果任务由宿主自行加后缀。
+/// 约定：单效果任务用任务 ID 作为 operation ID；选中列表按 id 去重（保留首个、顺序稳定），重复 id 不透传为重复 Attempt；重复只来自外部构造的 Selection。
 pub fn dispatch_ready(
     selection: &Selection,
     tasks: &[TaskSpec],
@@ -11,6 +8,9 @@ pub fn dispatch_ready(
 ) -> Result<Vec<Attempt>, Error> {
     let mut ready = Vec::with_capacity(selection.selected.len());
     for id in &selection.selected {
+        if ready.iter().any(|a: &Attempt| a.operation == *id) {
+            continue;
+        }
         let spec = tasks
             .binary_search_by(|spec| spec.task.id.as_str().cmp(id))
             .ok()

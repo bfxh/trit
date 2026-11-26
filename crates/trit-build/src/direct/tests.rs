@@ -117,9 +117,9 @@ fn variable_order_is_respected() {
     let expr = Parser::parse("b & a").expect("解析");
     let vars = vec!["a".to_string(), "b".to_string()];
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-    // 后序：b 先取 vars[1]，a 取 vars[0]。
+    // 后序：b 先取 vars[1]，a 取 vars[0]；两个单用输入并进根语句。
     assert!(
-        source.contains("int8_t t0 = vars[1];") && source.contains("int8_t t1 = vars[0];"),
+        source.contains("int8_t t0 = trit_bin(T_AND, vars[1], vars[0]);"),
         "{source}"
     );
 }

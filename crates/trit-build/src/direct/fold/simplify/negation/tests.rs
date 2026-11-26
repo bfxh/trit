@@ -83,7 +83,7 @@ fn render_sheds_the_two_inner_negations_and_the_outer_one() {
     let expr = Parser::parse("!(!a & !b)").expect("解析");
     let vars = expr.variables();
     let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-    assert_eq!(c.matches("    int8_t t").count(), 3, "{c}");
+    assert_eq!(c.matches("    int8_t t").count(), 1, "{c}");
     assert!(!c.contains("T_NOT"), "{c}");
     assert!(c.contains("T_OR"), "{c}");
 }

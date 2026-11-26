@@ -5,10 +5,24 @@
 //! 权重三值意味着连接只有「兴奋 / 无 / 抑制」三档，没有可调强度——这正是仿生侧
 //! 关心的稀疏性来源。
 
+mod stats;
+
+pub use stats::Stats;
+
 /// 神经元数上限（`weights` 是方阵，平方增长）。
 pub const MAX_NEURONS: usize = 4096;
 /// 单次模拟的 tick 上限（`per_tick` 会按 tick 数分配）。
 pub const MAX_TICKS: usize = 1_000_000;
+
+/// 构造与校验共用的规模检查：必须在任何方阵分配之前拒绝。
+fn check_size(size: usize) -> Result<(), NetworkError> {
+    if size > MAX_NEURONS {
+        return Err(NetworkError::Limit(format!(
+            "神经元数 {size} 超过上限 {MAX_NEURONS}"
+        )));
+    }
+    Ok(())
+}
 
 /// 网络/模拟参数错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +100,12 @@ impl std::fmt::Display for NetworkError {
 
 impl std::error::Error for NetworkError {}
 
+impl From<NetworkError> for String {
+    fn from(error: NetworkError) -> Self {
+        error.to_string()
+    }
+}
+
 /// 一个脉冲网络。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Network {
@@ -101,7 +121,11 @@ pub struct Network {
 
 impl Network {
     /// 随机稀疏网络（确定性种子）。
-    pub fn random(size: usize, seed: u64) -> Self {
+    ///
+    /// 先校验规模再分配 `size × size` 权重矩阵；超限返回
+    /// [`NetworkError::Limit`]，不会先 OOM。
+    pub fn random(size: usize, seed: u64) -> Result<Self, NetworkError> {
+        check_size(size)?;
         let mut state = seed | 1;
         let mut next = || {
             state ^= state << 13;
@@ -120,12 +144,12 @@ impl Network {
                     .collect()
             })
             .collect();
-        Self {
+        Ok(Self {
             weights,
             threshold: 3,
             decay: (3, 4),
             refractory: 1,
-        }
+        })
     }
 
     /// 神经元数。
@@ -138,11 +162,7 @@ impl Network {
     /// `weights` 是公开字段，`simulate` 不能再假定调用方构造的是合法网络（复审 M10）。
     pub fn validate(&self) -> Result<(), NetworkError> {
         let size = self.size();
-        if size > MAX_NEURONS {
-            return Err(NetworkError::Limit(format!(
-                "神经元数 {size} 超过上限 {MAX_NEURONS}"
-            )));
-        }
+        check_size(size)?;
         for (neuron, row) in self.weights.iter().enumerate() {
             if row.len() != size {
                 return Err(NetworkError::Shape {
@@ -182,33 +202,6 @@ pub struct State {
     pub refractory: Vec<u32>,
     /// 本 tick 的脉冲（`-1/0/1`）。
     pub spikes: Vec<i32>,
-}
-
-/// 一次模拟的统计。
-#[derive(Debug, Clone, PartialEq)]
-pub struct Stats {
-    /// tick 数。
-    pub ticks: usize,
-    /// 脉冲总数。
-    pub spikes: usize,
-    /// 其中兴奋 / 抑制脉冲数。
-    pub positive: usize,
-    /// 抑制脉冲数。
-    pub negative: usize,
-    /// 任意时刻发过脉冲的神经元比例。
-    pub active_fraction: f64,
-    /// 每个 tick 的脉冲数。
-    pub per_tick: Vec<usize>,
-}
-
-impl Stats {
-    /// 平均每个神经元每 tick 的脉冲数（稀疏度指标）。
-    pub fn spikes_per_neuron_tick(&self, neurons: usize) -> f64 {
-        if neurons == 0 || self.ticks == 0 {
-            return 0.0;
-        }
-        self.spikes as f64 / (neurons * self.ticks) as f64
-    }
 }
 
 /// 跑 `ticks` 步；初始膜电位全 0，无外部输入。

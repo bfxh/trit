@@ -1,9 +1,6 @@
 //! JSON-RPC 分发与文档状态。
 //!
-//! 只实现 `.tri` 需要的最小方法集：`initialize` / `shutdown` / `didOpen` /
-//! `didChange` / `didClose` / `didSave` / `hover` / `completion` / `documentSymbol` /
-//! `definition` / `references` / `documentHighlight` / `rename`。
-//! 未实现的方法按 JSON-RPC 返回 `-32601`，未知通知静默忽略。
+//! 只实现 `.tri` 需要的最小方法集（initialize/shutdown/didOpen/didChange/didClose/didSave/hover/completion/documentSymbol/definition/references/documentHighlight/rename）；未实现的方法返回 `-32601`，未知通知静默忽略。
 
 use std::collections::HashMap;
 
@@ -13,22 +10,17 @@ use trit_core::Algebra;
 use crate::analysis;
 use crate::text::Position;
 
-/// JSON-RPC 错误。
 #[derive(Debug)]
 pub struct RpcError {
-    /// 错误码。
     pub code: i64,
-    /// 错误消息。
     pub message: String,
 }
 
-/// 同时打开的文档数硬顶：恶意/失控客户端不许用海量 didOpen 撑爆内存。
+/// 打开文档数 / 单文档字节数硬顶：挡住海量 didOpen 与超大文档保留。
 pub const MAX_OPEN_DOCS: usize = 256;
-/// 单个文档文本字节硬顶：超大文档在保留前拒绝。
 pub const MAX_DOC_BYTES: usize = 4 * 1024 * 1024;
 
-/// 文档保留守卫（纯函数，不分配）：超尺寸/超数量返回拒绝理由，否则 `None`。
-/// 更新已存在的文档不受数量上限限制（否则到顶后连改都改不了）。
+/// 文档保留守卫（纯函数，不分配）：超尺寸/超数量返回拒绝理由，否则 `None`；已存在文档不受数量上限限制。
 fn retention_problem(open_count: usize, uri_exists: bool, text_len: usize) -> Option<&'static str> {
     if text_len > MAX_DOC_BYTES {
         return Some("文档超过尺寸上限");
@@ -39,7 +31,6 @@ fn retention_problem(open_count: usize, uri_exists: bool, text_len: usize) -> Op
     None
 }
 
-/// 服务器状态：打开的文本文档 + 当前三值语义。
 pub struct Server {
     texts: HashMap<String, String>,
     algebra: Algebra,
@@ -53,7 +44,6 @@ impl Default for Server {
 }
 
 impl Server {
-    /// 空状态；默认 Kleene 强三值语义。
     pub fn new() -> Self {
         Self {
             texts: HashMap::new(),
@@ -69,6 +59,13 @@ impl Server {
 
     /// 处理请求；`Err` 由调用方包成 JSON-RPC error。
     pub fn request(&mut self, method: &str, params: &Value) -> Result<Value, RpcError> {
+        // shutdown 后除自身外的请求拒绝：-32600 Invalid Request，仍走既有 error 对象形状。
+        if self.shutdown && method != "shutdown" {
+            return Err(RpcError {
+                code: -32600,
+                message: "已 shutdown，不再接受请求".into(),
+            });
+        }
         match method {
             "initialize" => {
                 self.apply_options(params);
@@ -114,6 +111,10 @@ impl Server {
 
     /// 处理通知；返回要发回客户端的通知（目前只有 `publishDiagnostics`）。
     pub fn notification(&mut self, method: &str, params: &Value) -> Vec<Value> {
+        // shutdown 后除 `exit` 外的通知一律丢弃：不改文档状态，也不回推诊断。
+        if self.shutdown && method != "exit" {
+            return Vec::new();
+        }
         match method {
             "textDocument/didOpen" => {
                 let Some(doc) = params.get("textDocument") else {
@@ -137,7 +138,6 @@ impl Server {
                 let Some(uri) = uri_of(params) else {
                     return Vec::new();
                 };
-                // 同步方式是 Full（capabilities 里 textDocumentSync = 1）。
                 if let Some(text) = params
                     .get("contentChanges")
                     .and_then(Value::as_array)

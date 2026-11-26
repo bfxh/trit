@@ -10,11 +10,7 @@ use super::{
     CheckpointLock, CheckpointSource,
 };
 
-/// 版本化目录的文件检查点存储。
-///
-/// 布局：`<root>/v<CHECKPOINT_VERSION>/<hex(task_id)>/<generation>.json`。
-/// 每次保存写同目录临时文件，再 `rename` 到**新**代文件；不覆盖旧文件，加载取最大代。
-/// 临时文件不以 `.json` 结尾，崩溃残留不会参与加载。
+/// 文件检查点存储；布局 `<root>/v<CHECKPOINT_VERSION>/<hex(task_id)>/<generation>.json`，临时文件不以 `.json` 结尾。
 #[derive(Debug, Clone)]
 pub struct FileCheckpointStore {
     root: PathBuf,
@@ -41,16 +37,22 @@ impl FileCheckpointStore {
         self.version_dir().join(hex_encode(task_id.as_bytes()))
     }
 
-    /// 保存检查点并返回生成的代号。
-    ///
-    /// 不自带锁：并发写**同一任务**时必须由调用方用 [`Self::lock`] 串行化，否则两个
-    /// 写者会算出同一代号（`rename` 在 unix 上静默覆盖、Windows 上报错）。
+    /// 保存检查点并返回生成的代号。不自带锁：并发写同一任务须由调用方用
+    /// [`Self::lock`] 串行化，否则两写者算出同一代号（rename 覆盖）。
     pub fn save(&self, checkpoint: &Checkpoint) -> Result<u64, CheckpointError> {
         checkpoint.validate()?;
         checked_task_id(&checkpoint.task_id)?;
         let dir = self.task_dir(&checkpoint.task_id);
         fs::create_dir_all(&dir).map_err(io_error)?;
-        let generation = latest_generation(&dir)?.map_or(1, |latest| latest + 1);
+        let latest = best_candidate(&dir)?.map(|(generation, _)| generation);
+        let generation = match latest {
+            None => 1u64,
+            Some(latest) => latest.checked_add(1).ok_or_else(|| {
+                CheckpointError::InvalidState(format!(
+                    "检查点代号已达上限 u64::MAX（{latest}），无法再分配新代号"
+                ))
+            })?,
+        };
         let bytes = serde_json::to_vec(checkpoint)
             .map_err(|error| CheckpointError::InvalidState(error.to_string()))?;
         let temp = dir.join(format!(".tmp-{}-{}", std::process::id(), nanos()));
@@ -63,24 +65,26 @@ impl FileCheckpointStore {
         Ok(generation)
     }
 
-    /// 加载某任务最新检查点；不存在返回 `None`。
+    /// 加载最新检查点；候选按代号数值从大到小尝试，最新代损坏回退次新代，全部不可用返回最后错误。
     pub fn load(&self, task_id: &str) -> Result<Option<Checkpoint>, CheckpointError> {
         checked_task_id(task_id)?;
         let dir = self.task_dir(task_id);
-        let Some(path) = latest_checkpoint_file(&dir)? else {
+        if !dir.exists() {
             return Ok(None);
-        };
-        let bytes = fs::read(&path).map_err(io_error)?;
-        let checkpoint: Checkpoint = serde_json::from_slice(&bytes)
-            .map_err(|error| CheckpointError::InvalidState(error.to_string()))?;
-        checkpoint.validate()?;
-        if checkpoint.task_id != task_id {
-            return Err(CheckpointError::InvalidState(format!(
-                "任务 id 不匹配: 期望 {task_id}，实际 {}",
-                checkpoint.task_id
-            )));
         }
-        Ok(Some(checkpoint))
+        let mut candidates = checkpoint_candidates(&dir)?;
+        candidates.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.file_name().cmp(&a.1.file_name()))
+        });
+        let mut last_error: Option<CheckpointError> = None;
+        for (_, path) in candidates {
+            match load_checkpoint_file(&path, task_id) {
+                Ok(checkpoint) => return Ok(Some(checkpoint)),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        last_error.map_or(Ok(None), Err)
     }
 
     /// 删除某任务的全部检查点；不存在返回 `false`。
@@ -125,8 +129,7 @@ impl FileCheckpointStore {
         match fs::create_dir(&path) {
             Ok(()) => {
                 let owner = local_owner();
-                // `create_new` 保证记录只有一份：建目录与写记录之间停顿过久、目录被
-                // 当成无主锁回收后，这里会失败而不是覆盖新持有者的记录。
+                // create_new 保证记录唯一：停顿过久被回收后会失败，而不是覆盖新持有者记录。
                 match write_owner(&path, &owner) {
                     Ok(()) => {}
                     Err(error)
@@ -153,10 +156,7 @@ impl FileCheckpointStore {
         }
     }
 
-    /// 带超时获取跨进程锁；默认 `lock()` 等 5 秒。
-    ///
-    /// 等待期间每秒探测一次残留锁：只有持有进程**确定已死**（或锁目录无 `owner.json`
-    /// 且已超过 `OWNERLESS_STALE_AFTER`）才清理并重试——崩溃/kill 不会再永久卡住后续进程。
+    /// 带超时获取跨进程锁；每秒探测残留锁，确定已死/超龄无主才清理重试，不永久卡住。
     pub fn lock_timeout(&self, timeout: Duration) -> Result<CheckpointLock, CheckpointError> {
         let start = Instant::now();
         let mut probed: Option<Instant> = None;
@@ -182,14 +182,8 @@ impl FileCheckpointStore {
         self.lock_timeout(Duration::from_secs(5))
     }
 
-    /// 清理**确定已死**的持有者留下的锁目录；返回是否清掉了。
-    ///
-    /// 判定规则：`owner.json` 存在且主机名一致 ⇒ 用平台命令探测 pid；pid 确定不在
-    /// 或探测不可用 ⇒ 只清前者。`owner.json` 缺失 ⇒ 仅在目录年龄超过
-    /// `OWNERLESS_STALE_AFTER` 时清理。跨主机记录一律视为占有。
-    ///
-    /// 清理走「先原子改名隔离、再复核 owner 记录」：如果拿到锁的进程刚建目录还没写
-    /// 记录，复核会发现内容变了并原样还回去，绝不删活锁。
+    /// 清理确定已死持有者的锁目录；先原子改名隔离、再复核 owner，绝不删活锁。
+    /// 跨主机记录一律视为占有；无主锁须目录年龄超过 `OWNERLESS_STALE_AFTER` 才清理。
     pub fn break_stale_lock(&self) -> Result<bool, CheckpointError> {
         let path = self.lock_path();
         if !path.is_dir() {
@@ -212,9 +206,7 @@ impl FileCheckpointStore {
             return Ok(false);
         }
         if read_owner(&quarantine) != owner {
-            // 记录变了（新锁刚写完 owner）⇒ 还回去；但绝不覆盖已存在的目录：
-            // POSIX 的 rename 能把「已 create_dir、记录未落盘」的空目录顶掉，
-            // 那就把别人的锁弄丢了。还不了就留着隔离目录，宁可不删。
+            // 记录变了就还回去；绝不覆盖已存在目录，还不了就留隔离目录。
             if !path.exists() {
                 let _ = fs::rename(&quarantine, &path);
             }
@@ -237,15 +229,11 @@ impl FileCheckpointStore {
                 let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
                     continue;
                 };
-                // M04：`.lock` 锁目录、`.lock.reap-*` 隔离目录不是任务目录，外来噪声目录
-                // 也不该让整张索引报错——`hex_decode` 是唯一判据，解不出来就跳过。
+                // M04：`.lock`/`.lock.reap-*` 等噪声目录由 hex_decode 判据跳过。
                 let Ok(task_id) = hex_decode(name) else {
                     continue;
                 };
-                let Some(generation) = latest_generation(&path)? else {
-                    continue;
-                };
-                let Some(file) = latest_checkpoint_file(&path)? else {
+                let Some((generation, file)) = best_candidate(&path)? else {
                     continue;
                 };
                 let state_bytes = fs::metadata(&file).map_err(io_error)?.len();
@@ -316,8 +304,7 @@ fn io_error(error: std::io::Error) -> CheckpointError {
     CheckpointError::Io(error.to_string())
 }
 
-/// 空 task id 的十六进制是空串，`task_dir("")` 会落在版本目录本身——
-/// `remove("")` 因此能一次删掉全部任务与锁目录。公开入口一律拒绝空 id。
+/// 空 id 的十六进制为空串，任务目录会落在版本目录本身；公开入口一律拒绝空 id。
 fn checked_task_id(task_id: &str) -> Result<(), CheckpointError> {
     if task_id.is_empty() {
         return Err(CheckpointError::InvalidState(
@@ -342,10 +329,7 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
-/// 版本目录下的合法任务目录名：偶数长度全十六进制。
-///
-/// 保留项（`.lock`、`.lock.reap-*`）含 `.`，不可能满足十六进制约束，因此不需要
-/// 额外的保留名清单。
+/// 合法任务目录名：偶数长度全十六进制；`.lock` 等保留项含 `.`，无需保留名清单。
 fn hex_decode(text: &str) -> Result<String, CheckpointError> {
     if !text.len().is_multiple_of(2) {
         return Err(CheckpointError::InvalidState(format!(
@@ -374,25 +358,41 @@ fn checkpoint_files(dir: &Path) -> Result<Vec<PathBuf>, CheckpointError> {
     Ok(files)
 }
 
-fn latest_checkpoint_file(dir: &Path) -> Result<Option<PathBuf>, CheckpointError> {
+/// R40-S8-2：候选须 `.json` 且 stem 可解析为 u64；非数字 stem/无扩展名/`.json.bak`/`.tmp-*` 不计入。
+fn checkpoint_candidates(dir: &Path) -> Result<Vec<(u64, PathBuf)>, CheckpointError> {
+    Ok(checkpoint_files(dir)?
+        .into_iter()
+        .filter_map(|path| {
+            let stem = path.file_stem()?.to_str()?;
+            stem.parse::<u64>()
+                .ok()
+                .map(|generation| (generation, path))
+        })
+        .collect())
+}
+
+fn load_checkpoint_file(path: &Path, task_id: &str) -> Result<Checkpoint, CheckpointError> {
+    let bytes = fs::read(path).map_err(io_error)?;
+    let checkpoint: Checkpoint = serde_json::from_slice(&bytes)
+        .map_err(|error| CheckpointError::InvalidState(error.to_string()))?;
+    checkpoint.validate()?;
+    if checkpoint.task_id != task_id {
+        return Err(CheckpointError::InvalidState(format!(
+            "任务 id 不匹配: 期望 {task_id}，实际 {}",
+            checkpoint.task_id
+        )));
+    }
+    Ok(checkpoint)
+}
+
+fn best_candidate(dir: &Path) -> Result<Option<(u64, PathBuf)>, CheckpointError> {
     if !dir.exists() {
         return Ok(None);
     }
-    let mut files = checkpoint_files(dir)?;
-    files.sort();
-    Ok(files.pop())
-}
-
-fn latest_generation(dir: &Path) -> Result<Option<u64>, CheckpointError> {
-    let mut latest = None;
-    for path in checkpoint_files(dir)? {
-        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-            continue;
-        };
-        let Ok(generation) = stem.parse::<u64>() else {
-            continue;
-        };
-        latest = Some(latest.map_or(generation, |current: u64| current.max(generation)));
-    }
-    Ok(latest)
+    let mut candidates = checkpoint_candidates(dir)?;
+    candidates.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.file_name().cmp(&b.1.file_name()))
+    });
+    Ok(candidates.pop())
 }
