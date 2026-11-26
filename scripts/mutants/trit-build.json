@@ -232,14 +232,6 @@
   "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
  },
  {
-  "name": "simplify: 双重否定不消",
-  "file": "crates/trit-build/src/direct/fold/simplify.rs",
-  "old": "                    resolve.push(target);",
-  "new": "                    resolve.push(inner);",
-  "pkg": "trit-build",
-  "filter": "direct::fold::simplify::tests::identity_laws_alias_to_the_operand"
- },
- {
   "name": "simplify: K3/Ł3 与吸收律失效",
   "file": "crates/trit-build/src/direct/fold/simplify.rs",
   "old": "                if !matches!(alg, Algebra::Bochvar)\n                    && (consts[left] == Some(Ternary::False)\n                        || consts[right] == Some(Ternary::False))",
@@ -430,5 +422,29 @@
   "new": "        if is_complement(kept, left, right) {\n            push_const(resolve, kept, consts, Ternary::False);",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::xor::tests::lukasiewicz_complement_collapses_but_k3_and_bochvar_stay"
+ },
+ {
+  "name": "negation: 双重否定不消",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "old": "    if let Op::Not(target) = kept[inner] {\n        resolve.push(target);\n        return;\n    }",
+  "new": "    if let Op::Not(_target) = kept[inner] {\n        resolve.push(inner);\n        return;\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::negation::tests::double_negation_aliases_and_one_sided_inversion_stays"
+ },
+ {
+  "name": "negation: 单侧取反也回收",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "old": "    let right = not_operand(kept, *right)?;",
+  "new": "    let right = not_operand(kept, *right).unwrap_or(*right);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::negation::tests::double_negation_aliases_and_one_sided_inversion_stays"
+ },
+ {
+  "name": "negation: 对偶算子写反",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "old": "    Some(if dual {\n        Op::And(left, right)\n    } else {\n        Op::Or(left, right)\n    })",
+  "new": "    Some(if dual {\n        Op::Or(left, right)\n    } else {\n        Op::And(left, right)\n    })",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::negation::tests::both_inverted_operands_collapse_to_the_dual_operator"
  }
 ]

@@ -9,6 +9,7 @@ use trit_core::value::Ternary;
 mod build;
 mod connectives;
 mod lattice;
+mod negation;
 mod xor;
 mod xor2;
 pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
@@ -26,16 +27,7 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
                 kept.push(Op::Var(slot));
                 consts.push(None);
             }
-            Op::Not(inner) => {
-                let inner = resolve[inner];
-                if let Op::Not(target) = kept[inner] {
-                    resolve.push(target);
-                } else {
-                    resolve.push(kept.len());
-                    kept.push(Op::Not(inner));
-                    consts.push(None);
-                }
-            }
+            Op::Not(inner) => negation::push(&mut resolve, &mut kept, &mut consts, inner),
             Op::And(left, right) => {
                 let (left, right) = (resolve[left], resolve[right]);
                 if !matches!(alg, Algebra::Bochvar)

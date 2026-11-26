@@ -256,7 +256,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
-      "lines": 89
+      "lines": 81
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/build.rs",
@@ -273,6 +273,14 @@
     {
       "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
       "lines": 35
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+      "lines": 54
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/tests.rs",
+      "lines": 89
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests.rs",
