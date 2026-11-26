@@ -92,9 +92,9 @@ fn json_pair(key: String, value: usize) -> (String, serde_json::Value) {
 fn ca_demo(args: &[String]) -> Result<(), String> {
     let width = number(args, "--width", 64)?;
     let steps = number(args, "--steps", 200)?;
-    let survey = ca::survey(width, steps);
+    let survey = ca::survey(width, steps)?;
     let best = ca::Rule::from_index(survey.max_entropy_rule).expect("合法规则编号");
-    let run = ca::run(&best, width, steps);
+    let run = ca::run(&best, width, steps)?;
     let obj = serde_json::json!({
         "rules": 2187,
         "width": width,
@@ -124,15 +124,14 @@ fn snn_demo(args: &[String]) -> Result<(), String> {
     let kick = number(args, "--kick", 3)? as i32;
     let drive = number(args, "--drive", 0)? as i32;
     let threshold = number(args, "--threshold", 3)? as i32;
-    let mut network = snn::Network::random(size, seed);
+    let mut network = snn::Network::random(size, seed)?;
     network.threshold = threshold;
     let external: Vec<i32> = if drive > 0 {
         vec![drive; ticks]
     } else {
         vec![kick]
     };
-    let stats =
-        snn::simulate_with_drive(&network, ticks, &external).map_err(|error| error.to_string())?;
+    let stats = snn::simulate_with_drive(&network, ticks, &external)?;
     let obj = serde_json::json!({
         "neurons": size,
         "ticks": ticks,
@@ -155,14 +154,14 @@ fn graded_demo(args: &[String]) -> Result<(), String> {
     let seed = number(args, "--seed", 7)? as u64;
     let groups = number(args, "--groups", 2)?;
     let rounds = number(args, "--rounds", 16)?;
-    let network = snn::Network::random(size, seed);
+    let network = snn::Network::random(size, seed)?;
     let config = graded::GradeConfig {
         groups,
         rounds,
         quorum: rounds.clamp(1, 3),
         ..graded::GradeConfig::default()
     };
-    let verdict = graded::run(&network, &config).map_err(|error| error.to_string())?;
+    let verdict = graded::run(&network, &config)?;
     let assemblies: Vec<serde_json::Value> = verdict
         .assemblies
         .iter()

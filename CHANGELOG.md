@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed（第四十五轮：机器入口的资源上界）
+
+- `trit-machines/ca`：`run` / `survey` 返回 `Result`，入口先按 `width/steps` 预算校验；历史格子、
+  单次周期扫描、整片 2187 条规则的总扫描量分别设上限。`ca --width 40000 --steps 5000`
+  （#704 的 2 亿格历史复现）在分配前报 `规模超限`，不再 OOM。
+- `trit-machines/snn`：`Network::random` 改为 `Result`，分配 `size × size` 权重矩阵前检查
+  `MAX_NEURONS`；`snn` / `graded` CLI 的 4097 神经元输入在构造前报错（#705 / #706）。
+- `trit-data/rewrite_kill`：Windows 夹具超时 2→10s、wrapper 睡眠 10→60s、PID 等待 5→10s。
+  本机 Windows GNU 连跑 4 次通过（约 10.5s/次），缓解冷启动时“孙进程 PID 未落盘”的假红。
+- 判据：`cargo test -p trit-machines` 24 单元 + 4 CLI + 3 资源上界全过；`clippy -D warnings`、
+  `fmt --check`、`module_budget` 干净。
+- 边界：超时夹具只在 Windows 上执行，Linux 门禁不覆盖；需 Windows CI 复核。
+
 ### Added（第四十四轮：direct 取反锥递归内联）
 
 - `direct/emit/inline.rs`：把取反内联的决策与表达式展开从 `emit.rs` 拆出。`Not` 的操作数单用时
