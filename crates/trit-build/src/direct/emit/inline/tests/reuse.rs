@@ -17,7 +17,7 @@ fn variable_reuse_boundary() {
         Algebra::Kleene,
     );
     assert_eq!(five.matches("    int8_t t").count(), 0, "{five}");
-    assert_eq!(five.matches("vars[0]").count(), 5, "{five}");
+    assert_eq!(five.matches("v[0]").count(), 5, "{five}");
     let six = render(
         vec![
             Op::Var(0),
@@ -30,8 +30,8 @@ fn variable_reuse_boundary() {
         &vars(),
         Algebra::Kleene,
     );
-    assert!(six.contains("int8_t t0 = vars[0];"), "{six}");
-    assert_eq!(six.matches("vars[0]").count(), 1, "{six}");
+    assert!(six.contains("int8_t t0 = v[0];"), "{six}");
+    assert_eq!(six.matches("v[0]").count(), 1, "{six}");
 }
 
 #[test]

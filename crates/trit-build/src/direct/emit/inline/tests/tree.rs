@@ -17,7 +17,7 @@ fn single_use_binary_tree_collapses_into_root() {
     );
     assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
     assert!(source.contains("return T_OR[3*T_AND["), "{source}");
-    assert!(source.contains("+vars[2]+4];"), "{source}");
+    assert!(source.contains("+v[2]+4];"), "{source}");
 }
 /// 单用锥整个并进根返回：`Not(And(Or(a,b),c))` 不留临时语句。
 #[test]
@@ -36,7 +36,7 @@ fn multilevel_single_use_cone_fits_one_statement() {
     );
     assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
     assert!(
-        source.contains("return -(T_AND[3*T_OR[3*vars[0]+vars[1]+4]+vars[2]+4]);"),
+        source.contains("return -T_AND[3*T_OR[3*v[0]+v[1]+4]+v[2]+4];"),
         "{source}"
     );
 }

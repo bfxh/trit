@@ -51,7 +51,7 @@ fn simplified_c_has_one_statement_and_no_tables() {
         let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
         assert_eq!(c.matches("    int8_t t").count(), 0, "{source}: {c}");
         assert!(!c.contains("static const int8_t T_"), "{source}: {c}");
-        assert!(c.contains("return vars[0];"), "{source}: {c}");
+        assert!(c.contains("return v[0];"), "{source}: {c}");
     }
 }
 

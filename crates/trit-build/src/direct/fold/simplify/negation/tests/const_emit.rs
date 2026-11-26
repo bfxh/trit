@@ -15,7 +15,7 @@ fn constant_not_sheds_tables_after_folding() {
         let c = emit(&expr, &vars, alg).expect("生成");
         assert!(!c.contains("T_NOT"), "{alg:?}: {c}");
         assert!(c.contains("T_AND"), "{alg:?}: {c}");
-        assert!(c.contains("-("), "{alg:?}: {c}");
+        assert!(c.contains("-T_AND"), "{alg:?}: {c}");
     }
 }
 

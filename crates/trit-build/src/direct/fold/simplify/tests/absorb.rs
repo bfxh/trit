@@ -38,6 +38,6 @@ fn absorbing_c_depends_on_the_algebra() {
 
         let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
         assert!(b3.contains(table), "{source} B3 应保留 {table}: {b3}");
-        assert!(b3.contains("vars[0]"), "{source}: {b3}");
+        assert!(b3.contains("v[0]"), "{source}: {b3}");
     }
 }

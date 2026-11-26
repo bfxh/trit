@@ -25,7 +25,7 @@ pub(crate) fn expr(ops: &[Op], names: &[Option<usize>], inlined: &[bool], index:
                 }
                 match ops[index] {
                     Op::Const(value) => out.push(code(value).to_string()),
-                    Op::Var(slot) => out.push(format!("vars[{slot}]")),
+                    Op::Var(slot) => out.push(format!("v[{slot}]")),
                     Op::Not(inner) => {
                         work.push(Frame::Not);
                         work.push(Frame::Visit(inner));
@@ -45,7 +45,7 @@ pub(crate) fn expr(ops: &[Op], names: &[Option<usize>], inlined: &[bool], index:
             }
             Frame::Not => {
                 let inner = out.pop().expect("取反表达式缺操作数");
-                out.push(format!("-({inner})"));
+                out.push(super::super::format::neg(inner));
             }
         }
     }

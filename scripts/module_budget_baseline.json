@@ -252,7 +252,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/format.rs",
-      "lines": 25
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/format/table.rs",
+      "lines": 10
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline.rs",
@@ -288,7 +292,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests.rs",
-      "lines": 72
+      "lines": 66
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests/many.rs",
@@ -496,7 +500,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/tests.rs",
-      "lines": 142
+      "lines": 139
     },
     {
       "file": "crates/trit-build/src/direct/tests/eval.rs",

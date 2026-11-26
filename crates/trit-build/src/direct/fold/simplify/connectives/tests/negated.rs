@@ -91,15 +91,15 @@ fn false_equivalence_emits_one_return_without_tables() {
         let c = emit(&expr, &vars, alg).expect("生成");
         assert_eq!(c.matches("    int8_t t").count(), 0, "{alg:?}: {c}");
         assert!(!c.contains("static const int8_t T_"), "{alg:?}: {c}");
-        assert!(c.contains("return -(vars[0]);"), "{alg:?}: {c}");
+        assert!(c.contains("return -v[0];"), "{alg:?}: {c}");
     }
 }
 
 #[test]
 fn double_negated_operands_emit_without_extra_minus() {
     for (source, expected) in [
-        ("(!a) => (!b)", "T_IMPL[3*vars[1]+vars[0]+4]"),
-        ("(!a) <=> (!b)", "T_EQUIV[3*vars[0]+vars[1]+4]"),
+        ("(!a) => (!b)", "T_IMPL[3*v[1]+v[0]+4]"),
+        ("(!a) <=> (!b)", "T_EQUIV[3*v[0]+v[1]+4]"),
     ] {
         let expr = Parser::parse(source).expect("解析");
         let vars = expr.variables();

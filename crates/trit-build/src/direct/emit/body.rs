@@ -2,17 +2,17 @@
 
 use super::super::code;
 use super::super::ir::Op;
-use super::inline;
+use super::{format, inline};
 
 pub(super) fn body(ops: &[Op], vars: &[String], inlined: &[bool]) -> String {
     let mut text = String::new();
-    text.push_str("int8_t trit_direct(const int8_t *vars, unsigned nvars) {\n");
+    text.push_str("int8_t trit_direct(const int8_t *v, unsigned n) {\n");
     if !vars.is_empty() {
-        text.push_str("    if (nvars < ");
+        text.push_str("    if (n < ");
         text.push_str(&vars.len().to_string());
         text.push_str("u) return 0; /* 入参不足：按 X 处理，fail-closed */\n");
     } else {
-        text.push_str("    (void)nvars;\n");
+        text.push_str("    (void)n;\n");
     }
     let mut names: Vec<Option<usize>> = vec![None; ops.len()];
     let mut next = 0usize;
@@ -31,10 +31,10 @@ pub(super) fn body(ops: &[Op], vars: &[String], inlined: &[bool]) -> String {
         };
         let line = match op {
             Op::Const(value) => format!("    int8_t t{next} = {};\n", code(*value)),
-            Op::Var(slot) => format!("    int8_t t{next} = vars[{slot}];\n"),
+            Op::Var(slot) => format!("    int8_t t{next} = v[{slot}];\n"),
             Op::Not(inner) => format!(
-                "    int8_t t{next} = -({});\n",
-                inline::expr(ops, &names, inlined, *inner)
+                "    int8_t t{next} = {};\n",
+                format::neg(inline::expr(ops, &names, inlined, *inner))
             ),
             Op::And(left, right) => bin("T_AND", *left, *right),
             Op::Or(left, right) => bin("T_OR", *left, *right),
