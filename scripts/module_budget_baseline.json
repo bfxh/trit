@@ -272,11 +272,19 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify.rs",
-      "lines": 81
+      "lines": 57
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/absorb.rs",
+      "lines": 91
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/build.rs",
       "lines": 29
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/complement.rs",
+      "lines": 52
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
@@ -305,6 +313,14 @@
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/absorb.rs",
       "lines": 43
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/complement.rs",
+      "lines": 116
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/tests/complement/alias.rs",
+      "lines": 16
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/idem.rs",

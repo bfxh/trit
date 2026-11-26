@@ -2,10 +2,10 @@
 use super::*;
 use crate::direct::emit;
 use crate::direct::lower::lower;
-use trit_core::Algebra;
-use trit_core::Parser;
 use trit_core::value::Ternary;
+use trit_core::{Algebra, Parser};
 mod absorb;
+mod complement;
 mod idem;
 mod lattice;
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];

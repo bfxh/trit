@@ -1,12 +1,15 @@
 //! 常量驱动的恒等式化简：单位律、对合律、幂等律三代数通用；吸收律与格吸收律按代数分派。
 //! `x ∧ T = x`、`x ∨ F = x`、`¬¬x = x`、`x ∧ x = x`、`x ∨ x = x` 三种代数都成立；
 //! K3/Ł3 额外 `x ∧ F = F`、`x ∨ T = T`、`x ∧ (x ∨ y) = x`；B3 的 U 传染保留原式。
+//! B3 另做补元消去 `x ∧ (¬x ∨ y) = x ∧ y`、`x ∨ (¬x ∧ y) = x ∨ y`，K3/Ł3 有 `U` 反例。
 use super::super::ir::Op;
 use super::super::lower::prune_dead;
-use build::{push_const, push_node};
+use build::push_const;
 use trit_core::Algebra;
 use trit_core::value::Ternary;
+mod absorb;
 mod build;
+mod complement;
 mod connectives;
 mod lattice;
 mod negation;
@@ -29,37 +32,10 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
             }
             Op::Not(inner) => negation::push(&mut resolve, &mut kept, &mut consts, inner),
             Op::And(left, right) => {
-                let (left, right) = (resolve[left], resolve[right]);
-                if !matches!(alg, Algebra::Bochvar)
-                    && (consts[left] == Some(Ternary::False)
-                        || consts[right] == Some(Ternary::False))
-                {
-                    push_const(&mut resolve, &mut kept, &mut consts, Ternary::False);
-                } else if let Some(alias) = lattice::absorbed(alg, &kept, left, right, true) {
-                    resolve.push(alias);
-                } else if left == right || consts[left] == Some(Ternary::True) {
-                    resolve.push(right);
-                } else if consts[right] == Some(Ternary::True) {
-                    resolve.push(left);
-                } else {
-                    push_node(&mut resolve, &mut kept, &mut consts, Op::And(left, right));
-                }
+                absorb::and(&mut resolve, &mut kept, &mut consts, left, right, alg);
             }
             Op::Or(left, right) => {
-                let (left, right) = (resolve[left], resolve[right]);
-                if !matches!(alg, Algebra::Bochvar)
-                    && (consts[left] == Some(Ternary::True) || consts[right] == Some(Ternary::True))
-                {
-                    push_const(&mut resolve, &mut kept, &mut consts, Ternary::True);
-                } else if let Some(alias) = lattice::absorbed(alg, &kept, left, right, false) {
-                    resolve.push(alias);
-                } else if left == right || consts[left] == Some(Ternary::False) {
-                    resolve.push(right);
-                } else if consts[right] == Some(Ternary::False) {
-                    resolve.push(left);
-                } else {
-                    push_node(&mut resolve, &mut kept, &mut consts, Op::Or(left, right));
-                }
+                absorb::or(&mut resolve, &mut kept, &mut consts, left, right, alg);
             }
             Op::Xor(left, right) => {
                 xor::push(&mut resolve, &mut kept, &mut consts, left, right, alg)
