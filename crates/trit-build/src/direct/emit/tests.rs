@@ -1,5 +1,4 @@
 //! 渲染内联判据：单用节点并进根返回，多用子式仍单独落变量。
-
 use super::render;
 use crate::direct::ir::Op;
 use trit_core::Algebra;
@@ -20,13 +19,13 @@ fn single_use_and_is_inlined_into_not() {
         "单用锥与根节点都直接展开，不留临时语句：{source}"
     );
     assert!(
-        source.contains("return -(trit_bin(T_AND, vars[0], vars[1]));"),
+        source.contains("return -(T_AND[(vars[0] + 1) * 3 + (vars[1] + 1)]);"),
         "{source}"
     );
+    assert!(!source.contains("trit_bin("), "{source}");
     assert!(!source.contains("return t0;"), "{source}");
     assert!(!source.contains("int8_t t0 ="), "{source}");
 }
-
 #[test]
 fn shared_and_stays_a_separate_statement() {
     let source = render(
@@ -51,7 +50,6 @@ fn shared_and_stays_a_separate_statement() {
     );
     assert!(!source.contains("int8_t t1 ="), "{source}");
 }
-
 #[test]
 fn or_and_xor2_are_inlined_with_their_own_tables() {
     let or_source = render(
@@ -60,16 +58,18 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
         Algebra::Kleene,
     );
     assert!(
-        or_source.contains("-(trit_bin(T_OR, vars[0], vars[1]))"),
+        or_source.contains("-(T_OR[(vars[0] + 1) * 3 + (vars[1] + 1)])"),
         "{or_source}"
     );
+    assert!(!or_source.contains("trit_bin("), "{or_source}");
     let xor_source = render(
         vec![Op::Var(0), Op::Var(1), Op::Xor2(0, 1), Op::Not(2)],
         &vars(),
         Algebra::Kleene,
     );
     assert!(
-        xor_source.contains("-(trit_bin(T_XOR2, vars[0], vars[1]))"),
+        xor_source.contains("-(T_XOR2[(vars[0] + 1) * 3 + (vars[1] + 1)])"),
         "{xor_source}"
     );
+    assert!(!xor_source.contains("trit_bin("), "{xor_source}");
 }
