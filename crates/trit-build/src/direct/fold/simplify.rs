@@ -8,6 +8,7 @@ use trit_core::Algebra;
 use trit_core::value::Ternary;
 mod build;
 mod lattice;
+mod xor2;
 pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     if ops.is_empty() {
         return ops;
@@ -15,7 +16,6 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
     let mut resolve: Vec<usize> = Vec::with_capacity(ops.len());
     let mut kept: Vec<Op> = Vec::with_capacity(ops.len());
     let mut consts: Vec<Option<Ternary>> = Vec::with_capacity(ops.len());
-
     for op in ops {
         match op {
             Op::Const(value) => push_const(&mut resolve, &mut kept, &mut consts, value),
@@ -70,9 +70,7 @@ pub(super) fn simplify(ops: Vec<Op>, alg: Algebra) -> Vec<Op> {
             Op::Xor(left, right) => {
                 push_binary(&mut resolve, &mut kept, &mut consts, left, right, Op::Xor)
             }
-            Op::Xor2(left, right) => {
-                push_binary(&mut resolve, &mut kept, &mut consts, left, right, Op::Xor2)
-            }
+            Op::Xor2(left, right) => xor2::push(&mut resolve, &mut kept, &mut consts, left, right),
             Op::Implies(left, right) => push_binary(
                 &mut resolve,
                 &mut kept,

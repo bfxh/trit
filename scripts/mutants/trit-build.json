@@ -310,5 +310,37 @@
   "new": "    if false {\n        return Some(left);\n    }",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::tests::lattice::lattice_absorption_aliases_to_the_operand"
+ },
+ {
+  "name": "xor2: X 不吸收",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        (Some(Ternary::Unknown), _) | (_, Some(Ternary::Unknown)) => {",
+  "new": "        (Some(Ternary::Unknown), Some(Ternary::Unknown)) => {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::false_is_identity_and_unknown_absorbs"
+ },
+ {
+  "name": "xor2: 0 不别名",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        (Some(Ternary::False), _) => resolve.push(right),",
+  "new": "        (Some(Ternary::False), Some(_)) => resolve.push(right),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::false_is_identity_and_unknown_absorbs"
+ },
+ {
+  "name": "xor2: 1 不取反",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        (Some(Ternary::True), _) => negate(resolve, kept, consts, right),",
+  "new": "        (Some(Ternary::True), _) => push_node(resolve, kept, consts, Op::Xor2(left, right)),",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::true_turns_into_not_and_double_negation_cancels"
+ },
+ {
+  "name": "xor2: 双重否定不消",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        resolve.push(inner);",
+  "new": "        resolve.push(target);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::xor2::tests::true_turns_into_not_and_double_negation_cancels"
  }
 ]
