@@ -23,13 +23,13 @@ r"""M1.40 HateXplain 清洗与官方切分导出。
 import argparse
 import collections
 import json
+import os
 import re
 from pathlib import Path
 
-DEFAULT_ROOT = Path(r"D:\trit-results\hatexplain")
-DEFAULT_TOKENIZER = (
-    r"C:\Users\lbx13\.cache\huggingface\hub\models--sentence-transformers--"
-    r"all-MiniLM-L12-v2\snapshots\a50ef00143b4d5391434df20ae11632588ac25be"
+DEFAULT_ROOT = Path(os.environ.get("TRIT_RESULTS", "trit-results")) / "hatexplain"
+DEFAULT_TOKENIZER = os.environ.get(
+    "TRIT_TOKENIZER", "sentence-transformers/all-MiniLM-L12-v2"
 )
 LABELS = ("hatespeech", "normal", "offensive")
 
