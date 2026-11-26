@@ -414,7 +414,7 @@ struct ArchiveLevel {
 
 impl<'a> Ttx3Archive<'a> {
     /// 解析头部与级目录，并在解析期对账瓦片载荷区间归属/disjoint 与政策副本数
-    /// （见 [`layout`]）；瓦片 CRC 仍是 [`Ttx3Archive::decode_tile`] /
+    /// （见 `layout` 模块）；瓦片 CRC 仍是 [`Ttx3Archive::decode_tile`] /
     /// [`Ttx3Archive::verify`] 的活，逐瓦片惰性校验。
     pub fn parse(bytes: &'a [u8]) -> Result<Self, TextureError> {
         if bytes.len() < HEADER_BYTES || bytes[0..4] != MAGIC {

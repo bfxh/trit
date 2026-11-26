@@ -12,11 +12,11 @@ use trit_texture::ttx3::{
 
 fn solid_rgba(width: usize, height: usize, rgb: [u8; 3]) -> Vec<u8> {
     let mut out = vec![0u8; width * height * 4];
-    for px in out.chunks_exact_mut(4) {
-        px[0] = rgb[0];
-        px[1] = rgb[1];
-        px[2] = rgb[2];
-        px[3] = 255;
+    for i in (0..out.len()).step_by(4) {
+        out[i] = rgb[0];
+        out[i + 1] = rgb[1];
+        out[i + 2] = rgb[2];
+        out[i + 3] = 255;
     }
     out
 }

@@ -4739,6 +4739,10 @@
       "lines": 190
     },
     {
+      "file": "crates/trit-schedule/tests/checkpoint_order.rs",
+      "lines": 66
+    },
+    {
       "file": "crates/trit-schedule/tests/stop_promotion.rs",
       "lines": 67
     },
@@ -4905,6 +4909,10 @@
     {
       "file": "crates/trit-texture/tests/ttx3_alias_policy.rs",
       "lines": 258
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx3_hostile_parse.rs",
+      "lines": 45
     },
     {
       "file": "crates/trit-texture/tests/ttx3_malformed.rs",
