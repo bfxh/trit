@@ -1,0 +1,20 @@
+[
+ {
+  "name": "direct: 残差方向取反（q-x 变成 x-q）",
+  "file": "scripts/wsp_classify_direct_quant.py",
+  "old": "def _residual(x, q):\n    return q - x",
+  "new": "def _residual(x, q):\n    return x - q",
+  "pkg": "scripts/wsp_classify_direct_quant.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "direct: group=1 被强制成 per-row（失去精确性）",
+  "file": "scripts/wsp_classify_direct_quant.py",
+  "old": "    group = min(group, dim)",
+  "new": "    group = dim",
+  "pkg": "scripts/wsp_classify_direct_quant.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

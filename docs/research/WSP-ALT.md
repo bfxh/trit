@@ -4,6 +4,27 @@
 > **端到端负结果，不进 PR**。BUDGET 的 M1 已在 `feat/wsp-budget` 跑完严格同字节
 > 全量；M1.1 用同字节块交换得到 `I10`；M1.2 把 Q3/K4 的 int4 升级移到 K10/K11，
 > 得到 `K10K11`，对纯 int3 双指标 10k CI 都过 0，但对 v6e 的 Spearman CI 仍跨 0。
+> M1.40 已在第二个 hate 语料 HateXplain 上做预注册 confirmatory：
+> `R12`/`rescan` 均 0/5 正 CI、被预注册判据判为 rejected，且
+> target_prior 的绝对 accuracy 低于 default；详见
+> `WSP-BUDGET-RESULTS.md` §11.40。
+> M1.41 进一步把 HateXplain 的先验按 Gab/Twitter 拆域：域感知阈值相对
+> global 在 3/4 个 probe family 上 supported，但仍低于 default
+> （`0.815/0.816` vs `0.823`，L6 `0.818/0.814` vs `0.822`），candidate
+> 没有被救回；M1.42 在 TweetEval/hate 上把阈值改成 fit-only 后，
+> M1.38 的 `+1.8~+2.9pp` candidate gain 没有保留，L12 翻负、L6 归零，
+> 四个 family 全部 `not_retained`。**target_prior 是 test 分数分位点的
+> transductive 现象，不是可部署协议；candidate 线收口。** 详见
+> `WSP-BUDGET-RESULTS.md` §11.41/§11.42。
+> M1.43 在 HateXplain 上换三分类（`normal/hate/offensive`）：四个
+> family 的 accuracy `arm−f32` 全部 0/5 正 CI，三分类 accuracy 只有
+> `0.649–0.656`，`offensive` recall `0.354–0.426`；binary 的 `0.82`
+> 主要来自 normal-vs-rest，**三分类 exploratory 不能升级 candidate**。
+> 详见 `WSP-BUDGET-RESULTS.md` §11.43。
+> M1.45 把 Davidson 作为第三 hate 语料：default 阈值下四个 family
+> accuracy 全部 0/5 正 CI；accuracy `0.942–0.945` 但 hate recall
+> `3.9–20.0%`、macro-F1 `0.52–0.63`，多数类把 accuracy 撑高。
+> **第三语料仍不能升级 candidate。** 详见 §11.45。
 > 详见 `WSP-BUDGET-RESULTS.md`。
 > 其余方案仍是草案。层内预演只覆盖 L12 第 0 层 `query/key/value`，不是全模型，
 > 也不是 STS。文中所有“误差下降”都是层内重建或层输出范数，不能直接当
@@ -510,6 +531,129 @@ f32 类均值近正交（cos `+0.068`），但在 f32 probe 上的投影 `+2.665
 `hybrid_rest_k16−f32 +0.043328`、对 int4 `−0.000455`（CI 跨 0），
 margin 比 `1.214×`。详见 `WSP-BUDGET-RESULTS.md` §11.23。
 
+M1.24 做一个负对照：直接对 f32 embedding 做 group=1/32/384 的均匀 int4，
+`q` 在 SST-2 L12 从 `0.800110` 降到 `0.787479`（g32）/`0.768259`（g384），
+直接残差单独 probe 在 chance/多数类基线（SST-2/CoLA `0.499–0.543`，hate
+`0.592` 是多数类基线），残差在 f32 probe 上的 margin 比只有 `−0.008` 到
+`+0.005`。**M1.23 的类别条件偏置不能由输出端 int4 舍入复现，它依赖权重
+量化误差在编码器里的传播路径。** 详见 §11.24。
+
+M1.25 再拟合一个线性代理：train 上 `r ≈ (x−μ)W+r_μ`，SST-2/CoLA/hate
+的 L12/L6 test `R²` 都在 `0.42–0.52`，打乱 train 残差后 `R²` 为负；所以
+残差不是各向同性噪声，而是有很大一块可由 f32 embedding 线性预测。但
+这个算子不跨数据集：SST-2 的算子用到 CoLA/hate 时 `R²` 是
+`−43.4/−36.5`（L12），反过来只有 `0.016–0.031`。类均值响应也数据集
+特异：SST-2 L12 放大 `1.52×`、旋转 `86°`，CoLA/hate 压缩到
+`0.21–0.23×`、旋转 `99°–108°`；SST-2 残差再拆成 `r_hat`/`r_perp`，
+L12 probe 是 `0.7935/0.6310`，L6 是 `0.8040/0.5837`。这把“为什么只有
+SST-2”推进到“SST-2 的类均值方向落在会被放大的方向”，但仍是线性
+代理，不是权重误差的因果消融；详见 `WSP-BUDGET-RESULTS.md` §11.25。
+
+**M1.26 基线审计（2026-11-26）**：上面 M1.23–M1.25 的 SST-2 L12
+`f32` 不是真 f32，而是 `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出。
+真实 f32→int4 是 `−0.001503`（CI `[−0.012081,+0.008786]`）；原
+`+0.040/+0.044` 是 2-bit→4-bit 恢复。SST-2 的 `1.59×` 放大、
+`cos +0.068` 和 `1.52×` 线性算子同样属于 ternary→4-bit，不是 f32→4-bit。
+CoLA/hate 的 L12 `l12-pure-f32` 与真 f32 只差 `2.1e-7`，旧结论保留；
+SST-2 L6 的 `l6-pure-f32` 在 M1.28 全量复核后确认也是 ternary，不是
+f32；L6 真 f32→int4 为 `−0.004964`，旧 `+0.0060` 不作数。上面所有
+SST-2 L6 的 f32/残差读数也应按 ternary→4-bit 读，不是 f32→4-bit。详见
+`WSP-BUDGET-RESULTS.md` §11.26/§11.28。
+M1.29 又把 L12 的 `int3`/`R12` 和 L6 的 `int3`/`rescan-k2` 在真 f32
+上重跑：没有任何量化档超过真 f32；L12 `int3`/`R12` 的 CI 整段为负，
+L6 三个量化档 CI 都跨 0。M1.12 的“量化增益”不只是 int4，int3/R12/
+rescan 也都是 ternary 锚点伪影（§11.29）。
+
+M1.30 补齐 CoLA/hate 的 L6 基线标签：全量 9,594 / 11,719 条的
+`l6-pure-f32` 对真 f32 余弦都是 `1.00000000`（max abs diff
+`1.8e-7 / 1.9e-7`），对真 ternary 只有 `0.46 / 0.38`。因此这两套 L6
+的 `f32` 是真 f32，M1.14/M1.15 的 L6 读数无需重算；SST-2 是唯一
+L12 与 L6 的 `pure-f32` 都错标成 ternary 的数据集（§11.30）。
+
+M1.31 又把 CoLA/hate 的 L12/L6 全部量化臂在同一 per-arm 5 折选 C
+口径下重跑。四个组合里没有任何量化臂显著超过真 f32；CoLA L12 的
+`int4`/bits4 只有 `+1.24pp/+0.93pp` 点估计且 CI 跨 0，hate 的
+`R12`/`int3`/`int4` 多处 CI 整段为负。CoLA/hate 没有复现 SST-2 的
+`int4` 正向，`R12`/`rescan` 也没有分类增益（§11.31）。
+
+M1.32 把 CoLA/hate 的 L6 官方 `l6-int4` 与全量 true bits4 逐行对齐：
+9,594 / 11,719 行余弦都是 `1.00000000`，max abs diff `1.64e-7 /
+1.53e-7`，所有行 ≤`1e-6`。把 `true-bits4` 补进分类矩阵后，CoLA L6
+`−0.94pp`、hate L6 `−1.55pp`（logreg）的方向不变，hate 的 CI 仍整段
+为负。M1.30 的 512 行抽检升级为全量，M1.31 的 L6 读数无需修改
+（§11.32）。
+
+M1.33 把 SST-2/CoLA/hate 的 L12/L6 线性头结果按“每个量化档只计
+一次”合成 36 个比较：0 个 CI 整段大于 0，9 个整段小于 0，27 个跨
+0。最大正向点估计只剩 CoLA L12 的 `int4` `+1.20pp`（CI 跨 0）；
+SST-2 L12 的 `int3`/`R12`、hate L12 的 `R12`、hate L6 的 `int4`
+都是显著负向。分类头没有可提升的量化档，f32 继续是默认锚点
+（§11.33）。
+
+M1.34 复验 C 选择：5 个 CV seed 下 29/36 点估计同号、7 个翻号；
+M1.33 的 9 个负向只有 6 个在 5/5 seed 仍为负。Hate L6 `logreg int3`
+在 4/5 seed 变显著正向（`+1.71pp`），但 matched-C 的 C=1/10 下只有
+`+0.44pp/+0.15pp` 且 CI 跨 0，是 per-arm C 错配，不是量化增益。
+`0/9/27` 只能当 seed 7 条件读数（§11.34）。
+
+M1.35 把 matched-C 扩到全部 36 个比较。每个 case/probe 只在真 f32
+上选 C，f32 与全部量化臂共用，5 个 seed、180 个 CI：**0 个显著正、
+41 个显著负、139 个跨 0**，36 个比较没有任何一个出现过正 CI。
+M1.34 的 Hate L6 `logreg int3` 4/5 显著正向消失（共同 C 下
+`+0.44pp/+0.15pp`，5/5 跨 0）。41 个负向集中在 11 个比较；SST-2
+L12 的 `int3`/`R12` 与 Hate L12 的 `R12`/SVC `int3` 仍 5/5 负向。
+最接近正向的 Hate L6 `logreg rescan` 在 C=10 为 `+1.32pp`，CI
+`[−0.0366,+2.67]pp`，仍跨 0。**matched-C 下也没有量化档超过 f32；
+量化既没有稳定增益，也不是一律无损。** 分类头继续用 f32 锚点
+（§11.35）。
+
+M1.36 用 nested CV 复验 M1.35 最接近正向的 Hate L6 `logreg rescan`：
+OOF train 上 30 个 CI 里 2 个显著正向、0 个负向、28 个跨 0。
+`rescan` 与 `int3` 点估计 10/10 为正，但各只有 1/10 CI 显著；SVC
+`0/15`。两个正向都只比 0 高 `0.13–0.16pp`。OOF f32 为
+`0.761–0.767`，官方 test 只有 `0.533–0.556`，约 `21pp` 分布差，
+不能把 OOF 弱正向搬到 test。**`rescan` 不是纯噪声，但也不是可发布
+增益；f32 继续是默认锚点。**（§11.36）。
+
+M1.37 把 nested CV 扩到全部 6 个 `dataset×depth`、两个 probe、
+5 个 outer seed，共 180 个 OOF CI：**5 正 / 52 负 / 123 跨**；
+36 个比较里 4 个出现过正 CI、15 个出现过负 CI、17 个全跨。
+正向全部在 Hate：L12 `R12`（2/5 logreg +1/5 SVC）与 L6
+`rescan`/`int3`（各 1/5 logreg）。但 Hate L12 `R12` 在官方 test
+上是 5/5 显著负向（OOF `+0.68pp` vs test `−1.35pp`），是方向反转；
+Hate L6 的两个弱候选在 test 上点正但 5/5 CI 跨 0。Hate 的
+OOF/test f32 差约 `20–22pp`，test 内部 5 折仍有 `0.751–0.764`，
+说明是跨域迁移，不是标签噪声。**OOF 全矩阵没有改变主判决：官方
+test 上 0 个量化档显著超过 f32；`R12` 的 OOF 正向是跨域不成立的
+候选，`rescan` 仍只是弱候选。**（§11.37）。
+
+M1.38 把 Hate 的 20–22pp 进一步拆开。Hate 的 train/test 文本域分类器
+AUC 是 `0.921`（SST-2 `0.491`、CoLA `0.687`），长度单特征只有 `0.561`；
+`>64` 与 `≤64` token 的 f32 准确率只差 `1.12pp`，所以长度/截断不是
+主因，文本域迁移才是。默认 0.5 把 Hate test 预测成 `73–75%` 正例
+（train 先验 `42.08%`），把阈值改成目标分数分位匹配 train 先验
+（不用 test 标签）可回收 `6.00/8.74pp`，校准后仍差 `12.97/11.77pp`。
+全臂 36 比较在默认阈值下仍是 0 正 / 41 负 / 139 跨；target_prior 下
+变成 23 正 / 30 负 / 127 跨，6 个比较出现正 CI，全部在 Hate：
+L12 `R12`（logreg 5/5、SVC 4/5）与 L6 `rescan`（两 probe 5/5）
+最强，`int4` SVC 3/5、`int3` logreg 1/5 只是弱信号；SST-2/CoLA
+仍 0 正。**默认 0.5 主判决不变，f32 仍是锚点；`R12` 不能再写
+“跨域不成立”，但 target_prior 是 transductive、后验选择的条件性
+口径，不能升级为默认。**（§11.38）。
+
+M1.39 把 M1.38 的 Hate 条件性正结果拿去做预注册半分割：官方 test
+按标签 50/50 分层切开，一半未标注分数校准 target_prior、另一半标签
+评估，双向交叉，5 seeds × 2 probes。Primary accuracy 只有 L6
+`rescan` logreg 过线（10/10 正 CI，`+2.82pp`）；L6 `rescan` SVC
+7/10（`+2.45pp`）未过线，但 macro-F1 10/10。L12 `R12` logreg
+5/10（`+1.90pp`）、SVC 4/10（`+1.62pp`），都是 inconclusive。
+Default 0.5 下 `R12` 仍是 0 正 / 5 负 / 5 跨，`rescan` logreg 只有
+4 正、SVC 0 正。**半分割没有确认 `R12`，它仍是 Hate-only/
+target_prior 条件下的候选；`rescan` 只在 L6 primary 的 logreg 上
+confirmed。target_prior 仍是 transductive exploratory；半分割不是
+新语料，下一步必须换第二个 hate 数据集做预注册 confirmatory。**
+（§11.39）。
+
 ## 6. WSP-MXQ 在新排序里的位置
 
 MXQ 仍然成立，但不再是第一枪：
@@ -671,3 +815,26 @@ I10，没有单一候选同时赢两边。M1.6 的 L6 第二模型进一步说�
 不能按层号直接搬，L6 上三个投影都低于纯 int3，输出端对齐的 R12 尾段也只
 统计中性；L6 重扫可以做到 `0.828687 / 0.821084`，但对 int4 的 CI 仍跨 0。
 下一步是做模型无关的选择规则或按模型重扫，再谈 MXQ 或更大预算。**
+
+## 12. M1.40：HateXplain 第二 hate 语料 confirmatory
+
+M1.40 把 M1.38/M1.39 的 L12 `R12` / L6 `rescan` 搬到第二个 hate 语料
+HateXplain，按官方 `train+val`/`test` 预注册复验。清洗后 fit `17,270`、
+test `1,918`；primary 是 `hatespeech=1`、`normal+offensive=0`，test 先验
+`0.309698`。仍冻结编码器、只训练线性 probe，C 只由 f32 的 fit 内 5 折选，
+量化臂共用 C。
+
+Primary accuracy（full test、target_prior、5 seeds）：
+
+| candidate | logreg | linear_svc |
+|---|---:|---:|
+| L12 `R12` | `0/5`，`+0.1043pp` | `0/5`，`−0.2920pp` |
+| L6 `rescan` | `0/5`，`−0.1043pp` | `0/5`，`+0.3545pp` |
+
+两个候选都被预注册判据判为 **rejected**；macro-F1 和 default 0.5 也
+全部 0/5，四个 cell 的 CI 全部跨 0。更关键的是 target_prior 在该语料上
+把 f32 的绝对 accuracy 从 default 的约 `0.823` 降到 `0.808`（L12）/
+`0.811`（L6），量化臂也降 `0.80–1.09pp`；匹配先验把预测正例率抬到
+`0.3092`，但 accuracy 反而下降。**匹配先验不是 accuracy 的免费增益，
+M1.38/M1.39 的条件性正结果没有跨语料复现。** 边界与复算见
+`WSP-BUDGET-RESULTS.md` §11.40。

@@ -1,0 +1,185 @@
+{
+  "study": "M1.40",
+  "title": "HateXplain confirmatory test of R12 and rescan under the target-prior threshold",
+  "status": "confirmatory, registered before any model score or prediction was inspected",
+  "registered_at": "2026-11-26",
+  "motivation": "M1.39 showed that split halves of the TweetEval/hate official test are not an independent corpus. M1.40 moves the same two candidate arms to a second hate corpus with an official train/val/test division.",
+  "dataset": {
+    "name": "HateXplain",
+    "repository": "https://github.com/hate-alert/HateXplain",
+    "raw_files": {
+      "dataset.json": {
+        "path": "D:\\trit-results\\hatexplain\\dataset.json",
+        "bytes": 12256170,
+        "sha256": "63bb3340fee0ec469b09690d04cb68f7c187787dd8b83807f071892c084967fb"
+      },
+      "post_id_divisions.json": {
+        "path": "D:\\trit-results\\hatexplain\\post_id_divisions.json",
+        "bytes": 591921,
+        "sha256": "c2fb0d89862e7897b11ea3e9380753f15a793482b4b70ad0532dfb1212212835"
+      }
+    },
+    "official_sizes": {
+      "train": 15383,
+      "val": 1922,
+      "test": 1924
+    },
+    "fit": "official train + official val",
+    "eval": "official test",
+    "why_not_resplit": "The official test is the only held-out split; no TweetEval test labels and no new random split are used.",
+    "label_source": "three annotators per post",
+    "majority_rule": "require 2-of-3 majority; ties dropped; official splits contain no ties",
+    "primary_mapping": "hatespeech=1; normal+offensive=0",
+    "secondary_mapping": "toxic: hatespeech+offensive=1; normal=0; exploratory only, not part of the primary decision",
+    "cleaning": {
+      "text": "join post_tokens with single spaces, collapse whitespace, strip",
+      "empty_text": "dropped",
+      "fit_dedup": "exact cleaned-text deduplication; texts with conflicting 3-class majority labels dropped",
+      "test_dedup": "exact cleaned-text deduplication",
+      "test_fit_overlap": "test texts present in fit removed",
+      "tweeteval_overlap": "test texts present in TweetEval/hate train or test removed; observed 0"
+    },
+    "cleaned_sizes": {
+      "fit": 17270,
+      "test": 1918,
+      "fit_three_class": {"normal": 7011, "hatespeech": 5336, "offensive": 4923},
+      "test_three_class": {"normal": 777, "hatespeech": 594, "offensive": 547},
+      "fit_binary": {"0": 11934, "1": 5336},
+      "test_binary": {"0": 1324, "1": 594},
+      "fit_hate_rate": 0.308975,
+      "test_hate_rate": 0.309698,
+      "fit_sources": {"gab": 9408, "twitter": 7862},
+      "test_sources": {"gab": 1038, "twitter": 880},
+      "drop_test_fit_overlap": 5,
+      "drop_test_tweeteval_overlap": 0
+    },
+    "length_audit": {
+      "tokenizer": "all-MiniLM-L12-v2 tokenizer, no truncation, special tokens included",
+      "seq": 64,
+      "fit": {"p50": 27, "p95": 58, "max": 179, "gt_seq": 255, "gt_seq_rate": 0.014765},
+      "test": {"p50": 26, "p95": 58, "max": 91, "gt_seq": 27, "gt_seq_rate": 0.014077}
+    }
+  },
+  "encoders": {
+    "L12": {
+      "model": "sentence-transformers/all-MiniLM-L12-v2",
+      "path": "C:\\Users\\lbx13\\.cache\\huggingface\\hub\\models--sentence-transformers--all-MiniLM-L12-v2\\snapshots\\a50ef00143b4d5391434df20ae11632588ac25be",
+      "layers": 12,
+      "seq": 64,
+      "frozen": true,
+      "pooling": "mean pooling and L2 normalization as emitted by bert6",
+      "arms": {
+        "f32": "pure-f32.f32 from the R12 run",
+        "r12": "TRIT_BUDGET=swap-r12.json, TRIT_WEIGHT_BITS=3"
+      }
+    },
+    "L6": {
+      "model": "sentence-transformers/all-MiniLM-L6-v2",
+      "path": "C:\\Users\\lbx13\\.cache\\huggingface\\hub\\models--sentence-transformers--all-MiniLM-L6-v2\\snapshots\\1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+      "layers": 6,
+      "seq": 64,
+      "frozen": true,
+      "pooling": "mean pooling and L2 normalization as emitted by bert6",
+      "arms": {
+        "f32": "pure-f32.f32 from the rescan run",
+        "rescan": "TRIT_BUDGET=l6-rescan-k2.json, TRIT_WEIGHT_BITS=3"
+      }
+    }
+  },
+  "probes": {
+    "logreg": "sklearn LogisticRegression, lbfgs, max_iter=5000, random_state=7, class_weight=None",
+    "linear_svc": "sklearn LinearSVC, max_iter=10000, random_state=7, tol=1e-4, class_weight=None",
+    "no_mlp": true,
+    "no_encoder_finetune": true,
+    "no_mnli": true
+  },
+  "c_selection": {
+    "grid": [0.01, 0.1, 1.0, 10.0],
+    "inner_cv": "StratifiedKFold(n_splits=5, shuffle=True) on fit only",
+    "seeds": [7, 13, 19, 31, 43],
+    "selection_data": "f32 embeddings only; f32 and quantized arm share the selected C within a probe and seed",
+    "metric": "accuracy for primary; macro-F1 is reported as a secondary metric with the same C",
+    "test_labels_used": false
+  },
+  "threshold_rules": {
+    "default": {
+      "logreg": "0.5 on predict_proba",
+      "linear_svc": "0.0 on decision_function"
+    },
+    "target_prior": {
+      "scores": "unlabeled test scores only",
+      "prior": "fit binary hate rate = 0.308975",
+      "threshold": "quantile(scores_test, 1 - prior) per arm, per probe, per seed",
+      "test_labels_used": false,
+      "status": "transductive exploratory protocol; not a deployable default"
+    }
+  },
+  "primary_endpoint": {
+    "split": "full official test, n=1918",
+    "metric": "accuracy",
+    "rule": "target_prior",
+    "comparison": "quantized arm minus f32 arm, paired by test example",
+    "arms": ["L12 r12 vs L12 f32", "L6 rescan vs L6 f32"],
+    "probes": ["logreg", "linear_svc"],
+    "seeds": [7, 13, 19, 31, 43],
+    "bootstrap": {
+      "iters": 10000,
+      "ci": "95% percentile, two-sided",
+      "paired": true,
+      "rng_seed": 7
+    }
+  },
+  "success_criteria": {
+    "unit": "candidate (L12 R12 or L6 rescan), requiring both probes",
+    "confirmed": "for both probes, at least 4 of 5 seeds have a paired 95% CI entirely above 0 and the 5-seed mean point delta is > 0",
+    "partially_confirmed": "one probe meets the 4/5 positive-CI bar and the other has at least 2/5 positive CIs",
+    "inconclusive": "neither confirmed nor rejected; e.g. both probes are 2-3/5, or one probe is below 2/5 while the other is at least 4/5",
+    "rejected": "both probes have at most 1/5 positive CIs, or both 5-seed mean point deltas are <= 0 with no positive CI",
+    "candidate_level_only": true,
+    "probe_level_counts_are_reported_but_do_not_override_the_candidate_rule": true,
+    "no_alpha_adjustment": "two candidate tests, each requiring both probes; 95% CIs are reported as pre-registered, no post-hoc alpha change"
+  },
+  "secondary_endpoints": {
+    "macro_f1": {
+      "same_split_and_rule": true,
+      "role": "supportive; cannot override primary accuracy",
+      "reported_counts": "same 5 seeds x 2 probes"
+    },
+    "default_0_5": {
+      "role": "reference only; tests whether any gain depends on target_prior"
+    },
+    "split_half": {
+      "role": "secondary diagnostic only",
+      "split": "StratifiedKFold(n_splits=2, shuffle=True, random_state=101) on test labels",
+      "directions": ["A_calib_B_eval", "B_calib_A_eval"],
+      "threshold": "target_prior using only the calibration half scores and fit prior",
+      "evaluation": "labels of the other half only",
+      "role_in_decision": "none; reported to check calibration/evaluation separation on the new corpus"
+    },
+    "toxic_mapping": {
+      "role": "exploratory only; not run in the primary matrix and not used in the decision"
+    }
+  },
+  "exclusions": [
+    "No encoder fine-tuning",
+    "No MLP or non-linear probe",
+    "No MNLI or other auxiliary training data",
+    "No TweetEval/hate test labels",
+    "No test labels for C selection or target-prior threshold",
+    "No per-arm C tuning for the quantized arm in the primary comparison",
+    "No claim that target_prior is a deployable default protocol"
+  ],
+  "analysis_outputs": {
+    "script": "docs/research/scripts/wsp_m140/hatexplain_target_prior.py",
+    "raw_tsv": "docs/research/data/wsp-classify-m140-raw.tsv",
+    "summary_tsv": "docs/research/data/wsp-classify-m140-summary.tsv",
+    "primary_tsv": "docs/research/data/wsp-classify-m140-primary.tsv",
+    "split_half_tsv": "docs/research/data/wsp-classify-m140-split-half.tsv"
+  },
+  "interpretation_boundary": {
+    "independent_corpus": "HateXplain is a second corpus, not a split of TweetEval/hate.",
+    "seed_independence": "five seeds share the same official test labels; seeds vary C and model fitting, not the evaluation examples. Effective independence is reported by C and by probe.",
+    "quantized_vs_f32": "The comparison is quantized arm minus f32 at the same C; it is not per-arm optimal C.",
+    "prior": "HateXplain fit and test hate rates are close (0.3090 vs 0.3097), so target_prior is close to the natural prior; this is a favorable condition for the rule and must be stated."
+  }
+}

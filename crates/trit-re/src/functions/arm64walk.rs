@@ -37,24 +37,13 @@ pub(super) enum ArmKind {
 /// 分类一条 ARM64 指令：`(种类, PC 相对目标)`。
 /// 间接 BR/BLR 的目标为 `None`（寄存器值静态不可知）。
 pub(super) fn classify(word: u32, addr: u64) -> (ArmKind, Option<u64>) {
-    let imm26 = (word & 0x03FF_FFFF) as i64;
-    let sext26 = if imm26 >= 0x0200_0000 {
-        imm26 - 0x0400_0000
-    } else {
-        imm26
+    let sext = |raw: i64, bits: u32| {
+        let shift = 64 - bits;
+        (raw << shift) >> shift
     };
-    let imm19 = ((word >> 5) & 0x7_FFFF) as i64;
-    let sext19 = if imm19 >= 0x4_0000 {
-        imm19 - 0x8_0000
-    } else {
-        imm19
-    };
-    let imm14 = ((word >> 5) & 0x3_FFFF) as i64;
-    let sext14 = if imm14 >= 0x2000 {
-        imm14 - 0x4000
-    } else {
-        imm14
-    };
+    let sext26 = sext((word & 0x03FF_FFFF) as i64, 26);
+    let sext19 = sext(((word >> 5) & 0x7_FFFF) as i64, 19);
+    let sext14 = sext(((word >> 5) & 0x3_FFFF) as i64, 14);
     let target26 = addr.wrapping_add((sext26 * 4) as u64);
     let target19 = addr.wrapping_add((sext19 * 4) as u64);
     let target14 = addr.wrapping_add((sext14 * 4) as u64);
@@ -106,6 +95,10 @@ pub(super) fn arm64_walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>) -> WalkOu
             if !off.is_multiple_of(4) || off + 4 > data.len() {
                 break; // 步进错位/越界：停链（ARM64 指令必须 4 对齐）
             }
+            // 节尾步进地址不可表示（近上限基址）即停链，不回绕。
+            let Some(next) = cur.checked_add(ARM64_INSN_LEN) else {
+                break;
+            };
             let word = u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]);
             let (kind, target) = classify(word, cur);
             out.visited.insert(cur, 4);
@@ -117,14 +110,14 @@ pub(super) fn arm64_walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>) -> WalkOu
                     {
                         stack.push(t);
                     }
-                    cur += ARM64_INSN_LEN; // call 有顺序后继
+                    cur = next; // call 有顺序后继
                 }
                 ArmKind::Jump => {
                     if let Some(t) = target
                         && in_exec_any(t, exec)
                     {
                         if t > cur {
-                            out.fwd_jumps.insert(t); // 尾调用/跳板候选
+                            out.fwd_jumps.insert(t);
                         }
                         stack.push(t);
                     }
@@ -136,10 +129,10 @@ pub(super) fn arm64_walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>) -> WalkOu
                     {
                         stack.push(t);
                     }
-                    cur += ARM64_INSN_LEN; // 条件边 + 顺序边都走
+                    cur = next; // 条件边 + 顺序边都走
                 }
                 ArmKind::Ret => break,
-                ArmKind::Other => cur += ARM64_INSN_LEN,
+                ArmKind::Other => cur = next,
             }
             if out.visited.len() >= super::cfg::WALK_CAP {
                 break;

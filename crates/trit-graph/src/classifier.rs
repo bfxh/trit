@@ -8,10 +8,12 @@
 //! 训练是**解析梯度**（不是有限差分）：`tanh → mean → 线性头 → softmax → CE`。
 //! 图级池化/多层/边特征在后续里程碑。
 
+use trit_core::BusError;
 use trit_core::value::Ternary;
 
 use crate::council::tally;
 use crate::graph::TritGraph;
+use crate::guards::{GradHead, GradTable, check_states_len, finite_latent, finite_scalar, softmax};
 use crate::mpnn::TransitionTable;
 use crate::view::TriGraphView;
 
@@ -66,20 +68,21 @@ impl TernaryClassifier {
     }
 
     /// 软特征：目标节点的入边投票（`tanh(latent)` 加权、按入度平均）。
-    pub fn feature(&self, view: &impl TriGraphView, states: &[Ternary]) -> f32 {
+    pub fn feature(&self, view: &impl TriGraphView, states: &[Ternary]) -> Result<f32, BusError> {
+        check_states_len(view, states)?;
         let incoming = incoming_edges(view, TARGET);
         if incoming.is_empty() {
-            return 0.0;
+            return Ok(0.0);
         }
         let mut sum = 0.0f32;
         for (source, edge) in &incoming {
             let probabilities = soft_state(states[*source]);
             let row = &self.table.latent()[index_of(*edge)];
             for (slot, &probability) in probabilities.iter().enumerate() {
-                sum += probability * row[slot].tanh();
+                sum += probability * finite_latent(row[slot]).tanh();
             }
         }
-        sum / incoming.len() as f32
+        Ok(sum / incoming.len() as f32)
     }
 
     fn logits(&self, feature: f32) -> [f32; 3] {
@@ -91,20 +94,28 @@ impl TernaryClassifier {
     }
 
     /// 软概率（`[+1, 0, -1]` 三类）。
-    pub fn probabilities(&self, view: &impl TriGraphView, states: &[Ternary]) -> [f32; 3] {
-        softmax(self.logits(self.feature(view, states)))
+    pub fn probabilities(
+        &self,
+        view: &impl TriGraphView,
+        states: &[Ternary],
+    ) -> Result<[f32; 3], BusError> {
+        let feature = self.feature(view, states)?;
+        Ok(softmax(self.logits(feature)))
     }
 
     /// 损失：`-ln p(label)`。
-    pub fn loss(&self, sample: &ClassifierSample) -> f32 {
-        let probabilities = self.probabilities(&sample.graph, &sample.states);
-        -(probabilities[index_of(sample.label)] + 1e-12).ln()
+    pub fn loss(&self, sample: &ClassifierSample) -> Result<f32, BusError> {
+        let probabilities = self.probabilities(&sample.graph, &sample.states)?;
+        Ok(-(probabilities[index_of(sample.label)] + 1e-12).ln())
     }
 
     /// 解析梯度：返回 `(loss, ∂L/∂table_latent, ∂L/∂head)`。
-    pub fn loss_and_grads(&self, sample: &ClassifierSample) -> (f32, [[f32; 3]; 3], [[f32; 3]; 2]) {
+    pub fn loss_and_grads(
+        &self,
+        sample: &ClassifierSample,
+    ) -> Result<(f32, GradTable, GradHead), BusError> {
         let incoming = incoming_edges(&sample.graph, TARGET);
-        let feature = self.feature(&sample.graph, &sample.states);
+        let feature = self.feature(&sample.graph, &sample.states)?;
         let probabilities = softmax(self.logits(feature));
         let loss = -(probabilities[index_of(sample.label)] + 1e-12).ln();
 
@@ -112,9 +123,9 @@ impl TernaryClassifier {
         dlogits[index_of(sample.label)] -= 1.0;
 
         let mut dhead = [[0.0f32; 3]; 2];
-        for k in 0..3 {
-            dhead[0][k] = dlogits[k] * feature;
-            dhead[1][k] = dlogits[k];
+        for (k, &dlogit) in dlogits.iter().enumerate() {
+            dhead[0][k] = dlogit * feature;
+            dhead[1][k] = dlogit;
         }
         let dfeature: f32 = (0..3).map(|k| dlogits[k] * self.head[0][k]).sum();
 
@@ -125,24 +136,33 @@ impl TernaryClassifier {
                 let probabilities = soft_state(sample.states[*source]);
                 let row = &self.table.latent()[index_of(*edge)];
                 for slot in 0..3 {
-                    let derivative = 1.0 - row[slot].tanh().powi(2);
+                    let derivative = 1.0 - finite_latent(row[slot]).tanh().powi(2);
                     dtable[index_of(*edge)][slot] += scale * probabilities[slot] * derivative;
                 }
             }
         }
-        (loss, dtable, dhead)
+        Ok((loss, dtable, dhead))
     }
 
     /// 全批梯度下降；返回最后一轮的平均损失。
-    pub fn fit(&mut self, samples: &[ClassifierSample], epochs: usize, lr: f32) -> f32 {
+    pub fn fit(
+        &mut self,
+        samples: &[ClassifierSample],
+        epochs: usize,
+        lr: f32,
+    ) -> Result<f32, BusError> {
         assert!(!samples.is_empty(), "没有训练样本");
+        for sample in samples {
+            check_states_len(&sample.graph, &sample.states)?;
+        }
+        let lr = finite_scalar(lr);
         let mut mean_loss = 0.0f32;
         for _ in 0..epochs {
             let mut dtable = [[0.0f32; 3]; 3];
             let mut dhead = [[0.0f32; 3]; 2];
             mean_loss = 0.0;
             for sample in samples {
-                let (loss, table_grad, head_grad) = self.loss_and_grads(sample);
+                let (loss, table_grad, head_grad) = self.loss_and_grads(sample)?;
                 mean_loss += loss;
                 for (dst, src) in dtable.iter_mut().zip(table_grad) {
                     for (target, value) in dst.iter_mut().zip(src) {
@@ -159,7 +179,7 @@ impl TernaryClassifier {
             let latent = self.table.latent_mut();
             for (e, row) in latent.iter_mut().enumerate() {
                 for (s, value) in row.iter_mut().enumerate() {
-                    *value -= scale * dtable[e][s];
+                    *value = finite_latent(*value) - scale * dtable[e][s];
                 }
             }
             for (row, dst) in self.head.iter_mut().enumerate() {
@@ -169,20 +189,25 @@ impl TernaryClassifier {
             }
             mean_loss /= samples.len() as f32;
         }
-        mean_loss
+        Ok(mean_loss)
     }
 
     /// 硬三票推理：表项取硬票，按议会合成；没有入边时保持原状态。
-    pub fn predict(&self, view: &impl TriGraphView, states: &[Ternary]) -> Ternary {
+    pub fn predict(
+        &self,
+        view: &impl TriGraphView,
+        states: &[Ternary],
+    ) -> Result<Ternary, BusError> {
+        check_states_len(view, states)?;
         let incoming = incoming_edges(view, TARGET);
         if incoming.is_empty() {
-            return states[TARGET];
+            return Ok(states[TARGET]);
         }
         let votes: Vec<(Ternary, bool)> = incoming
             .iter()
             .map(|(source, edge)| (self.table.vote(*edge, states[*source]), false))
             .collect();
-        tally(votes).outcome
+        Ok(tally(votes).outcome)
     }
 }
 
@@ -212,13 +237,6 @@ fn index_of(state: Ternary) -> usize {
         Ternary::Unknown => 1,
         Ternary::False => 2,
     }
-}
-
-fn softmax(logits: [f32; 3]) -> [f32; 3] {
-    let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let exp: [f32; 3] = logits.map(|value| (value - max).exp());
-    let sum: f32 = exp.iter().sum();
-    exp.map(|value| value / sum)
 }
 
 /// 生成"一跳到目标节点"的合成任务：真实标签 = 恒等规则下的议会结果。
@@ -283,22 +301,13 @@ mod tests {
 
     #[test]
     fn hard_predict_uses_identity_table() {
-        let classifier = TernaryClassifier::with_table(TransitionTable::identity());
-        let support = hand_sample(&[(Ternary::True, Ternary::True)], Ternary::True);
-        assert_eq!(
-            classifier.predict(&support.graph, &support.states),
-            Ternary::True
-        );
-        let oppose = hand_sample(&[(Ternary::False, Ternary::True)], Ternary::False);
-        assert_eq!(
-            classifier.predict(&oppose.graph, &oppose.states),
-            Ternary::False
-        );
-        let neutral = hand_sample(&[(Ternary::Unknown, Ternary::True)], Ternary::Unknown);
-        assert_eq!(
-            classifier.predict(&neutral.graph, &neutral.states),
-            Ternary::Unknown
-        );
+        let c = TernaryClassifier::with_table(TransitionTable::identity());
+        let s = hand_sample(&[(Ternary::True, Ternary::True)], Ternary::True);
+        assert_eq!(c.predict(&s.graph, &s.states).unwrap(), Ternary::True);
+        let o = hand_sample(&[(Ternary::False, Ternary::True)], Ternary::False);
+        assert_eq!(c.predict(&o.graph, &o.states).unwrap(), Ternary::False);
+        let n = hand_sample(&[(Ternary::Unknown, Ternary::True)], Ternary::Unknown);
+        assert_eq!(c.predict(&n.graph, &n.states).unwrap(), Ternary::Unknown);
     }
 
     #[test]
@@ -311,37 +320,36 @@ mod tests {
             Ternary::True,
         );
         let classifier = TernaryClassifier::new();
-        let (_, dtable, dhead) = classifier.loss_and_grads(&sample);
+        let (_, dtable, dhead) = classifier.loss_and_grads(&sample).unwrap();
         let epsilon = 1e-4;
-
         let mut probe = classifier.clone();
         for (e, row) in dtable.iter().enumerate() {
             for (s, &analytic) in row.iter().enumerate() {
                 let base = probe.table.latent()[e][s];
                 probe.table.latent_mut()[e][s] = base + epsilon;
-                let plus = probe.loss(&sample);
+                let plus = probe.loss(&sample).unwrap();
                 probe.table.latent_mut()[e][s] = base - epsilon;
-                let minus = probe.loss(&sample);
+                let minus = probe.loss(&sample).unwrap();
                 probe.table.latent_mut()[e][s] = base;
                 let numeric = (plus - minus) / (2.0 * epsilon);
                 assert!(
                     (numeric - analytic).abs() < 1e-3,
-                    "table[{e}][{s}] numeric={numeric} analytic={analytic}"
+                    "t[{e}][{s}] {numeric}/{analytic}"
                 );
             }
         }
-        for (row, analytic_row) in dhead.iter().enumerate() {
-            for (k, &analytic) in analytic_row.iter().enumerate() {
-                let base = probe.head[row][k];
-                probe.head[row][k] = base + epsilon;
-                let plus = probe.loss(&sample);
-                probe.head[row][k] = base - epsilon;
-                let minus = probe.loss(&sample);
-                probe.head[row][k] = base;
+        for (r, row) in dhead.iter().enumerate() {
+            for (k, &analytic) in row.iter().enumerate() {
+                let base = probe.head[r][k];
+                probe.head[r][k] = base + epsilon;
+                let plus = probe.loss(&sample).unwrap();
+                probe.head[r][k] = base - epsilon;
+                let minus = probe.loss(&sample).unwrap();
+                probe.head[r][k] = base;
                 let numeric = (plus - minus) / (2.0 * epsilon);
                 assert!(
                     (numeric - analytic).abs() < 1e-3,
-                    "head[{row}][{k}] numeric={numeric} analytic={analytic}"
+                    "h[{r}][{k}] {numeric}/{analytic}"
                 );
             }
         }
@@ -351,30 +359,22 @@ mod tests {
     fn training_beats_sign_blind_baseline() {
         let samples = synthetic_samples(300, 0x9E37_79B9_7F4A_7C15);
         let mut classifier = TernaryClassifier::new();
-        let loss = classifier.fit(&samples, 300, 0.5);
+        let loss = classifier.fit(&samples, 300, 0.5).unwrap();
         assert!(loss < 0.7, "final loss={loss}");
-
         let correct = samples
             .iter()
-            .filter(|sample| classifier.predict(&sample.graph, &sample.states) == sample.label)
+            .filter(|s| classifier.predict(&s.graph, &s.states).unwrap() == s.label)
             .count();
         let accuracy = correct as f64 / samples.len() as f64;
-
-        // 基线：忽略边符号，只看邻居节点状态的多数票。
         let baseline = samples
             .iter()
-            .filter(|sample| {
-                let votes: Vec<(Ternary, bool)> = sample
-                    .states
-                    .iter()
-                    .skip(1)
-                    .map(|&state| (state, false))
-                    .collect();
-                tally(votes).outcome == sample.label
+            .filter(|s| {
+                let votes: Vec<(Ternary, bool)> =
+                    s.states.iter().skip(1).map(|&st| (st, false)).collect();
+                tally(votes).outcome == s.label
             })
             .count() as f64
             / samples.len() as f64;
-
         assert!(accuracy > 0.9, "accuracy={accuracy}");
         assert!(
             accuracy > baseline + 0.05,
@@ -387,7 +387,7 @@ mod tests {
         let classifier = TernaryClassifier::with_table(TransitionTable::identity());
         let graph = TritGraph::new(1);
         assert_eq!(
-            classifier.predict(&graph, &[Ternary::False]),
+            classifier.predict(&graph, &[Ternary::False]).unwrap(),
             Ternary::False
         );
     }

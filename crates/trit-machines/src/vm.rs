@@ -154,7 +154,11 @@ pub fn run(program: &[Op], limits: Limits) -> RunReport {
                     }
                 },
                 Op::Halt => {
-                    let value = stack.last().copied().unwrap_or(Ternary::Unknown);
+                    // 空栈停机与 DUP/JZ/二元运算空栈口径一致：判截断，不伪造 Unknown。
+                    let Some(value) = stack.last().copied() else {
+                        truncated = true;
+                        break 'path;
+                    };
                     *outputs.entry(value).or_insert(0) += 1;
                     break;
                 }
@@ -200,7 +204,6 @@ mod tests {
 
     #[test]
     fn masking_through_unknown_is_definite() {
-        // X & 0 = 0：三值运算本身就能给出确定值，不需要分叉。
         let program = [
             Op::Push(Ternary::Unknown),
             Op::Push(Ternary::False),
@@ -215,7 +218,6 @@ mod tests {
 
     #[test]
     fn kleene_cannot_see_reconvergent_correlation() {
-        // 栈机没有相关性分析：X & ~X 仍是 X（这正是需要 X-Pessimism 分析器的地方）。
         let program = [
             Op::Push(Ternary::Unknown),
             Op::Dup,
@@ -229,7 +231,6 @@ mod tests {
 
     #[test]
     fn branch_on_unknown_forks_but_agrees() {
-        // if X { 1 } else { 1 }：两条路径、同一个输出。
         let program = [
             Op::Push(Ternary::Unknown),
             Op::Jz(5),
@@ -296,7 +297,6 @@ mod tests {
 
     #[test]
     fn path_budget_stops_forking() {
-        // 连续两次 X 分支 -> 4 条路径；预算 2 时截断。
         let program = [
             Op::Push(Ternary::Unknown),
             Op::Jz(6),

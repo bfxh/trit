@@ -12,25 +12,15 @@ use anyhow::{Context, Result};
 use trit_core::Expr;
 use trit_core::value::Ternary;
 
-/// 线性 IR 的一条指令：结果是第 `index` 个临时变量。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Op {
-    Const(Ternary),
-    Var(usize),
-    Not(usize),
-    And(usize, usize),
-    Or(usize, usize),
-    Xor(usize, usize),
-    Implies(usize, usize),
-    Equiv(usize, usize),
-}
+use super::ir::Op;
 
 /// 表达式 → 线性 IR（后序，最后一条即根）。同构子式走 CSE，只算一次。
 pub(super) fn lower(expr: &Expr, vars: &[String]) -> Result<Vec<Op>> {
     let mut ops = Vec::new();
     let mut memo = HashMap::new();
     push(expr, vars, &mut ops, &mut memo)?;
-    Ok(prune_dead(ops))
+    let root = ops.len().saturating_sub(1);
+    Ok(prune_dead(ops, root))
 }
 
 /// 去重键：`(算子, 左子, 右子)`，一元/常量/变量的右子位补 0。
@@ -122,12 +112,12 @@ fn ordinal(value: Ternary) -> usize {
 }
 
 /// 从根反向标记可达节点，丢掉孤儿并把下标压紧；根仍在最后一条。
-pub(super) fn prune_dead(ops: Vec<Op>) -> Vec<Op> {
+pub(super) fn prune_dead(ops: Vec<Op>, root: usize) -> Vec<Op> {
     if ops.is_empty() {
         return ops;
     }
     let mut live = vec![false; ops.len()];
-    let mut stack = vec![ops.len() - 1];
+    let mut stack = vec![root];
     while let Some(index) = stack.pop() {
         if live[index] {
             continue;
@@ -139,6 +129,7 @@ pub(super) fn prune_dead(ops: Vec<Op>) -> Vec<Op> {
             Op::And(left, right)
             | Op::Or(left, right)
             | Op::Xor(left, right)
+            | Op::Xor2(left, right)
             | Op::Implies(left, right)
             | Op::Equiv(left, right) => {
                 stack.push(left);
@@ -159,6 +150,7 @@ pub(super) fn prune_dead(ops: Vec<Op>) -> Vec<Op> {
             Op::And(left, right) => Op::And(remap[left], remap[right]),
             Op::Or(left, right) => Op::Or(remap[left], remap[right]),
             Op::Xor(left, right) => Op::Xor(remap[left], remap[right]),
+            Op::Xor2(left, right) => Op::Xor2(remap[left], remap[right]),
             Op::Implies(left, right) => Op::Implies(remap[left], remap[right]),
             Op::Equiv(left, right) => Op::Equiv(remap[left], remap[right]),
         };

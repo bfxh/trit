@@ -1,0 +1,31 @@
+{
+  "dataset": "Davidson et al. 2017",
+  "url": "https://raw.githubusercontent.com/t-davidson/hate-speech-and-offensive-language/master/data/labeled_data.csv",
+  "sha256": "FCB8BC7C68120AE4AF04A5B9ACD58585513EDE11E1548EBF36A5C2040B6F6281",
+  "raw_rows": 24783,
+  "raw_class_counts": {
+    "2": 4163,
+    "1": 19190,
+    "0": 1430
+  },
+  "clean_rows": 24782,
+  "clean_class_counts": {
+    "0": 23352,
+    "1": 1430
+  },
+  "fit_rows": 19825,
+  "test_rows": 4956,
+  "fit_label_counts": {
+    "0": 18681,
+    "1": 1144
+  },
+  "test_label_counts": {
+    "0": 4671,
+    "1": 285
+  },
+  "fit_hate_prior": 0.057704918032786885,
+  "test_hate_prior": 0.05750605326876514,
+  "split": "stratified 80/20, random_state=7",
+  "removed_test_overlap": 1,
+  "note": "Binary mapping; descriptive external transport only."
+}
