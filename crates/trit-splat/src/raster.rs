@@ -17,7 +17,7 @@ use crate::splat::{project, ScreenGaussian};
 use crate::Frame;
 
 /// 屏幕 σ 闸门比例：σ > ratio × max(w, h) 的高斯视为退化 splat。
-pub const MAX_SCREEN_SIGMA_RATIO: f32 = 0.15;
+pub const MAX_SCREEN_SIGMA_RATIO: f32 = 0.6;
 
 fn screen_sigma(s: &ScreenGaussian) -> Option<f32> {
     let det_inv = s.inv_a * s.inv_c - s.inv_b * s.inv_b;
@@ -40,6 +40,12 @@ pub fn render(
         .ok()
         .and_then(|v| v.parse::<f32>().ok())
         .unwrap_or_else(|| MAX_SCREEN_SIGMA_RATIO * intr.width.max(intr.height) as f32);
+    // 各向异性比率闸门：σ_max/σ_min 超过此值的针状退化 splat 剔除
+    // （MCM 针实测 ratio≈1900；合法远景/地面 splat ratio 通常 <10）。
+    let aniso_cap = std::env::var("SPLAT_ANISO_CAP")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(100.0);
     let mut splats: Vec<ScreenGaussian> = gaussians
         .iter()
         .enumerate()
@@ -51,9 +57,39 @@ pub fn render(
                 min_scales.and_then(|m| m.get(idx).copied()),
             )
         })
-        .filter(|s| screen_sigma(s).is_none_or(|sigma| sigma < sigma_cap))
+        .filter(|s| {
+            let Some(sigma) = screen_sigma(s) else {
+                return false;
+            };
+            if sigma >= sigma_cap {
+                return false;
+            }
+            let det_inv = s.inv_a * s.inv_c - s.inv_b * s.inv_b;
+            if det_inv <= 0.0 {
+                return false;
+            }
+            let sigma_min = (1.0 / det_inv).sqrt();
+            sigma / sigma_min.max(1e-6) < aniso_cap
+        })
         .collect();
     splats.sort_by(|a, b| b.depth.partial_cmp(&a.depth).unwrap_or(std::cmp::Ordering::Equal));
+
+    // SPLAT_DUMP=<路径>：把排序后的每 splat 中间量导出（u,v,depth,inv_a,inv_b,
+    // inv_c,alpha,r,g,b），供 numpy 合成实验台逐级对拍，消灭转写错误。
+    if let Ok(dump_path) = std::env::var("SPLAT_DUMP") {
+        let mut rows = Vec::with_capacity(splats.len() * 9);
+        for s in &splats {
+            rows.extend_from_slice(&[
+                s.u, s.v, s.depth, s.inv_a, s.inv_b, s.inv_c, s.alpha,
+                s.color[0], s.color[1], s.color[2],
+            ]);
+        }
+        let bytes: Vec<u8> = rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+        match std::fs::write(&dump_path, &bytes) {
+            Ok(_) => println!("SPLAT_DUMP 写出 {} 颗 → {dump_path}", splats.len()),
+            Err(e) => eprintln!("SPLAT_DUMP 写出失败: {e}"),
+        }
+    }
 
     let mut frame = Frame::new(intr.width, intr.height, background);
     let w = intr.width as i32;
