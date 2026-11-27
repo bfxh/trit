@@ -6719,6 +6719,10 @@
       "lines": 634
     },
     {
+      "file": "tools/tech-stack-mcp/src/main.rs",
+      "lines": 189
+    },
+    {
       "file": "verus/src/b3.rs",
       "lines": 215
     },
