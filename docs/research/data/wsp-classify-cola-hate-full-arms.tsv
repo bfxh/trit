@@ -1,0 +1,81 @@
+dataset	depth	probe	kind	arm	against	metric	selected_C	accuracy	macro_f1	delta	ci_low	ci_high
+cola	l12	logreg	arm	true-f32			10	0.573346	0.548644			
+cola	l12	logreg	arm	true-bits4			10	0.586769	0.560717			
+cola	l12	logreg	arm	official-pure-f32			10	0.576222	0.552321			
+cola	l12	logreg	arm	official-int3			10	0.558965	0.534089			
+cola	l12	logreg	arm	official-int4			10	0.586769	0.561151			
+cola	l12	logreg	arm	official-r12			10	0.566635	0.543040			
+cola	l12	logreg	delta	true-bits4	true-f32	macro_f1				0.011989	-0.007385	0.031764
+cola	l12	logreg	delta	official-pure-f32	true-f32	macro_f1				0.003627	-0.004144	0.011653
+cola	l12	logreg	delta	official-int3	true-f32	macro_f1				-0.014776	-0.043998	0.014406
+cola	l12	logreg	delta	official-int4	true-f32	macro_f1				0.012395	-0.006947	0.031930
+cola	l12	logreg	delta	official-r12	true-f32	macro_f1				-0.005731	-0.033790	0.023189
+cola	l12	linear_svc	arm	true-f32			10	0.577181	0.550525			
+cola	l12	linear_svc	arm	true-bits4			10	0.585810	0.559916			
+cola	l12	linear_svc	arm	official-pure-f32			10	0.577181	0.550525			
+cola	l12	linear_svc	arm	official-int3			10	0.566635	0.539541			
+cola	l12	linear_svc	arm	official-int4			10	0.585810	0.559916			
+cola	l12	linear_svc	arm	official-r12			10	0.563758	0.538937			
+cola	l12	linear_svc	delta	true-bits4	true-f32	macro_f1				0.009261	-0.009135	0.027831
+cola	l12	linear_svc	delta	official-pure-f32	true-f32	macro_f1				0.000000	0.000000	0.000000
+cola	l12	linear_svc	delta	official-int3	true-f32	macro_f1				-0.011200	-0.040025	0.017882
+cola	l12	linear_svc	delta	official-int4	true-f32	macro_f1				0.009261	-0.009135	0.027831
+cola	l12	linear_svc	delta	official-r12	true-f32	macro_f1				-0.011817	-0.040323	0.016637
+cola	l6	logreg	arm	true-f32			1	0.577181	0.553124			
+cola	l6	logreg	arm	official-pure-f32			1	0.581975	0.557138			
+cola	l6	logreg	arm	official-int3			10	0.570470	0.547084			
+cola	l6	logreg	arm	official-int4			1	0.568552	0.543789			
+cola	l6	logreg	arm	official-rescan-k2			1	0.565676	0.540530			
+cola	l6	logreg	delta	official-pure-f32	true-f32	macro_f1				0.004024	-0.002409	0.010906
+cola	l6	logreg	delta	official-int3	true-f32	macro_f1				-0.005909	-0.032745	0.020631
+cola	l6	logreg	delta	official-int4	true-f32	macro_f1				-0.009351	-0.027439	0.008747
+cola	l6	logreg	delta	official-rescan-k2	true-f32	macro_f1				-0.012499	-0.039901	0.015703
+cola	l6	linear_svc	arm	true-f32			0.1	0.573346	0.549910			
+cola	l6	linear_svc	arm	official-pure-f32			0.1	0.573346	0.549910			
+cola	l6	linear_svc	arm	official-int3			1	0.571429	0.548302			
+cola	l6	linear_svc	arm	official-int4			1	0.573346	0.548644			
+cola	l6	linear_svc	arm	official-rescan-k2			10	0.574305	0.549872			
+cola	l6	linear_svc	delta	official-pure-f32	true-f32	macro_f1				0.000000	0.000000	0.000000
+cola	l6	linear_svc	delta	official-int3	true-f32	macro_f1				-0.001486	-0.028257	0.025510
+cola	l6	linear_svc	delta	official-int4	true-f32	macro_f1				-0.001357	-0.023225	0.020539
+cola	l6	linear_svc	delta	official-rescan-k2	true-f32	macro_f1				0.000042	-0.029487	0.029020
+hate	l12	logreg	arm	true-f32			1	0.574250	0.565499			
+hate	l12	logreg	arm	true-bits4			10	0.565472	0.556540			
+hate	l12	logreg	arm	official-pure-f32			1	0.574250	0.565499			
+hate	l12	logreg	arm	official-int3			10	0.564740	0.553275			
+hate	l12	logreg	arm	official-int4			10	0.565472	0.556540			
+hate	l12	logreg	arm	official-r12			1	0.560717	0.549522			
+hate	l12	logreg	delta	true-bits4	true-f32	accuracy				-0.008816	-0.019020	0.001097
+hate	l12	logreg	delta	official-pure-f32	true-f32	accuracy				0.000000	0.000000	0.000000
+hate	l12	logreg	delta	official-int3	true-f32	accuracy				-0.009601	-0.022312	0.003658
+hate	l12	logreg	delta	official-int4	true-f32	accuracy				-0.008816	-0.019020	0.001097
+hate	l12	logreg	delta	official-r12	true-f32	accuracy				-0.013568	-0.026335	-0.000732
+hate	l12	linear_svc	arm	true-f32			0.1	0.571324	0.562138			
+hate	l12	linear_svc	arm	true-bits4			1	0.566569	0.557233			
+hate	l12	linear_svc	arm	official-pure-f32			0.1	0.571324	0.562138			
+hate	l12	linear_svc	arm	official-int3			0.1	0.553767	0.541568			
+hate	l12	linear_svc	arm	official-int4			1	0.566569	0.557233			
+hate	l12	linear_svc	arm	official-r12			0.1	0.557791	0.545421			
+hate	l12	linear_svc	delta	true-bits4	true-f32	accuracy				-0.004826	-0.015362	0.005852
+hate	l12	linear_svc	delta	official-pure-f32	true-f32	accuracy				0.000000	0.000000	0.000000
+hate	l12	linear_svc	delta	official-int3	true-f32	accuracy				-0.017598	-0.029993	-0.004755
+hate	l12	linear_svc	delta	official-int4	true-f32	accuracy				-0.004826	-0.015362	0.005852
+hate	l12	linear_svc	delta	official-r12	true-f32	accuracy				-0.013585	-0.025969	-0.001454
+hate	l6	logreg	arm	true-f32			1	0.546086	0.534408			
+hate	l6	logreg	arm	official-pure-f32			1	0.546086	0.534408			
+hate	l6	logreg	arm	official-int3			1	0.550475	0.538579			
+hate	l6	logreg	arm	official-int4			10	0.531090	0.516935			
+hate	l6	logreg	arm	official-rescan			10	0.546452	0.531903			
+hate	l6	logreg	delta	official-pure-f32	true-f32	accuracy				0.000000	0.000000	0.000000
+hate	l6	logreg	delta	official-int3	true-f32	accuracy				0.004218	-0.008778	0.017191
+hate	l6	logreg	delta	official-int4	true-f32	accuracy				-0.015084	-0.024872	-0.005486
+hate	l6	logreg	delta	official-rescan	true-f32	accuracy				0.000282	-0.014265	0.014265
+hate	l6	linear_svc	arm	true-f32			0.1	0.546452	0.534505			
+hate	l6	linear_svc	arm	official-pure-f32			0.1	0.546452	0.534505			
+hate	l6	linear_svc	arm	official-int3			0.1	0.547184	0.533635			
+hate	l6	linear_svc	arm	official-int4			1	0.529261	0.514096			
+hate	l6	linear_svc	arm	official-rescan			1	0.544623	0.529190			
+hate	l6	linear_svc	delta	official-pure-f32	true-f32	accuracy				0.000000	0.000000	0.000000
+hate	l6	linear_svc	delta	official-int3	true-f32	accuracy				0.000582	-0.012070	0.013533
+hate	l6	linear_svc	delta	official-int4	true-f32	accuracy				-0.017248	-0.027067	-0.007681
+hate	l6	linear_svc	delta	official-rescan	true-f32	accuracy				-0.001922	-0.016094	0.011704

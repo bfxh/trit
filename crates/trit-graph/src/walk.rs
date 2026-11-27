@@ -30,8 +30,11 @@ impl TriScore {
         self.plus + self.minus + self.unknown
     }
 
-    /// 三态判决：未知占优或并列 → 悬置；否则多数通道。
+    /// 三态判决：未知占优或并列 → 悬置；否则多数通道；NaN 通道判无效输入悬置。
     pub fn state(self) -> Ternary {
+        if self.plus.is_nan() || self.minus.is_nan() || self.unknown.is_nan() {
+            return Ternary::Unknown;
+        }
         if self.unknown >= self.plus && self.unknown >= self.minus {
             Ternary::Unknown
         } else if self.plus > self.minus {
@@ -152,7 +155,6 @@ mod tests {
         );
         let scores = tri_pagerank(&g, &[(0, Ternary::True)], 0.85, 80, 1e-12);
         assert_eq!(states(&scores), vec![Ternary::True; 4]);
-        // 质量守恒：种子总质量 = 1。
         let total: f64 = scores.iter().map(|s| s.total()).sum();
         assert!((total - 1.0).abs() < 1e-6, "total={total}");
     }
@@ -175,7 +177,6 @@ mod tests {
 
     #[test]
     fn seed_mass_accumulates() {
-        // 0 -> 1 与 2 -> 1：两个 True 种子对一个 False 种子。
         let g = chain(&[(0, 1, Ternary::True), (2, 1, Ternary::True)], 3);
         let scores = tri_pagerank(
             &g,
@@ -213,7 +214,6 @@ mod tests {
     fn dead_end_keeps_mass() {
         let g = chain(&[(0, 1, Ternary::True)], 2);
         let scores = tri_pagerank(&g, &[(1, Ternary::True)], 0.85, 50, 1e-12);
-        // 节点 1 没有出边，质量留在原地。
         assert!(scores[1].plus > 0.0);
         assert_eq!(scores[1].state(), Ternary::True);
     }

@@ -2,6 +2,855 @@
 
 ## [Unreleased]
 
+### Changed（第五十八轮：direct 头部、guard 与签名空白压缩）
+
+- `direct/emit.rs`：头部从
+  `/* trit-build direct-c kleene vars=a,b,c */` 收成 `/*kleene v=a,b,c*/`。
+  代数名和 `v` 的槽位映射仍保留，`trit-build` / `direct-c` 由文件名与函数名承担；
+  每个生成物少 25 B。
+- `direct/emit/body.rs`：guard 从
+  `    if (n < 3u) return 0; /* n<变量数→X */` 收成
+  `    if(n<3)return 0;/*X*/`；签名从
+  `int8_t trit_direct(const int8_t *v, unsigned n) {` 收成
+  `int8_t trit_direct(const int8_t*v,unsigned n){`。两处合计再少 25 B。
+- 固定少 50 B：`(a & b) | c` 277→227 B、`((a & b) | c) & (d | e)` 306→256 B、
+  `((a => b) <=> (!a | b)) ^ c` 321→271 B、11 变量混合式 417→367 B、
+  深链 320→270 B、`(!(a & b)) => (!(c | d))` 293→243 B；
+  `!a` / `a <=> 0` 179→129 B；`a & b` 243→193 B；
+  `(!a) => (!b)` / `(!a) <=> (!b)` 240→190 B；扇出 `fan3` 337→287 B、
+  `fan5` 355→305 B。
+- 判据：11 项 `direct_c_size` 预算收紧到 227/256/271/367/270/129/193/129/190/190/243 B；
+  `direct_c_fanout` 收紧到 287/305 B。签名断言、`direct.rs` 文档与 `--verify-c`
+  驱动器同步到新签名空白（C 只看声明类型，不看空白）。
+- 门禁：`cargo test -p trit-build`、clippy、fmt、rustdoc、docs、module budget、
+  test surface、alloc guard 与 100 条变异全绿。
+
+### Changed（第五十七轮：direct 单表统一 `T[]`、临时变量改 `int`、头部注释压缩）
+
+- `direct/emit/inline/table.rs`：只用到一张表时也写 `T[]`，不再保留 `T_AND[]` 等原名；
+  `Table` 只剩基址，表值总是拼进同一个 `T`。单表单次引用与声明各少 3–6 B，
+  单表样例合计少 6–12 B，多表不变。
+- `direct/emit/body.rs`：临时变量类型从 `int8_t` 改成更短的 `int`；值域仍是
+  `-1/0/1`，返回时隐式收窄回 `int8_t`，语义不变。每个临时变量少 3 B。
+- `direct/emit.rs`：生成物头两行注释收成一行
+  `/* trit-build direct-c kleene vars=a,b,c */`；guard 注释从
+  `/* 入参不足：按 X 处理，fail-closed */` 收成 `/* n<变量数→X */`。中文注释的
+  UTF-8 字节省得更多，每个生成物固定少 152 B。
+- `direct/verify.rs`：驱动器把 `trit_direct` 声明成 `int`，而定义返回 `int8_t`，
+  ABI 不一致属于未定义行为；改成 `int8_t trit_direct(...)`，三代数逐行对拍不再靠
+  寄存器残留高位碰巧通过。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 429→277 B、
+  `((a & b) | c) & (d | e)` 458→306 B、`((a => b) <=> (!a | b)) ^ c` 476→321 B、
+  11 变量混合式 569→417 B、深链 472→320 B、`(!(a & b)) => (!(c | d))` 445→293 B；
+  单表 `a & b` 403→243 B、`(!a) => (!b)` 398→240 B、`(!a) <=> (!b)` 404→240 B；
+  扇出 `fan3` 492→337 B、`fan5` 510→355 B。
+- 判据：11 项 `direct_c_size` 预算收紧到 277/306/321/417/320/179/243/179/240/240/293 B；
+  `direct_c_fanout` 收紧到 337/355 B，仍锁单条 `int t0=...,t1=` 声明与三代数 81 行
+  对拍；`verify_c` 驱动器原型与生成函数签名一致。
+- 门禁：`cargo test -p trit-build`、clippy、fmt、rustdoc、docs、module budget、
+  test surface、alloc guard 与 100 条变异全绿。
+
+### Changed（第五十六轮：direct 合并运算符表、临时变量单条声明）
+
+- `direct/emit/inline/table.rs`：只用到一张二元表时仍写 `T_AND[]`；用到两张及以上时，
+  把各表按固定顺序拼成一个 `T[]`，索引写成 `T[3*l+r+base+4]`。表声明只留一个前缀，
+  每个算子的表名缩成 `T`、基址并进常量：两张表起每篇少一份前缀，
+  三张表少两份；每次调用再少 2–5 B。
+- `direct/emit/body.rs`：临时变量不再一条一句，合并成
+  `int8_t t0=...,t1=...;` 一条声明；第一个变量省掉 ` = ` 两个空格，后续每个变量
+  从 `    int8_t tN = ` 变成 `,tN=`，固定少 12 B。节点仍按后序初始化，C 的声明符
+  顺序保证后面的表达式能读前面的临时变量。
+- 新增 `direct/emit/tables.rs` 与 `direct/emit/body/value.rs`，把“用了哪些表”和
+  “单个节点右值”从 `render` / 函数体循环里拆出，模块预算不抬高；表达式展开的
+  两万层测试移到 `inline/expr/tests.rs`。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 469→429 B、
+  `((a & b) | c) & (d | e)` 504→458 B、`((a => b) <=> (!a | b)) ^ c` 560→476 B、
+  11 变量混合式 665→569 B、深链 522→472 B、`(!(a & b)) => (!(c | d))` 487→445 B；
+  单表与无表样例 `!a` / `a & b` / `a <=> 0` / `(!a) => (!b)` / `(!a) <=> (!b)`
+  保持 331/403/331/398/404 B。扇出网表 `fan3` 574→492 B、两个共享节点 `fan5`
+  610→510 B。
+- 判据：`direct_c_size.rs` 六个多表预算收紧；新增 `direct_c_fanout.rs` 锁 `fan3`
+  492 B、`fan5` 510 B 与 `int8_t t0=...,t1=...` 单条声明，并在三代数下
+  `--verify-c` 81 行全过；`cargo test -p trit-build` 141 单元（140 passed / 1 ignored）
+  + 集成全绿；`mutation_check --pkg trit-build` 97/97 caught（新增多表基址错位、
+  临时变量不合并两条）；clippy、fmt、rustdoc、docs、module budget、test surface
+  与 alloc guard 全绿。
+
+### Changed（第五十五轮：direct 生成 C 词法压缩）
+
+- `direct/emit/format/table.rs`：运算符表声明从 `static const int8_t T_AND[9] = { -1, -1, ..., };`
+  改成 `static const int8_t T_AND[]={-1,-1,...};`：省掉显式长度、等号两侧空格、每项前空格与
+  末尾逗号，每张表固定少 14 B；表值仍由 `Algebra` 现算，语义不变。
+- `direct/emit/body.rs` / `inline/expr.rs`：生成函数参数从 `vars` / `nvars` 缩短为 `v` / `n`
+  （C 参数名不是 ABI），变量叶子写 `v[i]`；每次变量引用少 3 B，`n` 的两处各少 4 B。
+- `direct/emit/format.rs`：`Not` 直接写 `-expr`，只在子表达式本身以 `-` 开头时补括号，
+  避免拼成 `--` 记号；每个存活取反少 2 B。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 517→469 B、
+  `((a & b) | c) & (d | e)` 558→504 B、混合式 622→560 B、11 变量 753→665 B、
+  深链 579→522 B、`a & b` 434→403 B、`(!a) => (!b)` 431→398 B、
+  `(!a) <=> (!b)` 435→404 B、`(!(a & b)) => (!(c | d))` 540→487 B、
+  `!a` / `a <=> 0` 347→331 B；12 变量 dense 842→739 B、8 变量高复用 753→687 B。
+- 判据：`direct_c_size.rs` 11 个预算按新产物收紧；三代数 `--verify-c` 对 11 变量
+  （177147 行）、dense（531441 行）、高复用（19683 行）与深链（729 行）全过；
+  `cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+ 集成全绿；
+  `mutation_check --pkg trit-build` 95/95 caught（新增表值加一、取反丢负号两条）；
+  clippy、fmt、rustdoc、docs、module budget、test surface 与 alloc guard 全绿。
+
+### Changed（第五十四轮：direct 表索引化简为 `3*l+r+4`，删除 helper）
+
+- `direct/emit/inline.rs`：二元调用的表索引从 `[(l+1)*3+(r+1)]` 改成 `[3*l+r+4]`；
+  两者代数等价，但新式每个展开调用固定少 14 B（括号与两个 `+1` 被吸收）。
+  `body.rs` 的语句右值与 `expr.rs` 的根展开共用同一写法，不再按 helper/表索引分叉。
+- `direct/emit.rs`：删除 `trit_bin` helper 与双函数体择优。紧凑索引每次调用的固定开销是
+  12 B（`T[3*l+r+4]`），helper 调用是 19 B（`trit_bin(T, l, r)`），直接索引恒短 7 B；
+  helper 还有约 90 B 声明，任何调用数都无法摊平，旧“按整篇字节数择优”实际总选表索引。
+  多调用测试改为断言 21 次调用全部内联、零 `trit_bin`。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 545→517 B、
+  `((a & b) | c) & (d | e)` 614→558 B、`((a => b) <=> (!a | b)) ^ c` 664→622 B、
+  11 变量混合式 893→753 B、深链 649→579 B、`a & b` 448→434 B、
+  `(!a) => (!b)` 445→431 B、`(!a) <=> (!b)` 449→435 B、
+  `(!(a & b)) => (!(c | d))` 582→540 B；`!a` 347 B、`a <=> 0` 347 B 不变；
+  12 变量 dense 样（11 次二元调用）995→841 B、8 变量高复用样（15 次调用）963→753 B。
+- 判据：`direct_c_size.rs` 11 个预算按新产物同步收紧（`!a` / `a <=> 0` 保持 347 B）；三代数 `--verify-c` 对 11 变量
+  （177147 行）、dense（531441 行）、高复用（19683 行）与深链（729 行）全过；
+  `cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+ 集成全绿；
+  `mutation_check --pkg trit-build` 93/93 caught（helper 两条变异换成表索引偏移与错表变异）；
+  clippy、fmt、rustdoc、docs、module budget、test surface 与 alloc guard 全绿。
+
+### Added（第五十三轮：direct 单用内联取消深度封顶）
+
+- `direct/emit/inline/plan.rs`：删掉 `MAX_INLINE_DEPTH = 3`，凡 `uses == 1` 的非叶子节点
+  都沿单用边并进父表达式，直到叶子；扇出/多用节点仍单独落语句，网表扇出不复制。
+  每个单用临时语句比它的引用多至少约 20 B，因此全量内联在字节上严格更短，代价是深链和
+  密集网变成更长的单条 `return` 表达式。
+- 新增 `direct/emit/inline/expr.rs`：内联锥的表达式展开也用显式栈走后序，不再按链长递归；
+  两万层单用链的展开测试留在该文件，避免“取消深度封顶”重新引入调用栈崩溃面。
+- 读数（同机 CLI，K3；整个 `direct.c`）：深链 `a & (b | (c & (d | (e & f))))`
+  669→649 B、dense 12 项 1254→1174 B、高复用 `(a ^ b) | ... | (a ^ i)` 1003→963 B；
+  11 变量混合式保持 893 B，其余 fixtures 不变。
+- 判据：`direct_c_size.rs` 深链预算收紧到 649 B；深链测试改为断言四层 `And` 全并进
+  根返回、零临时语句；新增两万层单用链展开测试；三代数 `--verify-c` 对 11 变量、dense
+  与高复用样例全过；`cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+
+  全部集成测试通过；`mutation_check --pkg trit-build` 93/93 caught（深度封顶变异替换为
+  不下钻子节点变异）。
+
+### Added（第五十二轮：direct 叶子临时变量消除）
+
+- `direct/emit/inline/plan.rs`：变量/常量叶子不再无条件落 `int8_t tN = vars[i];`；变量复用
+  ≤5 次直接重写 `vars[i]`，≥6 次保留一条读取（临时语句约 25 B，每次引用省 5 B，
+  6 次才回本）。常量叶子总是直接重写。非叶子仍按单用/深度 3 规则内联。
+- 读数（同机 CLI，K3；整个 `direct.c`）：11 变量混合式 1093→893 B、深链 689→669 B、
+  dense 12 项 1430→1254 B；`(a & b) | c` 545 B、`((a & b) | c) & (d | e)` 614 B、
+  混合式 664 B、`!a` 347 B、`a & b` 448 B、`a <=> 0` 347 B、`(!a) => (!b)` 445 B、
+  `(!a) <=> (!b)` 449 B、`(!(a & b)) => (!(c | d))` 582 B 不变。
+- 判据：`direct_c_size.rs` 的 11 变量与深链预算收紧到 893 / 669 B；新增
+  `tests/reuse.rs` 锁住 6 次复用的变量仍只读一次；三代数 `--verify-c` 对 11 变量与
+  dense 全过。`cargo test -p trit-build` 140 单元（139 passed / 1 ignored）+ 集成测试通过；
+  `mutation_check --pkg trit-build` 94/94 caught（含叶子直写、复用阈值与常量直写变异）。
+
+### Added（第五十一轮：direct 否定对偶化简与精确 helper 选择）
+
+- `direct/fold/simplify/connectives/negated.rs`：`⇒` 右侧为 `F` 时改 `¬左`，两侧都是
+  `Not` 时反证内层；`⇔` 任一侧为 `F` 时否定另一侧，两侧都是 `Not` 时去双层取反，
+  同一 `Not` 在 Ł3 折成常量 `T`。`is_not_of` 随之迁入，`connectives.rs` 保持 92 行。
+- `direct/emit.rs` / `direct/emit/body.rs` / `direct/emit/inline.rs`：二元调用不再按固定
+  节点数决定 helper，而是把「共用 `trit_bin`」与「全部展开表索引」两版函数体都渲染，
+  按整篇字节数选短者；语句右值在 helperless 版本也走表索引，不再引用不存在的 helper。
+- `direct_c_size.rs` 更新为 11 个 fixtures；读数（同机 CLI，K3；整个 `direct.c`）：
+  `a <=> 0` 442→347 B、`(!a) <=> (!b)` 455→449 B、`(!a) => (!b)` 445 B、
+  `(!(a & b)) => (!(c | d))` 671→582 B；`(a & b) | c` 641→545 B、
+  `((a & b) | c) & (d | e)` 696→614 B、混合式 753→664 B、11 变量 1133→1093 B、
+  深链 764→689 B。dense 12 项仍选 helper，保持 1430 B；若强推表索引会到 1446 B。
+- 判据：`cargo test -p trit-build` 138 单元（137 passed / 1 ignored）+ 全部集成测试通过；
+  三种代数穷举否定对偶；`negated.rs` 与 helper 选择均有形状断言；
+  `mutation_check --pkg trit-build` 90/90 caught（含 helperless 语句与三条对偶变异）。
+
+### Added（第五十轮：direct 单二元调用展开）
+
+- `direct/emit.rs` / `direct/emit/inline.rs`：统计折叠后的二元节点；全文只有一个二元
+  调用时不再生成 `trit_bin` helper，调用点直接展开成
+  `T_NAME[(左 + 1) * 3 + (右 + 1)]`。两个及以上调用仍共用 helper；`format.rs`
+  承接表与代数名的固定片段。
+- `direct_c_size.rs` 增加 `a & b` 预算，覆盖单调用路径；module budget 1684 文件，debt=0。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`a & b` 557→448 B、`a | b` 551→442 B、
+  `a => b` 555→446 B、`a <=> b` 558→449 B、`a ^ b` 555→446 B；`a & b | c` 仍是
+  两个调用，保持 641 B。单调用样例省掉 109 B 的 helper。
+- 判据：`cargo test -p trit-build` 130 单元 + 全部集成测试通过；单调用/多调用形状断言
+  分别覆盖；三代数 `--verify-c` 单算子与 11 变量 3^11 行逐行一致；
+  `mutation_check --pkg trit-build` 86/86 caught。
+
+### Added（第四十九轮：direct 取反去表与字节回归门）
+
+- `direct/emit.rs` / `direct/emit/inline.rs`：`Not` 不再生成 `T_NOT[3]` 与 `trit_not()`，
+  直接写一元负号 `-(<子式>)`。依据是三种代数的 `not` 在 `-1/0/1` 上都等价于算术取负
+  （`¬F=T`、`¬X=X`、`¬T=F`）；新增 `negation_is_unary_minus_in_every_algebra` 直接断言。
+  解析/折叠/CSE 与根节点直返形状不变，`lookup.c` 不受影响。
+- 新增 `crates/trit-build/tests/direct_c_size.rs`：六个样例（单用链、扇出、取反、11 变量、
+  深链）对 CLI 生成的 `direct.c` 设字节上界，任一变大即失败；新增文件已登记 module budget
+  （1683 文件，debt=0）。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`!a` 466→348 B、1→0 条临时语句；11 变量混合式
+  1251→1133 B、10 条不变；`(a & b) | c`、`((a & b) | c) & (d | e)`、深链和
+  `((a => b) <=> (!a | b)) ^ c` 不变（这些式子经 egraph/折叠后没有存活的 `Not`）。
+  含存活取反的文件统一少 118 B（`T_NOT` 三字节表 + helper + 空行）。
+- 判据：`cargo test -p trit-build` 130 单元 + 全部集成测试通过；新增字节门通过；
+  三代数 `--verify-c` 在 11 变量（3^11 = 177147 行）上逐行一致；
+  `mutation_check --pkg trit-build` 85/85 caught。
+- 边界：只去掉 direct 后端的取反表；三类代数的 `not` 映射相同是这次去表的前提，
+  未把二元算子改成手写公式。
+
+### Added（第四十八轮：direct 根节点直返）
+
+- `direct/emit/inline/plan.rs`：根节点也标记为不发射，`direct.c` 直接写成 `return <根表达式>;`，
+  不再先落 `tN` 再 `return tN`。其余单用内联规则、深度 3 封顶、扇出节点单独落变量均不变；
+  `nvars` 不足仍按 X fail-closed 返回 0。
+- 读数（同机，`.tri` 源；字节数为整个 `direct.c`）：`(a & b) | c` 661→641 B、1→0 条临时语句；
+  `((a & b) | c) & (d | e)` 716→696 B、1→0 条；`((a => b) <=> (!a | b)) ^ c` 773→753 B、2→1 条；
+  11 变量混合式 1273→1251 B、11→10 条；深链 `a & (b | (c & (d | (e & f))))` 784→764 B、3→2 条；
+  `!a` 486→466 B、1→0 条。
+- 判据：`cargo test -p trit-build` 129 单元 + 全部集成测试通过；既有语句数断言同步改为
+  「根不落临时语句」，并增加根 `return` 形状断言；三代数 `--verify-c` 在 11 变量
+  （3^11 = 177147 行）上逐行一致；`mutation_check --pkg trit-build` 85/85 caught。
+- 边界：只改变根节点的落盘形状，不改变表达式语义、算子表集合与函数入口检查。
+
+### Added（第四十七轮：direct 单用节点递归内联）
+
+- `direct/emit/inline/plan.rs`：内联决策从「只沿 `Not` 的操作数锥」扩成「从每个会发射的
+  节点出发」——凡 `uses == 1` 的节点都并进父语句，沿单用操作数最多下钻 3 层。到深度
+  边界后该节点自己发射、子树重新计深度；扇出节点（`uses > 1`）仍单独落临时变量，不复制。
+  决策逻辑从 `inline.rs` 拆出，`inline.rs` 只留 C 表达式展开。
+- 读数（同机，`.tri` 源）：`(a & b) | c` 5→1 条、741→661 B；`((a & b) | c) & (d | e)`
+  9→1 条、876→716 B；`((a => b) <=> (!a | b)) ^ c` 6→2 条、853→773 B；11 变量混合式
+  17→11 条、1405→1273 B；`a & (b | (c & (d | (e & f))))` 11→3 条、946→784 B。
+- 判据：`cargo test -p trit-build` 129 单元 + 全部集成测试通过；新增
+  `single_use_binary_tree_collapses_into_root`，并把内联测试拆到 `inline/tests/{tree,fanout,depth}.rs`；
+  三代数 `--verify-c` 在 11 变量（3^11 = 177147 行）上逐行一致。
+- 边界：深度封顶仍是 3；只消除单用临时变量，不改变算子语义、表集合与 fail-closed 入参检查。
+  普通二元树也会塌缩，因此 `direct.c` 的语句数不再等于后序节点数。
+
+### Fixed（第四十六轮：RE 边收割溢出与 TTX3 幽灵级）
+
+- `trit-re/functions/cfg`：x86 `E8`/`E9` 边收割的 `base + index` 改为 `checked_add`，节基址
+  贴近 `u64::MAX` 时跳过溢出位置而不是在 debug 构建里 panic（#707）。ARM64 分支已在
+  第四十轮硬化，本轮只补齐同族 x86 位点；测试模块拆到 `cfg/tests.rs`，新增
+  `edges_from_near_u64_max_are_skipped_not_panicking`。
+- `trit-texture/ttx3`：`Ttx3Archive::parse` 在构造视图前调用 `levels::validate_chain`：
+  每级复用 `validate_dims`（零尺寸/非法边长在 `tile_grid` 之前拒绝），相邻级尺寸不得增大
+  或完全相同，级目录偏移必须等于编码端封闭布局（头部 + 级目录 + 逐级瓦片目录与载荷）。
+  因此 `level_count` 谎报时多读出的“级条目”（实际是瓦片目录字节）会在解析期被拒绝，
+  不再生成幽灵级（#708）。新增 `tests/ttx3_ghost.rs` 4 条：零尺寸、相同/增大尺寸、
+  谎报级数，以及“宽不变、高继续减半”的非方形合法链防误杀。
+- 判据：`cargo test -p trit-re -p trit-texture` 137 + 62 单元及全部集成测试通过；
+  `clippy -D warnings`、`fmt --check`、`RUSTDOCFLAGS=-D warnings cargo doc`、
+  `module_budget`、`test_surface`（3831 条）、`docs_hygiene`、`alloc_guard` 干净；
+  `mutation_check --pkg trit-re --pkg trit-texture` 58/58 捕获、0 存活。
+- 边界：TTX3 的级目录账本按编码端封闭布局对账；手写档案若故意在尾部追加字节仍可解析，
+  但级目录偏移不再能指向任意文件内位置。级链规则只允许“宽或高不增、且不同时相等”，
+  覆盖标准减半链与宽先到瓦片下限的链。
+
+### Fixed（第四十五轮：机器入口的资源上界）
+
+- `trit-machines/ca`：`run` / `survey` 返回 `Result`，入口先按 `width/steps` 预算校验；历史格子、
+  单次周期扫描、整片 2187 条规则的总扫描量分别设上限。`ca --width 40000 --steps 5000`
+  （#704 的 2 亿格历史复现）在分配前报 `规模超限`，不再 OOM。
+- `trit-machines/snn`：`Network::random` 改为 `Result`，分配 `size × size` 权重矩阵前检查
+  `MAX_NEURONS`；`snn` / `graded` CLI 的 4097 神经元输入在构造前报错（#705 / #706）。
+- `trit-data/rewrite_kill`：Windows 夹具超时 2→10s、wrapper 睡眠 10→60s、PID 等待 5→10s。
+  本机 Windows GNU 连跑 4 次通过（约 10.5s/次），缓解冷启动时“孙进程 PID 未落盘”的假红。
+- 判据：`cargo test -p trit-machines` 24 单元 + 4 CLI + 3 资源上界全过；`clippy -D warnings`、
+  `fmt --check`、`module_budget` 干净。
+- 边界：超时夹具只在 Windows 上执行，Linux 门禁不覆盖；需 Windows CI 复核。
+
+### Added（第四十四轮：direct 取反锥递归内联）
+
+- `direct/emit/inline.rs`：把取反内联的决策与表达式展开从 `emit.rs` 拆出。`Not` 的操作数单用时
+  并进父语句，并沿它的单用操作数继续下钻（从 `Not` 的操作数算起最多 3 层）；命中扇出（被引用
+  两次及以上）或超出深度即停，该节点仍单独落临时变量。
+- 渲染侧统一用 `inline::expr` 展开操作数：已内联的递归成 C 表达式，未内联的取已发射的 `tN`。
+  因此 `Not(Var)` 不再固定「取变量 + 取反」两条，单用时并成 `trit_not(vars[0])` 一条；
+  `Not(And(Var, Var))` 也整棵并成一条。内联后临时变量仍连续重编号 `t0..tn`。
+- 不内联 `Not` 自身到它的父语句：下钻只发生在 `Not` 的操作数锥内；普通 `And` / `Or` 树即使
+  单用也不整树塌缩。
+- 读数（K3 / B3，同机对照 main `a6fc77bd`）：单门 `nand g(y,a,b)` 3→1 条、732→692 B
+  （B3 731→691 B）；单门 `not g(y,a)` 2→1 条、506→486 B（B3 507→487 B）；`~((a | b) & c)`
+  5→1 条、862→782 B（B3 861→781 B）；`a ^ 1'b1` 2→1 条、506→486 B；混合 `nand/nor/xnor`
+  网表 9→9 条、1113→1113 B（K3，a/b/c 有扇出，不命中，按 0 收益记账）。
+- 判据：三代数 × 5 个样例 `--verify-c` 全过（27/27、9/9、3/3 行）；新增四条渲染判据
+  （单用变量、扇出停、深度封顶、三层单用锥一条语句），lib 124→128 passed。
+
+### Added（第四十三轮：direct 渲染内联单用取反子式）
+
+- `direct/emit.rs`：把 `direct.c` 的渲染从 `direct.rs` 拆出。节点仍按后序发语句，但单用取反子式内联：
+  `Not(x)` 的 `x` 只被这一处引用、且是二元算子（`∧` / `∨` / `⊕` / `Xor2` / `⇒` / `⇔`）时，子式不再
+  单独落临时变量，并成 `trit_not(trit_bin(T_AND, t0, t1))` 一条 C 语句；被多处引用的子式仍单独成变量，
+  网表扇出不复制。
+- 内联后临时变量重编号为连续 `t0..tn`，产物不留空号；表集合仍按实际出现的算子现算，不新增表。
+- 读数（K3 / B3，同机）：混合 `nand/nor/xnor` 网表样例 12→9 条语句、`direct.c` 1203→1113 B
+  （K3）、1202→1112 B（B3）；单门 `nand g(y,a,b)` 4→3 条、778→732 B；经德摩根抵消的 nand 链
+  7→7 条、835→809 B（语句不变，仅注释变短）；无 `Not` 的中间公共项网表 10→10 条、944→918 B
+  （不命中，按 0 收益记账）。
+- 边界：只内联 `Not` 的直接子式，不做通用表达式内联或树塌缩；`Not(Var)` / `Not(Const)` 保持独立语句
+  （`a ^ 1'b1` 仍是取变量 + 取反两条）。
+
+### Added（第四十二轮：direct 直算常量折叠与恒等式化简）
+
+- `direct/fold.rs`：TTIR 线性 IR 的常量折叠 + 常量传播。操作数全是常量的节点直接按
+  `Algebra` 现算成 `Op::Const`，后续引用它的节点继续折；`Xor2` 走
+  `GateKind::XorClassic.eval`，不借用 `strong_add` 的表。
+- `direct/fold/simplify.rs`：常量驱动的恒等式化简。三种代数通用
+  `x ∧ T = x`、`x ∨ F = x`（别名到操作数）、`¬¬x = x`、`x ∧ x = x`、
+  `x ∨ x = x`（后两条是幂等律）。K3/Ł3 额外做吸收律 `x ∧ F = F`、`x ∨ T = T`。
+  别名通过 `resolve` 表压平，最后 `prune_dead` 统一收孤儿；不碰 `=>` / `<=>` 的常量律
+  （K3 与 Ł3 的蕴含表不同）。
+- 更正：`∧` / `∨` 在 K3/Ł3 是格序 min/max，`U ∧ U = U`、`U ∨ U = U`，所以幂等律三代数通用；
+  Ł3 的强合取 `⊗` 才有 `U ⊗ U = F`，不要与 `∧` 混淆。
+- 负结果：B3 的 U 传染，`U ∧ F = U`、`U ∨ T = U`，所以吸收律按代数分派，B3 保留原式；
+  `simplify/tests/absorb.rs` 用反例钉住。辅助函数拆到 `simplify/build.rs` 以守行数台账。
+- `direct/fold/cse.rs`：化简后再做一遍结构化 CSE，按「算子 + 已重映射子下标」合并；
+  交换律算子先排序，合并后暴露的 `x ∧ x` / `x ∨ x` 直接别名。`((a & 1) & b) | (a & b)`
+  由 **7→3 条语句**（K3/Ł3/B3 相同），语义与 `trit_eval` 全赋值对拍。
+- `direct/fold/simplify/lattice.rs`：格吸收律 `x ∧ (x ∨ y) = x`、`x ∨ (x ∧ y) = x`。
+  K3/Ł3 有效；B3 有反例 `F ∧ (F ∨ U) = U`，所以按代数分派、B3 保留原式。
+  K3/Ł3 的 `a & (a | b)` 化简后只剩一条取变量语句。
+- `direct/fold/simplify/xor2.rs`：`Xor2` 的常量律。按 `GateKind::XorClassic.eval` 的 3×3 表，
+  `x ^ 0 = x`、`x ^ 1 = ¬x`、`x ^ X = X` 三代数都成立；`x ^ x` 因 `X ^ X = X` 不化简。
+- `direct/fold/simplify/xor.rs`：三值强加 `⊕` 的常量律按代数分派：
+  K3/B3 的已知值按合取，做 `x ⊕ T = x`、`x ⊕ U = U`；`x ⊕ F` 不是单位元，保留；
+  Ł3 是饱和加法，做 `x ⊕ F = x`、`x ⊕ T = T`、`x ⊕ ¬x = T`；`x ⊕ U` 保留。
+- `direct/fold/simplify/negation.rs`：否定归一。`¬¬x = x` 之外，回收
+  `¬(¬a ∧ ¬b) = a ∨ b`、`¬(¬a ∨ ¬b) = a ∧ b`；只认两侧操作数都已经取反的形状，
+  4 个节点合并成 1 个。单侧取反仍要新建 `Not`，不减少节点，保留原式。
+- 判据：德摩根 3 代数 × 3×3 值逐格对拍；`!(!a & !b)` 的线性 IR **6→3 条语句**，
+  `direct.c` 631 B，不再注册 `T_NOT`。
+- `direct/fold/simplify/{absorb,complement}.rs`：B3 的补元消去
+  `x ∧ (¬x ∨ y) = x ∧ y`、`x ∨ (¬x ∧ y) = x ∨ y`。命中后重建 `x ∧ y` / `x ∨ y`，
+  不是别名到单个操作数；四种操作数顺序（`¬x` 在左/右、外层在左/右）都认。
+  只在 B3 开闸：K3/Ł3 的 `x = U` 反例是 `U ∧ (U ∨ F) = U ≠ U ∧ F = F`、
+  `U ∨ (U ∧ T) = U ≠ U ∨ T = T`。判据：B3 3×3 真值表、K3/Ł3 的 IR 逐节点保留、
+  正反顺序与渲染面；`a & (!a | b)` 线性 IR **5→3 条**，`direct.c` 636 B，
+  不再注册 `T_NOT` / `T_OR`。`simplify.rs` 的 And/Or 分支拆到 `absorb.rs` 只为行数预算，
+  规则顺序不变；补元检测单独放 `complement.rs`。
+- `direct/fold/simplify/lattice/chain.rs`：格吸收的同算子链传递。K3/Ł3 的
+  `x ∧ (x ∨ y ∨ z) = x`、`x ∨ (x ∧ y ∧ z) = x` 不再只认内层直接子节点；
+  `Or` 沿 `Or`、`And` 沿 `And` 迭代下钻，遇异算子停手，共享节点用 visited 集去重。
+  B3 仍由毒值守卫整条拦下。判据：K3/Ł3 3×3×3 逐格、左右嵌套与对偶、异算子反例；
+  `a & (a | b | c)` 线性 IR **6→1 条**、`direct.c` **395 B**、不注册算子表；
+  B3 同式仍 **6 条**、**806 B**，保留 `T_AND` / `T_OR`。
+- `direct/fold/cse/factor.rs`：反向分配提取公因子
+  `(a ∧ b) ∨ (a ∧ c) = a ∧ (b ∨ c)`、`(a ∨ b) ∧ (a ∨ c) = a ∨ (b ∧ c)`。
+  `∧` / `∨` 在三种代数下都是分配格，不依赖 `¬` 或排中律；只认两侧同算子节点里
+  直接相同的操作数，子式里埋着的公因子不猜。CSE 先用一遍合并同构节点，再提取、
+  再压平新建的内层链。判据：三代数全赋值对拍、公因子在左/右操作数与对偶形状、
+  异算子/不相交反例；`(a & b) | (a & c)` 线性 IR **6→5 条**、`direct.c` **767 B**；
+  B3 同式 5 条、**766 B**，仍保留 `T_AND` / `T_OR`。
+- `direct/fold/negchain.rs`：德摩根链归一。`¬(¬a ∧ ¬b ∧ ¬c) = a ∨ b ∨ c`、对偶式落
+  `And` 链；只在 `Not` 直接盖住同算子链且每个叶子都是 `Not` 时命中，任一叶子不是
+  `Not` 就整棵保留。这一步在恒等式化简之前跑，否则内层 `And(¬a, ¬b)` 会先被收成
+  `Or(a, b)`，外层就看不出原链。三代数 3×3×3 逐格对拍；`!(!a & !b & !c)` 线性 IR
+  **9→5 条**、`direct.c` **698 B**（K3）/ **699 B**（B3），不注册 `T_NOT`；B3 的
+  `U` 组合仍逐格相等。
+- `direct/fold/simplify/absorb.rs`：B3 毒值吸收 `x ∧ X = X`、`x ∨ X = X`。`U` 在 B3
+  沾上即传染；K3 的 `F ∧ U = F`、Ł3 的 `F ∧ U = F` / `T ∨ U = T` 都保留原式，所以只
+  在 B3 开闸。`a & X` / `a | X` 在 B3 从 3 条语句塌成一条 `Const`、`direct.c` **386 B**、
+  不注册 `T_AND` / `T_OR`；K3 同式仍是 3 条语句（**629 B** / **623 B**）。判据：三代数
+  形状对拍，K3/Ł3 反例钉住。
+- `direct/fold/simplify/negation.rs`：`Not(Const)` 在化简内即时折成 `Const`，让父节点本遍
+  就看到这个常量；否则父节点已经错过 B3 毒值吸收。B3 网表 `(~(a & 1'bx)) & b` 从
+  **3 条语句 / 550 B / `T_AND`** 收成 **1 条 `Const` / 308 B / 不注册表**；K3/Ł3 同式仍
+  6 条（758 B / 763 B），保留 `T_AND` + `T_NOT`；三种代数 `--verify-c` 均 9/9 行。
+  独立的 `refold` pass 因此没有剩余职责，已删除，管线回到 `simplify → CSE`；`de_morgan`
+  辅助拆到 `negation/de_morgan.rs` 只为守行数台账，德摩根行为不变。
+- `direct/verify.rs`：`--verify-c` 支持相对 `--out`。原先把相对的
+  `out_dir/direct_check` 传给已设 `current_dir(out_dir)` 的 `Command`，会再拼一次
+  目录而报 `No such file`；现在先 `canonicalize` 输出目录，回归判据
+  `direct_c.rs::verify_c_accepts_a_relative_out_dir`。
+- `direct/fold/cse/assoc.rs`：`And` / `Or` 的结合链规范化。把嵌套的同一算子展平成叶子、
+  去重、按 IR 下标排序，再重建为左深链；`((a & c) & b) | (a & (b & c))` 的线性 IR **8→5 条**，
+  `direct.c` 705 B，只注册 `T_AND`；镜像但叶子顺序不同的
+  `((b & c) & a) | (a & (b & c))` 也归一到同一条链。交换律、结合律与幂等律在三种代数下都成立。
+- `direct/fold/cse/xorchain.rs`：`Xor2`（Verilog 经典异或）的结合链共享。展平嵌套链、按 IR 下标
+  排序、重建左深链并共享前缀；**不做幂等去重**，因为 `x ^ x` 在 `x = U` 时仍是 `U`，不是 `F`。
+  展平时记录已展开的内部节点，`Xor2(y, y)` 里的 `y` 不会被展开两次。镜像链
+  `((a ^ b) ^ c) ^ (a ^ (b ^ c))` 从 **8→6 条语句**、`direct.c` **751→667 B**（K3），
+  B3 同式 **752→668 B**；三代数 `--verify-c` 均 27/27。为守行数，CSE 的单遍循环抽到 `cse/pass.rs`。
+- `direct/fold/simplify/connectives.rs`：`⇒` / `⇔` 的常量律按代数分派：
+  K3/Ł3 做 `x ⇒ T = T`、`F ⇒ x = T`；三代数共用 `T ⇒ x = x`、`x ⇔ T = x`；
+  Ł3 额外 `x ⇒ x = T`、`x ⇔ x = T`，K3/B3 额外 `x ⇒ ¬x = ¬x`、`¬x ⇒ x = x`、
+  `x ⇔ X = X`。B3 的 `X ⇒ T`、`F ⇒ X` 返回 `X`，保留原式。
+- 判据：`⇒` / `⇔` 的 3×3 表逐格对拍；K3/Ł3 的 `x ⇒ T`、`F ⇒ x` 落成一条 `Const`，
+  B3 在 `X ⇒ T`、`F ⇒ X` 上保留 `T_IMPL`；Ł3 的 `x ⇒ x` / `x ⇔ x` 塌成 `Const`，
+  K3/B3 保留原式；`x ⇔ U` 在 K3/B3 落成 `Const U`，Ł3 保留 `T_EQUIV`。
+- 判据：`⊕` 的 3×3 表逐格对拍；K3/B3 的 `x ⊕ T = x`、`x ⊕ X = X` 落成别名/常量，
+  `x ⊕ F` 保留 `T_XOR`；Ł3 的 `x ⊕ F = x`、`x ⊕ T = T`、`x ⊕ ¬x = T` 落成别名/常量，
+  变量 `x ⊕ X` 保留 `T_XOR`。渲染面 `a ^ 0` 在 K3 保留 `T_XOR`，在 Ł3 只剩一条取变量语句。
+- 判据：全常量树（`((1 & X) | !0) <=> (X => 0)`）在 K3/Ł3/B3 下都塌成 **一条 `Const`**，
+  生成物只有一条语句且不注册 `T_NOT` / `T_AND` 等算子表；混合树折叠前后对 3^n 全赋值
+  与 `trit_eval` 一致；`Xor2` 的 3×3 常量表逐格与 `GateKind::XorClassic` 一致。
+- 读数：同一 3 输入 Verilog 网表（`assign z = 1'b1 & 1'b0`）**16→14→12 条语句、
+  1331→1267→1203 B**（K3，折叠后接恒等式化简）；K3/Ł3 的 `a & 0` / `a | 1`
+  只剩一条常量语句，B3 仍保留 `T_AND` / `T_OR`；`a & a` / `a | a` 在三种代数下
+  都只剩一条取变量语句。12 变量 `direct --verify-c` 折叠前后
+  `direct.c` 同为 1418 B，531,441/531,441 行通过，墙钟 0.42→0.41 s、RSS 46172→46124 KB
+  （变量表达式不产常量节点）。
+- `BUILD_VERSION` 7 → 25：折叠、代数分派吸收律、幂等律、格吸收律（含同算子链传递）、
+  公因子提取、B3 补元消去、B3 毒值吸收、化简内常量否定、`Xor2` 常量律与结合链、
+  `⇒`/`⇔` 常量律、`⊕` 常量律、否定归一、德摩根链归一、结合链规范化与 CSE 都会改变
+  `direct.c` 的语句数，旧缓存失效。
+- 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算架构行、实测行与边界。
+
+诚实边界：折叠/化简只减少常量与单位元节点，不做代数恒等式全集、不重排算子；Verilog 侧
+同样只覆盖组合子集与单一选中输出，`Xor2` 做常量律与结合链共享，不去重、不做 `x ^ x`；`⇒`/`⇔` 不做
+`x ⇒ F = ¬x` 这类不减少节点的重写；`⊕` 只做单位元/吸收元，不做 `x ⊕ x`；二元德摩根
+只回收两侧都已取反的形状，三叶以上的链在化简前单独归一，但要求每个叶子都已经是
+`Not`，不猜子式里含取反；结合链规范化只做 `∧` / `∨`，不把 `⊕` / `^` / `⇔`
+当成可结合的算子；B3 的 `U` 只在 `∧` / `∨` 上直接吸收成 `X`，其他算子不把 `X`
+当普通常量推广；化简内只把 `Not(Const)` 折成常量，不把变量揣成常量，也不推广 `U`。
+
+### Added（第四十一轮：direct 后端支持 Verilog 网表）
+
+- `direct.c` 不再只接 `.tri` 表达式：`.v` 组合网表也能 `--backend direct|both`。
+  新链路从选中输出反向 DFS，只降扇入锥（未选中的输出与不可达门不进 IR）；
+  同名信号只降一次（网表扇出 → 一个临时变量）。
+- 门型落到已有算子：`NAND/NOR` = `Not(And/Or)`、`BUF` 直接别名到输入、
+  `XOR2`（Verilog `^` / `xnor` 的经典异或）单独成 `Op::Xor2`，
+  表由 `GateKind::eval` 现算，和 `trit-circuit` 仿真同一口径。
+- 线性 IR 拆到 `direct/ir.rs`（两条 lowering 共用）；`direct.rs` 只留渲染与表，
+  `--verify-c` 的宿主编译器调用拆到 `direct/verify.rs`；网表 lowering 在
+  `direct/netlist.rs`，产物分发在 `artifacts/`（`lookup.c` 独立成 `artifacts/lookup.rs`）。
+- 测试：`direct_c_verilog.rs` 钉产物形状；Unix 上 K3/Ł3/B3 三种代数各
+  **27/27 行**用 cc 编译 `direct.c` 与 `truth.csv` 逐行对拍；网表单测 5 条
+  （Buf 别名、`Xor2` 形状、只降选中输出、重复驱动/未驱动报错）。`trit-build` 单测 48 条全绿。
+- `BUILD_VERSION` 6 → 7：`direct.c` 的产物面变了（新增 Verilog 链路），旧缓存失效。
+- 文档：`docs/reference/TERNARY-TOOLCHAIN.md` 更新直算行与未验证清单。
+
+诚实边界：仍只覆盖组合逻辑与单一选中输出；没有综合、时序/面积收敛与门级优化。
+### Changed（M1.45：Davidson 第三 hate 语料）
+
+- 预注册 `data/wsp-classify-m145-prereg.json`（commit `d1810448`）后，
+  把 Davidson et al. 2017 作为第三个 hate 语料做 descriptive transport。
+  原始 `24,783` 行；binary 映射 `hate -> 1`、`offensive+neither -> 0`；
+  去重 1 行、去 TweetEval/HateXplain 重叠 1 行；固定 stratified 80/20
+  `random_state=7`，fit `19,825`（`18,681/1,144`）、test `4,956`
+  （`4,671/285`），fit prior `0.057704918`、test prior
+  `0.057506053`。SHA256
+  `FCB8BC7C68120AE4AF04A5B9ACD58585513EDE11E1548EBF36A5C2040B6F6281`。
+- default 阈值（logreg 0.5 / SVC 0）下，Primary accuracy
+  `arm−f32`：L12 logreg `−0.0202pp`、L12 SVC `+0.1211pp`、
+  L6 logreg `−0.0202pp`、L6 SVC `−0.0605pp`；**四个 family 全部
+  0/5 正 CI**。macro-F1 点估计三负一微负（`−1.1665/−0.0192/
+  −1.2288/−0.9570pp`）。
+- 绝对 accuracy `0.942–0.945`，但预测正例率仅 `0.38–2.08%`，
+  hate recall `3.9–20.0%`，macro-F1 `0.52–0.63`；test 真实 hate
+  率 `5.75%`。**accuracy 被 94% 多数类撑高，第三语料仍不能升级
+  R12/rescan；default 阈值下的 accuracy 不能单独当保真证据。**
+- 新增 `docs/research/scripts/wsp_m145/prepare_davidson.py`、
+  `run_encode.ps1`、`davidson_probe.py`，以及
+  `data/wsp-classify-m145-prepare-summary.json`、`-raw.tsv`
+  （40 行、11 列）、`-compare.tsv`（40 行、14 列）、`-primary.tsv`
+  （4 行、7 列）。详见 `WSP-BUDGET-RESULTS.md` §11.45。
+
+### Changed（M1.43：HateXplain 三分类探索）
+
+- 在 M1.40 的同一批 HateXplain 清洗行与 embedding 上，只把二分类头换成
+  三分类：fit `7,011 normal / 5,336 hate / 4,923 offensive`，test
+  `777/594/547`；映射 `normal=0, hatespeech=1, offensive=2`。预注册
+  `data/wsp-classify-m143-prereg.json`（commit `3af46565`），
+  exploratory、不设 candidate verdict。
+- Primary（test 三分类 accuracy，`arm − f32`，10k paired bootstrap）：
+  L12 logreg `+0.1564pp`、L12 SVC `−0.3233pp`、L6 logreg
+  `+0.4692pp`、L6 SVC `+0.0730pp`；**四个 family 全部 0/5 正 CI**。
+- 绝对 accuracy：L12 `0.651199`（R12 `0.652763`）、L12 SVC
+  `0.649948`（R12 `0.646715`）、L6 `0.651721`（rescan `0.656413`）、
+  L6 SVC `0.648697`（rescan `0.649426`）。macro-F1 分别为
+  `−0.1668pp`、`−0.5666pp`、`+0.4505pp`、`−0.0193pp`。
+- `offensive` recall 只有 `0.354–0.426`，是主要错误来源；binary 的
+  `0.82` 主要来自 normal-vs-rest，不是 hate/offensive 细边界。
+  **三分类只作 exploratory，不能升级 R12/rescan。**
+- 新增 `docs/research/scripts/wsp_m143/three_class.py`、`merge_chunks.py`，
+  以及 `data/wsp-classify-m143-raw.tsv`（40 行、12 列）、
+  `-compare.tsv`（40 行、14 列）、`-primary.tsv`（4 行、7 列）。
+  详见 `WSP-BUDGET-RESULTS.md` §11.43。
+
+### Changed（M1.44：静态字节–质量 Pareto）
+
+- 把已发布的 actual artifact bytes 与 corrected true-f32 任务读数拼成
+  7 个指标的 Pareto 表：STS Pearson/Spearman、SciFact MRR@10/nDCG@10、
+  SST-2 accuracy、CoLA macro-F1、TweetEval-hate accuracy。分类只用
+  logreg，避免混 probe；不做新编码。
+- 成本：L12 f32 `84,934,656 B`、int3/R12 `10,782,720 B`、int4
+  `13,436,928 B`；L6 f32 `42,467,328 B`、int3/rescan `5,391,360 B`、
+  int4 `6,718,464 B`。int3/R12 是 f32 工件字节的 `12.69%`，int4 是
+  `15.82%`；这是工件字节比，不是 bit 比或延迟比。
+- 没有跨任务统一 winner：L12 STS Spearman 的 `R12` 在 10.78MB 上
+  `0.835411`，支配 f32/int4；L12 CoLA 的 `int4` 支配 f32
+  （`0.561151` vs `0.548644`）；L6 STS 的 `rescan` 在 5.39MB 上
+  `0.831304` 支配 f32；L6 Hate 的 `int3` 在 5.39MB 上 `0.550475`
+  支配 f32；L6 SciFact 的 `int4` 为 `0.573827`，高于 f32。
+- 新增 `docs/research/scripts/wsp_m144/cost_pareto.py`、
+  `data/wsp-classify-m144-pareto.tsv`（56 行、9 列）。详见
+  `WSP-BUDGET-RESULTS.md` §11.44。
+
+### Changed（M1.41/M1.42：域感知先验与 fit-only 阈值搬运）
+
+- M1.41 在 HateXplain 官方 `train+val`/`test` 上预注册比较
+  `global_test_prior` 与 `domain_test_prior`（按 Gab/Twitter 拆先验），
+  另加两个 OOF fit 阈值。fit 域先验 Gab `0.501594`、Twitter
+  `0.078479`；test `0.497110/0.088636`。5 seeds、2 probes、L12/L6，
+  仍冻结编码器，C 只由 f32 fit 内 5 折选。
+- M1.41 primary（`domain_test − global_test` overall accuracy）：
+  L12 logreg **5/5**（`+0.7821pp`）、L12 SVC **5/5**
+  （`+0.6569pp`）、L6 logreg **4/5**（`+0.6361pp`）supported；
+  L6 SVC **0/5**（`+0.3650pp`）rejected。域感知阈值相对 global 有效，
+  但绝对 accuracy 仍低于 default：`0.8154/0.8161`（L12）、
+  `0.8179/0.8144`（L6）vs `0.8233/0.8216`、`0.8227/0.8229`。
+  正例率 `0.3076` 几乎精确匹配 test 先验 `0.3097`，accuracy 仍更低：
+  **匹配先验不等于更优阈值。**
+- M1.42 在 TweetEval/hate（fit `8,985`、test `2,734`）上把
+  `target_prior` 换成 fit OOF 分位点。Primary（`global_fit_prior`
+  下 arm−f32）：L12 logreg **0/5**（`−1.7703pp`）、L12 SVC **0/5**
+  （`−1.5947pp`）、L6 logreg **0/5**（`+0.0219pp`）、L6 SVC
+  **1/5**（`+0.5779pp`），四个 family 全部 `not_retained`。
+  同脚本 `global_test_prior` 仍复现 M1.38 方向：L12
+  `+1.8288/+1.6825pp`、L6 `+2.8676/+2.5457pp`。
+- fit-only 阈值没有搬运先验：f32 预测正例率 `0.761–0.795`，
+  而 test 真实 hate 率约 `0.421`；absolute accuracy 比 test-prior
+  低 `7.3–11.0pp`。**M1.38 的 target_prior rescue 是 test 分数
+  分位点现象，不是可部署协议；candidate 线到此收口。**
+- 新增 `docs/research/scripts/wsp_m141/domain_prior.py`、
+  `wsp_m142/fit_only_threshold.py`，以及 `data/wsp-classify-m141-*`
+  （raw 1,200 行、compare 1,500 行、summary 240 行、compare-summary
+  300 行、primary 4 行）与 `data/wsp-classify-m142-*`（raw 240 行、
+  compare 300 行、primary 4 行）。详见 `WSP-BUDGET-RESULTS.md`
+  §11.41/§11.42。
+
+### Changed（M1.40：HateXplain 第二个 hate 语料的预注册 confirmatory）
+
+- 在 HateXplain 官方 `train+val`/`test` 上预注册复验 M1.38/M1.39 的
+  L12 `R12` 与 L6 `rescan`。清洗后 fit `17,270`、test `1,918`；
+  primary 是 `hatespeech=1`、`normal+offensive=0`，test 先验 `0.309698`。
+  仍冻结编码器、只训练线性 probe；C 只由 f32 的 fit 内 5 折选，量化臂
+  共用；target_prior 只用未标注 test 分数。
+- Primary accuracy（full test、matched-C、5 seeds `7/13/19/31/43`）：
+  L12 `R12` logreg **0/5**（`+0.1043pp`）、SVC **0/5**（`−0.2920pp`）；
+  L6 `rescan` logreg **0/5**（`−0.1043pp`）、SVC **0/5**（`+0.3545pp`）。
+  两个候选都被预注册判据判为 **rejected**；macro-F1 和 default 0.5
+  也全部 0/5，所有 CI 都跨 0。
+- target_prior 在该语料上没有绝对增益：f32 accuracy 从 default 的
+  `0.823` 降到 `0.808/0.811`，量化臂也降 `0.80–1.09pp`；预测正例率
+  从 `0.2388–0.2607` 抬到 `0.3092`。半分割诊断 8 个 cell 全部 0 正，
+  方向仍翻符号。
+- 判决：**M1.38/M1.39 的 `+1.6~+2.8pp` 没有跨语料复现；`R12` 和
+  `rescan` 都不能升级，target_prior 也不能当默认协议。HateXplain
+  test 有 54% Gab、`offensive→0` 映射，是外部边界；但“没有复现”
+  是明确结论。**
+- 新增 `docs/research/scripts/wsp_m140/prepare_hatexplain.py`、
+  `make_chunk_inputs.py`、`hatexplain_target_prior.py`，以及
+  `data/wsp-classify-m140-prereg.json`、`-prepare-summary.json`、
+  `-raw.tsv`（160 行、20 列）、`-summary.tsv`（32 行、15 列）、
+  `-primary.tsv`（4 行、8 列）、`-split-half.tsv`（40 行、12 列）、
+  `-vs-default.tsv`（20 行、12 列）。
+
+### Changed（M1.39：Hate 目标先验的预注册半分割 confirmatory）
+
+- 在既有 TweetEval/hate 官方 test 上预注册 50/50 标签分层半分割
+  （split seed `101`，预注册文件先于结果提交）。一半 test 分数只用于
+  target_prior 校准，另一半标签只用于评估，双向交叉；5 seeds
+  `7/13/19/31/43` × 2 probes × 4 臂 × 2 规则（default / target_prior）。
+  仍冻结编码器、只训练线性 probe；C 只由真 f32 的 train 内 5 折选。
+- Primary accuracy：L12 `R12` logreg 5/10 正 CI（`+1.9020pp`）、
+  SVC 4/10（`+1.6167pp`），均 inconclusive；L6 `rescan` logreg
+  10/10（`+2.8237pp`）confirmed、SVC 7/10（`+2.4506pp`）
+  inconclusive。Macro-F1 次要口径：L12 `R12` 5/10、4/10；L6
+  `rescan` 两 probe 均 10/10（`+2.8345/+2.5372pp`）。
+- Default 0.5 下 L12 `R12` 仍是 0 正 / 5 负 / 5 跨（logreg
+  `−1.3533pp`、SVC `−1.4411pp`）；L6 `rescan` logreg `+1.0534pp`
+  （4 正）、SVC `+0.6072pp`（0 正）。target_prior 相对 default
+  分别抬 `+3.26/+3.06pp` 与 `+1.77/+1.84pp`。
+- 判决：**半分割没有确认 `R12`，它仍是 Hate-only、target_prior
+  条件下的候选；`rescan` 只在 L6 primary 的 logreg accuracy 上
+  confirmed，SVC accuracy 未过线但 macro-F1 10/10。target_prior
+  仍是 transductive exploratory，不是默认协议。半分割只分开校准
+  分数与评估标签，没有换语料；不能替代第二个 hate 数据集的独立
+  confirmatory。**
+- 新增 `docs/research/scripts/wsp_m139/split_half_confirm.py`，以及
+  `data/wsp-classify-m139-prereg.json`、`-split.tsv`、`-raw.tsv`
+  （240 行）、`-summary.tsv`（24 行）、`-primary.tsv`（4 行）、
+  `-raw-macro.tsv`（240 行）、`-summary-macro.tsv`（24 行）。
+
+### Changed（M1.38：Hate 域/阈值分解与目标先验阈值复验）
+
+- 对 Hate 的 20–22pp 差距做三组拆分：train/test 文本域分类器、
+  token 长度分桶、目标先验阈值；再把同一阈值规则套到 M1.35 的
+  全部 36 个 matched-C 比较。仍冻结编码器，只训练线性 probe。
+- 域分类器（词 1–2 gram TF-IDF，5 折内重拟合）：Hate AUC `0.921051`、
+  acc `0.853400`；SST-2 `0.490853/0.648095`；CoLA `0.686817/0.807380`。
+  Hate 的长度单特征 AUC 只有 `0.561306`；test `>64` token 占 `12.77%`
+  （train `4.50%`），但 f32 的 `>64` 与 `≤64` 准确率只差 `1.12pp`。
+  **长度/截断不是 20pp 主因，文本域迁移才是。**
+- f32 logreg（C=1）Hate test：L12 默认 0.5 `0.574250`、预测正例率
+  `0.734089`；target-prior（目标分数分位匹配 train 先验 `0.420812`，
+  不用 test 标签）`0.634236`、预测正例率 `0.420995`（回收 `6.00pp`）。
+  L6 默认 `0.546086`、预测正例 `0.750549`；target-prior `0.633504`
+  （回收 `8.74pp`）。校准后仍差 L12 `12.97pp`、L6 `11.77pp`。
+  `test_prior`/`oracle` 用 test 标签，仅诊断（`0.635699/0.645208`、
+  `0.634967/0.646306`）。
+- 双向迁移：Hate L12 train OOF `0.771998`、test 内部 `0.763934`、
+  train→test `0.574250`、test→train `0.623484`；L6 为
+  `0.762671/0.751205/0.546086/0.614135`。两个方向都远低于 in-domain，
+  不是单一方向标签错位。
+- 全臂复验：36 个比较、5 seed、180 CI。默认阈值 **0 正 / 41 负 /
+  139 跨**，36 个比较 0 个出现正 CI，与 M1.35 一致；target_prior
+  **23 正 / 30 负 / 127 跨**，6 个比较出现正 CI，全部在 Hate，SST-2/
+  CoLA 仍 0 正。default→target 为 `6 gain / 30 same / 0 loss`。
+- 6 个正比较：Hate L12 `R12` logreg 5/5（`+1.83pp`）、SVC 4/5；
+  Hate L6 `rescan` logreg 5/5（`+2.72pp`）、SVC 5/5（`+2.55pp`）；
+  Hate L6 `int4` SVC 3/5（`+1.10pp`）、`int3` logreg 1/5
+  （`+1.39pp`）。`R12`/`rescan` 的 test AUC 也高于 f32（L12 约
+  `+1.2–1.5pp`，L6 约 `+2.8–3.7pp`），不是纯阈值伪影。
+- 判决：**默认 0.5 的官方 test 主判决不变（0/36 正，f32 锚点）；
+  target_prior 只给出 Hate-only、后验校准的条件性候选，不能写成
+  量化普遍增益。** M1.37 的“R12 跨域不成立”应加“默认阈值”限定；
+  但 target_prior 是 transductive、非预注册规则，`R12`/`rescan` 仍不能
+  直接发布，需预注册独立数据/切分 confirmatory test。
+- 新增 `wsp-classify-domain-shift.tsv`（3 行）、
+  `wsp-classify-hate-transfer.tsv`（8 行）、
+  `wsp-classify-hate-threshold.tsv`（8 行）、
+  `wsp-classify-hate-length-buckets.tsv`（6 行）、
+  `wsp-classify-matched-prior-raw.tsv`（360 行）、
+  `wsp-classify-matched-prior-summary.tsv`（72 行）、
+  `wsp-classify-matched-prior-vs-default.tsv`（36 行）、
+  `wsp-classify-matched-prior-f32.tsv`（24 行）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.38、§12 读法，并给 §11.15/§11.35/§11.37 补阈值注记。
+- 复算脚本入库 `docs/research/scripts/wsp_m138/`（5 个文件，含
+  `cv_seed_stability.py` / `matched_c_full.py` 依赖）；支持
+  `TRIT_RESULTS` / `TRIT_GEOM_OUT` / `TRIT_DATA_DIR` /
+  `TRIT_L12_TOKENIZER`。已在原结果上复算 8 张 TSV，SHA256 全部一致。
+
+### Changed（M1.37：nested CV 全矩阵与 OOF/test 分布差）
+
+- 把 M1.36 的 nested CV 扩到 6 个 `dataset×depth`、两个 probe、
+  5 个 outer seed：每个 outer-train 内 5 折只在真 f32 上选 C，
+  f32 与全部量化臂共用；官方 test 不参与选 C/训练/评分。
+  共 180 个 OOF paired CI。
+- 总读数：**5 个显著正向、52 个显著负向、123 个跨 0**；
+  36 个比较里 4 个出现过正 CI、15 个出现过负 CI、17 个全跨，
+  没有任何比较同时出现正负 CI。正向全部在 Hate。
+- 5 个正向：Hate L12 `R12` logreg seed 7/13（`+0.924/+1.024pp`）
+  与 SVC seed 13（`+0.879pp`）；Hate L6 logreg `rescan` seed 7
+  （`+0.857pp`）、`int3` seed 43（`+0.790pp`）。
+- Hate L12 `R12` 在 OOF 5-seed 均值 logreg `+0.6767pp`、SVC
+  `+0.6477pp`，但官方 test 上 logreg `−1.3533pp`、SVC
+  `−1.4411pp`，两个 probe 都 5/5 显著负向：OOF 正向与 test 负向
+  方向相反，不能升级。
+- Hate L6 `rescan` OOF 均值 `+0.5899pp`、5/5 点正、1/5 CI 显著；
+  test 均值 `+1.0534pp` 但 5/5 CI 跨 0，仍是弱候选。
+- Hate 的 OOF/test f32 差约 `19.8–21.7pp`；Hate test 内部 5 折
+  f32 为 `0.763934/0.751205`，说明 test 标签可学，差距是跨域
+  迁移，不是标签错位或噪声。Hate test 读数应标为跨域读数。
+- SST-2/CoLA 的 24 个比较没有正 CI；52 个负 CI 全部来自
+  SST-2（46）与 CoLA（6）。OOF 在 train 分布内能分辨量化损失，
+  官方 test 的样本量/分布未能分辨；不改变“没有量化档超过 f32”。
+- 判决：官方 test 上 0 个量化档显著超过真 f32；`R12` 的 OOF
+  正向是跨域不成立的候选，`rescan` 仍只是弱候选；f32 继续是
+  默认锚点。分类头这条线可以收口。
+- 新增 `docs/research/data/wsp-classify-nested-cv-matrix.tsv`
+  （180 行）、`wsp-classify-nested-cv-matrix-summary.tsv`（36 行）、
+  `wsp-classify-nested-vs-test.tsv`（36 行）、
+  `wsp-classify-oof-test-gap.tsv`（6 行）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.37 与 §12 读法。
+
+### Changed（M1.36：nested CV 复验 Hate L6 边界格）
+
+- 对 M1.35 最接近正向的 Hate L6 `logreg rescan` 做 nested CV：
+  outer 5 折 ×5 个 outer seed（`7/13/19/31/43`），inner 5 折只在
+  真 f32 上选 C，f32 与 `int3`/`int4`/`rescan` 共用；两个 probe，
+  30 个 OOF paired CI，50 个 outer fold 点差值。
+- 结果：**2 个显著正向、0 个显著负向、28 个跨 0**。两个正向都在
+  `logreg`：`rescan` seed 7 `+0.857pp`，CI `[+0.156,+1.558]pp`；
+  `int3` seed 43 `+0.790pp`，CI `[+0.134,+1.458]pp`。SVC `0/15`。
+- `rescan` 与 `int3` 在 10/10 outer seed 点估计为正；`int4` 9/10。
+  但 `rescan` 只有 1/10 CI 显著、`int3` 1/10、`int4` 0/10；50 个
+  fold 中 `rescan` 正/负/零为 `20/5/0`（logreg）与 `19/5/1`（SVC）。
+- OOF f32 accuracy `0.761–0.767`，官方 test `0.533–0.556`，约
+  `21pp` 分布差；OOF 的 `+0.44–+0.59pp` 弱正向不能搬到官方 test。
+- 判决：`rescan` 不是纯噪声，点方向在两种口径下都未出现负 CI；但
+  30 个 CI 只有 2 个刚过 0，SVC 0/5，不能升级为可发布增益。f32 继续
+  是默认锚点；`rescan` 只保留为弱候选。
+- 新增 `docs/research/data/wsp-classify-nested-cv-hate-l6-raw.tsv`
+  （30 行）、`wsp-classify-nested-cv-hate-l6-folds.tsv`（50 行）、
+  `wsp-classify-nested-cv-hate-l6-summary.tsv`（6 行）；
+  `WSP-BUDGET-RESULTS.md` 新增 §11.36 与 §12 读法。
+
+### Changed（M1.35：matched-C 全矩阵）
+
+- 把 M1.34 的 matched-C 控制扩到全部 36 个比较：每个
+  `dataset×depth×probe×seed` 只在真 f32 上做 5 折选 C，f32 与
+  `true-bits4`/`int3`/`int4`/`R12`/`rescan` 共用这个 C，test 固定，
+  10k paired bootstrap；5 个 seed，共 180 个 CI。
+- 结果：**0 个显著正向、41 个显著负向、139 个跨 0**；36 个比较里
+  没有任何一个在 5 个 seed 出现过正向 CI。
+- M1.34 的 Hate L6 `logreg int3` 4/5 显著正向消失：共同 C 下 seed 7
+  为 `+0.44pp`、其余 seed 为 `+0.15pp`，5/5 CI 跨 0，确认是 per-arm
+  C 错配。
+- 41 个负向集中在 11 个比较：SST-2 L12 四个 `int3`/`R12`、Hate L12
+  的 `R12`/SVC `int3`/SVC `R12` 都是 5/5 负向，Hate L12 SVC
+  `true-bits4` 1/5；CoLA L6 的 logreg `rescan` 3/5 负向，SVC
+  `int3`/`int4` 各 1/5。
+- 最接近正向的是 Hate L6 `logreg rescan` 在 C=10：
+  `+1.3168pp`，CI `[−0.0366,+2.6701]pp`，仍跨 0；C=0.1/1 也不显著。
+  它是 rescan 对坏 C 更稳，不是上限超过 f32。
+- 判决：matched-C 全矩阵仍没有量化档显著超过真 f32；f32 继续是
+  默认锚点。`int3`/`int4`/`R12`/`rescan` 既没有稳定增益，也在共同 C
+  下出现 41 个显著负向，不能写成“量化只是无损”。
+- 新增 `docs/research/data/wsp-classify-matched-c-raw.tsv`（180 行）、
+  `wsp-classify-matched-c-summary.tsv`（36 行），`WSP-BUDGET-RESULTS.md`
+  新增 §11.35 与 §12 读法。
+
+### Changed（M1.34：C 选择敏感性）
+
+- 对 M1.33 的 36 个比较重跑 5 个 CV seed（`7/13/19/31/43`），每个 arm
+  独立重选 C，test 固定：29/36 点估计同号，7 个翻号。
+- M1.33 的 9 个显著负向里只有 6 个在 5/5 seed 仍为负；Hate L6 两个
+  `int4` 臂不再稳定负向（logreg seed 43 变 `+1.17pp` 全正 CI）。
+- Hate L6 `logreg int3` 在 seed 13/19/31/43 变显著正向
+  `+1.7191pp`（CI `[+0.003658,+0.031090]`），但 matched-C 控制下
+  C=1 为 `+0.44pp`、C=10 为 `+0.15pp`，CI 都跨 0；4/5 显著正向是
+  f32 选 C=10、int3 选 C=1 的错配，不是量化增益。
+- 修正 M1.33 口径：其 `delta` 是 bootstrap 均值，不是点估计；
+  CoLA L6 SVC `rescan-k2` 的 `+0.000042` 是 boot mean，点估计
+  `−0.000038`，5 seed 点估计全负、均值 `−0.011901`。
+- 判决：M1.33 的 `0/9/27` 只是 seed 7 条件读数；matched-C 下仍无
+  量化档稳定超过 f32。引用分类头结论必须带“seed 7 条件”。
+- 新增 `wsp-classify-cv-seed-stability.tsv`（180 行）、
+  `wsp-classify-cv-seed-summary.tsv`（36 行）、
+  `wsp-classify-cv-seed-ci.tsv`（120 行）、
+  `wsp-classify-hate-l6-common-c.tsv`（9 行）。
+
+### Changed（M1.33：分类头跨任务判决）
+
+- 把 SST-2/CoLA/hate 的 L12/L6 线性头结果按“每个量化档只计一次”
+  合成 36 个 `dataset×depth×probe×arm` 比较：0 个 CI 整段 `>0`，
+  9 个整段 `<0`，27 个跨 0。
+- 显著负向集中在 SST-2 L12 的 `int3`/`R12`（两个 probe 都负）、
+  hate L12 的 `R12` 与 SVC `int3`、hate L6 的 `int4`（两个 probe 都负）。
+- 最大正向点估计仍是 CoLA L12 的 `int4` `+1.20pp`（logreg macro，
+  CI `[−0.007385,+0.031764]`），不显著；CoLA L6 没有转正。
+- SST-2 L12 的 `true-bits4` 是 `−0.10pp`（SVC）/`−0.15pp`（logreg），
+  CI 跨 0；历史 `+4.22pp` 是 ternary→4-bit 恢复，不是 f32→int4。
+- 判决：分类头没有可提升的量化档，f32 继续是默认锚点；`int3`/`int4`/
+  `R12`/`rescan` 都不因“可能正则化”被提升。
+- 新增 `docs/research/data/wsp-classify-cross-task-verdict.tsv`（36 行），
+  `WSP-BUDGET-RESULTS.md` 新增 §11.33 与 §12 读法。
+
+### Fixed（M1.32：L6 int4 全量逐位复刻）
+
+- 用 `all-MiniLM-L6-v2` 读取官方 `chunks-l6-1500`，全量生成 CoLA/hate
+  的 true bits4（`l6-cola-bits4.npy`、`l6-tweet-hate-bits4.npy`）。
+- CoLA 9,594 / hate 11,719 行的官方 `l6-int4` 与 true bits4 全部逐行
+  对齐：余弦 `1.00000000`（min/max `0.99999988/1.00000024`），max abs
+  diff `1.64e-7 / 1.53e-7`，所有行 ≤`1e-6`。M1.30 的 512 行抽检升级
+  为全量。
+- 把 `true-bits4` 补进 L6 分类矩阵：CoLA logreg macro `−0.94pp`
+  （CI 跨 0）、LinearSVC `−0.14pp`（CI 跨 0）；hate logreg accuracy
+  `−1.55pp`（CI `[−2.52,−0.59]`）、LinearSVC `−1.72pp`
+  （CI `[−2.71,−0.77]`）。没有任何一格转正，M1.31 的 L6 结论不变。
+- hate logreg 的 true bits4 与官方 int4 有 11/2,734 条预测翻转，净
+  accuracy 只差 1 条（`−0.000368`，CI 跨 0）；CoLA 与 hate SVC 的
+  逐条预测完全相同。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 的两条 L6
+  provenance 行从 `n=512` 更新为全量，并新增 20 行 true-bits4 分类
+  读数；`WSP-BUDGET-RESULTS.md` 新增 §11.32。
+
+### Fixed（M1.31：CoLA/hate 全臂矩阵）
+
+- 用同一套 per-arm 5 折选 C（C 网格 `0.01/0.1/1/10`）+ test 只评一次 +
+  10k paired bootstrap，重跑 CoLA/hate 的 L12/L6 全臂；CoLA 用
+  balanced + macro-F1，hate 用无权重 + accuracy；logreg 与 LinearSVC
+  都跑。
+- 结论：四个数据集×深度组合里没有任何量化臂显著超过真 f32。CoLA
+  L12 的 `int4`/`true bits4` 是唯一正向点估计（logreg macro
+  `+1.24pp/+1.20pp`，SVC `+0.93pp`），CI 都跨 0；CoLA L6 全为负或
+  零；hate L12 的 `R12` 为 `−1.36pp`（两个 probe 的 CI 都不含 0），
+  SVC `int3` 为 `−1.76pp`（CI 整段为负）；hate L6 的 `int4` 为
+  `−1.51pp`（logreg）/`−1.72pp`（SVC），两个 CI 都不含 0。
+- M1.15 hate L12 主表是固定 `C=1`，M1.31 是 per-arm 选 C：
+  `int4−f32` 从 `−0.37pp` 变为 `−0.88pp`，方向一致但不能混表。
+- 新增 `docs/research/data/wsp-classify-cola-hate-full-arms.tsv`（80 行），
+  `WSP-BUDGET-RESULTS.md` 新增 §11.31 与 §12 读法；`WSP-ALT.md`/
+  `WSP-BERT6-RESULTS.md` 追加 M1.31 结论。
+
+### Fixed（M1.30：CoLA/hate L6 基线标签收口）
+
+- 用 `all-MiniLM-L6-v2` 读取官方同一批 `chunks-l6-1500` 的
+  `input.f32`/`mask.u8`，全量生成真 f32 与真 ternary，并与官方
+  `l6-pure-f32-*.f32` 逐行比较：CoLA 9,594 条的余弦均值 `1.00000000`
+  （max abs diff `1.81e-7`），hate 11,719 条为 `1.00000000`
+  （`1.91e-7`）；对真 ternary 只有 `0.463824` / `0.378651`。因此
+  CoLA/hate L6 的 `l6-pure-f32` 是真 f32，不是 ternary。
+- 官方 `l6-int4` 首 512 行与真 bits4 逐位一致（max abs diff
+  `1.26e-7` / `1.38e-7`；M1.32 已补成全量，见上）；全量
+  `official int4 vs true f32` 余弦为 `0.955514` / `0.953085`，与正常
+  f32→bits4 距离同量级。M1.14/M1.15 的 L6 分类结论无需重算；SST-2 是
+  唯一 L12 与 L6 的 `pure-f32` 都错标成 ternary 的数据集。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 新增 8 行
+  CoLA/hate L6 provenance 读数；`WSP-BUDGET-RESULTS.md` 新增 §11.30，
+  修正 §11.28.3/§11.28.4 的 L6 边界与 §12 读法；
+  `WSP-ALT.md`/`WSP-BERT6-RESULTS.md` 追加 M1.30 结论。
+
+### Fixed（M1.29：SST-2 全臂矩阵复核）
+
+- 把 L12 的 `int3`/`R12` 和 L6 的 `int3`/`rescan-k2` 也改为相对真 f32
+  重跑。L12 logreg：真 f32 `0.842943`、官方 int3 `0.823174`
+  （`−0.019732`，CI `[−0.035146,−0.004942]`）、官方 int4 `0.840198`
+  （`−0.002625`，CI 跨 0）、官方 R12 `0.819879`（`−0.022967`，
+  CI `[−0.038440,−0.007688]`）。L12 `int3`/`R12` 的 CI 整段为负。
+- L6 logreg：真 f32 `0.811642`、官方 int3 `0.808347`（`−0.003291`）、
+  官方 int4 `0.806700`（`−0.004964`）、官方 rescan `0.803405`
+  （`−0.008296`），三个 CI 都跨 0。没有任何量化档超过真 f32。
+- 新增 `docs/research/data/wsp-classify-sst2-full-arms.tsv`（64 行，
+  L12/L6 × logreg/LinearSVC 的 arm 与 delta）；`WSP-BUDGET-RESULTS.md`
+  新增 §11.29，并修正 §11.12/§12 的读法。
+- M1.12 的旧 `+2.36pp`（L12 int3）、`+1.48pp`（L12 R12）、
+  `+0.38pp`（L6 rescan）等正差值都是 ternary 锚点造成的；L12
+  `int4−int3=+1.71pp`（CI 全正）仍是真实档内排序，但不能写成“超过 f32”。
+
+### Fixed（M1.28：SST-2 L6 基线标签）
+
+- 用 `all-MiniLM-L6-v2` 全量生成真 f32 / 真 bits4 / 真 ternary，并与官方
+  `l6-pure-f32-c*.f32` / `l6-int4-c*.f32` 逐行核对：官方 `l6-pure-f32`
+  与 L6 真 ternary 余弦 `0.99999976`（max abs diff `1.17e-3`），与真 f32
+  只有 `0.373686`；官方 `l6-int4` 与真 bits4 的 max abs diff 为
+  `1.83e-7`。M1.26 的“L6 未发现 ternary”作废，SST-2 L6 的 `f32` 标签
+  同样是 ternary。
+- 重算 L6 分类头（train 6,920 / test 1,821，冻结编码器 + 线性 probe，
+  5 折选 C，10k paired bootstrap）：真 f32 / 真 bits4 / 官方 ternary /
+  官方 int4 的 logreg accuracy 为 `0.811642 / 0.806700 / 0.795717 /
+  0.806700`；真 bits4−真 f32 为 `−0.004964`（CI `[−0.013729,+0.003844]`），
+  官方 int4−官方 ternary 为 `+0.010811`（CI `[−0.009336,+0.030752]`），
+  真 bits4−官方 int4 为 `0`（逐条预测相同）。SVC 同向：真差值
+  `−0.006079`（CI `[−0.014827,+0.002746]`），官方差值 `+0.002492`
+  （CI `[−0.017573,+0.023064]`）。L6 的旧 `int4−f32≈+0.0060` 也是
+  ternary→4-bit 恢复，不是 int4 超过真 f32。
+- `docs/research/data/wsp-classify-baseline-audit.tsv` 的 L6 行改为全量
+  读数并补 15 行（provenance、arm、logreg/SVC delta），共 56 行；
+  `WSP-BUDGET-RESULTS.md` 新增 §11.28，并修正 §11.26 的 L6 边界与 §12
+  的读法；`WSP-BERT6-RESULTS.md` §3.16.25 追加 M1.28 修正。
+- `docs/results/LESSONS.md` 新增第 43–44 条：5 条样本不能给标签定性；
+  标签错误可能在同一数据集的多个深度重复。
+
+### Fixed（M1.27：残差矩阵严格复核）
+
+- `scripts/wsp_classify_residual.py` 的 test 侧类均值/组内置换不再使用
+  `y_test`：默认用 f32 base probe 的预测标签构造严格对照；新增
+  `--legacy-controls` 仅供复现 M1.23 旧表（旧的 oracle 构造会泄漏 test 标签）。
+- 用真 f32 / 真 bits4 重跑 SST-2 L12 的 32 臂残差矩阵：真 f32 下没有合法
+  残差臂超过 f32，`hybrid_rest_k16` 为 `−0.006590`（旧表 ternary 基线为
+  `+0.039539`）；`noclassmean` 的 `+0.023064` 是 test 标签泄漏，严格模式
+  `−0.007139`；`perm_class` 的 `+0.007688` 也是标签依赖，严格模式
+  `−0.018671`。新增 `docs/research/data/wsp-classify-residual-sst2-l12-strict.tsv`
+  与 `wsp-classify-residual-control-audit.tsv`，结果写入 §11.27。
+- `docs/results/LESSONS.md` 新增第 41–42 条：test 标签对照是 oracle；
+  换基线后必须逐臂重跑。
+
 ### Added（第四十轮：TriVec 整向量等价的 Verus 证明）
 
 - 新增 `verus/src/bulk.rs`：位切片向量 `TriVec` 的 spec/exec。`view(len, ones, unknowns)`
@@ -1258,6 +2107,74 @@ exec 省略 `len` 之外的 padding 掩码写入（`view` 不读 padding），pa
   - 边界：主表 logreg，SST-2 L12 有 SVC 全 32 arm 复验，其余五组没有
     SVC；一个 seed；bootstrap 只重采样 test；残差是量化算子的确定性函数，
     本文是观测性拆解，不是因果证明。
+
+- **直接量化代理负对照（M1.24）**：新增
+  `scripts/wsp_classify_direct_quant.py`，对冻结 f32 embedding 直接做
+  group=1/32/384 的对称 int4 RTN，比较 `q`、`r=q−x` 和 f32 的线性
+  probe。带 `--self-test` 和 2 条 mutation 锚点（残差方向取反 / group=1
+  被强制成 per-row）。
+  - SST-2 L12：`q` 从 `0.800110` 降到 `0.787479`（g32）/`0.768259`
+    （g384）；直接残差单独 probe 在 `0.499176`（chance）。
+  - 6 组 × 3 group：残差 probe 在 chance/多数类基线（hate `0.592` 是
+    多数类基线，macro-F1 `0.372`）；残差/f32 类均值 `0–0.081`，但在
+    f32 probe 上的 margin 比只有 `−0.008` 到 `+0.005`。
+  - 结论：M1.23 的类别条件偏置不能由输出端 int4 舍入复现，依赖权重量化
+    误差在编码器里的传播路径；这是 representation-level 负对照，不是
+    权重量化器的因果消融。
+  - 表：`wsp-classify-direct-quant.tsv`（18 行：6 组 × 3 group）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.24、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.26、`LESSONS.md` 第 36 条。
+  - 边界：logreg；一个 seed；bootstrap 只重采样 test；weight per-group
+    sweep 在本机 CPU 上单档 20+ 分钟未完成，已停，不写成结论。
+
+- **残差线性算子与数据集特异几何（M1.25）**：新增
+  `scripts/wsp_classify_residual_linear.py`，只在 train 上拟合
+  `r ≈ (x−μ)W+r_μ`，在 test 上评估 `R²`、余弦、类均值放大/角度和
+  跨数据集迁移；可选 `--probe` 把 SST-2 残差拆成 `r_hat`/`r_perp` 再
+  probe。带 `--self-test` 和 2 条 mutation 锚点（残差方向取反 / 预测忘记
+  加回残差均值）。
+  - 六组 test `R²` 0.42–0.52，shuffled `R²` −0.04 到 −0.09；残差有
+    42–52% 的方差可由 f32 embedding 线性预测。
+  - 类均值响应数据集特异：SST-2 L12 放大 `1.52×`、旋转 `86.1°`，L6
+    `1.15×`、`93.7°`；CoLA/hate 压缩到 `0.21–0.23×`、旋转 `99°–108°`。
+  - 跨数据集不迁移：SST-2 算子用到 CoLA/hate 的 `R²` 是
+    `−43.4/−36.5`（L12），反过来只有 `0.016–0.031`。
+  - SST-2 残差分解：L12 `r_hat` 0.7935 / `r_perp` 0.6310；L6 0.8040 /
+    0.5837。
+  - 结论：SST-2 的正向可由“类均值方向落在被放大的方向”描述，但没有
+    一个跨数据集共同算子；这是线性代理，不是权重量化器的因果消融。
+  - 表：`wsp-classify-residual-linear.tsv`（24 行）、
+    `wsp-classify-residual-linear-probe.tsv`（6 行）。
+  - 文档：`WSP-BUDGET-RESULTS.md` §11.25、`WSP-ALT.md` §5.5、
+    `WSP-BERT6-RESULTS.md` §3.16.27、`LESSONS.md` 第 37 条。
+  - 边界：ridge α=0.1 固定、无 CV；只读最终 384 维 embedding；无
+    bootstrap CI；一个 seed；只跑 logreg；cross-transfer 用目标数据集
+    自己的截距。
+
+- **基线标签审计与 SST-2 修正（M1.26）**：逐位核对发现 SST-2 L12
+  的 `sst2/emb12/l12-pure-f32-*.f32` 不是 f32，而是 `bert6`
+  `TRIT_WEIGHT_BITS=2` 的 ternary/absmean 输出（首 5 条与 tiny bits2
+  余弦 `1.0`，与真 f32 余弦 `0.279–0.382`）。`l12-int4` 与真 4-bit
+  只差 `1.83e-7`；CoLA/hate 的 `l12-pure-f32` 才是真 f32（只差 `2.1e-7`）。
+  - 真 f32 `0.842943`、真 int4 `0.841296`，差值 `−0.001503`
+    （CI `[−0.012081,+0.008786]`）；官方 ternary `0.797913`、官方
+    int4 `0.840198`，`+0.042207`（CI `[+0.023064,+0.061505]`）是
+    2-bit→4-bit 恢复，不是 int4 超过 f32。
+  - 几何反转：真 f32→int4 残差类均值 `0.191×`、`cos −0.353`；
+    M1.23 的 `1.594× / +0.068` 属于 ternary→4-bit。CoLA/Hate 也是
+    压缩（`0.250/0.220×`、`cos −0.473/−0.301`），没有 SST-2 特异放大。
+  - CoLA 真 f32→int4 macro-F1 `+0.012073`（CI 跨 0）；Hate
+    `−0.002560`（CI 跨 0）。当时判断只有 SST-2 的 L12 f32 基线坏了，
+    CoLA/hate 旧结论保留；SST-2 L6 首 5 条与真 f32 余弦 `0.97–0.99`，
+    未发现同错。**M1.28 后作废：L6 也是 ternary，见上条 M1.28 条目。**
+  - 表：`docs/research/data/wsp-classify-baseline-audit.tsv`（M1.26 时 41 行，
+    M1.28 后 56 行）。
+    文档：`WSP-BUDGET-RESULTS.md` §11.26（§11.12–§11.25 加修正横幅）、
+    `WSP-ALT.md` §5.5、`WSP-BERT6-RESULTS.md` §3.16.25、
+    `LESSONS.md` 第 38–40 条。
+  - 边界：PyTorch 复刻是独立实现，f32/f64 累加差异在 `2e-7` 量级，
+    不是 Rust 位级等价；只跑 logreg + LinearSVC，无 MLP、无 encoder
+    微调、无 MNLI。
 
 - **按来源拆解脚本**：新增 `scripts/wsp_budget_source_eval.py`，只读 preds，
   按 `mteb/stsbenchmark-sts` test 的 `dataset` 字段拆成 6 个来源并输出

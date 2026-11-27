@@ -1,0 +1,20 @@
+[
+ {
+  "name": "linear: 残差方向取反（q-x 变成 x-q）",
+  "file": "scripts/wsp_classify_residual_linear.py",
+  "old": "def _residual(x, q):\n    \"\"\"Signed int4 rounding residual.\"\"\"\n    return q - x",
+  "new": "def _residual(x, q):\n    \"\"\"Signed int4 rounding residual.\"\"\"\n    return x - q",
+  "pkg": "scripts/wsp_classify_residual_linear.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "linear: 预测忘记加回残差均值",
+  "file": "scripts/wsp_classify_residual_linear.py",
+  "old": "def _predict(x, mu, r_mu, w):\n    return (x - mu) @ w + r_mu",
+  "new": "def _predict(x, mu, r_mu, w):\n    return (x - mu) @ w",
+  "pkg": "scripts/wsp_classify_residual_linear.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

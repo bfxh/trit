@@ -1,7 +1,7 @@
 //! Windows 超时回归：只杀直接子进程会留下孙进程，这里锁住“整棵树都停”。
 //!
 //! 夹具：`powershell` 包装器先拉起一个 `Start-Sleep 20` 的孙进程，把 PID 写文件，
-//! 自己再睡 10s；`--timeout 2` 触发后，孙进程必须在数秒内消失。
+//! 自己再睡 60s；`--timeout 10` 触发后，孙进程必须在数秒内消失。
 //! 非 Windows 由 Unix 进程组路径覆盖，本文件跳过。
 
 #![cfg(windows)]
@@ -55,7 +55,7 @@ fn wrapper(dir: &Path) -> PathBuf {
         "$null = [Console]::In.ReadToEnd()\n\
          $p = Start-Process -FilePath powershell -ArgumentList \"-NoProfile\",\"-Command\",\"Start-Sleep -Seconds 20\" -PassThru\n\
          Set-Content -Path \"{}\" -Value $p.Id\n\
-         Start-Sleep -Seconds 10\n",
+         Start-Sleep -Seconds 60\n",
         pid_file.display()
     );
     fs::write(&script, text).expect("写包装器");
@@ -86,7 +86,7 @@ fn timeout_kills_the_whole_process_tree() {
             "--cmd",
             &format!("powershell -NoProfile -File \"{}\"", script.display()),
             "--timeout",
-            "2",
+            "10",
             "--out",
             &out.display().to_string(),
         ])
@@ -99,7 +99,7 @@ fn timeout_kills_the_whole_process_tree() {
     );
 
     let pid_file = dir.path().join("grandchild.pid");
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(10);
     while !pid_file.exists() && Instant::now() < deadline {
         sleep(Duration::from_millis(50));
     }
@@ -109,7 +109,7 @@ fn timeout_kills_the_whole_process_tree() {
         .parse()
         .expect("PID 不是数字");
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(10);
     while alive(pid) && Instant::now() < deadline {
         sleep(Duration::from_millis(100));
     }

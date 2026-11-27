@@ -1,0 +1,301 @@
+kind	scope	depth	probe	arm	rule	rule_a	rule_b	metric	n_cells	positive	negative	cross	point	mean_point	mean_boot
+arm_minus_f32	gab	l12	linear_svc	r12	default	f32:default	f32	accuracy	5	0	0	5	0	0.0013487475915221702	0.0013133526011560692
+arm_minus_f32	gab	l12	linear_svc	r12	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	-0.002119460500963388	-0.0021891136801541434
+arm_minus_f32	gab	l12	linear_svc	r12	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.00038535645472064227	0.0003342967244701349
+arm_minus_f32	gab	l12	linear_svc	r12	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	-0.00655105973025043	-0.006603834296724472
+arm_minus_f32	gab	l12	linear_svc	r12	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	-0.0038535645472061787	-0.003899036608863199
+arm_minus_f32	gab	l12	logreg	r12	default	f32:default	f32	accuracy	5	0	0	5	0	0.0	-4.0423892100192555e-05
+arm_minus_f32	gab	l12	logreg	r12	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	-0.0009633911368015502	-0.0010304431599229284
+arm_minus_f32	gab	l12	logreg	r12	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.0	-5.93063583815025e-05
+arm_minus_f32	gab	l12	logreg	r12	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	-0.0017341040462426794	-0.0017784393063583815
+arm_minus_f32	gab	l12	logreg	r12	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	0.0028901734104045396	0.0028422157996146435
+arm_minus_f32	gab	l6	linear_svc	rescan	default	f32:default	f32	accuracy	5	0	0	5	0	-0.0021194605009634106	-0.002182736030828516
+arm_minus_f32	gab	l6	linear_svc	rescan	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	0.00924855491329477	0.009245472061657033
+arm_minus_f32	gab	l6	linear_svc	rescan	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.005780346820809301	0.0057689788053949895
+arm_minus_f32	gab	l6	linear_svc	rescan	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	0.0044315992292871306	0.004414277456647398
+arm_minus_f32	gab	l6	linear_svc	rescan	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	0.0026974951830443404	0.0026985356454720614
+arm_minus_f32	gab	l6	logreg	rescan	default	f32:default	f32	accuracy	5	0	0	5	0	-0.006936416184971162	-0.006982697495183043
+arm_minus_f32	gab	l6	logreg	rescan	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	0.004624277456647441	0.0046214836223506745
+arm_minus_f32	gab	l6	logreg	rescan	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.0034682080924855587	0.0034475915221579964
+arm_minus_f32	gab	l6	logreg	rescan	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	0.001541425818882458	0.001524315992292871
+arm_minus_f32	gab	l6	logreg	rescan	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	-0.0011560693641618602	-0.0011640847784200388
+arm_minus_f32	overall	l12	linear_svc	r12	default	f32:default	f32	accuracy	5	0	0	5	0	-0.004275286757038632	-0.0042889572471324355
+arm_minus_f32	overall	l12	linear_svc	r12	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	1	4	0	-0.00782064650677794	-0.007848206465067788
+arm_minus_f32	overall	l12	linear_svc	r12	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.0	-1.2210636079249166e-05
+arm_minus_f32	overall	l12	linear_svc	r12	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	-0.010218978102189746	-0.010221981230448384
+arm_minus_f32	overall	l12	linear_svc	r12	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	-0.0029197080291970766	-0.0029386027111574556
+arm_minus_f32	overall	l12	logreg	r12	default	f32:default	f32	accuracy	5	0	0	5	0	-0.0036496350364964014	-0.0036607403545359796
+arm_minus_f32	overall	l12	logreg	r12	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	-0.007403545359749764	-0.007415672575599591
+arm_minus_f32	overall	l12	logreg	r12	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.0	-2.081334723670476e-05
+arm_minus_f32	overall	l12	logreg	r12	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	-0.005109489051094896	-0.005113618352450469
+arm_minus_f32	overall	l12	logreg	r12	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	0.0010427528675703845	0.0010433993743482791
+arm_minus_f32	overall	l6	linear_svc	rescan	default	f32:default	f32	accuracy	5	0	0	5	0	-0.0006256517205422308	-0.0006145881126173099
+arm_minus_f32	overall	l6	linear_svc	rescan	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	0.006152241918665302	0.0061522002085505805
+arm_minus_f32	overall	l6	linear_svc	rescan	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.005005213764337846	0.005000750782064657
+arm_minus_f32	overall	l6	linear_svc	rescan	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	0.0033368091762252527	0.0033420959332638167
+arm_minus_f32	overall	l6	linear_svc	rescan	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	0.0035453597497393076	0.0035664442127215875
+arm_minus_f32	overall	l6	logreg	rescan	default	f32:default	f32	accuracy	5	0	0	5	0	-0.0016684045881126598	-0.0016427632950990635
+arm_minus_f32	overall	l6	logreg	rescan	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	0.00344108446298228	0.003427580813347239
+arm_minus_f32	overall	l6	logreg	rescan	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.004171011470281538	0.004167122002085512
+arm_minus_f32	overall	l6	logreg	rescan	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	-0.0010427528675703624	-0.0010507612095933272
+arm_minus_f32	overall	l6	logreg	rescan	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	-0.0010427528675703845	-0.0010589572471324305
+arm_minus_f32	twitter	l12	linear_svc	r12	default	f32:default	f32	accuracy	5	0	5	0	0	-0.010909090909090934	-0.010892545454545457
+arm_minus_f32	twitter	l12	linear_svc	r12	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	5	0	0	-0.01454545454545455	-0.014493454545454545
+arm_minus_f32	twitter	l12	linear_svc	r12	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	-0.000454545454545463	-0.00040959090909090877
+arm_minus_f32	twitter	l12	linear_svc	r12	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	5	0	0	-0.01454545454545455	-0.014546454545454546
+arm_minus_f32	twitter	l12	linear_svc	r12	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	-0.0018181818181817854	-0.0018139090909090904
+arm_minus_f32	twitter	l12	logreg	r12	default	f32:default	f32	accuracy	5	0	0	5	0	-0.007954545454545547	-0.00792843181818182
+arm_minus_f32	twitter	l12	logreg	r12	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	5	0	0	-0.01499999999999999	-0.014980977272727274
+arm_minus_f32	twitter	l12	logreg	r12	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.0	4.309090909090909e-05
+arm_minus_f32	twitter	l12	logreg	r12	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	-0.009090909090909104	-0.009099272727272727
+arm_minus_f32	twitter	l12	logreg	r12	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	-0.001136363636363713	-0.0011285454545454546
+arm_minus_f32	twitter	l6	linear_svc	rescan	default	f32:default	f32	accuracy	5	0	0	5	0	0.001136363636363602	0.001101340909090909
+arm_minus_f32	twitter	l6	linear_svc	rescan	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	0.002499999999999969	0.0024628863636363637
+arm_minus_f32	twitter	l6	linear_svc	rescan	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.004090909090909101	0.004029886363636363
+arm_minus_f32	twitter	l6	linear_svc	rescan	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	0.0020454545454545283	0.0019727272727272727
+arm_minus_f32	twitter	l6	linear_svc	rescan	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	0.00454545454545463	0.004516545454545454
+arm_minus_f32	twitter	l6	logreg	rescan	default	f32:default	f32	accuracy	5	0	0	5	0	0.004545454545454519	0.004499772727272727
+arm_minus_f32	twitter	l6	logreg	rescan	domain_fit_prior	f32:domain_fit_prior	f32	accuracy	5	0	0	5	0	0.0020454545454545725	0.001970727272727272
+arm_minus_f32	twitter	l6	logreg	rescan	domain_test_prior	f32:domain_test_prior	f32	accuracy	5	0	0	5	0	0.004999999999999982	0.004943022727272727
+arm_minus_f32	twitter	l6	logreg	rescan	global_fit_prior	f32:global_fit_prior	f32	accuracy	5	0	0	5	0	-0.004090909090909101	-0.004154272727272727
+arm_minus_f32	twitter	l6	logreg	rescan	global_test_prior	f32:global_test_prior	f32	accuracy	5	0	0	5	0	-0.0009090909090908594	-0.0009644090909090911
+rule_diff	gab	l12	linear_svc	f32		domain_fit_prior	default	accuracy	5	0	0	5	0	0.001156069364161838	0.0011571483622350672
+rule_diff	gab	l12	linear_svc	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.004500497893599631	nan
+rule_diff	gab	l12	linear_svc	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	0.00019267822736031005	0.00019645472061657052
+rule_diff	gab	l12	linear_svc	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	0.0001925367729684213	nan
+rule_diff	gab	l12	linear_svc	f32		domain_test_prior	default	accuracy	5	0	0	5	0	0.000963391136801528	0.000960693641618497
+rule_diff	gab	l12	linear_svc	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	0.00430796112063121	nan
+rule_diff	gab	l12	linear_svc	f32		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	-0.0015414258188824804	-0.001543699421965318
+rule_diff	gab	l12	linear_svc	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	-0.0014959212382956277	nan
+rule_diff	gab	l12	linear_svc	f32		global_test_prior	default	accuracy	5	0	0	5	0	0.0025048169556840085	0.002504393063583815
+rule_diff	gab	l12	linear_svc	f32		global_test_prior	default	macro_f1	5	0	0	0	5	0.005803882358926838	nan
+rule_diff	gab	l12	linear_svc	r12		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.0023121387283237204	-0.0023453179190751445
+rule_diff	gab	l12	linear_svc	r12		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.0009008911879915482	nan
+rule_diff	gab	l12	linear_svc	r12		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	-0.0023121387283237204	-0.0023269556840077076
+rule_diff	gab	l12	linear_svc	r12		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.002335160656702406	nan
+rule_diff	gab	l12	linear_svc	r12		domain_test_prior	default	accuracy	5	0	0	5	0	0.0	-1.836223506743709e-05
+rule_diff	gab	l12	linear_svc	r12		domain_test_prior	default	macro_f1	5	0	0	0	5	0.0032360518446939547	nan
+rule_diff	gab	l12	linear_svc	r12		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	0.0026974951830443404	0.002689633911368015
+rule_diff	gab	l12	linear_svc	r12		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.0027691300314866218	nan
+rule_diff	gab	l12	linear_svc	r12		global_test_prior	default	accuracy	5	0	0	5	0	-0.0026974951830443404	-0.0027079961464354534
+rule_diff	gab	l12	linear_svc	r12		global_test_prior	default	macro_f1	5	0	0	0	5	0.0004669218132073327	nan
+rule_diff	gab	l12	logreg	f32		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.0013487475915221702	-0.001344990366088632
+rule_diff	gab	l12	logreg	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.0015977095223626892	nan
+rule_diff	gab	l12	logreg	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	-0.0003853564547206201	-0.00038608863198458563
+rule_diff	gab	l12	logreg	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0003892175597381087	nan
+rule_diff	gab	l12	logreg	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.0009633911368015502	-0.0009589017341040465
+rule_diff	gab	l12	logreg	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	0.001986927082100798	nan
+rule_diff	gab	l12	logreg	f32		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	0.0	6.551059730247768e-07
+rule_diff	gab	l12	logreg	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	6.722918445556392e-05	nan
+rule_diff	gab	l12	logreg	f32		global_test_prior	default	accuracy	5	0	0	5	0	-0.0009633911368015502	-0.000959556840077071
+rule_diff	gab	l12	logreg	f32		global_test_prior	default	macro_f1	5	0	0	0	5	0.001919697897645234	nan
+rule_diff	gab	l12	logreg	r12		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.0023121387283237204	-0.0023350096339113677
+rule_diff	gab	l12	logreg	r12		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.0005281900756135549	nan
+rule_diff	gab	l12	logreg	r12		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	-0.0013487475915221702	-0.0013572254335260116
+rule_diff	gab	l12	logreg	r12		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0013531148621480638	nan
+rule_diff	gab	l12	logreg	r12		domain_test_prior	default	accuracy	5	0	0	5	0	-0.0009633911368015502	-0.0009777842003853563
+rule_diff	gab	l12	logreg	r12		domain_test_prior	default	macro_f1	5	0	0	0	5	0.0018813049377616187	nan
+rule_diff	gab	l12	logreg	r12		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	-0.0028901734104045396	-0.0029008670520231216
+rule_diff	gab	l12	logreg	r12		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	-0.00279809675119036	nan
+rule_diff	gab	l12	logreg	r12		global_test_prior	default	accuracy	5	0	0	5	0	0.0019267822736029894	0.001923082851637765
+rule_diff	gab	l12	logreg	r12		global_test_prior	default	macro_f1	5	0	0	0	5	0.0046794016889519785	nan
+rule_diff	gab	l6	linear_svc	f32		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.012331406551059732	-0.01240412331406551
+rule_diff	gab	l6	linear_svc	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.010192461974853684	nan
+rule_diff	gab	l6	linear_svc	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	-0.0019267822736029894	-0.0019302697495183047
+rule_diff	gab	l6	linear_svc	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0019474223844649253	nan
+rule_diff	gab	l6	linear_svc	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.010404624277456743	-0.010473853564547206
+rule_diff	gab	l6	linear_svc	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.008245039590388758	nan
+rule_diff	gab	l6	linear_svc	f32		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	-0.004816955684007751	-0.00481354527938343
+rule_diff	gab	l6	linear_svc	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	-0.004767212060170145	nan
+rule_diff	gab	l6	linear_svc	f32		global_test_prior	default	accuracy	5	0	0	5	0	-0.005587668593448991	-0.0056603082851637765
+rule_diff	gab	l6	linear_svc	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.0034778275302186135	nan
+rule_diff	gab	l6	linear_svc	rescan		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.0009633911368015502	-0.0009759152215799618
+rule_diff	gab	l6	linear_svc	rescan		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.0009443272418920179	nan
+rule_diff	gab	l6	linear_svc	rescan		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	0.0015414258188824804	0.001546223506743738
+rule_diff	gab	l6	linear_svc	rescan		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	0.0014882180617120434	nan
+rule_diff	gab	l6	linear_svc	rescan		domain_test_prior	default	accuracy	5	0	0	5	0	-0.0025048169556840306	-0.0025221387283236997
+rule_diff	gab	l6	linear_svc	rescan		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.0005438908198200254	nan
+rule_diff	gab	l6	linear_svc	rescan		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	-0.0017341040462427904	-0.001743102119460501
+rule_diff	gab	l6	linear_svc	rescan		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	-0.001690298848689542	nan
+rule_diff	gab	l6	linear_svc	rescan		global_test_prior	default	accuracy	5	0	0	5	0	-0.0007707129094412402	-0.0007790366088631986
+rule_diff	gab	l6	linear_svc	rescan		global_test_prior	default	macro_f1	5	0	0	0	5	0.0011464080288695166	nan
+rule_diff	gab	l6	logreg	f32		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.008477842003853642	-0.008570944123314066
+rule_diff	gab	l6	logreg	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.0063588449386217105	nan
+rule_diff	gab	l6	logreg	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	-0.004238921001926821	-0.004248921001926783
+rule_diff	gab	l6	logreg	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0042631595792443685	nan
+rule_diff	gab	l6	logreg	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.004238921001926821	-0.004322023121387283
+rule_diff	gab	l6	logreg	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.0020956853593773416	nan
+rule_diff	gab	l6	logreg	f32		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	0.0026974951830443404	0.0026959537572254335
+rule_diff	gab	l6	logreg	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.0027357488060615774	nan
+rule_diff	gab	l6	logreg	f32		global_test_prior	default	accuracy	5	0	0	5	0	-0.006936416184971162	-0.007017976878612717
+rule_diff	gab	l6	logreg	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.004831434165438919	nan
+rule_diff	gab	l6	logreg	rescan		domain_fit_prior	default	accuracy	5	0	0	5	0	0.003082851637764961	0.003033236994219653
+rule_diff	gab	l6	logreg	rescan		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.005350387628243069	nan
+rule_diff	gab	l6	logreg	rescan		domain_fit_prior	domain_test_prior	accuracy	5	0	1	4	0	-0.0030828516377649383	-0.0030750289017341045
+rule_diff	gab	l6	logreg	rescan		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0030905680655842318	nan
+rule_diff	gab	l6	logreg	rescan		domain_test_prior	default	accuracy	5	0	0	5	0	0.006165703275529899	0.006108265895953758
+rule_diff	gab	l6	logreg	rescan		domain_test_prior	default	macro_f1	5	0	0	0	5	0.008440955693827301	nan
+rule_diff	gab	l6	logreg	rescan		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	0.0073217726396917595	0.0073076300578034685
+rule_diff	gab	l6	logreg	rescan		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.007412757153157523	nan
+rule_diff	gab	l6	logreg	rescan		global_test_prior	default	accuracy	5	0	0	5	0	-0.0011560693641618602	-0.0011993641618497114
+rule_diff	gab	l6	logreg	rescan		global_test_prior	default	macro_f1	5	0	0	0	5	0.001028198540669778	nan
+rule_diff	overall	l12	linear_svc	f32		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.0022940563086548903	-0.002309822732012516
+rule_diff	overall	l12	linear_svc	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.011772008938329036	nan
+rule_diff	overall	l12	linear_svc	f32		domain_fit_prior	domain_test_prior	accuracy	5	4	0	1	0	0.003232533889468203	0.00323112617309698
+rule_diff	overall	l12	linear_svc	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	0.0030873357607446917	nan
+rule_diff	overall	l12	linear_svc	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.005526590198123094	-0.005540948905109496
+rule_diff	overall	l12	linear_svc	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	0.008684673177584345	nan
+rule_diff	overall	l12	linear_svc	f32		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.0065693430656934785	0.006578310740354541
+rule_diff	overall	l12	linear_svc	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.007384537754648446	nan
+rule_diff	overall	l12	linear_svc	f32		global_test_prior	default	accuracy	5	0	4	1	0	-0.012095933263816572	-0.012119259645464037
+rule_diff	overall	l12	linear_svc	f32		global_test_prior	default	macro_f1	5	0	0	0	5	0.0013001354229358996	nan
+rule_diff	overall	l12	linear_svc	r12		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.0058394160583941975	-0.005869071949947869
+rule_diff	overall	l12	linear_svc	r12		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.009884719729462588	nan
+rule_diff	overall	l12	linear_svc	r12		domain_fit_prior	domain_test_prior	accuracy	5	0	3	2	0	-0.004588112617309736	-0.004604869655891558
+rule_diff	overall	l12	linear_svc	r12		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.003396093781173004	nan
+rule_diff	overall	l12	linear_svc	r12		domain_test_prior	default	accuracy	5	0	0	5	0	-0.0012513034410844615	-0.0012642022940563104
+rule_diff	overall	l12	linear_svc	r12		domain_test_prior	default	macro_f1	5	0	0	0	5	0.013280813510635592	nan
+rule_diff	overall	l12	linear_svc	r12		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.009489051094890556	0.009504702815432748
+rule_diff	overall	l12	linear_svc	r12		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.010800428349977164	nan
+rule_diff	overall	l12	linear_svc	r12		global_test_prior	default	accuracy	5	0	0	5	0	-0.010740354535975017	-0.010768905109489057
+rule_diff	overall	l12	linear_svc	r12		global_test_prior	default	macro_f1	5	0	0	0	5	0.002480385160658427	nan
+rule_diff	overall	l12	logreg	f32		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.004796663190823813	-0.0048248696558915605
+rule_diff	overall	l12	logreg	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.008135247198623418	nan
+rule_diff	overall	l12	logreg	f32		domain_fit_prior	domain_test_prior	accuracy	5	4	0	1	0	0.003023983315954126	0.003012022940563091
+rule_diff	overall	l12	logreg	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	0.0027577659674492107	nan
+rule_diff	overall	l12	logreg	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.00782064650677794	-0.007836892596454651
+rule_diff	overall	l12	logreg	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	0.005377481231174208	nan
+rule_diff	overall	l12	logreg	f32		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.00782064650677794	0.007843399374348284
+rule_diff	overall	l12	logreg	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.008847466322426056	nan
+rule_diff	overall	l12	logreg	f32		global_test_prior	default	accuracy	5	0	5	0	0	-0.01564129301355588	-0.015680291970802934
+rule_diff	overall	l12	logreg	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.003469985091251848	nan
+rule_diff	overall	l12	logreg	r12		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.008550573514077175	-0.00857980187695517
+rule_diff	overall	l12	logreg	r12		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.005164045021820729	nan
+rule_diff	overall	l12	logreg	r12		domain_fit_prior	domain_test_prior	accuracy	5	0	5	0	0	-0.004379562043795637	-0.0043828362877997955
+rule_diff	overall	l12	logreg	r12		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0038656347608533757	nan
+rule_diff	overall	l12	logreg	r12		domain_test_prior	default	accuracy	5	0	0	5	0	-0.004171011470281538	-0.004196965589155376
+rule_diff	overall	l12	logreg	r12		domain_test_prior	default	macro_f1	5	0	0	0	5	0.009029679782674105	nan
+rule_diff	overall	l12	logreg	r12		domain_test_prior	global_test_prior	accuracy	5	4	0	1	0	0.006777893639207555	0.0067791866527632996
+rule_diff	overall	l12	logreg	r12		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.007627505395522816	nan
+rule_diff	overall	l12	logreg	r12		global_test_prior	default	accuracy	5	0	0	5	0	-0.010948905109489093	-0.010976152241918676
+rule_diff	overall	l12	logreg	r12		global_test_prior	default	macro_f1	5	0	0	0	5	0.0014021743871512893	nan
+rule_diff	overall	l6	linear_svc	f32		domain_fit_prior	default	accuracy	5	0	4	1	0	-0.011887382690302428	-0.011913691345151212
+rule_diff	overall	l6	linear_svc	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.0006593454076569305	nan
+rule_diff	overall	l6	linear_svc	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	-0.0033368091762252527	-0.003341751824817521
+rule_diff	overall	l6	linear_svc	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.002283917328732099	nan
+rule_diff	overall	l6	linear_svc	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.008550573514077175	-0.00857193952033369
+rule_diff	overall	l6	linear_svc	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	0.0016245719210751686	nan
+rule_diff	overall	l6	linear_svc	f32		domain_test_prior	global_test_prior	accuracy	5	0	0	5	0	0.0036496350364964014	0.003657601668404591
+rule_diff	overall	l6	linear_svc	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.003965915040636259	nan
+rule_diff	overall	l6	linear_svc	f32		global_test_prior	default	accuracy	5	0	5	0	0	-0.012200208550573577	-0.012229541188738282
+rule_diff	overall	l6	linear_svc	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.0023413431195610903	nan
+rule_diff	overall	l6	linear_svc	rescan		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.005109489051094896	-0.005146903023983322
+rule_diff	overall	l6	linear_svc	rescan		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.007283454521593668	nan
+rule_diff	overall	l6	linear_svc	rescan		domain_fit_prior	domain_test_prior	accuracy	5	0	0	5	0	-0.0021897810218977965	-0.0021903023983315976
+rule_diff	overall	l6	linear_svc	rescan		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-9.200339484569665e-05	nan
+rule_diff	overall	l6	linear_svc	rescan		domain_test_prior	default	accuracy	5	0	0	5	0	-0.0029197080291970988	-0.0029566006256517246
+rule_diff	overall	l6	linear_svc	rescan		domain_test_prior	default	macro_f1	5	0	0	0	5	0.0073754579164393656	nan
+rule_diff	overall	l6	linear_svc	rescan		domain_test_prior	global_test_prior	accuracy	5	3	0	2	0	0.00510948905109494	0.00509190823774766
+rule_diff	overall	l6	linear_svc	rescan		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.005682056694350712	nan
+rule_diff	overall	l6	linear_svc	rescan		global_test_prior	default	accuracy	5	0	0	5	0	-0.008029197080292039	-0.008048508863399384
+rule_diff	overall	l6	linear_svc	rescan		global_test_prior	default	macro_f1	5	0	0	0	5	0.001693401222088653	nan
+rule_diff	overall	l6	logreg	f32		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.010218978102189857	-0.010265078206465082
+rule_diff	overall	l6	logreg	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.0012572074605487372	nan
+rule_diff	overall	l6	logreg	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	5	0	0	-0.005422314911366044	-0.005425828988529725
+rule_diff	overall	l6	logreg	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.004579952328656689	nan
+rule_diff	overall	l6	logreg	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.004796663190823813	-0.004839249217935356
+rule_diff	overall	l6	logreg	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	0.0058371597892054265	nan
+rule_diff	overall	l6	logreg	f32		domain_test_prior	global_test_prior	accuracy	5	4	0	1	0	0.006360792492179401	0.006357570385818567
+rule_diff	overall	l6	logreg	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.007143619202786588	nan
+rule_diff	overall	l6	logreg	f32		global_test_prior	default	accuracy	5	0	4	1	0	-0.011157455683003215	-0.011196819603753922
+rule_diff	overall	l6	logreg	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.0013064594135811624	nan
+rule_diff	overall	l6	logreg	rescan		domain_fit_prior	default	accuracy	5	0	0	5	0	-0.005109489051094917	-0.0051947340980187775
+rule_diff	overall	l6	logreg	rescan		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.0074544921163241405	nan
+rule_diff	overall	l6	logreg	rescan		domain_fit_prior	domain_test_prior	accuracy	5	0	5	0	0	-0.006152241918665302	-0.006165370177267996
+rule_diff	overall	l6	logreg	rescan		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.005332963571489824	nan
+rule_diff	overall	l6	logreg	rescan		domain_test_prior	default	accuracy	5	0	0	5	0	0.0010427528675703845	0.000970636079249219
+rule_diff	overall	l6	logreg	rescan		domain_test_prior	default	macro_f1	5	0	0	0	5	0.012787455687813965	nan
+rule_diff	overall	l6	logreg	rescan		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.011574556830031325	0.011583649635036507
+rule_diff	overall	l6	logreg	rescan		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.01325025413401073	nan
+rule_diff	overall	l6	logreg	rescan		global_test_prior	default	accuracy	5	0	4	1	0	-0.01053180396246094	-0.01061301355578729
+rule_diff	overall	l6	logreg	rescan		global_test_prior	default	macro_f1	5	0	0	0	5	-0.000462798446196766	nan
+rule_diff	twitter	l12	linear_svc	f32		domain_fit_prior	default	accuracy	5	0	2	3	0	-0.0063636363636363266	-0.006394886363636365
+rule_diff	twitter	l12	linear_svc	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.005520951919143169	nan
+rule_diff	twitter	l12	linear_svc	f32		domain_fit_prior	domain_test_prior	accuracy	5	4	0	1	0	0.006818181818181812	0.0067950681818181825
+rule_diff	twitter	l12	linear_svc	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	0.00662545079796808	nan
+rule_diff	twitter	l12	linear_svc	f32		domain_test_prior	default	accuracy	5	0	5	0	0	-0.013181818181818138	-0.01318995454545455
+rule_diff	twitter	l12	linear_svc	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.01214640271711125	nan
+rule_diff	twitter	l12	linear_svc	f32		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.01613636363636368	0.01611959090909091
+rule_diff	twitter	l12	linear_svc	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.0182948876044128	nan
+rule_diff	twitter	l12	linear_svc	f32		global_test_prior	default	accuracy	5	0	5	0	0	-0.02931818181818182	-0.02930954545454546
+rule_diff	twitter	l12	linear_svc	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.03044129032152405	nan
+rule_diff	twitter	l12	linear_svc	r12		domain_fit_prior	default	accuracy	5	0	1	4	0	-0.009999999999999943	-0.009995795454545455
+rule_diff	twitter	l12	linear_svc	r12		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.010803005786828935	nan
+rule_diff	twitter	l12	linear_svc	r12		domain_fit_prior	domain_test_prior	accuracy	5	0	5	0	0	-0.007272727272727275	-0.007288795454545455
+rule_diff	twitter	l12	linear_svc	r12		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.005110951400725305	nan
+rule_diff	twitter	l12	linear_svc	r12		domain_test_prior	default	accuracy	5	0	0	5	0	-0.002727272727272667	-0.002707
+rule_diff	twitter	l12	linear_svc	r12		domain_test_prior	default	macro_f1	5	0	0	0	5	0.01591395718755424	nan
+rule_diff	twitter	l12	linear_svc	r12		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.017500000000000005	0.01752390909090909
+rule_diff	twitter	l12	linear_svc	r12		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.015214067209309535	nan
+rule_diff	twitter	l12	linear_svc	r12		global_test_prior	default	accuracy	5	0	5	0	0	-0.02022727272727267	-0.020230909090909088
+rule_diff	twitter	l12	linear_svc	r12		global_test_prior	default	macro_f1	5	0	0	0	5	0.0006998899782447055	nan
+rule_diff	twitter	l12	logreg	f32		domain_fit_prior	default	accuracy	5	0	5	0	0	-0.00886363636363643	-0.008853090909090911
+rule_diff	twitter	l12	logreg	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.004616879998447221	nan
+rule_diff	twitter	l12	logreg	f32		domain_fit_prior	domain_test_prior	accuracy	5	5	0	0	0	0.007045454545454554	0.007050409090909091
+rule_diff	twitter	l12	logreg	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	0.01011809953059568	nan
+rule_diff	twitter	l12	logreg	f32		domain_test_prior	default	accuracy	5	0	5	0	0	-0.015909090909090984	-0.0159035
+rule_diff	twitter	l12	logreg	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.014734979529042902	nan
+rule_diff	twitter	l12	logreg	f32		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.017045454545454475	0.01703188636363636
+rule_diff	twitter	l12	logreg	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.014023442799109831	nan
+rule_diff	twitter	l12	logreg	f32		global_test_prior	default	accuracy	5	0	5	0	0	-0.03295454545454546	-0.03293538636363637
+rule_diff	twitter	l12	logreg	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.028758422328152733	nan
+rule_diff	twitter	l12	logreg	r12		domain_fit_prior	default	accuracy	5	0	5	0	0	-0.015909090909090873	-0.015905636363636365
+rule_diff	twitter	l12	logreg	r12		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.008462038498065283	nan
+rule_diff	twitter	l12	logreg	r12		domain_fit_prior	domain_test_prior	accuracy	5	0	5	0	0	-0.007954545454545436	-0.00797365909090909
+rule_diff	twitter	l12	logreg	r12		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.010648024422742841	nan
+rule_diff	twitter	l12	logreg	r12		domain_test_prior	default	accuracy	5	0	0	5	0	-0.007954545454545436	-0.007931977272727275
+rule_diff	twitter	l12	logreg	r12		domain_test_prior	default	macro_f1	5	0	0	0	5	0.002185985924677558	nan
+rule_diff	twitter	l12	logreg	r12		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.018181818181818188	0.018203522727272728
+rule_diff	twitter	l12	logreg	r12		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.011585591602541134	nan
+rule_diff	twitter	l12	logreg	r12		global_test_prior	default	accuracy	5	0	5	0	0	-0.026136363636363624	-0.0261355
+rule_diff	twitter	l12	logreg	r12		global_test_prior	default	macro_f1	5	0	0	0	5	-0.009399605677863576	nan
+rule_diff	twitter	l6	linear_svc	f32		domain_fit_prior	default	accuracy	5	0	5	0	0	-0.011363636363636376	-0.011349977272727274
+rule_diff	twitter	l6	linear_svc	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.004933764801790086	nan
+rule_diff	twitter	l6	linear_svc	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	3	2	0	-0.004999999999999982	-0.005011545454545454
+rule_diff	twitter	l6	linear_svc	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0038109676200165587	nan
+rule_diff	twitter	l6	linear_svc	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.006363636363636393	-0.006338431818181818
+rule_diff	twitter	l6	linear_svc	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.0011227971817735273	nan
+rule_diff	twitter	l6	linear_svc	f32		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.013636363636363669	0.013655545454545453
+rule_diff	twitter	l6	linear_svc	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.006878144253171214	nan
+rule_diff	twitter	l6	linear_svc	f32		global_test_prior	default	accuracy	5	0	5	0	0	-0.020000000000000063	-0.01999397727272727
+rule_diff	twitter	l6	linear_svc	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.008000941434944741	nan
+rule_diff	twitter	l6	linear_svc	rescan		domain_fit_prior	default	accuracy	5	0	5	0	0	-0.010000000000000009	-0.009988431818181818
+rule_diff	twitter	l6	linear_svc	rescan		domain_fit_prior	default	macro_f1	5	0	0	0	5	0.0017726461887884516	nan
+rule_diff	twitter	l6	linear_svc	rescan		domain_fit_prior	domain_test_prior	accuracy	5	0	3	2	0	-0.006590909090909114	-0.006578545454545453
+rule_diff	twitter	l6	linear_svc	rescan		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.0014313469284081837	nan
+rule_diff	twitter	l6	linear_svc	rescan		domain_test_prior	default	accuracy	5	0	2	3	0	-0.003409090909090895	-0.0034098863636363636
+rule_diff	twitter	l6	linear_svc	rescan		domain_test_prior	default	macro_f1	5	0	0	0	5	0.0032039931171966352	nan
+rule_diff	twitter	l6	linear_svc	rescan		domain_test_prior	global_test_prior	accuracy	5	3	0	2	0	0.013181818181818138	0.013168886363636362
+rule_diff	twitter	l6	linear_svc	rescan		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.008320690887036996	nan
+rule_diff	twitter	l6	linear_svc	rescan		global_test_prior	default	accuracy	5	0	5	0	0	-0.016590909090909035	-0.016578772727272727
+rule_diff	twitter	l6	linear_svc	rescan		global_test_prior	default	macro_f1	5	0	0	0	5	-0.0051166977698403615	nan
+rule_diff	twitter	l6	logreg	f32		domain_fit_prior	default	accuracy	5	0	5	0	0	-0.012272727272727347	-0.012262977272727274
+rule_diff	twitter	l6	logreg	f32		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.00840174777751923	nan
+rule_diff	twitter	l6	logreg	f32		domain_fit_prior	domain_test_prior	accuracy	5	0	5	0	0	-0.006818181818181834	-0.006811840909090908
+rule_diff	twitter	l6	logreg	f32		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.007686658214365316	nan
+rule_diff	twitter	l6	logreg	f32		domain_test_prior	default	accuracy	5	0	0	5	0	-0.005454545454545512	-0.005451136363636364
+rule_diff	twitter	l6	logreg	f32		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.0007150895631539145	nan
+rule_diff	twitter	l6	logreg	f32		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.010681818181818192	0.010687704545454545
+rule_diff	twitter	l6	logreg	f32		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.00156169511783959	nan
+rule_diff	twitter	l6	logreg	f32		global_test_prior	default	accuracy	5	0	5	0	0	-0.016136363636363706	-0.016138840909090908
+rule_diff	twitter	l6	logreg	f32		global_test_prior	default	macro_f1	5	0	0	0	5	-0.0022767846809935042	nan
+rule_diff	twitter	l6	logreg	rescan		domain_fit_prior	default	accuracy	5	0	5	0	0	-0.014772727272727293	-0.014792022727272727
+rule_diff	twitter	l6	logreg	rescan		domain_fit_prior	default	macro_f1	5	0	0	0	5	-0.009329050624723024	nan
+rule_diff	twitter	l6	logreg	rescan		domain_fit_prior	domain_test_prior	accuracy	5	0	5	0	0	-0.009772727272727244	-0.009784136363636363
+rule_diff	twitter	l6	logreg	rescan		domain_fit_prior	domain_test_prior	macro_f1	5	0	0	0	5	-0.00572451181125202	nan
+rule_diff	twitter	l6	logreg	rescan		domain_test_prior	default	accuracy	5	0	0	5	0	-0.005000000000000049	-0.005007886363636364
+rule_diff	twitter	l6	logreg	rescan		domain_test_prior	default	macro_f1	5	0	0	0	5	-0.0036045388134710032	nan
+rule_diff	twitter	l6	logreg	rescan		domain_test_prior	global_test_prior	accuracy	5	5	0	0	0	0.016590909090909035	0.01659513636363636
+rule_diff	twitter	l6	logreg	rescan		domain_test_prior	global_test_prior	macro_f1	5	0	0	0	5	0.007408407815040019	nan
+rule_diff	twitter	l6	logreg	rescan		global_test_prior	default	accuracy	5	0	5	0	0	-0.021590909090909084	-0.021603022727272724
+rule_diff	twitter	l6	logreg	rescan		global_test_prior	default	macro_f1	5	0	0	0	5	-0.011012946628511022	nan

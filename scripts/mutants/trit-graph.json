@@ -2,8 +2,8 @@
  {
   "name": "classifier: 头梯度漏掉特征",
   "file": "crates/trit-graph/src/classifier.rs",
-  "old": "            dhead[0][k] = dlogits[k] * feature;",
-  "new": "            dhead[0][k] = dlogits[k];",
+  "old": "            dhead[0][k] = dlogit * feature;",
+  "new": "            dhead[0][k] = dlogit;",
   "pkg": "trit-graph",
   "filter": "gradients_match_finite_differences"
  },

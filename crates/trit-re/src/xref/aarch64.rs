@@ -56,12 +56,9 @@ fn instructions(data: &[u8]) -> Vec<u32> {
     let mut out = Vec::with_capacity(data.len() / 4);
     let mut index = 0usize;
     while index + 4 <= data.len() {
-        out.push(u32::from_le_bytes([
-            data[index],
-            data[index + 1],
-            data[index + 2],
-            data[index + 3],
-        ]));
+        out.push(u32::from_le_bytes(
+            data[index..index + 4].try_into().unwrap(),
+        ));
         index += 4;
     }
     out
@@ -203,13 +200,15 @@ fn writes(insn: u32, register: u32) -> Option<bool> {
 /// 扫描一段代码里的 `adrp + [add] + ldr + blr/br` 序列。
 ///
 /// 允许中间夹杂其他指令（参数准备很常见），但会被对目标寄存器的破坏性写入打断。
-/// 返回值第二项是"槽位地址被计算过但没有直接调用"的槽位——它们不能被判成"没有引用"。
-fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
+/// 返回值第二项是"槽位地址被计算过但没有直接调用"的槽位；第三项表示指令地址求和是否溢出。
+fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>, bool) {
     let insns = instructions(data);
     let mut out = Vec::new();
     let mut taken = BTreeSet::new();
+    let mut address_overflow = false;
     for index in 0..insns.len() {
         let Some(pc) = super::pc::pc_at(base, index) else {
+            address_overflow = true;
             continue;
         };
         let Some(page) = adrp_page(insns[index], pc) else {
@@ -259,7 +258,10 @@ fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
         let mut call_register = target_register;
         while cursor < insns.len() && steps < MAX_CALL_STEPS {
             let insn = insns[cursor];
-            let at = base + cursor as u64 * 4;
+            let Some(at) = super::pc::pc_at(base, cursor) else {
+                address_overflow = true;
+                break;
+            };
             if let Some((dst, src)) = mov_alias(insn)
                 && src == call_register
             {
@@ -298,7 +300,7 @@ fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
             taken.insert(slot);
         }
     }
-    (out, taken)
+    (out, taken, address_overflow)
 }
 
 /// PE ARM64：直接调用 + 跳板展开。
@@ -310,7 +312,7 @@ pub(super) fn scan_pe_sections(
 ) {
     for (section_rva, file_base, data) in exec {
         let base = *section_rva as u64;
-        let (references, referenced) = references(data, base);
+        let (references, referenced, _) = references(data, base);
         for reference in references {
             if let Some(&row) = slots.get(&reference.slot) {
                 let offset = (reference.site - base) as usize;
@@ -342,10 +344,7 @@ fn expand_thunks(exec: &[(u32, usize, &[u8])], sites: &mut [BTreeSet<RawSite>]) 
     for (section_rva, file_base, data) in exec {
         let base = *section_rva as u64;
         for (index, insn) in instructions(data).iter().enumerate() {
-            let Some(offset) = (index as u64).checked_mul(4) else {
-                continue;
-            };
-            let Some(pc) = base.checked_add(offset) else {
+            let Some(pc) = super::pc::pc_at(base, index) else {
                 continue;
             };
             let Some((target, is_call)) = branch_target(*insn, pc) else {
@@ -387,8 +386,10 @@ pub(super) fn scan_elf(
     let mut stub_to_symbol: BTreeMap<u64, usize> = BTreeMap::new();
     let mut stub_ranges: Vec<(u64, u64)> = Vec::new();
     let mut taken: BTreeSet<u64> = BTreeSet::new();
+    let mut address_overflow = false;
     for (section, data) in exec_data {
-        let (references, referenced) = references(data, section.addr);
+        let (references, referenced, overflow) = references(data, section.addr);
+        address_overflow |= overflow;
         for slot in referenced {
             taken.insert(slot);
         }
@@ -407,7 +408,8 @@ pub(super) fn scan_elf(
     let mut sites: BTreeMap<usize, BTreeSet<RawSite>> = BTreeMap::new();
     for (section, data) in exec_data {
         let base = section.addr;
-        let (references, _) = references(data, base);
+        let (references, _, overflow) = references(data, base);
+        address_overflow |= overflow;
         for reference in references {
             if reference.kind != SiteKind::Call {
                 continue;
@@ -422,10 +424,7 @@ pub(super) fn scan_elf(
             }
         }
         for (index, insn) in instructions(data).iter().enumerate() {
-            let Some(offset) = (index as u64).checked_mul(4) else {
-                continue;
-            };
-            let Some(pc) = base.checked_add(offset) else {
+            let Some(pc) = super::pc::pc_at(base, index) else {
                 continue;
             };
             if stub_ranges
@@ -452,6 +451,7 @@ pub(super) fn scan_elf(
         }
     }
 
+    let complete = complete && !address_overflow;
     let mut report = build_elf_report(arch, symbols, jump_slots, &sites, complete, scanned);
     mark_taken(&mut report.imports, &taken);
     report

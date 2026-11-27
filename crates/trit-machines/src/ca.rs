@@ -5,29 +5,17 @@
 
 use trit_core::value::Ternary;
 
-/// 一条总istic 三值规则：按邻域和查表。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rule(pub [Ternary; 7]);
+mod limits;
+mod metrics;
+mod rule;
 
-impl Rule {
-    /// 用 0..2187 的编号构造（三进制展开，低位对应 `sum = 0`）。
-    pub fn from_index(index: usize) -> Option<Self> {
-        if index >= 2187 {
-            return None;
-        }
-        let mut digits = [Ternary::False; 7];
-        let mut rest = index;
-        for digit in &mut digits {
-            *digit = match rest % 3 {
-                0 => Ternary::False,
-                1 => Ternary::Unknown,
-                _ => Ternary::True,
-            };
-            rest /= 3;
-        }
-        Some(Self(digits))
-    }
-}
+pub use limits::{
+    CaError, MAX_HISTORY_CELLS, MAX_PERIOD_WORK, MAX_STEPS, MAX_SURVEY_WORK, MAX_WIDTH, check,
+    check_survey,
+};
+pub use metrics::{density, entropy};
+pub use rule::Rule;
+use rule::offset;
 
 /// 一次演化。
 #[derive(Debug, Clone, PartialEq)]
@@ -43,7 +31,11 @@ pub struct Run {
 }
 
 /// 演化 `steps` 步，宽度 `width`；初始只有中间一格为 `T`。
-pub fn run(rule: &Rule, width: usize, steps: usize) -> Run {
+///
+/// 入口先过 [`check`]：历史是 `width × steps` 的快照，超预算时返回
+/// [`CaError::Limit`]，不会先分配再失败。
+pub fn run(rule: &Rule, width: usize, steps: usize) -> Result<Run, CaError> {
+    limits::check(width, steps)?;
     let mut cells = vec![Ternary::False; width];
     if width > 0 {
         cells[width / 2] = Ternary::True;
@@ -58,12 +50,12 @@ pub fn run(rule: &Rule, width: usize, steps: usize) -> Run {
         }
         history.push(cells.clone());
     }
-    Run {
+    Ok(Run {
         density: density(&cells),
         entropy: entropy(&cells),
         cells,
         period,
-    }
+    })
 }
 
 /// 走一步；边界外按 `F` 处理。
@@ -86,45 +78,6 @@ pub fn step(rule: &Rule, cells: &[Ternary]) -> Vec<Ternary> {
     next
 }
 
-fn offset(value: Ternary) -> usize {
-    match value {
-        Ternary::False => 0,
-        Ternary::Unknown => 1,
-        Ternary::True => 2,
-    }
-}
-
-/// 非 `F` 占比。
-pub fn density(cells: &[Ternary]) -> f64 {
-    if cells.is_empty() {
-        return 0.0;
-    }
-    let alive = cells
-        .iter()
-        .filter(|value| **value != Ternary::False)
-        .count();
-    alive as f64 / cells.len() as f64
-}
-
-/// 三符号香农熵。
-pub fn entropy(cells: &[Ternary]) -> f64 {
-    if cells.is_empty() {
-        return 0.0;
-    }
-    let total = cells.len() as f64;
-    [Ternary::False, Ternary::Unknown, Ternary::True]
-        .into_iter()
-        .map(|symbol| {
-            let count = cells.iter().filter(|value| **value == symbol).count() as f64;
-            if count == 0.0 {
-                0.0
-            } else {
-                -(count / total) * (count / total).log2()
-            }
-        })
-        .sum()
-}
-
 /// 整片规则空间的行为分布。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Survey {
@@ -143,7 +96,11 @@ pub struct Survey {
 }
 
 /// 枚举全部 2187 条规则跑一遍。
-pub fn survey(width: usize, steps: usize) -> Survey {
+///
+/// 先按整片代价 [`check_survey`]，再逐条跑；单条超限同样返回
+/// [`CaError::Limit`]。
+pub fn survey(width: usize, steps: usize) -> Result<Survey, CaError> {
+    limits::check_survey(width, steps)?;
     let mut survey = Survey {
         dead: 0,
         fixed: 0,
@@ -154,7 +111,7 @@ pub fn survey(width: usize, steps: usize) -> Survey {
     };
     for index in 0..2187 {
         let rule = Rule::from_index(index).expect("index < 2187");
-        let run = run(&rule, width, steps);
+        let run = run(&rule, width, steps)?;
         match run.period {
             Some(1) => {
                 if run.density == 0.0 {
@@ -171,7 +128,7 @@ pub fn survey(width: usize, steps: usize) -> Survey {
             survey.max_entropy_rule = index;
         }
     }
-    survey
+    Ok(survey)
 }
 
 #[cfg(test)]
@@ -199,7 +156,7 @@ mod tests {
             Ternary::True,
             Ternary::True,
         ]);
-        let result = run(&rule, 9, 5);
+        let result = run(&rule, 9, 5).expect("合法规模");
         assert_eq!(result.density, 1.0);
         assert_eq!(result.period, Some(1));
     }
@@ -219,7 +176,7 @@ mod tests {
 
     #[test]
     fn survey_covers_the_whole_space() {
-        let survey = survey(32, 60);
+        let survey = survey(32, 60).expect("合法规模");
         assert_eq!(
             survey.dead + survey.fixed + survey.periodic + survey.complex,
             2187

@@ -1,0 +1,103 @@
+{
+  "dataset": "HateXplain",
+  "source": {
+    "dataset_json": "D:\\trit-results\\hatexplain\\dataset.json",
+    "divisions": "D:\\trit-results\\hatexplain\\post_id_divisions.json",
+    "license": "MIT (HateXplain repository)"
+  },
+  "split": {
+    "fit": "official train + official val",
+    "eval": "official test",
+    "train_n": 15383,
+    "val_n": 1922,
+    "test_n": 1924
+  },
+  "label_mapping": {
+    "primary": "hatespeech=1; normal+offensive=0",
+    "secondary_toxic": "hatespeech+offensive=1; normal=0",
+    "majority": "3 annotators, require 2-of-3; ties dropped"
+  },
+  "raw_fit": {
+    "raw_rows": 17305,
+    "empty": 0,
+    "duplicate_rows": 31,
+    "conflict_texts": 4,
+    "clean_rows": 17270,
+    "ties": 0
+  },
+  "raw_test": {
+    "raw_rows": 1924,
+    "empty": 0,
+    "duplicate_rows": 1,
+    "conflict_texts": 0,
+    "clean_rows": 1923,
+    "ties": 0
+  },
+  "drop_test_fit_overlap": 5,
+  "drop_test_tweeteval_overlap": 0,
+  "clean": {
+    "fit": 17270,
+    "test": 1918,
+    "fit_labels": {
+      "offensive": 4923,
+      "normal": 7011,
+      "hatespeech": 5336
+    },
+    "test_labels": {
+      "normal": 777,
+      "offensive": 547,
+      "hatespeech": 594
+    },
+    "fit_binary": {
+      "0": 11934,
+      "1": 5336
+    },
+    "test_binary": {
+      "0": 1324,
+      "1": 594
+    },
+    "fit_toxic": {
+      "1": 10259,
+      "0": 7011
+    },
+    "test_toxic": {
+      "0": 777,
+      "1": 1141
+    },
+    "fit_sources": {
+      "gab": 9408,
+      "twitter": 7862
+    },
+    "test_sources": {
+      "twitter": 880,
+      "gab": 1038
+    }
+  },
+  "prior": {
+    "fit_hate_rate": 0.308975,
+    "test_hate_rate": 0.309698
+  },
+  "length": {
+    "fit": {
+      "n": 17270,
+      "mean": 29.89,
+      "p50": 27,
+      "p95": 58,
+      "max": 179,
+      "gt_seq": 255,
+      "gt_seq_rate": 0.014765,
+      "seq": 64
+    },
+    "test": {
+      "n": 1918,
+      "mean": 29.558,
+      "p50": 26,
+      "p95": 58,
+      "max": 91,
+      "gt_seq": 27,
+      "gt_seq_rate": 0.014077,
+      "seq": 64
+    }
+  },
+  "note": "Official train+val used only for fitting/C selection; official test labels never used for C selection or threshold calibration in primary."
+}

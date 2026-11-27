@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 
 mod artifacts;
 mod bitplan;
+mod cache;
 mod direct;
 mod egraph;
 mod gpu;
@@ -55,6 +56,7 @@ use trit_eval::eval::equivalent_within;
 use trit_eval::simplify::{SimplifyOptions, simplify_with};
 
 use artifacts::Backend;
+use cache::cache_hit;
 use egraph::{CostModel, RewriteOptions};
 
 use trit_core::Parser as ExprParser;
@@ -69,7 +71,7 @@ fn resolve_algebra(name: &str) -> Result<Algebra> {
 }
 
 /// 构建工具版本（参与缓存键；产物格式变了就 bump）。
-const BUILD_VERSION: u32 = 6;
+const BUILD_VERSION: u32 = 27;
 /// 允许穷举的变量上限（3^12 = 531,441）。
 const MAX_BUILD_VARS: u32 = 12;
 
@@ -190,21 +192,6 @@ fn enumerate(
     Ok(out)
 }
 
-/// 读缓存清单；产物哈希全部对得上就返回清单（可跳过构建）。
-fn cache_hit(manifest_path: &Path, out_dir: &Path) -> Option<Value> {
-    let text = fs::read_to_string(manifest_path).ok()?;
-    let manifest: Value = serde_json::from_str(&text).ok()?;
-    let outputs = manifest.get("outputs")?.as_object()?;
-    for (name, info) in outputs {
-        let path = out_dir.join(name);
-        let bytes = fs::read(&path).ok()?;
-        if hash64(&bytes) != u64::from_str_radix(info.get("hash")?.as_str()?, 16).ok()? {
-            return None;
-        }
-    }
-    Some(manifest)
-}
-
 fn is_verilog(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
@@ -247,6 +234,8 @@ pub(crate) fn build_source(
     }
 
     let mut rewritten_expr: Option<trit_core::Expr> = None;
+    // Verilog 链路保留原网表，`--backend direct|both` 从这里降 `direct.c`。
+    let mut netlist: Option<(trit_circuit::Circuit, String)> = None;
     let (vars, values, header, mut verified) = if verilog {
         let design = verilog::load(source, output, algebra, MAX_BUILD_VARS)?;
         if let Some(expr_text) = expect {
@@ -266,6 +255,7 @@ pub(crate) fn build_source(
                 "exhaustive propagate"
             }
         );
+        netlist = Some((design.circuit, design.output));
         (
             design.inputs,
             design.table,
@@ -357,6 +347,11 @@ pub(crate) fn build_source(
     } else {
         None
     };
+    let direct_source = if let Some((circuit, output)) = &netlist {
+        Some(artifacts::DirectSource::Netlist { circuit, output })
+    } else {
+        rewritten_expr.as_ref().map(artifacts::DirectSource::Expr)
+    };
     let mut outputs = artifacts::emit_artifacts(artifacts::EmitRequest {
         out_dir,
         header: &header,
@@ -364,7 +359,7 @@ pub(crate) fn build_source(
         values: &values,
         algebra,
         rail: rail_text.as_deref(),
-        expr: rewritten_expr.as_ref(),
+        direct_source,
         backend,
     })?;
     if verify_hdl {
@@ -560,7 +555,7 @@ fn cmd_decode(blob_path: &Path, out_dir: &Path) -> Result<()> {
         values: &values,
         algebra: alg,
         rail: None,
-        expr: None,
+        direct_source: None,
         backend: Backend::Table,
     })?;
     let manifest = json!({

@@ -1,0 +1,87 @@
+{
+  "run": "M1.45",
+  "status": "preregistered_before_model_scores",
+  "created_at_local": "2026-11-27T00:50:00+08:00",
+  "title": "Davidson third hate corpus descriptive transport",
+  "parent": "M1.40/M1.42",
+  "question": "在 TweetEval/hate 与 HateXplain 之外，R12 / rescan 在 Davidson 第三个 hate 语料上，按 default 阈值是否仍能保持 f32 的 accuracy/macro-F1？M1.42 已否定 fit-only 阈值搬运，因此本轮不测 target_prior，只做 descriptive transport。",
+  "dataset": {
+    "name": "Davidson et al. 2017 hate speech and offensive language",
+    "url": "https://raw.githubusercontent.com/t-davidson/hate-speech-and-offensive-language/master/data/labeled_data.csv",
+    "local_path": "D:/trit-results/davidson/raw/labeled_data.csv",
+    "sha256": "FCB8BC7C68120AE4AF04A5B9ACD58585513EDE11E1548EBF36A5C2040B6F6281",
+    "bytes": 2546446,
+    "raw_rows": 24783,
+    "class_counts_raw": {
+      "hate": 1430,
+      "offensive": 19190,
+      "neither": 4163
+    },
+    "label_mapping": {
+      "primary": "class=0 (hate) -> 1; class=1 (offensive) + class=2 (neither) -> 0",
+      "note": "binary primary only; three-class is not part of M1.45."
+    },
+    "preprocessing": [
+      "strip and collapse whitespace",
+      "drop empty text (0 rows)",
+      "deduplicate by normalized text, keep first occurrence (1 duplicate removed)",
+      "no official split; fixed stratified 80/20 split, random_state=7, stratify by binary label",
+      "remove test rows whose exact normalized text appears in TweetEval/hate train+test or HateXplain train+test (1 row removed)"
+    ],
+    "clean_rows": {
+      "fit": 19825,
+      "test": 4956
+    },
+    "clean_label_counts": {
+      "fit": {"non_hate": 18681, "hate": 1144},
+      "test": {"non_hate": 4671, "hate": 285}
+    },
+    "hate_prior": {
+      "fit": 0.057704918032786885,
+      "test": 0.05750605326876514
+    },
+    "note": "No official split exists. The 80/20 split is fixed before model scores and is a descriptive external transport check, not a confirmatory claim about the original corpus population."
+  },
+  "modeling": {
+    "encoder": "frozen all-MiniLM-L12-v2 / all-MiniLM-L6-v2",
+    "seq_len": 64,
+    "depth_arms": {
+      "l12": ["f32", "r12"],
+      "l6": ["f32", "rescan"]
+    },
+    "probes": ["logreg", "linear_svc"],
+    "seeds": [7, 13, 19, 31, 43],
+    "c_grid": [0.01, 0.1, 1.0, 10.0],
+    "c_selection": "f32 only, 5-fold StratifiedKFold on fit, accuracy; f32 and quantized arm share C",
+    "probe_settings": {
+      "logreg": "LogisticRegression(C=c, max_iter=5000, solver=lbfgs, random_state=7)",
+      "linear_svc": "LinearSVC(C=c, max_iter=10000, random_state=7, tol=1e-4)"
+    },
+    "threshold": {
+      "logreg": 0.5,
+      "linear_svc": 0.0,
+      "uses_test_scores": false,
+      "uses_test_labels": false
+    }
+  },
+  "primary": {
+    "metric": "accuracy",
+    "contrast": "quantized arm - f32",
+    "scope": "full 4,956-row test",
+    "bootstrap": "10,000 paired test-level bootstrap, 95% two-sided CI",
+    "verdict": "descriptive only; report positive/negative/cross counts but do not confirm or reject a candidate",
+    "reason": "third corpus, no official split, binary mapping collapses offensive+neither, and only 285 hate test rows; insufficient for a confirmatory candidate claim"
+  },
+  "secondary": [
+    "macro-F1 arm - f32, point estimate only",
+    "per-class recall (non_hate/hate)",
+    "C values and predicted positive rates",
+    "length/domain boundary table"
+  ],
+  "exclusions": [
+    "no target_prior / fit-only threshold (M1.42 already closed that line)",
+    "no three-class (M1.43 separate exploratory)",
+    "no MLP, no encoder fine-tuning, no MNLI",
+    "no latency/energy measurement"
+  ]
+}

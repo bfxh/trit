@@ -1,0 +1,47 @@
+{
+  "milestone": "M1.39",
+  "status": "preregistered_before_run",
+  "question": "M1.38 的 Hate target_prior 条件性增益，在把阈值校准分数与评估标签分开的半分割上是否仍然成立？",
+  "dataset": {
+    "name": "TweetEval/hate (dedup/leak-filtered, M1.15 split)",
+    "train_n": 8985,
+    "test_n": 2734,
+    "note": "只使用现有官方 train/test；不重新编码、不换数据集。"
+  },
+  "split": {
+    "method": "StratifiedKFold",
+    "n_splits": 2,
+    "shuffle": true,
+    "random_state": 101,
+    "directions": ["A_to_B", "B_to_A"],
+    "calibration": "用校准半的未标注 test 分数取分位；阈值 = quantile(scores_calib, 1 - prior_train)；prior_train = 0.420812",
+    "evaluation": "只用评估半的标签算 accuracy / macro-F1；两个方向都跑，互为校准/评估。"
+  },
+  "training": {
+    "encoder": "frozen MiniLM L12/L6",
+    "probe": ["logreg", "linear_svc"],
+    "seeds": [7, 13, 19, 31, 43],
+    "C_selection": "每个 case/probe/seed 只在真 f32 的 train 内做 5 折选 C；f32 与全部量化臂共用该 C",
+    "arms": {
+      "hate_l12": ["true_f32", "r12", "int4", "int3"],
+      "hate_l6": ["true_f32", "rescan", "int4", "int3"]
+    }
+  },
+  "primary": [
+    {"case": "hate_l12", "arm": "r12", "probes": ["logreg", "linear_svc"]},
+    {"case": "hate_l6", "arm": "rescan", "probes": ["logreg", "linear_svc"]}
+  ],
+  "primary_endpoint": "accuracy（arm - f32），每个 candidate×probe 共 5 seeds × 2 directions = 10 个 paired bootstrap CI（10k，95% 双侧）",
+  "success_criterion": "confirmed：>=8/10 个 CI 整段 > 0；rejected：<=3/10 个 CI 整段 > 0；其余为 inconclusive。不因看到结果改阈值。",
+  "secondary": [
+    "macro-F1 同口径",
+    "default 0.5（logreg）/ 0（SVC）作为阈值对照",
+    "int4 / int3 作为弱控制，不进入 primary 判定"
+  ],
+  "boundaries": [
+    "这是同一 test 的标签半分割，不是独立语料；不能替代新数据集的 confirmatory test。",
+    "两个方向共享同一批 test 文本，但每个方向的评估标签不参与该方向的阈值校准。",
+    "5 个 seed 仍共享同一批文本；bootstrap 只覆盖评估半的抽样方差。",
+    "不做 MLP、不做 encoder 微调、不做 MNLI。"
+  ]
+}
