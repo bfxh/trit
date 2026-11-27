@@ -1,0 +1,28 @@
+{
+  "run": "M1.47",
+  "status": "completed",
+  "prereg": "docs/research/data/wsp-classify-m147-prereg.json",
+  "independent_units": 5,
+  "split_seeds": [
+    101,
+    103,
+    107,
+    109,
+    113
+  ],
+  "bootstrap_rng_seeds": [
+    1001,
+    1003,
+    1007,
+    1009,
+    1013
+  ],
+  "point_positive_splits": 5,
+  "ci_positive_splits": 1,
+  "mean_point_delta": 0.021158233693756336,
+  "min_point_delta": 0.0016619207151827853,
+  "max_point_delta": 0.034049386198957365,
+  "supported": false,
+  "verdict": "directional",
+  "note": "Descriptive split-stability audit of one M1.46 cell on one corpus. The five split rows are independent split draws, not independent corpora; even a supported verdict does not reopen the candidate line."
+}
