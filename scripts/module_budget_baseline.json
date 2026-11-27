@@ -1896,15 +1896,23 @@
     },
     {
       "file": "crates/trit-export/src/lib.rs",
-      "lines": 321
+      "lines": 317
     },
     {
       "file": "crates/trit-export/src/names.rs",
       "lines": 14
     },
     {
+      "file": "crates/trit-export/src/regions.rs",
+      "lines": 65
+    },
+    {
       "file": "crates/trit-export/tests/gguf.rs",
       "lines": 140
+    },
+    {
+      "file": "crates/trit-export/tests/gguf_overlap.rs",
+      "lines": 220
     },
     {
       "file": "crates/trit-export/tests/gguf_read_duplicate.rs",
@@ -2788,7 +2796,7 @@
     },
     {
       "file": "crates/trit-machines/src/main.rs",
-      "lines": 203
+      "lines": 202
     },
     {
       "file": "crates/trit-machines/src/snn.rs",
@@ -2809,6 +2817,10 @@
     {
       "file": "crates/trit-machines/tests/limits.rs",
       "lines": 61
+    },
+    {
+      "file": "crates/trit-machines/tests/ticks.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-machines/tests/vm_empty_stack.rs",
@@ -5233,6 +5245,10 @@
     {
       "file": "crates/trit-texture/tests/ttx2_endpoint_checksum.rs",
       "lines": 37
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx2_trailing_bytes.rs",
+      "lines": 64
     },
     {
       "file": "crates/trit-texture/tests/ttx3.rs",

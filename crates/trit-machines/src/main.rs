@@ -68,7 +68,7 @@ fn vm_demo() -> Result<(), String> {
         serde_json::json!({
             "verdict": report.verdict().map(|value| value.as_char().to_string()),
             "outputs": report.outputs.iter().map(|(value, paths)| {
-                json_pair(value.as_char().to_string(), *paths)
+                (value.as_char().to_string(), serde_json::Value::from(*paths))
             }).collect::<serde_json::Map<_, _>>(),
             "paths": report.paths,
             "steps": report.steps,
@@ -83,10 +83,6 @@ fn vm_demo() -> Result<(), String> {
     });
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
-}
-
-fn json_pair(key: String, value: usize) -> (String, serde_json::Value) {
-    (key, serde_json::Value::from(value))
 }
 
 fn ca_demo(args: &[String]) -> Result<(), String> {
@@ -120,6 +116,9 @@ fn ca_demo(args: &[String]) -> Result<(), String> {
 fn snn_demo(args: &[String]) -> Result<(), String> {
     let size = number(args, "--size", 100)?;
     let ticks = number(args, "--ticks", 200)?;
+    if ticks > snn::MAX_TICKS {
+        return Err(format!("ticks {ticks} 超过上限 {}", snn::MAX_TICKS));
+    }
     let seed = number(args, "--seed", 7)? as u64;
     let kick = number(args, "--kick", 3)? as i32;
     let drive = number(args, "--drive", 0)? as i32;
