@@ -29,15 +29,15 @@ fn absorption_is_only_for_k3_and_lukasiewicz() {
 /// 吸收律的渲染差异：K3 直接返回常量，B3 仍要算子表。
 #[test]
 fn absorbing_c_depends_on_the_algebra() {
-    for (source, table) in [("a & 0", "T_AND"), ("a | 1", "T_OR")] {
+    for source in ["a & 0", "a | 1"] {
         let expr = Parser::parse(source).expect("解析");
         let vars = expr.variables();
         let k3 = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-        assert_eq!(k3.matches("    int8_t t").count(), 0, "{source}: {k3}");
-        assert!(!k3.contains("static const int8_t T_") && k3.contains("return "));
+        assert_eq!(k3.matches("int t").count(), 0, "{source}: {k3}");
+        assert!(!k3.contains("static const int8_t T[]") && k3.contains("return "));
 
         let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
-        assert!(b3.contains(table), "{source} B3 应保留 {table}: {b3}");
-        assert!(b3.contains("vars[0]"), "{source}: {b3}");
+        assert!(b3.contains("T["), "{source} B3 应保留算子表: {b3}");
+        assert!(b3.contains("v[0]"), "{source}: {b3}");
     }
 }

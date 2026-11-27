@@ -1,4 +1,4 @@
-//! 单用内联的边界：单用才并、扇出即停、深度封顶。
+//! 单用内联的边界：单用才并、扇出即停、深链不封顶。
 
 use super::super::render;
 use crate::direct::ir::Op;
@@ -12,10 +12,10 @@ fn vars() -> Vec<String> {
 #[test]
 fn negated_single_use_variable_is_inlined() {
     let source = render(vec![Op::Var(0), Op::Not(0)], &vars(), Algebra::Kleene);
-    assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
-    assert!(source.contains("return -(vars[0]);"), "{source}");
+    assert_eq!(source.matches("int t").count(), 0, "{source}");
+    assert!(source.contains("?0:-v[0];"), "{source}");
 }
-
 mod depth;
 mod fanout;
+mod reuse;
 mod tree;

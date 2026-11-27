@@ -338,8 +338,8 @@
  {
   "name": "connectives: 否定形状不别名",
   "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
-  "old": "    if !matches!(alg, Algebra::Lukasiewicz)\n        && (is_not_of(kept, right, left) || is_not_of(kept, left, right))",
-  "new": "    if matches!(alg, Algebra::Lukasiewicz)\n        && (is_not_of(kept, right, left) || is_not_of(kept, left, right))",
+  "old": "    if !matches!(alg, Algebra::Lukasiewicz)\n        && (negated::is_not_of(kept, right, left) || negated::is_not_of(kept, left, right))",
+  "new": "    if matches!(alg, Algebra::Lukasiewicz)\n        && (negated::is_not_of(kept, right, left) || negated::is_not_of(kept, left, right))",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::connectives::tests::implication_constants_alias_or_fold"
  },
@@ -649,19 +649,11 @@
  },
  {
   "name": "emit: 内联后不重编号",
-  "file": "crates/trit-build/src/direct/emit.rs",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
   "old": "        names[index] = Some(next);",
   "new": "        names[index] = Some(index);",
   "pkg": "trit-build",
   "filter": "direct::emit::tests::shared_and_stays_a_separate_statement"
- },
- {
-  "name": "inline: 深度不封顶",
-  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
-  "old": "    if depth > MAX_INLINE_DEPTH {\n        // 到边界就不再并进上一层；该节点自己发射，子树重新计深度。\n        mark_children(uses, inlined, ops, &ops[index], 1);\n        return;\n    }\n",
-  "new": "",
-  "pkg": "trit-build",
-  "filter": "direct::emit::inline::tests::depth::depth_cap_keeps_deep_leaves_declared"
  },
  {
   "name": "emit: 根节点仍落临时变量",
@@ -672,13 +664,155 @@
   "filter": "direct::emit::tests::single_use_and_is_inlined_into_not"
  },
  {
-  "name": "inline: 不递归下钻",
+  "name": "inline: 不下钻子节点",
   "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
-  "old": "            mark(uses, inlined, ops, left, depth);\n            mark(uses, inlined, ops, right, depth);",
-  "new": "            let _ = (left, right);",
+  "old": "    match *op {\n        Op::Const(_) | Op::Var(_) => {}\n        Op::Not(inner) => stack.push(inner),\n        Op::And(left, right)\n        | Op::Or(left, right)\n        | Op::Xor(left, right)\n        | Op::Xor2(left, right)\n        | Op::Implies(left, right)\n        | Op::Equiv(left, right) => {\n            stack.push(left);\n            stack.push(right);\n        }\n    }\n",
+  "new": "    let _ = (op, stack);\n",
   "pkg": "trit-build",
   "filter": "direct::emit::inline::tests::tree::multilevel_single_use_cone_fits_one_statement"
+ },
+ {
+  "name": "negated: ⇔F 否定反侧",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
+  "old": "        negation::push(resolve, kept, consts, right);",
+  "new": "        negation::push(resolve, kept, consts, left);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::negated::false_equivalence_negates_the_other_operand"
+ },
+ {
+  "name": "negated: 双取反蕴含不换序",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
+  "old": "        push_node(resolve, kept, consts, Op::Implies(b, a));",
+  "new": "        push_node(resolve, kept, consts, Op::Implies(a, b));",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::negated::double_negated_operands_cancel"
+ },
+ {
+  "name": "negated: Ł3 同取反等价不折 T",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
+  "old": "        if a == b && matches!(alg, Algebra::Lukasiewicz) {",
+  "new": "        if false && matches!(alg, Algebra::Lukasiewicz) {",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::negated::same_negated_equivalence_still_folds_only_in_lukasiewicz"
+ },
+ {
+  "name": "inline: 变量复用阈值失效（全部直写）",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "        if matches!(ops[index], Op::Const(_)) || uses[index] <= 5 {",
+  "new": "        if true {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::variable_reuse_boundary"
+ },
+ {
+  "name": "inline: 变量复用阈值提前到 5 次",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "        if matches!(ops[index], Op::Const(_)) || uses[index] <= 5 {",
+  "new": "        if matches!(ops[index], Op::Const(_)) || uses[index] < 5 {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::variable_reuse_boundary"
+ },
+ {
+  "name": "inline: 常量不再总是直写",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "        if matches!(ops[index], Op::Const(_)) || uses[index] <= 5 {",
+  "new": "        if uses[index] <= 5 {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::reused_constant_stays_inline"
+ },
+ {
+  "name": "inline: 常量叶子不进直写分支",
+  "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
+  "old": "    if matches!(ops[index], Op::Var(_) | Op::Const(_)) {",
+  "new": "    if matches!(ops[index], Op::Var(_)) {",
+  "pkg": "trit-build",
+  "filter": "direct::emit::inline::tests::reuse::reused_constant_stays_inline"
+ },
+ {
+  "name": "inline: 表索引偏移少一",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset)",
+  "new": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset - 1)",
+  "pkg": "trit-build",
+  "filter": "single_use_and_is_inlined_into_not"
+ },
+ {
+  "name": "body: 与门错用或表",
+  "file": "crates/trit-build/src/direct/emit/body/value.rs",
+  "old": "Op::And(left, right) => bin(tables.and(), *left, *right),",
+  "new": "Op::And(left, right) => bin(tables.or(), *left, *right),",
+  "pkg": "trit-build",
+  "filter": "shared_and_stays_a_separate_statement"
+ },
+ {
+  "name": "format: 表值整体加一",
+  "file": "crates/trit-build/src/direct/emit/format/table.rs",
+  "old": "|value| value.to_string()",
+  "new": "|value| (*value + 1).to_string()",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_verilog_every_row"
+ },
+ {
+  "name": "format: 取反丢负号",
+  "file": "crates/trit-build/src/direct/emit/format.rs",
+  "old": "        format!(\"-{inner}\")",
+  "new": "        format!(\"{inner}\")",
+  "pkg": "trit-build",
+  "filter": "single_use_and_is_inlined_into_not"
+ },
+ {
+  "name": "table: 多表合并基址错位",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "tables.set(name, 4 + merged.len());",
+  "new": "tables.set(name, 5 + merged.len());",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_fanout_every_row"
+ },
+ {
+  "name": "body: 临时变量不合并声明",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
+  "old": "            text.push_str(&format!(\",t{next}=\"));",
+  "new": "            text.push_str(&format!(\"; int8_t t{next}=\"));",
+  "pkg": "trit-build",
+  "filter": "fanout_bytes_stay_within_budget"
+ },
+ {
+  "name": "body: 三目 guard 恒真",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
+  "old": "        Some(format!(\"n<{}?0:\", vars.len()))",
+  "new": "        Some(format!(\"1?0:\"))",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_verilog_every_row"
+ },
+ {
+  "name": "table: 单表退回长表名",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset)",
+  "new": "format!(\"T_AND[3*{left}{sign}{right}+{}]\", table.offset)",
+  "pkg": "trit-build",
+  "filter": "variable_order_is_respected"
+ },
+ {
+  "name": "table: 负右操作数退回 +-",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "    let sign = if right.starts_with('-') { \"\" } else { \"+\" };",
+  "new": "    let sign = \"+\";",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
+ },
+ {
+  "name": "format: 代数标签退回长名",
+  "file": "crates/trit-build/src/direct/emit/format.rs",
+  "old": "        Algebra::Kleene => \"K3\",",
+  "new": "        Algebra::Kleene => \"kleene v=\",",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
+ },
+ {
+  "name": "verify: 驱动器返回类型写成 int",
+  "file": "crates/trit-build/src/direct/verify.rs",
+  "old": "         int8_t trit_direct(const int8_t *v, unsigned n);\\n\\n\\",
+  "new": "         int trit_direct(const int8_t *v, unsigned n);\\n\\n\\",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_verilog_every_row"
  }
 ]
-
-

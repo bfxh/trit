@@ -244,15 +244,43 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 161
+      "lines": 42
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/body.rs",
+      "lines": 46
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/body/value.rs",
+      "lines": 30
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/format.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/format/table.rs",
+      "lines": 10
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline.rs",
-      "lines": 67
+      "lines": 15
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/expr.rs",
+      "lines": 68
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/expr/tests.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
-      "lines": 68
+      "lines": 62
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+      "lines": 86
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests.rs",
@@ -264,15 +292,27 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/fanout.rs",
-      "lines": 24
+      "lines": 16
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/tests/reuse.rs",
+      "lines": 53
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/tree.rs",
-      "lines": 44
+      "lines": 42
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/tables.rs",
+      "lines": 46
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests.rs",
-      "lines": 75
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/tests/many.rs",
+      "lines": 17
     },
     {
       "file": "crates/trit-build/src/direct/fold.rs",
@@ -308,7 +348,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/chain.rs",
-      "lines": 46
+      "lines": 45
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/dual.rs",
@@ -355,8 +395,16 @@
       "lines": 92
     },
     {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
+      "lines": 56
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests.rs",
       "lines": 189
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests/negated.rs",
+      "lines": 126
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
@@ -396,7 +444,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/complement.rs",
-      "lines": 116
+      "lines": 114
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/complement/alias.rs",
@@ -404,11 +452,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/idem.rs",
-      "lines": 62
+      "lines": 58
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice.rs",
-      "lines": 85
+      "lines": 81
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice/chain.rs",
@@ -436,7 +484,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests.rs",
-      "lines": 135
+      "lines": 131
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests/factor.rs",
@@ -468,7 +516,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/tests.rs",
-      "lines": 142
+      "lines": 139
     },
     {
       "file": "crates/trit-build/src/direct/tests/eval.rs",
@@ -537,6 +585,10 @@
     {
       "file": "crates/trit-build/tests/direct_c.rs",
       "lines": 139
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_fanout.rs",
+      "lines": 84
     },
     {
       "file": "crates/trit-build/tests/direct_c_relative.rs",
@@ -6681,6 +6733,10 @@
     {
       "file": "t3/crates/t3-sig/src/rule.rs",
       "lines": 634
+    },
+    {
+      "file": "tools/tech-stack-mcp/src/main.rs",
+      "lines": 189
     },
     {
       "file": "verus/src/b3.rs",

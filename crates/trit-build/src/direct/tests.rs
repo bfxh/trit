@@ -1,12 +1,10 @@
 //! `direct` 的语义与渲染判据：表对拍 `trit_eval`、IR 全赋值对拍、CSE、渲染形状。
-
 use super::*;
 use trit_core::Parser;
 use trit_eval::eval::{Assignment, eval};
 
 mod eval;
 use eval::eval_ops;
-
 /// 用 `trit_eval` 独立算 3×3 表：与生成物里的表逐格相同才算语义一致。
 #[test]
 fn generated_tables_match_eval() {
@@ -54,7 +52,6 @@ fn negation_is_unary_minus_in_every_algebra() {
         }
     }
 }
-
 /// IR 执行结果必须与 `trit_eval` 全赋值一致（3^n 穷举）。
 #[test]
 fn lowered_ir_matches_eval_for_every_assignment() {
@@ -97,18 +94,19 @@ fn render_is_linear_not_a_truth_table() {
     let expr = Parser::parse("a & b | !c").expect("解析");
     let vars = expr.variables();
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
+    assert!(source.starts_with("/*K3 a,b,c*/"), "{source}");
     assert!(
-        source.contains("int8_t trit_direct(const int8_t *vars, unsigned nvars)"),
+        source.contains("int8_t trit_direct(const int8_t*v,unsigned n){"),
         "{source}"
     );
-    assert!(source.contains("trit_bin(T_AND"), "{source}");
-    assert!(source.contains("-("), "{source}");
+    assert!(source.contains("static const int8_t T[]"), "{source}");
+    assert!(source.contains("-v["), "{source}");
     assert!(!source.contains("T_NOT"), "{source}");
     assert!(
         !source.contains("TRIT_TABLE"),
         "直算后端不该有 3^n 表：{source}"
     );
-    assert!(source.contains("return trit_bin("), "{source}");
+    assert!(source.contains("?0:T["), "{source}");
 }
 
 #[test]
@@ -116,11 +114,9 @@ fn variable_order_is_respected() {
     let expr = Parser::parse("b & a").expect("解析");
     let vars = vec!["a".to_string(), "b".to_string()];
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-    // 后序：b 先取 vars[1]，a 取 vars[0]；两个单用输入并进根返回。
-    assert!(
-        source.contains("return trit_bin(T_AND, vars[1], vars[0]);"),
-        "{source}"
-    );
+    // 后序：b 先取 v[1]，a 取 v[0]；两个单用输入并进根返回。
+    assert!(source.contains("?0:T[3*v[1]+v[0]+4];"), "{source}");
+    assert!(!source.contains("trit_bin("), "{source}");
 }
 
 #[test]
@@ -131,10 +127,11 @@ fn identical_subexpressions_are_computed_once() {
     assert_eq!(ops.len(), 4, "CSE 没生效：{ops:?}");
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
     assert_eq!(
-        source.matches("trit_bin(T_AND").count(),
+        source.matches("T[3*").count(),
         1,
         "同一个与式只该算一次：{source}"
     );
+    assert!(!source.contains("trit_bin("), "{source}");
 }
 
 fn code_of(value: Ternary) -> i8 {

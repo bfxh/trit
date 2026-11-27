@@ -3,7 +3,7 @@
 //! 和 `lookup.c` 是同一条边界上的两种产物：
 //! - `lookup.c` 把 3^n 真值表整块塞进 C，运行时一次索引；
 //! - `direct.c` 把表达式或 Verilog 组合网表**降成线性 IR**（每个节点一条 `int8_t tN = ...;`），
-//!   常量折叠 / 恒等式化简（含格吸收链、公因子提取、德摩根链、常量否定、Xor2 结合链与 B3 补元/毒值吸收）后再做 CSE，出口过一遍死代码消除；运行时按节点顺序算，不展开 3^n 表。取反直接写一元负号 `-(...)`；单用节点在渲染时递归并进父语句（从父节点算起最多 3 层），扇出即停。
+//!   常量折叠 / 恒等式化简（含格吸收链、公因子提取、德摩根链、常量否定、Xor2 结合链与 B3 补元/毒值吸收）后再做 CSE，出口过一遍死代码消除；运行时按节点顺序算，不展开 3^n 表。取反直接写一元负号 `-(...)`；单用节点在渲染时沿单用边并进父语句（不再封深度），扇出即停。二元调用一律直接展开 `T[3*l+r+4]` 表索引；紧凑索引恒比 `trit_bin` helper 调用短，helper 已删除。
 //!
 //! 语义不靠手写 C 算子保证：取反用 `-x` 是因为三种代数都有 `¬F=T / ¬X=X / ¬T=F`，
 //! 六个二元 3×3 表由 [`Algebra`] 现算，测试再拿 `trit_eval::eval` 逐赋值对拍。
@@ -11,8 +11,8 @@
 //! `docs/reference/TERNARY-TOOLCHAIN.md` §7「不做二进制后端」一致。
 //!
 //! 函数签名与 `lookup.c` 的 `trit_lookup` 平行：
-//! `int8_t trit_direct(const int8_t *vars, unsigned nvars)`。
-//! 入参不足（`nvars < 变量数`）一律返回 `0`（X），fail-closed，不读越界内存。
+//! `int8_t trit_direct(const int8_t*v,unsigned n)`。
+//! 入参不足（`n < 变量数`）一律返回 `0`（X），fail-closed，不读越界内存。
 
 use anyhow::Result;
 use trit_circuit::{Circuit, GateKind};
