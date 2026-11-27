@@ -29,12 +29,25 @@ fn main() -> std::process::ExitCode {
         .unwrap_or_else(|| "splat.png".into())
         .into();
     let bg_mode = value(&argv, "--bg").unwrap_or_else(|| "auto".into());
+    // SH 阶数裁剪：0=纯 DC，3=完整 SH3（默认）。用于隔离视角色项的对错。
+    let sh_degree: usize = value(&argv, "--sh-degree").and_then(|v| v.parse().ok()).unwrap_or(3);
 
     let run = || -> Result<Frame, String> {
         let ply_bytes = std::fs::read(&ply_path)
             .map_err(|e| format!("读 ply 失败 {ply_path}: {e}"))?;
-        let gaussians = parse_ply(&ply_bytes).map_err(|e| format!("PLY 解析: {e}"))?;
-        println!("ply: {} 高斯", gaussians.len());
+        let mut gaussians = parse_ply(&ply_bytes).map_err(|e| format!("PLY 解析: {e}"))?;
+        println!("ply: {} 高斯 (sh-degree={sh_degree})", gaussians.len());
+        if sh_degree < 3 {
+            let keep = match sh_degree {
+                0 => 0,
+                1 => 3,
+                2 => 8,
+                _ => 15,
+            } * 3;
+            for g in &mut gaussians {
+                g.f_rest.truncate(keep);
+            }
+        }
 
         let transforms_path = PathBuf::from(&dataset).join("transforms.json");
         let text = std::fs::read_to_string(&transforms_path)

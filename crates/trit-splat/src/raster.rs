@@ -17,7 +17,7 @@ use crate::splat::{project, ScreenGaussian};
 use crate::Frame;
 
 /// 屏幕 σ 闸门比例：σ > ratio × max(w, h) 的高斯视为退化 splat。
-pub const MAX_SCREEN_SIGMA_RATIO: f32 = 0.3;
+pub const MAX_SCREEN_SIGMA_RATIO: f32 = 0.15;
 
 fn screen_sigma(s: &ScreenGaussian) -> Option<f32> {
     let det_inv = s.inv_a * s.inv_c - s.inv_b * s.inv_b;

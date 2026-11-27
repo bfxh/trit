@@ -55,7 +55,7 @@ pub fn eval_color(f_dc: [f32; 3], f_rest: &[f32], view_dir: Vec3) -> [f32; 3] {
     if k < 3 {
         return color.map(|v| v.clamp(0.0, 1.0));
     }
-    let coeff = |idx: usize, c: usize| f_rest[c * k + idx]; // channel-major: c·K + k
+    let coeff = |idx: usize, c: usize| f_rest[c * k + idx]; // channel-major（Brush 导出口径）
     let (xx, yy, zz) = (x * x, y * y, z * z);
     let (xy, yz, xz) = (x * y, y * z, x * z);
     for c in 0..3 {
@@ -68,13 +68,30 @@ pub fn eval_color(f_dc: [f32; 3], f_rest: &[f32], view_dir: Vec3) -> [f32; 3] {
                 + SH_C2[4] * (xx - yy) * coeff(7, c);
         }
         if k >= 15 {
-            color[c] += SH_C3[0] * y * (3.0 * xx - yy) * coeff(8, c)
-                + SH_C3[1] * z * (4.0 * xx - zz) * coeff(9, c)
-                + SH_C3[2] * y * (4.0 * zz - xx) * coeff(10, c)
-                + SH_C3[3] * z * (zz - 3.0 * yy) * coeff(11, c)
-                + SH_C3[4] * x * (4.0 * zz - xx) * coeff(12, c)
-                + SH_C3[5] * z * (xx - yy) * coeff(13, c)
-                + SH_C3[6] * x * (xx - 3.0 * yy) * coeff(14, c);
+            // l3 用 Brush/Sloan(JCGT 2013) 的多项式形式——与 3DGS 教科书版
+            // (sh_utils.py) 在 l3 段基函数不同，系数是按 Brush 约定烘的。
+            let z2 = zz;
+            let f0c = -2.285_229 * z2 + 0.457_045_8;
+            let f1b = 1.445_305_7 * z;
+            let f2a = -0.590_043_6;
+            let fc1 = xx - yy;
+            let fs1 = 2.0 * xy;
+            let fc2 = x * fc1 - y * fs1;
+            let fs2 = x * fs1 + y * fc1;
+            let p9 = f2a * fs2;
+            let p10 = f1b * fs1;
+            let p11 = f0c * y;
+            let p12 = z * (1.865_881_7 * z2 - 1.119_529);
+            let p13 = f0c * x;
+            let p14 = f1b * fc1;
+            let p15 = f2a * fc2;
+            color[c] += p9 * coeff(8, c)
+                + p10 * coeff(9, c)
+                + p11 * coeff(10, c)
+                + p12 * coeff(11, c)
+                + p13 * coeff(12, c)
+                + p14 * coeff(13, c)
+                + p15 * coeff(14, c);
         }
     }
     color.map(|v| v.clamp(0.0, 1.0))
@@ -95,7 +112,9 @@ pub fn project(
         return None; // 相机后方/过近
     }
 
-    // Σ_cam = W Σ_w Wᵀ（W 是 c2w 的 3×3，行主序）
+    // Σ_cam = Wᵀ Σ_w W：world→cam 的线性映射是 Rᵀ（p_cam = Rᵀ(p−t)），
+    // 协方差随之用 Rᵀ Σ R——写成 R Σ Rᵀ 会让有俯仰角的相机把各向异性
+    // splat 全部转错朝向（实测表现：整幅涂抹感）。
     let sigma_w = covariance(rot, scale);
     let r = c2w.rot3();
     let mut sigma_cam = [[0.0f32; 3]; 3];
@@ -104,7 +123,7 @@ pub fn project(
             let mut acc = 0.0;
             for k in 0..3 {
                 for l in 0..3 {
-                    acc += r[i][k] * sigma_w[k][l] * r[j][l];
+                    acc += r[k][i] * sigma_w[k][l] * r[l][j];
                 }
             }
             sigma_cam[i][j] = acc;
@@ -114,11 +133,13 @@ pub fn project(
     // J = ∂(u,v)/∂(x_cam,y_cam,z_cam)（OpenGL −Z 前）
     let fl_x = intr.fl_x;
     let fl_y = intr.fl_y;
+    // J = ∂(u,v)/∂(x_cam,y_cam,z_cam)。v = cy − fl·y/depth ⇒ ∂v/∂y 与 ∂v/∂z
+    // 均为负——y 行符号错了会镜像各向异性 splat 的朝向（cov2d 非对角元翻转）。
     let j = [
         [fl_x / depth, 0.0, fl_x * cam.x / (depth * depth)],
-        [0.0, fl_y / depth, fl_y * cam.y / (depth * depth)],
+        [0.0, -fl_y / depth, -fl_y * cam.y / (depth * depth)],
     ];
-    // Σ_2d = J Σ_cam Jᵀ + 0.3 I
+    // Σ_2d = J Σ_cam Jᵀ + 0.3·I（0.3px 膨胀，标准做法；实验证伪了 Mip 补偿变体）。
     let jt = [[j[0][0], j[1][0]], [j[0][1], j[1][1]], [j[0][2], j[1][2]]];
     let mut cov2 = [[0.0f32; 2]; 2];
     for i in 0..2 {
@@ -142,10 +163,12 @@ pub fn project(
 
     let u = fl_x * (cam.x / depth) + intr.cx;
     let v = intr.cy - fl_y * (cam.y / depth); // +Y 朝上 vs 图像 v 朝下
+    // 视方向口径与 gaussian-splatting eval_sh 一致：从相机指向高斯（ray 方向）。
+    // 奇数阶 l1/l3 依赖此方向——方向反了全部变号（实测差 0.6 dB 以上且物体区噪声）。
     let dir = Vec3::new(
-        c2w.translation().x - pos.x,
-        c2w.translation().y - pos.y,
-        c2w.translation().z - pos.z,
+        pos.x - c2w.translation().x,
+        pos.y - c2w.translation().y,
+        pos.z - c2w.translation().z,
     )
     .normalized();
     let color = eval_color(g.f_dc, &g.f_rest, dir);

@@ -118,12 +118,21 @@ pub fn parse_ply(bytes: &[u8]) -> Result<Vec<RawGaussian>, SplatError> {
             let o = base + k * 4;
             f32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]])
         };
-        let rest_cols: Vec<usize> = props
+        // f_rest 列在 PLY 头里可能是字典序（实测 Brush v0.3.0 导出：
+        // f_rest_0, f_rest_1, f_rest_10, ...），必须按数字后缀重排，
+        // 否则 SH 系数全部错位。
+        let mut rest_cols: Vec<usize> = props
             .iter()
             .enumerate()
             .filter(|(_k, p)| p.starts_with("f_rest_"))
             .map(|(k, _p)| k)
             .collect();
+        rest_cols.sort_by_key(|k| {
+            props[*k]
+                .strip_prefix("f_rest_")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(usize::MAX)
+        });
         let rot_w = col("rot_3");
         out.push(RawGaussian {
             position: [f(i("x")), f(i("y")), f(i("z"))],
