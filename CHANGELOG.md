@@ -13,6 +13,8 @@
 - 验证（train-brush-001/scene_30000）：最近邻抽查 16667 点全命中，位置 mean |Δ| 1.17e-4；
   frame_0016 与 gaussforge 回转 PLY 渲染逐像素一致，与源 PLY 渲染 32.96 dB，
   对 GT 27.94 dB（源 PLY 29.48 dB）；scale 差来自 SPZ 对 log-scale 的 [-10,10] 截断。
+- 第二资产交叉验证（train-brush-wasteland-001，scan-wasteland frame_0016）：
+  与回转 PLY 93.92 dB，与源 PLY 34.72 dB；对 GT 11.80 dB（源 PLY 11.92 dB）。
 - 测试 25 条（23 lib + 2 集成），新增 `decodes_brush_ply_semantics_and_per_point_sh`
   用合成 `.spz` 锁 SH 逐点基址、四元数顺序与激活口径。
 - `spz 0.0.6` 为可选依赖（feature 关闭不进构建）；Cargo.lock 增 tokio/rayon/clap 等传递项。
