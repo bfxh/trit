@@ -244,7 +244,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 42
+      "lines": 41
     },
     {
       "file": "crates/trit-build/src/direct/emit/body.rs",
@@ -5077,6 +5077,38 @@
     {
       "file": "crates/trit-simd/src/lib.rs",
       "lines": 448
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render.rs",
+      "lines": 133
+    },
+    {
+      "file": "crates/trit-splat/src/camera.rs",
+      "lines": 193
+    },
+    {
+      "file": "crates/trit-splat/src/lib.rs",
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-splat/src/math.rs",
+      "lines": 172
+    },
+    {
+      "file": "crates/trit-splat/src/ply.rs",
+      "lines": 244
+    },
+    {
+      "file": "crates/trit-splat/src/raster.rs",
+      "lines": 204
+    },
+    {
+      "file": "crates/trit-splat/src/splat.rs",
+      "lines": 233
+    },
+    {
+      "file": "crates/trit-splat/tests/render_dataset.rs",
+      "lines": 72
     },
     {
       "file": "crates/trit-texture/benches/sample.rs",

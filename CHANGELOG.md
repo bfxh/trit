@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（trit-splat：3DGS 泼溅渲染实验层 v1）
+
+- 新 crate `crates/trit-splat`（`publish = false`）：把训练产物 3DGS PLY 用自家
+  Rust 渲染出图，不依赖 bevy_gaussian_splatting 等现成件。链路：PLY 头按属性名
+  建列映射解析（兼容 gaussforge 回转无 `end_header` 变体）→ nerfstudio
+  transforms.json（OPENCV 内参 + OpenGL c2w）→ SH3 视角色（channel-major 索引，
+  与 Brush ply 口径一致）→ EWA 投影（Jacobian + 0.3px 膨胀）→ 视深排序 painter
+  alpha 合成 → RGB8；`png` feature 后有 `splat-render` CLI。
+- **退化 splat 闸门**（`MAX_SCREEN_SIGMA_RATIO=0.3`）：MCM 训练会产生针状巨型
+  splat（实测 scan-wasteland 有 266m×14cm、opacity 0.999 的针贴着相机轨道），
+  屏幕 σ 全屏覆盖时以近乎满 opacity 盖掉整幅画面；闸门剔除 σ 超过
+  0.3×画面最长边者，并留回归测试（`degenerate_giant_splat_does_not_wash_frame`）。
+- 测试 24 条全绿（21 lib + 2 集成 + 1 doc）：PLY 解析/无头变体、相机投影
+  （+Y 上 vs 图像 v 向下的 − 号）、SH0/SH1、遮挡排序、退化闸门、端到端三色场景。
+- 实测：toy（synthetic-orbit）frame_0016 构图与 Brush eval 一致（PSNR 22.59 dB，
+  Brush 33.27）；scan-wasteland frame_0016 构图一致（17.55 dB，Brush 31.43）。
+  与 Brush 的质量差距（约 10 dB）属 v2 项：Mip-Splatting 尺度下限、tile 级排序
+  与 overflow、SH 方向核验、针状 splat 的各向异性处理。
+- 牵连：新 crate 无反向依赖者；根 `Cargo.toml` 仅 workspace members 增一行。
+
 ### Changed（第五十八轮：direct 头部、guard 与签名空白压缩）
 
 - `direct/emit.rs`：头部从
