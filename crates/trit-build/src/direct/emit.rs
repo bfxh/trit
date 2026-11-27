@@ -7,7 +7,7 @@
 use trit_core::Algebra;
 
 use super::ir::Op;
-use format::{alg_name, push_table};
+use format::{alg_tag, push_table};
 
 mod body;
 mod format;
@@ -20,20 +20,19 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
     let inlined = inline::targets(&ops);
     let mut prefix = String::new();
     prefix.push_str("/*");
-    prefix.push_str(alg_name(alg));
-    prefix.push_str(" v=");
-    prefix.push_str(&vars.join(","));
+    prefix.push_str(alg_tag(alg));
+    if !vars.is_empty() {
+        prefix.push(' ');
+        prefix.push_str(&vars.join(","));
+    }
     prefix.push_str("*/\n");
-    prefix.push_str("#include <stdint.h>\n\n");
+    prefix.push_str("#include <stdint.h>\n");
     let (tables, merged) = inline::tables(&binary_tables);
     if !merged.is_empty() {
         push_table(&mut prefix, "T", &merged);
     }
 
     let mut text = prefix;
-    if !binary_tables.is_empty() {
-        text.push('\n');
-    }
     text.push_str(&body::body(&ops, vars, &inlined, &tables));
     text
 }

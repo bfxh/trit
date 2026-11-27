@@ -114,7 +114,7 @@ fn strong_add_c_tables_follow_the_dispatch() {
         let vars = expr.variables();
         let c = emit(&expr, &vars, alg).expect("生成");
         assert_eq!(
-            c.matches("    int t").count(),
+            c.matches("int t").count(),
             statements,
             "{alg:?} {source}: {c}"
         );

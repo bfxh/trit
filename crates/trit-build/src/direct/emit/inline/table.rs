@@ -5,7 +5,6 @@
 pub(crate) struct Table {
     pub(super) offset: usize,
 }
-
 impl Table {
     pub(super) fn at(offset: usize) -> Self {
         Self { offset }
@@ -82,5 +81,6 @@ pub(crate) fn tables(entries: &[(&'static str, [i8; 9])]) -> (Tables, Vec<i8>) {
 }
 
 pub(crate) fn call(table: Table, left: String, right: String) -> String {
-    format!("T[3*{left}+{right}+{}]", table.offset)
+    let sign = if right.starts_with('-') { "" } else { "+" };
+    format!("T[3*{left}{sign}{right}+{}]", table.offset)
 }

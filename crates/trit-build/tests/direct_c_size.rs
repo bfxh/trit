@@ -1,6 +1,6 @@
 //! `direct.c` 字节数回归门：只设上界，优化缩小时同步下调。
 //!
-//! 样例覆盖单用链、扇出、取反、否定对偶、11 变量与深链；预算来自当前 CLI 产物，任何变大都要先解释；生成物用单行头注释、短 guard、短参数名 `v/n`、单表 `T[]` 与 `3*l+r+4` 索引。
+//! 样例覆盖单用链、扇出、取反、否定对偶、11 变量、深链与全常量；预算来自当前 CLI 产物，任何变大都要先解释；生成物用 `/*K3 变量表*/` 单行头、无空行、无缩进函数体、`n<N?0:` 守卫、短参数名 `v/n`、单表 `T[]` 与 `3*l+r+4` 索引。
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -20,7 +20,6 @@ fn scratch() -> PathBuf {
     fs::create_dir_all(&dir).expect("创建临时目录");
     dir
 }
-
 fn build(dir: &Path, name: &str, source: &str) -> usize {
     let source_path = dir.join(format!("{name}.tri"));
     let out = dir.join(format!("{name}-out"));
@@ -47,20 +46,21 @@ fn build(dir: &Path, name: &str, source: &str) -> usize {
 #[test]
 fn direct_c_bytes_stay_within_budget() {
     let fixtures = [
-        ("(a & b) | c", 227),
-        ("((a & b) | c) & (d | e)", 256),
-        ("((a => b) <=> (!a | b)) ^ c", 271),
+        ("(a & b) | c", 195),
+        ("((a & b) | c) & (d | e)", 224),
+        ("((a => b) <=> (!a | b)) ^ c", 235),
         (
             "(((a & b) | (c & d)) & ((e | f) ^ (g & h))) | !(i & (j | k))",
-            367,
+            334,
         ),
-        ("a & (b | (c & (d | (e & f))))", 270),
-        ("!a", 129),
-        ("a & b", 193),
-        ("a <=> 0", 129),
-        ("(!a) => (!b)", 190),
-        ("(!a) <=> (!b)", 190),
-        ("(!(a & b)) => (!(c | d))", 243),
+        ("a & (b | (c & (d | (e & f))))", 238),
+        ("!a", 98),
+        ("a & b", 161),
+        ("a <=> 0", 98),
+        ("(!a) => (!b)", 157),
+        ("(!a) <=> (!b)", 158),
+        ("(!(a & b)) => (!(c | d))", 210),
+        ("1 & 0", 87),
     ];
     let dir = scratch();
     for (index, (source, budget)) in fixtures.into_iter().enumerate() {

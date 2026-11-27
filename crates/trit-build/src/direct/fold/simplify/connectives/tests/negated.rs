@@ -89,9 +89,9 @@ fn false_equivalence_emits_one_return_without_tables() {
         let expr = Parser::parse("a <=> 0").expect("解析");
         let vars = expr.variables();
         let c = emit(&expr, &vars, alg).expect("生成");
-        assert_eq!(c.matches("    int t").count(), 0, "{alg:?}: {c}");
+        assert_eq!(c.matches("int t").count(), 0, "{alg:?}: {c}");
         assert!(!c.contains("static const int8_t T[]"), "{alg:?}: {c}");
-        assert!(c.contains("return -v[0];"), "{alg:?}: {c}");
+        assert!(c.contains("?0:-v[0];"), "{alg:?}: {c}");
     }
 }
 

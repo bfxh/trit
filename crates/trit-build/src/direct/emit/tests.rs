@@ -13,11 +13,11 @@ fn single_use_and_is_inlined_into_not() {
         Algebra::Kleene,
     );
     assert_eq!(
-        source.matches("    int t").count(),
+        source.matches("int t").count(),
         0,
         "单用锥与根节点都直接展开，不留临时语句：{source}"
     );
-    assert!(source.contains("return -T[3*v[0]+v[1]+4];"), "{source}");
+    assert!(source.contains("?0:-T[3*v[0]+v[1]+4];"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(
         !source.contains("return t0;") && !source.contains("int t0="),
@@ -37,9 +37,9 @@ fn shared_and_stays_a_separate_statement() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int t").count(), 1, "{source}");
+    assert_eq!(source.matches("int t").count(), 1, "{source}");
     assert!(source.contains("int t0=T["), "{source}");
-    assert!(source.contains("return T[3*-t0"), "{source}");
+    assert!(source.contains("?0:T[3*-t0"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(!source.contains(",t1="), "{source}");
 }

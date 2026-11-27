@@ -14,10 +14,10 @@ pub(super) fn neg(inner: String) -> String {
     }
 }
 
-pub(super) fn alg_name(alg: Algebra) -> &'static str {
+pub(super) fn alg_tag(alg: Algebra) -> &'static str {
     match alg {
-        Algebra::Kleene => "kleene",
-        Algebra::Lukasiewicz => "lukasiewicz",
-        Algebra::Bochvar => "bochvar",
+        Algebra::Kleene => "K3",
+        Algebra::Lukasiewicz => "L3",
+        Algebra::Bochvar => "B3",
     }
 }
