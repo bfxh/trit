@@ -1,0 +1,83 @@
+{
+  "run": "M1.47",
+  "status": "preregistered_before_model_scores",
+  "created_at_local": "2026-11-27T05:12:00+08:00",
+  "title": "Davidson L6 SVC balanced split-stability audit",
+  "parent": "M1.46",
+  "question": "M1.46 的唯一 5/5 格是 Davidson L6 SVC balanced f32 的 macro-F1 +6.8989pp，但该 5/5 只是同一组 test 预测的 5 次 bootstrap 重采样，不是独立拟合。把 Davidson 的 train/test 重新独立切分后，这个 balanced−unweighted 差值是否仍然稳定为正？",
+  "scope": "single cell audit; descriptive split-stability, not candidate confirmatory",
+  "dataset": {
+    "name": "Davidson et al. 2017 hate speech and offensive language",
+    "local_path": "D:/trit-results/davidson/texts-l12.json",
+    "rows": 24781,
+    "label_mapping": "class=0 (hate) -> 1; class=1 (offensive) + class=2 (neither) -> 0",
+    "label_counts": {
+      "non_hate": 23352,
+      "hate": 1429
+    },
+    "hate_prior": 0.05766514668496025,
+    "duplicate_normalized_texts": 0,
+    "external_overlap_rows": 0,
+    "note": "M1.45 exported 24,781 rows after deduplication and removal of the one normalized-text overlap row with TweetEval/hate and HateXplain. All 24,781 rows are eligible here."
+  },
+  "splits": {
+    "kind": "five independent stratified 80/20 train/test draws",
+    "implementation": "sklearn.model_selection.train_test_split(test_size=0.2, stratify=label, random_state=split_seed)",
+    "split_seeds": [101, 103, 107, 109, 113],
+    "independence_note": "Each split is a separate partition draw from the same corpus. They are independent split draws, not independent corpora or independent samples; test sets overlap across draws.",
+    "expected_fit_rows": 19824,
+    "expected_test_rows": 4957,
+    "expected_test_hate_rows": 286,
+    "uses_original_m145_split": false,
+    "original_m145_split_used_for": "only as the source of the 24,781-row cleaned table and embeddings"
+  },
+  "modeling": {
+    "encoder": "frozen all-MiniLM-L6-v2",
+    "depth": "l6",
+    "arm": "f32",
+    "probe": "LinearSVC",
+    "probe_settings": "LinearSVC(C=c, max_iter=10000, random_state=7, tol=1e-4)",
+    "threshold": 0.0,
+    "threshold_note": "default LinearSVC decision boundary; fixed before scoring, no threshold search",
+    "rules": ["unweighted", "balanced"],
+    "class_weight": "balanced only for the balanced rule, estimated from fit labels",
+    "c_grid": [0.01, 0.1, 1.0, 10.0],
+    "c_selection": "per split: unweighted f32 fit only, 5-fold StratifiedKFold(shuffle=True, random_state=7), accuracy; the selected C is shared by both rules within that split",
+    "test_usage": "test labels and test scores are not used for C selection, threshold selection, or rule selection"
+  },
+  "primary": {
+    "metric": "macro_f1",
+    "contrast": "balanced f32 - unweighted f32",
+    "unit": "one independently redrawn split",
+    "n_splits": 5,
+    "bootstrap": "10,000 paired test-level bootstrap resamples within each split, 95% two-sided percentile CI",
+    "bootstrap_rng_seeds": [1001, 1003, 1007, 1009, 1013],
+    "bootstrap_note": "The five split rows are the independent fitting units. The bootstrap RNG seeds only quantify within-split sampling noise; they are not model seeds and must not be counted as independent confirmations.",
+    "verdict_rule": {
+      "supported": "at least 4/5 splits have point_delta > 0 and ci_low > 0, and the mean point_delta across the 5 splits is > 0",
+      "directional": "at least 3/5 splits have point_delta > 0 and mean point_delta > 0, but the supported condition is not met",
+      "not_supported": "all other outcomes"
+    },
+    "interpretation_limit": "Even if supported, this only establishes split-stability of one descriptive cell on one corpus. It does not reopen M1.46's candidate line, does not validate a deployable rule, and does not turn Davidson into an official-split benchmark."
+  },
+  "secondary": [
+    "per-split absolute accuracy, macro-F1, hate/non-hate recall, predicted positive rate, and selected C",
+    "per-split point-delta sign and bootstrap verdict counts",
+    "test hate prior and predicted positive rate drift"
+  ],
+  "exclusions": [
+    "no L12 or logreg",
+    "no quantized arm (f32 only)",
+    "no target_prior, fit-prior quantile, calibration, or threshold search",
+    "no new corpus, re-encoding, MLP, or fine-tuning",
+    "no candidate upgrade or promotion",
+    "no reuse of the M1.46 test partition as a primary split"
+  ],
+  "planned_outputs": [
+    "data/wsp-classify-m147-splits.tsv",
+    "data/wsp-classify-m147-raw.tsv",
+    "data/wsp-classify-m147-primary.tsv",
+    "data/wsp-classify-m147-verdict.json"
+  ],
+  "gate_note": "If any split has zero hate rows in test, that split is invalid and must be reported as invalid; do not repair it after seeing scores."
+}
