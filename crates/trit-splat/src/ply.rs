@@ -146,7 +146,11 @@ pub fn parse_ply(bytes: &[u8]) -> Result<Vec<RawGaussian>, SplatError> {
     Ok(out)
 }
 
-/// 3DGS 激活：scale = exp(log_scale)，opacity = sigmoid(logit)，rot 保持 xyzw 4 元。
+/// 3DGS 激活：scale = exp(log_scale)，opacity = sigmoid(logit)。
+/// rot：Brush 的 PLY rot_0..3 是 **[W,X,Y,Z]** 顺序（brush-serde quant.rs:63-67
+/// `w = quat[0]`，raw 导入原样透传到内部 WXYZ 张量）——这里转成 xyzw 供
+/// quat_to_mat3 使用。按 XYZW 解读会让所有各向异性 splat 旋转全错
+/// （实测：cov2d 非对角元差 61×，整幅涂抹感，PSNR −10dB）。
 pub fn activate(g: &RawGaussian) -> ([f32; 3], [f32; 4], f32) {
     let scale = [
         g.scale_log[0].exp(),
@@ -154,7 +158,9 @@ pub fn activate(g: &RawGaussian) -> ([f32; 3], [f32; 4], f32) {
         g.scale_log[2].exp(),
     ];
     let opacity = 1.0 / (1.0 + (-g.opacity_logit).exp());
-    (scale, g.rot_xyzw, opacity)
+    // PLY rot_0..3 = [W,X,Y,Z] → 转 xyzw: (rot_1, rot_2, rot_3, rot_0)
+    let rot_xyzw = [g.rot_xyzw[1], g.rot_xyzw[2], g.rot_xyzw[3], g.rot_xyzw[0]];
+    (scale, rot_xyzw, opacity)
 }
 
 #[cfg(test)]
@@ -243,11 +249,13 @@ mod tests {
             f_rest: vec![],
             opacity_logit: 0.0,
             scale_log: [0.0, 0.0, 0.0],
-            rot_xyzw: [0.0, 0.0, 0.0, 1.0],
+            // PLY 存储序 [W,X,Y,Z]：恒等四元数是 [1,0,0,0]
+            rot_xyzw: [1.0, 0.0, 0.0, 0.0],
         };
         let (scale, rot, opacity) = activate(&g);
         assert!((opacity - 0.5).abs() < 1e-6);
         assert!((scale[0] - 1.0).abs() < 1e-6);
+        // 转成 xyzw 后 w 在末位
         assert!((rot[3] - 1.0).abs() < 1e-6);
     }
 }
