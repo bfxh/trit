@@ -63,6 +63,7 @@ pub struct Model {
 
 mod error;
 mod names;
+mod regions;
 pub use error::Error;
 
 /// 单张量数据区大小：trits + scales + bias。
@@ -280,36 +281,31 @@ pub fn read(bytes: &[u8]) -> Result<Model, Error> {
         });
     }
     let data_start = align(pos);
-    let mut tensors = Vec::with_capacity(infos.len());
-    for info in infos {
-        let start = data_start
-            .checked_add(info.offset)
-            .ok_or_else(|| Error::Tensor(info.name.clone()))?;
-        let trit_len = info.rows.saturating_mul(info.cols);
-        let packed = trit_len.div_ceil(5);
-        let bias_bytes = info.rows.div_ceil(5);
-        let end = start
-            .checked_add(packed)
-            .and_then(|value| value.checked_add(info.rows.saturating_mul(4)))
-            .and_then(|value| value.checked_add(bias_bytes))
-            .ok_or_else(|| Error::Tensor(info.name.clone()))?;
-        if end > bytes.len() {
-            return Err(Error::Tensor(info.name));
+    let prepared = regions::prepare(data_start, &infos)?;
+    let mut tensors = Vec::with_capacity(prepared.len());
+    for (info, region) in infos.iter().zip(prepared) {
+        if region.end > bytes.len() {
+            return Err(Error::Tensor(info.name.clone()));
         }
-        let trits = trit_core::pack::unpack_canonical(&bytes[start..start + packed], trit_len)
-            .map_err(|error| Error::Tensor(format!("{}: {error}", info.name)))?;
-        let scale_start = start + packed;
+        let trits = trit_core::pack::unpack_canonical(
+            &bytes[region.start..region.start + region.packed],
+            region.trit_len,
+        )
+        .map_err(|error| Error::Tensor(format!("{}: {error}", info.name)))?;
+        let scale_start = region.start + region.packed;
         let scales = (0..info.rows)
             .map(|row| {
                 let begin = scale_start + row * 4;
                 f32::from_le_bytes(bytes[begin..begin + 4].try_into().expect("4 字节"))
             })
             .collect();
-        let bias =
-            trit_core::pack::unpack_canonical(&bytes[scale_start + info.rows * 4..end], info.rows)
-                .map_err(|error| Error::Tensor(format!("{}: {error}", info.name)))?;
+        let bias = trit_core::pack::unpack_canonical(
+            &bytes[scale_start + info.rows * 4..region.end],
+            info.rows,
+        )
+        .map_err(|error| Error::Tensor(format!("{}: {error}", info.name)))?;
         tensors.push(Tensor {
-            name: info.name,
+            name: info.name.clone(),
             rows: info.rows,
             cols: info.cols,
             trits,
