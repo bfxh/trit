@@ -1,15 +1,13 @@
 //! `⇒` / `⇔` 的常量律与形状规则：只做能真正减少节点的规则，按代数分派。
-//!
 //! K3/Ł3 的 `x ⇒ T = T`、`F ⇒ x = T`；B3 在 `X ⇒ T`、`F ⇒ X` 上返回 `U`，不做。
-//! Ł3 的 `x ⇒ x = T`、`x ⇔ x = T`；K3/B3 在这两个式子上保留原式（`X` 处不同）。
-//! K3/B3 的 `x ⇒ ¬x = ¬x`、`¬x ⇒ x = x`、`x ⇔ X = X`；Ł3 有反例，不做。
-
+//! Ł3 的 `x ⇒ x = T`、`x ⇔ x = T`；K3/B3 保留原式。取反对偶与 `⇔ F` 在 `negated`。
 use trit_core::Algebra;
 use trit_core::value::Ternary;
 
 use super::build::{push_const, push_node};
 use crate::direct::ir::Op;
 
+mod negated;
 pub(super) fn implies(
     resolve: &mut Vec<usize>,
     kept: &mut Vec<Op>,
@@ -41,9 +39,12 @@ pub(super) fn implies(
         return;
     }
     if !matches!(alg, Algebra::Lukasiewicz)
-        && (is_not_of(kept, right, left) || is_not_of(kept, left, right))
+        && (negated::is_not_of(kept, right, left) || negated::is_not_of(kept, left, right))
     {
         resolve.push(right);
+        return;
+    }
+    if negated::implies(resolve, kept, consts, left, right) {
         return;
     }
     push_node(resolve, kept, consts, Op::Implies(left, right));
@@ -67,6 +68,9 @@ pub(super) fn equiv(
         resolve.push(left);
         return;
     }
+    if negated::equiv(resolve, kept, consts, left, right, alg) {
+        return;
+    }
     if !matches!(alg, Algebra::Lukasiewicz)
         && (consts[left] == Some(Ternary::Unknown) || consts[right] == Some(Ternary::Unknown))
     {
@@ -82,10 +86,6 @@ pub(super) fn equiv(
         return;
     }
     push_node(resolve, kept, consts, Op::Equiv(left, right));
-}
-
-fn is_not_of(kept: &[Op], outer: usize, inner: usize) -> bool {
-    matches!(kept[outer], Op::Not(target) if target == inner)
 }
 
 #[cfg(test)]

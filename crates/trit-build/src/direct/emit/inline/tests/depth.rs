@@ -1,10 +1,9 @@
-//! 深度封顶：越过 3 层的单用链重新找发射点。
+//! 深链：单用节点不再有深度上限。
 
 use super::*;
-
-/// 从发射父节点算起超过 3 层就不再下钻，边界节点自己发射；根节点仍直接返回。
+/// 四层单用 `And` 链整个并进根返回，不在第三层落临时变量。
 #[test]
-fn depth_cap_keeps_deep_leaves_declared() {
+fn deep_single_use_chain_is_not_capped() {
     let source = render(
         vec![
             Op::Var(0),
@@ -14,12 +13,13 @@ fn depth_cap_keeps_deep_leaves_declared() {
             Op::And(2, 3),
             Op::Var(3),
             Op::And(4, 5),
-            Op::Not(6),
+            Op::Const(trit_core::value::Ternary::False),
+            Op::And(6, 7),
+            Op::Not(8),
         ],
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 2, "{source}");
-    assert!(source.contains("int8_t t0 = vars[0];"), "{source}");
-    assert!(source.contains("return -("), "{source}");
+    assert_eq!(source.matches("int t").count(), 0, "{source}");
+    assert!(source.contains("3*T[3*T[3*T["), "{source}");
 }

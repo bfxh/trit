@@ -1,0 +1,11 @@
+[package]
+name = "trit-tech-stack-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "MCP server enforcing the bfxh/trit tech-stack policy: new Python is test-only."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde_json = "1"
+
+[workspace]

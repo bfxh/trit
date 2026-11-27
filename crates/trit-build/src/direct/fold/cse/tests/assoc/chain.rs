@@ -40,7 +40,6 @@ fn render_shares_the_mirrored_and_chain() {
     let after = fold(before, Algebra::Kleene);
     assert_eq!(after.len(), 5, "{after:?}");
     let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-    assert_eq!(c.matches("    int8_t t").count(), 0, "{c}");
-    assert!(!c.contains("T_OR"), "{c}");
-    assert!(c.contains("return trit_bin(T_AND"), "{c}");
+    assert_eq!(c.matches("int t").count(), 0, "{c}");
+    assert!(c.contains("?0:T[3*T["), "{c}");
 }

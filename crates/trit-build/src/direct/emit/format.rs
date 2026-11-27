@@ -2,24 +2,22 @@
 
 use trit_core::Algebra;
 
-pub(super) fn push_table(text: &mut String, name: &str, table: &[i8]) {
-    text.push_str("static const int8_t ");
-    text.push_str(name);
-    text.push('[');
-    text.push_str(&table.len().to_string());
-    text.push_str("] = {");
-    for value in table {
-        text.push(' ');
-        text.push_str(&value.to_string());
-        text.push(',');
+mod table;
+
+pub(super) use table::push_table;
+
+pub(super) fn neg(inner: String) -> String {
+    if inner.starts_with('-') {
+        format!("-({inner})")
+    } else {
+        format!("-{inner}")
     }
-    text.push_str(" };\n");
 }
 
-pub(super) fn alg_name(alg: Algebra) -> &'static str {
+pub(super) fn alg_tag(alg: Algebra) -> &'static str {
     match alg {
-        Algebra::Kleene => "kleene",
-        Algebra::Lukasiewicz => "lukasiewicz",
-        Algebra::Bochvar => "bochvar",
+        Algebra::Kleene => "K3",
+        Algebra::Lukasiewicz => "L3",
+        Algebra::Bochvar => "B3",
     }
 }

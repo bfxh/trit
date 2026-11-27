@@ -37,6 +37,168 @@
 - 新增 `docs/research/data/wsp-classify-m147-{prereg,splits,raw,primary,verdict}` 与
   `docs/research/scripts/wsp_m147/split_audit.py`；更新 `WSP-BUDGET-RESULTS.md`
   §11.47/§12、`WSP-ALT.md`、`WSP-BERT6-RESULTS.md` 和 `LESSONS.md` #63。
+### Changed（第五十八轮：direct 头部、guard 与签名空白压缩）
+
+- `direct/emit.rs`：头部从
+  `/* trit-build direct-c kleene vars=a,b,c */` 收成 `/*kleene v=a,b,c*/`。
+  代数名和 `v` 的槽位映射仍保留，`trit-build` / `direct-c` 由文件名与函数名承担；
+  每个生成物少 25 B。
+- `direct/emit/body.rs`：guard 从
+  `    if (n < 3u) return 0; /* n<变量数→X */` 收成
+  `    if(n<3)return 0;/*X*/`；签名从
+  `int8_t trit_direct(const int8_t *v, unsigned n) {` 收成
+  `int8_t trit_direct(const int8_t*v,unsigned n){`。两处合计再少 25 B。
+- 固定少 50 B：`(a & b) | c` 277→227 B、`((a & b) | c) & (d | e)` 306→256 B、
+  `((a => b) <=> (!a | b)) ^ c` 321→271 B、11 变量混合式 417→367 B、
+  深链 320→270 B、`(!(a & b)) => (!(c | d))` 293→243 B；
+  `!a` / `a <=> 0` 179→129 B；`a & b` 243→193 B；
+  `(!a) => (!b)` / `(!a) <=> (!b)` 240→190 B；扇出 `fan3` 337→287 B、
+  `fan5` 355→305 B。
+- 判据：11 项 `direct_c_size` 预算收紧到 227/256/271/367/270/129/193/129/190/190/243 B；
+  `direct_c_fanout` 收紧到 287/305 B。签名断言、`direct.rs` 文档与 `--verify-c`
+  驱动器同步到新签名空白（C 只看声明类型，不看空白）。
+- 门禁：`cargo test -p trit-build`、clippy、fmt、rustdoc、docs、module budget、
+  test surface、alloc guard 与 100 条变异全绿。
+
+### Changed（第五十七轮：direct 单表统一 `T[]`、临时变量改 `int`、头部注释压缩）
+
+- `direct/emit/inline/table.rs`：只用到一张表时也写 `T[]`，不再保留 `T_AND[]` 等原名；
+  `Table` 只剩基址，表值总是拼进同一个 `T`。单表单次引用与声明各少 3–6 B，
+  单表样例合计少 6–12 B，多表不变。
+- `direct/emit/body.rs`：临时变量类型从 `int8_t` 改成更短的 `int`；值域仍是
+  `-1/0/1`，返回时隐式收窄回 `int8_t`，语义不变。每个临时变量少 3 B。
+- `direct/emit.rs`：生成物头两行注释收成一行
+  `/* trit-build direct-c kleene vars=a,b,c */`；guard 注释从
+  `/* 入参不足：按 X 处理，fail-closed */` 收成 `/* n<变量数→X */`。中文注释的
+  UTF-8 字节省得更多，每个生成物固定少 152 B。
+- `direct/verify.rs`：驱动器把 `trit_direct` 声明成 `int`，而定义返回 `int8_t`，
+  ABI 不一致属于未定义行为；改成 `int8_t trit_direct(...)`，三代数逐行对拍不再靠
+  寄存器残留高位碰巧通过。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 429→277 B、
+  `((a & b) | c) & (d | e)` 458→306 B、`((a => b) <=> (!a | b)) ^ c` 476→321 B、
+  11 变量混合式 569→417 B、深链 472→320 B、`(!(a & b)) => (!(c | d))` 445→293 B；
+  单表 `a & b` 403→243 B、`(!a) => (!b)` 398→240 B、`(!a) <=> (!b)` 404→240 B；
+  扇出 `fan3` 492→337 B、`fan5` 510→355 B。
+- 判据：11 项 `direct_c_size` 预算收紧到 277/306/321/417/320/179/243/179/240/240/293 B；
+  `direct_c_fanout` 收紧到 337/355 B，仍锁单条 `int t0=...,t1=` 声明与三代数 81 行
+  对拍；`verify_c` 驱动器原型与生成函数签名一致。
+- 门禁：`cargo test -p trit-build`、clippy、fmt、rustdoc、docs、module budget、
+  test surface、alloc guard 与 100 条变异全绿。
+
+### Changed（第五十六轮：direct 合并运算符表、临时变量单条声明）
+
+- `direct/emit/inline/table.rs`：只用到一张二元表时仍写 `T_AND[]`；用到两张及以上时，
+  把各表按固定顺序拼成一个 `T[]`，索引写成 `T[3*l+r+base+4]`。表声明只留一个前缀，
+  每个算子的表名缩成 `T`、基址并进常量：两张表起每篇少一份前缀，
+  三张表少两份；每次调用再少 2–5 B。
+- `direct/emit/body.rs`：临时变量不再一条一句，合并成
+  `int8_t t0=...,t1=...;` 一条声明；第一个变量省掉 ` = ` 两个空格，后续每个变量
+  从 `    int8_t tN = ` 变成 `,tN=`，固定少 12 B。节点仍按后序初始化，C 的声明符
+  顺序保证后面的表达式能读前面的临时变量。
+- 新增 `direct/emit/tables.rs` 与 `direct/emit/body/value.rs`，把“用了哪些表”和
+  “单个节点右值”从 `render` / 函数体循环里拆出，模块预算不抬高；表达式展开的
+  两万层测试移到 `inline/expr/tests.rs`。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 469→429 B、
+  `((a & b) | c) & (d | e)` 504→458 B、`((a => b) <=> (!a | b)) ^ c` 560→476 B、
+  11 变量混合式 665→569 B、深链 522→472 B、`(!(a & b)) => (!(c | d))` 487→445 B；
+  单表与无表样例 `!a` / `a & b` / `a <=> 0` / `(!a) => (!b)` / `(!a) <=> (!b)`
+  保持 331/403/331/398/404 B。扇出网表 `fan3` 574→492 B、两个共享节点 `fan5`
+  610→510 B。
+- 判据：`direct_c_size.rs` 六个多表预算收紧；新增 `direct_c_fanout.rs` 锁 `fan3`
+  492 B、`fan5` 510 B 与 `int8_t t0=...,t1=...` 单条声明，并在三代数下
+  `--verify-c` 81 行全过；`cargo test -p trit-build` 141 单元（140 passed / 1 ignored）
+  + 集成全绿；`mutation_check --pkg trit-build` 97/97 caught（新增多表基址错位、
+  临时变量不合并两条）；clippy、fmt、rustdoc、docs、module budget、test surface
+  与 alloc guard 全绿。
+
+### Changed（第五十五轮：direct 生成 C 词法压缩）
+
+- `direct/emit/format/table.rs`：运算符表声明从 `static const int8_t T_AND[9] = { -1, -1, ..., };`
+  改成 `static const int8_t T_AND[]={-1,-1,...};`：省掉显式长度、等号两侧空格、每项前空格与
+  末尾逗号，每张表固定少 14 B；表值仍由 `Algebra` 现算，语义不变。
+- `direct/emit/body.rs` / `inline/expr.rs`：生成函数参数从 `vars` / `nvars` 缩短为 `v` / `n`
+  （C 参数名不是 ABI），变量叶子写 `v[i]`；每次变量引用少 3 B，`n` 的两处各少 4 B。
+- `direct/emit/format.rs`：`Not` 直接写 `-expr`，只在子表达式本身以 `-` 开头时补括号，
+  避免拼成 `--` 记号；每个存活取反少 2 B。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 517→469 B、
+  `((a & b) | c) & (d | e)` 558→504 B、混合式 622→560 B、11 变量 753→665 B、
+  深链 579→522 B、`a & b` 434→403 B、`(!a) => (!b)` 431→398 B、
+  `(!a) <=> (!b)` 435→404 B、`(!(a & b)) => (!(c | d))` 540→487 B、
+  `!a` / `a <=> 0` 347→331 B；12 变量 dense 842→739 B、8 变量高复用 753→687 B。
+- 判据：`direct_c_size.rs` 11 个预算按新产物收紧；三代数 `--verify-c` 对 11 变量
+  （177147 行）、dense（531441 行）、高复用（19683 行）与深链（729 行）全过；
+  `cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+ 集成全绿；
+  `mutation_check --pkg trit-build` 95/95 caught（新增表值加一、取反丢负号两条）；
+  clippy、fmt、rustdoc、docs、module budget、test surface 与 alloc guard 全绿。
+
+### Changed（第五十四轮：direct 表索引化简为 `3*l+r+4`，删除 helper）
+
+- `direct/emit/inline.rs`：二元调用的表索引从 `[(l+1)*3+(r+1)]` 改成 `[3*l+r+4]`；
+  两者代数等价，但新式每个展开调用固定少 14 B（括号与两个 `+1` 被吸收）。
+  `body.rs` 的语句右值与 `expr.rs` 的根展开共用同一写法，不再按 helper/表索引分叉。
+- `direct/emit.rs`：删除 `trit_bin` helper 与双函数体择优。紧凑索引每次调用的固定开销是
+  12 B（`T[3*l+r+4]`），helper 调用是 19 B（`trit_bin(T, l, r)`），直接索引恒短 7 B；
+  helper 还有约 90 B 声明，任何调用数都无法摊平，旧“按整篇字节数择优”实际总选表索引。
+  多调用测试改为断言 21 次调用全部内联、零 `trit_bin`。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 545→517 B、
+  `((a & b) | c) & (d | e)` 614→558 B、`((a => b) <=> (!a | b)) ^ c` 664→622 B、
+  11 变量混合式 893→753 B、深链 649→579 B、`a & b` 448→434 B、
+  `(!a) => (!b)` 445→431 B、`(!a) <=> (!b)` 449→435 B、
+  `(!(a & b)) => (!(c | d))` 582→540 B；`!a` 347 B、`a <=> 0` 347 B 不变；
+  12 变量 dense 样（11 次二元调用）995→841 B、8 变量高复用样（15 次调用）963→753 B。
+- 判据：`direct_c_size.rs` 11 个预算按新产物同步收紧（`!a` / `a <=> 0` 保持 347 B）；三代数 `--verify-c` 对 11 变量
+  （177147 行）、dense（531441 行）、高复用（19683 行）与深链（729 行）全过；
+  `cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+ 集成全绿；
+  `mutation_check --pkg trit-build` 93/93 caught（helper 两条变异换成表索引偏移与错表变异）；
+  clippy、fmt、rustdoc、docs、module budget、test surface 与 alloc guard 全绿。
+
+### Added（第五十三轮：direct 单用内联取消深度封顶）
+
+- `direct/emit/inline/plan.rs`：删掉 `MAX_INLINE_DEPTH = 3`，凡 `uses == 1` 的非叶子节点
+  都沿单用边并进父表达式，直到叶子；扇出/多用节点仍单独落语句，网表扇出不复制。
+  每个单用临时语句比它的引用多至少约 20 B，因此全量内联在字节上严格更短，代价是深链和
+  密集网变成更长的单条 `return` 表达式。
+- 新增 `direct/emit/inline/expr.rs`：内联锥的表达式展开也用显式栈走后序，不再按链长递归；
+  两万层单用链的展开测试留在该文件，避免“取消深度封顶”重新引入调用栈崩溃面。
+- 读数（同机 CLI，K3；整个 `direct.c`）：深链 `a & (b | (c & (d | (e & f))))`
+  669→649 B、dense 12 项 1254→1174 B、高复用 `(a ^ b) | ... | (a ^ i)` 1003→963 B；
+  11 变量混合式保持 893 B，其余 fixtures 不变。
+- 判据：`direct_c_size.rs` 深链预算收紧到 649 B；深链测试改为断言四层 `And` 全并进
+  根返回、零临时语句；新增两万层单用链展开测试；三代数 `--verify-c` 对 11 变量、dense
+  与高复用样例全过；`cargo test -p trit-build` 141 单元（140 passed / 1 ignored）+
+  全部集成测试通过；`mutation_check --pkg trit-build` 93/93 caught（深度封顶变异替换为
+  不下钻子节点变异）。
+
+### Added（第五十二轮：direct 叶子临时变量消除）
+
+- `direct/emit/inline/plan.rs`：变量/常量叶子不再无条件落 `int8_t tN = vars[i];`；变量复用
+  ≤5 次直接重写 `vars[i]`，≥6 次保留一条读取（临时语句约 25 B，每次引用省 5 B，
+  6 次才回本）。常量叶子总是直接重写。非叶子仍按单用/深度 3 规则内联。
+- 读数（同机 CLI，K3；整个 `direct.c`）：11 变量混合式 1093→893 B、深链 689→669 B、
+  dense 12 项 1430→1254 B；`(a & b) | c` 545 B、`((a & b) | c) & (d | e)` 614 B、
+  混合式 664 B、`!a` 347 B、`a & b` 448 B、`a <=> 0` 347 B、`(!a) => (!b)` 445 B、
+  `(!a) <=> (!b)` 449 B、`(!(a & b)) => (!(c | d))` 582 B 不变。
+- 判据：`direct_c_size.rs` 的 11 变量与深链预算收紧到 893 / 669 B；新增
+  `tests/reuse.rs` 锁住 6 次复用的变量仍只读一次；三代数 `--verify-c` 对 11 变量与
+  dense 全过。`cargo test -p trit-build` 140 单元（139 passed / 1 ignored）+ 集成测试通过；
+  `mutation_check --pkg trit-build` 94/94 caught（含叶子直写、复用阈值与常量直写变异）。
+
+### Added（第五十一轮：direct 否定对偶化简与精确 helper 选择）
+
+- `direct/fold/simplify/connectives/negated.rs`：`⇒` 右侧为 `F` 时改 `¬左`，两侧都是
+  `Not` 时反证内层；`⇔` 任一侧为 `F` 时否定另一侧，两侧都是 `Not` 时去双层取反，
+  同一 `Not` 在 Ł3 折成常量 `T`。`is_not_of` 随之迁入，`connectives.rs` 保持 92 行。
+- `direct/emit.rs` / `direct/emit/body.rs` / `direct/emit/inline.rs`：二元调用不再按固定
+  节点数决定 helper，而是把「共用 `trit_bin`」与「全部展开表索引」两版函数体都渲染，
+  按整篇字节数选短者；语句右值在 helperless 版本也走表索引，不再引用不存在的 helper。
+- `direct_c_size.rs` 更新为 11 个 fixtures；读数（同机 CLI，K3；整个 `direct.c`）：
+  `a <=> 0` 442→347 B、`(!a) <=> (!b)` 455→449 B、`(!a) => (!b)` 445 B、
+  `(!(a & b)) => (!(c | d))` 671→582 B；`(a & b) | c` 641→545 B、
+  `((a & b) | c) & (d | e)` 696→614 B、混合式 753→664 B、11 变量 1133→1093 B、
+  深链 764→689 B。dense 12 项仍选 helper，保持 1430 B；若强推表索引会到 1446 B。
+- 判据：`cargo test -p trit-build` 138 单元（137 passed / 1 ignored）+ 全部集成测试通过；
+  三种代数穷举否定对偶；`negated.rs` 与 helper 选择均有形状断言；
+  `mutation_check --pkg trit-build` 90/90 caught（含 helperless 语句与三条对偶变异）。
 
 ### Added（第五十轮：direct 单二元调用展开）
 

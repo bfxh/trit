@@ -72,7 +72,7 @@ fn direct_backend_writes_linear_c_and_skips_table() {
 
     let source = fs::read_to_string(dir.join("d-out/direct.c")).expect("读 direct.c");
     assert!(
-        source.contains("int8_t trit_direct(const int8_t *vars, unsigned nvars)"),
+        source.contains("int8_t trit_direct(const int8_t*v,unsigned n){"),
         "{source}"
     );
     assert!(

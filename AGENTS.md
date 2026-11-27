@@ -137,3 +137,20 @@
   `python tools/sandbox_run.py -Root . -Copy <相对输入> -- <命令>`，默认 cwd 在宿主外、
   policy 先拒、run_caps 兜底；宿主指纹变了且没开 `-AllowHostWrite` 就 exit 3。
   `sandbox_matrix.py --cases 40 --parallel 8` 是并发对抗矩阵；边界见 `AGENT-SANDBOX.md`。
+
+## 语言用途：新增 Python 只准测试代码（2026-11-28）
+
+**默认规则，适用于 bfxh/trit 三进制全部项目与所有智能体（含子智能体、外部 CLI 智能体）。**
+
+- 新增 `.py` 只能落在测试位置：`tests/`、`test/`、`spec/`、`test_*.py`、`*_test.py`、`conftest.py`；
+  生产路径（`src/`、`tools/`、仓库根等）一律**拒绝写入**。
+- **存量豁免**：本规则只约束新增/覆盖，不回溯清理已有 `.py`（`tools/*.py` 等旧脚本保持不动）。
+- 执行方式（硬约束，不是评分扣分）：
+  - `trit-agent-kernel` 的 `write_file` 已内置校验（`tech_stack::validate_write_path`）；
+  - 其它项目 / 外部智能体通过 MCP 调用：`tools/tech-stack-mcp`（`validate_path` / `policy`）；
+  - 子智能体回执里的 `stack.added` 越权同样判违约。
+- 唯一例外：用户在任务 brief 里显式授权（`explicit_override`）；授权是一次性的、写进 brief 的，
+  不是"允许模型偏好某语言"。
+- 其它语言（Rust / TS / Go / …）不受此限，仍按项目现有技术栈。
+
+策略文档：`docs/tech-stack-policy.md`；MCP：`tools/tech-stack-mcp/README.md`。

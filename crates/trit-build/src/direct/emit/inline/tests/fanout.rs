@@ -2,23 +2,15 @@
 
 use super::*;
 
-/// 单用锥里的节点若在别处还有引用，下钻在该节点停住，不复制扇出。
+/// 单用锥里的二元节点若在别处还有引用，下钻在该节点停住，单独发射一次。
 #[test]
 fn fanout_stops_the_descent() {
     let source = render(
-        vec![
-            Op::Var(0),
-            Op::Var(1),
-            Op::And(0, 1),
-            Op::Not(2),
-            Op::And(3, 1),
-        ],
+        vec![Op::Var(0), Op::Var(1), Op::And(0, 1), Op::Or(2, 2)],
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
-    assert!(
-        source.contains("return trit_bin(T_AND, -(trit_bin(T_AND, vars[0], t0)), t0);"),
-        "共享输入要引用已发射变量、根节点直接返回：{source}"
-    );
+    assert_eq!(source.matches("int t").count(), 1, "{source}");
+    assert!(source.contains("int t0=T["), "{source}");
+    assert!(source.contains("?0:T[3*t0+t0+13];"), "{source}");
 }
