@@ -20,6 +20,6 @@ fn deep_single_use_chain_is_not_capped() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
-    assert!(source.contains("3*T_AND[3*T_AND[3*T_AND["), "{source}");
+    assert_eq!(source.matches("    int t").count(), 0, "{source}");
+    assert!(source.contains("3*T[3*T[3*T["), "{source}");
 }

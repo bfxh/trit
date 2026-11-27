@@ -730,8 +730,8 @@
  {
   "name": "inline: 表索引偏移少一",
   "file": "crates/trit-build/src/direct/emit/inline/table.rs",
-  "old": "format!(\"{}[3*{left}+{right}+{}]\", table.name, table.offset)",
-  "new": "format!(\"{}[3*{left}+{right}+{}]\", table.name, table.offset - 1)",
+  "old": "format!(\"T[3*{left}+{right}+{}]\", table.offset)",
+  "new": "format!(\"T[3*{left}+{right}+{}]\", table.offset - 1)",
   "pkg": "trit-build",
   "filter": "single_use_and_is_inlined_into_not"
  },
@@ -762,8 +762,8 @@
  {
   "name": "table: 多表合并基址错位",
   "file": "crates/trit-build/src/direct/emit/inline/table.rs",
-  "old": "tables.set(name, Table::merged(4 + merged.len()));",
-  "new": "tables.set(name, Table::merged(5 + merged.len()));",
+  "old": "tables.set(name, 4 + merged.len());",
+  "new": "tables.set(name, 5 + merged.len());",
   "pkg": "trit-build",
   "filter": "verify_c_matches_fanout_every_row"
  },
@@ -774,5 +774,29 @@
   "new": "            text.push_str(&format!(\"; int8_t t{next}=\"));",
   "pkg": "trit-build",
   "filter": "fanout_bytes_stay_within_budget"
+ },
+ {
+  "name": "table: 单表退回长表名",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "format!(\"T[3*{left}+{right}+{}]\", table.offset)",
+  "new": "format!(\"T_AND[3*{left}+{right}+{}]\", table.offset)",
+  "pkg": "trit-build",
+  "filter": "variable_order_is_respected"
+ },
+ {
+  "name": "format: 头部注释退回两行",
+  "file": "crates/trit-build/src/direct/emit.rs",
+  "old": "    prefix.push_str(\"#include <stdint.h>\\n\\n\");",
+  "new": "    prefix.push_str(\"/* 直算：节点顺序发语句，单用节点并句；不展开 3^n 表。 */\\n\");\n    prefix.push_str(\"#include <stdint.h>\\n\\n\");",
+  "pkg": "trit-build",
+  "filter": "fanout_bytes_stay_within_budget"
+ },
+ {
+  "name": "verify: 驱动器返回类型写成 int",
+  "file": "crates/trit-build/src/direct/verify.rs",
+  "old": "         int8_t trit_direct(const int8_t *v, unsigned n);\\n\\n\\",
+  "new": "         int trit_direct(const int8_t *v, unsigned n);\\n\\n\\",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_verilog_every_row"
  }
 ]

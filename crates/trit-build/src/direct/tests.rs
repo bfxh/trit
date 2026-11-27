@@ -115,7 +115,7 @@ fn variable_order_is_respected() {
     let vars = vec!["a".to_string(), "b".to_string()];
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
     // 后序：b 先取 v[1]，a 取 v[0]；两个单用输入并进根返回。
-    assert!(source.contains("return T_AND[3*v[1]+v[0]+4];"), "{source}");
+    assert!(source.contains("return T[3*v[1]+v[0]+4];"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
 }
 
@@ -127,7 +127,7 @@ fn identical_subexpressions_are_computed_once() {
     assert_eq!(ops.len(), 4, "CSE 没生效：{ops:?}");
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
     assert_eq!(
-        source.matches("T_AND[3*").count(),
+        source.matches("T[3*").count(),
         1,
         "同一个与式只该算一次：{source}"
     );

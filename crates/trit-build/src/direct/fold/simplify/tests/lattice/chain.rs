@@ -93,8 +93,8 @@ fn chain_absorbing_c_drops_tables() {
         let expr = Parser::parse(source).expect("解析");
         let vars = expr.variables();
         let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-        assert_eq!(c.matches("    int8_t t").count(), 0, "{source}: {c}");
-        assert!(!c.contains("static const int8_t T_"), "{source}: {c}");
+        assert_eq!(c.matches("    int t").count(), 0, "{source}: {c}");
+        assert!(!c.contains("static const int8_t T[]"), "{source}: {c}");
     }
     let expr = Parser::parse("a & (a | b | c)").expect("解析");
     let vars = expr.variables();

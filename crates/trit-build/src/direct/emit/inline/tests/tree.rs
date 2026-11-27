@@ -15,7 +15,7 @@ fn single_use_binary_tree_collapses_into_root() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
+    assert_eq!(source.matches("    int t").count(), 0, "{source}");
     assert!(source.contains("return T[3*T["), "{source}");
     assert!(source.contains("+v[2]+13];"), "{source}");
 }
@@ -34,7 +34,7 @@ fn multilevel_single_use_cone_fits_one_statement() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
+    assert_eq!(source.matches("    int t").count(), 0, "{source}");
     assert!(
         source.contains("return -T[3*T[3*v[0]+v[1]+13]+v[2]+4];"),
         "{source}"

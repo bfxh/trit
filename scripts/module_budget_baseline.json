@@ -244,7 +244,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 48
+      "lines": 42
     },
     {
       "file": "crates/trit-build/src/direct/emit/body.rs",
@@ -280,7 +280,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/table.rs",
-      "lines": 96
+      "lines": 86
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests.rs",
@@ -308,7 +308,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests.rs",
-      "lines": 66
+      "lines": 63
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests/many.rs",
@@ -348,7 +348,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/chain.rs",
-      "lines": 46
+      "lines": 45
     },
     {
       "file": "crates/trit-build/src/direct/fold/cse/tests/assoc/dual.rs",
@@ -444,7 +444,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/complement.rs",
-      "lines": 116
+      "lines": 114
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/complement/alias.rs",
@@ -452,11 +452,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/idem.rs",
-      "lines": 62
+      "lines": 58
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice.rs",
-      "lines": 85
+      "lines": 81
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice/chain.rs",
@@ -484,7 +484,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests.rs",
-      "lines": 135
+      "lines": 131
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests/factor.rs",

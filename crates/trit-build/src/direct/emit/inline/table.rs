@@ -1,23 +1,18 @@
-//! 二元表的 C 引用：单表用原名，多表合并进 `T[]` 并写入基址。
+//! 二元表的 C 引用：所有表共用 `T[]`，每张表只记索引基址。
 
-/// 一张二元表的 C 引用：名字与索引基址。
+/// 一张二元表在 `T[]` 里的索引基址。
 #[derive(Clone, Copy)]
 pub(crate) struct Table {
-    pub(super) name: &'static str,
     pub(super) offset: usize,
 }
 
 impl Table {
-    pub(super) fn named(name: &'static str) -> Self {
-        Self { name, offset: 4 }
-    }
-
-    pub(super) fn merged(offset: usize) -> Self {
-        Self { name: "T", offset }
+    pub(super) fn at(offset: usize) -> Self {
+        Self { offset }
     }
 }
 
-/// 当前生成物用到的表；单表保持原名，多表合并为 `T`。
+/// 当前生成物用到的表，全部指向同一个 `T[]`。
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Tables {
     and: Option<Table>,
@@ -29,13 +24,15 @@ pub(crate) struct Tables {
 }
 
 impl Tables {
+    /// 测试用：只登记一张表，基址 4。
+    #[cfg(test)]
     pub(super) fn named(name: &'static str) -> Self {
         let mut tables = Self::default();
-        tables.set(name, Table::named(name));
+        tables.set(name, 4);
         tables
     }
 
-    pub(super) fn set(&mut self, name: &str, table: Table) {
+    pub(super) fn set(&mut self, name: &str, offset: usize) {
         let slot = match name {
             "T_AND" => &mut self.and,
             "T_OR" => &mut self.or,
@@ -45,7 +42,7 @@ impl Tables {
             "T_EQUIV" => &mut self.equiv,
             other => unreachable!("未知二元表 {other}"),
         };
-        *slot = Some(table);
+        *slot = Some(Table::at(offset));
     }
 
     pub(crate) fn and(&self) -> Table {
@@ -73,24 +70,17 @@ impl Tables {
     }
 }
 
-/// 单表用原名；多表合并成 `T[]`，返回拼好的表值与各算子的基址。
-pub(crate) fn tables(entries: &[(&'static str, [i8; 9])]) -> (Tables, Option<Vec<i8>>) {
-    if entries.len() <= 1 {
-        let tables = match entries.first() {
-            Some((name, _)) => Tables::named(name),
-            None => Tables::default(),
-        };
-        return (tables, None);
-    }
+/// 把用到的表按固定顺序拼成一个 `T[]`，返回各算子基址与表值。
+pub(crate) fn tables(entries: &[(&'static str, [i8; 9])]) -> (Tables, Vec<i8>) {
     let mut tables = Tables::default();
     let mut merged = Vec::new();
     for (name, values) in entries {
-        tables.set(name, Table::merged(4 + merged.len()));
+        tables.set(name, 4 + merged.len());
         merged.extend_from_slice(values.as_slice());
     }
-    (tables, Some(merged))
+    (tables, merged)
 }
 
 pub(crate) fn call(table: Table, left: String, right: String) -> String {
-    format!("{}[3*{left}+{right}+{}]", table.name, table.offset)
+    format!("T[3*{left}+{right}+{}]", table.offset)
 }

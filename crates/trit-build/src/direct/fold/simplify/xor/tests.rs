@@ -114,10 +114,10 @@ fn strong_add_c_tables_follow_the_dispatch() {
         let vars = expr.variables();
         let c = emit(&expr, &vars, alg).expect("生成");
         assert_eq!(
-            c.matches("    int8_t t").count(),
+            c.matches("    int t").count(),
             statements,
             "{alg:?} {source}: {c}"
         );
-        assert_eq!(c.contains("T_XOR"), has_table, "{alg:?} {source}: {c}");
+        assert_eq!(c.contains("T["), has_table, "{alg:?} {source}: {c}");
     }
 }

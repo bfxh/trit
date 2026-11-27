@@ -22,5 +22,5 @@ fn deep_inline_chain_does_not_recurse() {
         ops.len() - 1,
         &Tables::named("T_AND"),
     );
-    assert!(source.starts_with("T_AND[") && source.ends_with(']'));
+    assert!(source.starts_with("T[") && source.ends_with(']'));
 }
