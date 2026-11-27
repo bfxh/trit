@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v6：.spz 直读）
+
+- `trit-splat` 增 `spz` feature（默认关）：直接读 gaussforge/Brush 交付的 `.spz`，
+  省掉回转 PLY 中间步；`splat-render --ply <asset>` 按扩展名分流。
+- 解码口径对齐 Brush PLY：scale log、alpha logit、f_dc raw、rotation 转 `[W,X,Y,Z]`、
+  SH 系数交错 → channel-major（逐点基址）。两处实测修复：SH 取址漏 `i*K*3`
+  （所有点都读第 0 点）；坐标系原先按 RUF 翻转 y/z，最近邻取证表明 gaussforge `.spz`
+  保留 Brush 世界系原值，改 RUB 恒等。
+- 验证（train-brush-001/scene_30000）：最近邻抽查 16667 点全命中，位置 mean |Δ| 1.17e-4；
+  frame_0016 与 gaussforge 回转 PLY 渲染逐像素一致，与源 PLY 渲染 32.96 dB，
+  对 GT 27.94 dB（源 PLY 29.48 dB）；scale 差来自 SPZ 对 log-scale 的 [-10,10] 截断。
+- 测试 25 条（23 lib + 2 集成），新增 `decodes_brush_ply_semantics_and_per_point_sh`
+  用合成 `.spz` 锁 SH 逐点基址、四元数顺序与激活口径。
+- `spz 0.0.6` 为可选依赖（feature 关闭不进构建）；Cargo.lock 增 tokio/rayon/clap 等传递项。
+
 ### Added（trit-splat：3DGS 泼溅渲染实验层 v1）
 
 - 新 crate `crates/trit-splat`（`publish = false`）：把训练产物 3DGS PLY 用自家

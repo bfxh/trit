@@ -5107,6 +5107,10 @@
       "lines": 233
     },
     {
+      "file": "crates/trit-splat/src/spz.rs",
+      "lines": 194
+    },
+    {
       "file": "crates/trit-splat/tests/render_dataset.rs",
       "lines": 72
     },

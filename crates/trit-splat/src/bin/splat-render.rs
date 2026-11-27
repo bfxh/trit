@@ -1,7 +1,8 @@
-//! splat-render：读 3DGS .ply + nerfstudio transforms.json，渲染指定帧出 PNG。
+//! splat-render：读 3DGS .ply/.spz + nerfstudio transforms.json，渲染指定帧出 PNG。
 //!
 //! 用法：
 //!   splat-render --dataset <root> --frame 16 --ply scene_30000.ply --out out.png [--bg auto]
+//!   splat-render --dataset <root> --frame 16 --ply scene_30000.spz --out out.png
 
 use std::path::PathBuf;
 
@@ -21,7 +22,7 @@ fn value(argv: &[String], key: &str) -> Option<String> {
 fn main() -> std::process::ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     let Some(dataset) = value(&argv, "--dataset") else {
-        eprintln!("用法: splat-render --dataset <root> --frame N --ply <ply> --out <png> [--bg auto|r,g,b]");
+        eprintln!("用法: splat-render --dataset <root> --frame N --ply <ply|spz> --out <png> [--bg auto|r,g,b]");
         return std::process::ExitCode::from(2);
     };
     let frame: usize = value(&argv, "--frame").and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -39,9 +40,22 @@ fn main() -> std::process::ExitCode {
         .unwrap_or(0.0);
 
     let run = || -> Result<Frame, String> {
-        let ply_bytes = std::fs::read(&ply_path)
-            .map_err(|e| format!("读 ply 失败 {ply_path}: {e}"))?;
-        let mut gaussians = parse_ply(&ply_bytes).map_err(|e| format!("PLY 解析: {e}"))?;
+        // .spz 资产直读（spz feature）；.ply 走解析器
+        let mut gaussians = if ply_path.to_ascii_lowercase().ends_with(".spz") {
+            #[cfg(feature = "spz")]
+            {
+                trit_splat::spz::load_spz(std::path::Path::new(&ply_path))
+                    .map_err(|e| format!("SPZ 解析: {e}"))?
+            }
+            #[cfg(not(feature = "spz"))]
+            {
+                return Err("读 .spz 需要构建时启用 spz feature".into());
+            }
+        } else {
+            let ply_bytes = std::fs::read(&ply_path)
+                .map_err(|e| format!("读 ply 失败 {ply_path}: {e}"))?;
+            parse_ply(&ply_bytes).map_err(|e| format!("PLY 解析: {e}"))?
+        };
         println!("ply: {} 高斯 (sh-degree={sh_degree})", gaussians.len());
         if sh_degree < 3 {
             let keep = match sh_degree {

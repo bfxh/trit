@@ -20,6 +20,8 @@ pub mod math;
 pub mod ply;
 pub mod raster;
 pub mod splat;
+#[cfg(feature = "spz")]
+pub mod spz;
 
 use thiserror::Error;
 
@@ -37,6 +39,8 @@ pub enum SplatError {
     Transforms(String),
     #[error("渲染参数非法: {0}")]
     InvalidArgs(String),
+    #[error("SPZ 解析失败: {0}")]
+    Spz(String),
 }
 
 /// 渲染结果：w×h 的 RGB8 帧（行主序，无 padding）。

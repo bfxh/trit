@@ -10,14 +10,17 @@ publish = false
 
 [features]
 # PNG 文件 I/O 与 splat-render CLI（默认关：渲染核零图像编码依赖）。
+# spz：直接读 .spz 资产（gaussforge/Brush 导出的交付物），免回转 PLY 中间步。
 default = []
 png = ["dep:png"]
+spz = ["dep:spz"]
 
 [dependencies]
 trit-log.workspace = true
 thiserror = "2.0.21"
 serde_json = "1.0"
 png = { version = "0.17", optional = true }
+spz = { version = "0.0.6", optional = true }
 
 [[bin]]
 name = "splat-render"
