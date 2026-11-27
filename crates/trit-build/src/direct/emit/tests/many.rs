@@ -12,6 +12,6 @@ fn many_calls_stay_inline() {
     }
     let source = render(ops, &["a".to_string(), "b".to_string()], Algebra::Kleene);
     assert!(!source.contains("trit_bin("), "{source}");
-    assert!(source.contains("return T[3*T["), "{source}");
+    assert!(source.contains("?0:T[3*T["), "{source}");
     assert_eq!(source.matches("T[3*").count(), 21, "{source}");
 }

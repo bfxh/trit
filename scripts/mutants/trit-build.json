@@ -730,8 +730,8 @@
  {
   "name": "inline: 表索引偏移少一",
   "file": "crates/trit-build/src/direct/emit/inline/table.rs",
-  "old": "format!(\"T[3*{left}+{right}+{}]\", table.offset)",
-  "new": "format!(\"T[3*{left}+{right}+{}]\", table.offset - 1)",
+  "old": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset)",
+  "new": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset - 1)",
   "pkg": "trit-build",
   "filter": "single_use_and_is_inlined_into_not"
  },
@@ -776,20 +776,36 @@
   "filter": "fanout_bytes_stay_within_budget"
  },
  {
+  "name": "body: 三目 guard 恒真",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
+  "old": "        Some(format!(\"n<{}?0:\", vars.len()))",
+  "new": "        Some(format!(\"1?0:\"))",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_verilog_every_row"
+ },
+ {
   "name": "table: 单表退回长表名",
   "file": "crates/trit-build/src/direct/emit/inline/table.rs",
-  "old": "format!(\"T[3*{left}+{right}+{}]\", table.offset)",
-  "new": "format!(\"T_AND[3*{left}+{right}+{}]\", table.offset)",
+  "old": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset)",
+  "new": "format!(\"T_AND[3*{left}{sign}{right}+{}]\", table.offset)",
   "pkg": "trit-build",
   "filter": "variable_order_is_respected"
  },
  {
-  "name": "format: 头部注释退回两行",
-  "file": "crates/trit-build/src/direct/emit.rs",
-  "old": "    prefix.push_str(\"#include <stdint.h>\\n\\n\");",
-  "new": "    prefix.push_str(\"/* 直算：节点顺序发语句，单用节点并句；不展开 3^n 表。 */\\n\");\n    prefix.push_str(\"#include <stdint.h>\\n\\n\");",
+  "name": "table: 负右操作数退回 +-",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "    let sign = if right.starts_with('-') { \"\" } else { \"+\" };",
+  "new": "    let sign = \"+\";",
   "pkg": "trit-build",
-  "filter": "fanout_bytes_stay_within_budget"
+  "filter": "direct_c_bytes_stay_within_budget"
+ },
+ {
+  "name": "format: 代数标签退回长名",
+  "file": "crates/trit-build/src/direct/emit/format.rs",
+  "old": "        Algebra::Kleene => \"K3\",",
+  "new": "        Algebra::Kleene => \"kleene v=\",",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
  },
  {
   "name": "verify: 驱动器返回类型写成 int",

@@ -16,7 +16,7 @@ fn variable_reuse_boundary() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(five.matches("    int t").count(), 0, "{five}");
+    assert_eq!(five.matches("int t").count(), 0, "{five}");
     assert_eq!(five.matches("v[0]").count(), 5, "{five}");
     let six = render(
         vec![
@@ -48,6 +48,6 @@ fn reused_constant_stays_inline() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int t").count(), 0, "{source}");
-    assert!(source.contains("return T[3*"), "{source}");
+    assert_eq!(source.matches("int t").count(), 0, "{source}");
+    assert!(source.contains("?0:T[3*"), "{source}");
 }
