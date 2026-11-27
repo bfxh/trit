@@ -152,6 +152,9 @@ pub fn project(
     let fl_y = intr.fl_y;
     // J = ∂(u,v)/∂(x_cam,y_cam,z_cam)。v = cy − fl·y/depth ⇒ ∂v/∂y 与 ∂v/∂z
     // 均为负——y 行符号错了会镜像各向异性 splat 的朝向（cov2d 非对角元翻转）。
+    // 注意：Brush 的 pinhole 雅可比虽带 x/z 钳制（视锥外 15% 余量），但实验
+    // 证明钳制会破坏背景巨型 splat 的合法贡献（29.17→22.91），已移除。
+    // Brush 实际走 RT8 路径（"OPENCV"→RT8），其 lim_r 语义待 v4 单独验证。
     let j = [
         [fl_x / depth, 0.0, fl_x * cam.x / (depth * depth)],
         [0.0, -fl_y / depth, -fl_y * cam.y / (depth * depth)],

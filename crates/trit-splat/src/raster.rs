@@ -36,7 +36,10 @@ pub fn render(
     background: [f32; 3],
     min_scales: Option<&[f32]>,
 ) -> Frame {
-    let sigma_cap = MAX_SCREEN_SIGMA_RATIO * intr.width.max(intr.height) as f32;
+    let sigma_cap = std::env::var("SPLAT_SIGMA_CAP")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or_else(|| MAX_SCREEN_SIGMA_RATIO * intr.width.max(intr.height) as f32);
     let mut splats: Vec<ScreenGaussian> = gaussians
         .iter()
         .enumerate()
