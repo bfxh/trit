@@ -103,10 +103,15 @@ pub fn render(
         }
         let sigma_x = (s.inv_c / det_inv).sqrt();
         let sigma_y = (s.inv_a / det_inv).sqrt();
-        let x0 = (s.u - 3.0 * sigma_x).floor() as i32;
-        let x1 = (s.u + 3.0 * sigma_x).ceil() as i32;
-        let y0 = (s.v - 3.0 * sigma_y).floor() as i32;
-        let y1 = (s.v + 3.0 * sigma_y).ceil() as i32;
+        // bbox 半宽按 Brush compute_bbox_extent 口径：α 自适应
+        // ex = √(2·ln(α·255))·σ —— α=1 时 3.33σ，α=0.1 时 2.55σ（低 α 裁尾更紧）
+        let power_threshold = (s.alpha * 255.0).max(1e-6).ln();
+        let ex = (2.0 * power_threshold * sigma_x * sigma_x).sqrt();
+        let ey = (2.0 * power_threshold * sigma_y * sigma_y).sqrt();
+        let x0 = (s.u - ex).floor() as i32;
+        let x1 = (s.u + ex).ceil() as i32;
+        let y0 = (s.v - ey).floor() as i32;
+        let y1 = (s.v + ey).ceil() as i32;
         if s.alpha < 1.0 / 255.0 {
             continue;
         }
