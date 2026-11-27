@@ -39,6 +39,7 @@ B4:  trit-belnap::B4                  ≡  b4.rs       （4×4）
 BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + Verus 逐位证明 + 8×8×64 对拍）
 BULK: trit-core::bulk::TriVec          ≡  bulk.rs     （spec/exec + Verus 整向量证明 + tests/bridge_bulk.rs）
 POINT: trit-core::bulk::TriVec 单点     ≡  point.rs    （get/set/from_ternary 视图等价 + tests/bridge_point.rs）
+LEAN:  bulk.rs                          ≡  interop/lean/Trit/Bulk.lean（同一句话的模型层独立证明）
 每行：执行版 ≡ spec（Verus ensures）
 ```
 
@@ -110,9 +111,27 @@ padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆
 单点操作同时补了运行时对拍：`get`/`try_get` 逐位与标量一致、越界报错；
 `try_set` 后逐位一致且清空最后一个 `Unknown` 时 `unknowns()` 归一为 `None`。
 
+## 4.1 Lean 锚点（`interop/lean`，模型层）
+
+`interop/lean` 是一个固定 Lean 4.35.0、零 Mathlib 的独立 Lake 包。它不从
+`trit-core` 取代码，而是用符号模型证明同一批命题；与 Verus 的分工是
+“模型层 / 代码层”，细节见 [`LEAN.md`](LEAN.md)。
+
+- `Trit/Bulk.lean`（本轮新增，35 条定理）：`fromTernary`/`get`/`set` 的
+  视图律与 `wf` 维持；`andv`/`orv`/`notv`/`andvB3`/`orvB3` 的视图逐位等于
+  标量运算。位平面公式与 `bulk.rs` 的 `o_out/f_out/x_out` 逐字同形。
+- 证明对 `∀ len`、`∀ i` 成立，不是抽样；`lake build` 7 个目标，无 `sorry`。
+- 数据桥 `lake exe tritLean → interop/runner --bridge` 目前覆盖
+  K3/B4/Pack5 共 738 条；`TriVec` 的 bulk profile 是下一轮（`LEAN.md` §7）。
+
+**为什么小仓库能直证**：三值语义的模型是符号的（3 元素代数 + 位公式），
+一条 `∀ i < len` 的定理覆盖任意长度；需要 64 位字打包、`Vec` 分配、
+padding 掩码的部分才必须落到代码级，那由 Verus 与 bridge 对拍承担。
+
 ## 5. 覆盖范围（已证 / 未证）
 
-覆盖范围（当前 `scripts/verify.py --only verify` 报 188 verified）：
+覆盖范围（Verus 侧 `scripts/verify.py` 报 188 verified（含单点操作）；Lean 侧
+`interop/lean/Trit/Bulk.lean` 新增 35 条定理）：
 
 - K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射、
   `table` 与 spec 一致；
@@ -144,9 +163,12 @@ padding 位不在 `view` 语义内，由 `tests/bridge_point.rs` 对拍主库覆
    `table ≡ spec` 的 bridge 降级为冗余检查。位平面/批量路径与单点操作
    已完成（188 verified，`python3 scripts/verify.py --only verify` 复算）；
    剩余：padding 掩码、SIMD 口径（见 §7）。
-4. **M4**：统一入口 `trit-verify`：Verus / Kani / Creusot / 属性测试共用一套
+4. **M3.5（落地）**：Lean 第二个锚点——`interop/lean/Trit/Bulk.lean` 证单点操作
+   与平面公式；bulk 数据桥（`vectors/bulk.json` + runner profile）与
+   `#print axioms` 公理审计是下一轮。
+5. **M4**：统一入口 `trit-verify`：Verus / Kani / Creusot / 属性测试共用一套
    报告与门禁。
-5. **M5**（远期）：面向三值/位平面领域更强的验证器（当前不启动）。
+6. **M5**（远期）：面向三值/位平面领域更强的验证器（当前不启动）。
 
 ## 7. SIMD：口径拆分
 
