@@ -244,7 +244,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 42
+      "lines": 41
     },
     {
       "file": "crates/trit-build/src/direct/emit/body.rs",
@@ -4543,6 +4543,10 @@
       "lines": 658
     },
     {
+      "file": "crates/trit-policy/tests/frontier_design.rs",
+      "lines": 159
+    },
+    {
       "file": "crates/trit-policy/tests/fuzz_smoke.rs",
       "lines": 88
     },
@@ -4632,7 +4636,7 @@
     },
     {
       "file": "crates/trit-re/src/functions/cfg/tests.rs",
-      "lines": 193
+      "lines": 184
     },
     {
       "file": "crates/trit-re/src/functions/cooccurrence.rs",

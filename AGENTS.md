@@ -8,12 +8,18 @@
 2. **缺实现就自己造**；不许拿 Python 训练、外部模型或二进制现成件顶替。Python 只作对齐基线，不交付。
 3. **模型权重与训练产物属于本仓**：代码进 `crates/`，大件进 `D:\KF\trit-data\`，不许放在 `.yanagent/`。
 4. **没做完必须当场说明缺口**，不得把"文档里写了规矩"当成实现。
+5. **前沿优先，不沿用老旧设计**（2026-11-28 用户口述）：主库与编程模型默认依赖 MCP 与默认工具
+   （清单 `docs/specs/DEFAULT-TOOLS.json`）；上帝对象**上游与下游一并禁止**；任何
+   "更强 / 更快 / 更省"必须同时给基线、读数与负结果。宪章 `docs/specs/FRONTIER.md`，
+   门禁 `cargo test -p trit-policy --test frontier_design`。
 
 ## 工程口径
 
 - 实验层 `publish = false`；单文件 ≤800 行（`python scripts/module_budget.py`，台账只减不增）。
 - 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`
-  + `python scripts/sync_handoff_snapshot.py --check`。第三条只校验**交接账本快照的新鲜度**
+  + `python scripts/sync_handoff_snapshot.py --check`
+  + `cargo test -p trit-policy --test frontier_design`（前沿设计门：默认件清单 + S 级四门槛）。
+  第三条只校验**交接账本快照的新鲜度**
   （CI 里的 `tech_collide` 只判快照自洽，判不了正本被别人改过）；本机没有
   `_handoff/` 正本时会打印 `SKIP` 并 rc0，不算失败。
 - 新 worktree 的构建产物默认落 E: 盘：post-checkout 钩子自动生成 `.cargo/config.toml`；没有钩子的环境跑 `python scripts/wt_target.py --all`（见 `docs/engineering/BUILD-PERF.md` §5）。

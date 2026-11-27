@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "updated": "2026-11-28",
+  "rule": "默认件 = 主库与编程模型默认依赖的 MCP / 工具 / 验证入口。替换或新增必须写清替代对象、对标基线、复算命令与负结果；判据见 docs/positioning/FRONTIER.md §1.4。",
+  "tools": [
+    {
+      "name": "tech-stack-mcp",
+      "kind": "mcp",
+      "path": "tools/tech-stack-mcp",
+      "role": "语言用途策略的机器可判执行面：validate_path / policy",
+      "replaces": "每个项目各写一份路径检查脚本",
+      "baseline": "无同类 MCP；规则唯一来源 docs/tech-stack-policy.md",
+      "receipt": "cd tools/tech-stack-mcp && cargo test",
+      "negative": "只约束经由工具/MCP 的写入；bash 重定向与外部 CLI 直接改盘不在拦截范围，需事后审计",
+      "why_frontier": "策略以结构化方式被所有项目复用，新增语言只改一处"
+    },
+    {
+      "name": "agent_verify",
+      "kind": "gate",
+      "path": "tools/agent_verify.py",
+      "role": "验收编排的单一入口：任一闸拒绝则整体拒绝",
+      "replaces": "逐个手跑各个检查脚本",
+      "baseline": "无同类编排器；各闸自身即基线",
+      "receipt": "python3 tools/agent_verify.py --self-test",
+      "negative": "编排不等于判据本身；每个闸的边界仍以各自文档为准",
+      "why_frontier": "拒绝面收敛到一个入口，避免漏跑"
+    },
+    {
+      "name": "module_budget",
+      "kind": "gate",
+      "path": "scripts/module_budget.py",
+      "role": "上帝对象门禁：每个 .rs 自带行数上限，棘轮只减不增",
+      "replaces": "只在超过 800 行时才有人管",
+      "baseline": "旧口径（2026-11-01 实测）：台账只登记超 800 的文件，对 700 行文件无约束",
+      "receipt": "python3 scripts/module_budget.py",
+      "negative": "行数只是上帝对象的代理指标；职责面是否合理仍需评审",
+      "why_frontier": "默认全量棘轮：任何文件变胖都会被拦，不等到跨线"
+    },
+    {
+      "name": "verify",
+      "kind": "proof",
+      "path": "scripts/verify.py",
+      "role": "数学验证入口：Verus 证明 + bridge 对拍",
+      "replaces": "口头声明『逻辑正确』",
+      "baseline": "无等价替代；Lean 锚点见 docs/engineering/LEAN.md",
+      "receipt": "python3 scripts/verify.py",
+      "negative": "覆盖范围见 docs/engineering/VERIFICATION.md §5；浮点内核只是差分证据",
+      "why_frontier": "模型层（Lean）与代码层（Verus）分工，同一批命题两处独立成立"
+    }
+  ]
+}
