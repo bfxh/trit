@@ -12,11 +12,11 @@ pub(super) fn body(
     tables: &inline::Tables,
 ) -> String {
     let mut text = String::new();
-    text.push_str("int8_t trit_direct(const int8_t *v, unsigned n) {\n");
+    text.push_str("int8_t trit_direct(const int8_t*v,unsigned n){\n");
     if !vars.is_empty() {
-        text.push_str("    if (n < ");
+        text.push_str("    if(n<");
         text.push_str(&vars.len().to_string());
-        text.push_str("u) return 0; /* n<变量数→X */\n");
+        text.push_str(")return 0;/*X*/\n");
     } else {
         text.push_str("    (void)n;\n");
     }

@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Changed（第五十八轮：direct 头部、guard 与签名空白压缩）
+
+- `direct/emit.rs`：头部从
+  `/* trit-build direct-c kleene vars=a,b,c */` 收成 `/*kleene v=a,b,c*/`。
+  代数名和 `v` 的槽位映射仍保留，`trit-build` / `direct-c` 由文件名与函数名承担；
+  每个生成物少 25 B。
+- `direct/emit/body.rs`：guard 从
+  `    if (n < 3u) return 0; /* n<变量数→X */` 收成
+  `    if(n<3)return 0;/*X*/`；签名从
+  `int8_t trit_direct(const int8_t *v, unsigned n) {` 收成
+  `int8_t trit_direct(const int8_t*v,unsigned n){`。两处合计再少 25 B。
+- 固定少 50 B：`(a & b) | c` 277→227 B、`((a & b) | c) & (d | e)` 306→256 B、
+  `((a => b) <=> (!a | b)) ^ c` 321→271 B、11 变量混合式 417→367 B、
+  深链 320→270 B、`(!(a & b)) => (!(c | d))` 293→243 B；
+  `!a` / `a <=> 0` 179→129 B；`a & b` 243→193 B；
+  `(!a) => (!b)` / `(!a) <=> (!b)` 240→190 B；扇出 `fan3` 337→287 B、
+  `fan5` 355→305 B。
+- 判据：11 项 `direct_c_size` 预算收紧到 227/256/271/367/270/129/193/129/190/190/243 B；
+  `direct_c_fanout` 收紧到 287/305 B。签名断言、`direct.rs` 文档与 `--verify-c`
+  驱动器同步到新签名空白（C 只看声明类型，不看空白）。
+- 门禁：`cargo test -p trit-build`、clippy、fmt、rustdoc、docs、module budget、
+  test surface、alloc guard 与 100 条变异全绿。
+
 ### Changed（第五十七轮：direct 单表统一 `T[]`、临时变量改 `int`、头部注释压缩）
 
 - `direct/emit/inline/table.rs`：只用到一张表时也写 `T[]`，不再保留 `T_AND[]` 等原名；
