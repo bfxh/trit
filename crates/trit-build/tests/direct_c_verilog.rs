@@ -66,7 +66,7 @@ fn direct_backend_emits_c_for_verilog() {
         source.contains("int8_t trit_direct(const int8_t *v, unsigned n)"),
         "{source}"
     );
-    assert!(source.contains("T_XOR2"), "经典异或要单独成表：{source}");
+    assert!(source.contains("-1,0,1,0,0,0,1,0,-1"));
     let _ = fs::remove_dir_all(&dir);
 }
 

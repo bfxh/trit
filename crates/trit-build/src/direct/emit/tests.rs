@@ -20,7 +20,7 @@ fn single_use_and_is_inlined_into_not() {
     assert!(source.contains("return -T_AND[3*v[0]+v[1]+4];"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(
-        !source.contains("return t0;") && !source.contains("int8_t t0 ="),
+        !source.contains("return t0;") && !source.contains("int8_t t0="),
         "{source}"
     );
 }
@@ -38,10 +38,10 @@ fn shared_and_stays_a_separate_statement() {
         Algebra::Kleene,
     );
     assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
-    assert!(source.contains("int8_t t0 = T_AND["), "{source}");
+    assert!(source.contains("int8_t t0=T_AND["), "{source}");
     assert!(source.contains("return T_AND[3*-t0"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
-    assert!(!source.contains("int8_t t1 ="), "{source}");
+    assert!(!source.contains(",t1="), "{source}");
 }
 #[test]
 fn or_and_xor2_are_inlined_with_their_own_tables() {

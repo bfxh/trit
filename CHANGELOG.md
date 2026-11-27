@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Changed（第五十六轮：direct 合并运算符表、临时变量单条声明）
+
+- `direct/emit/inline/table.rs`：只用到一张二元表时仍写 `T_AND[]`；用到两张及以上时，
+  把各表按固定顺序拼成一个 `T[]`，索引写成 `T[3*l+r+base+4]`。表声明只留一个前缀，
+  每个算子的表名缩成 `T`、基址并进常量：两张表起每篇少一份前缀，
+  三张表少两份；每次调用再少 2–5 B。
+- `direct/emit/body.rs`：临时变量不再一条一句，合并成
+  `int8_t t0=...,t1=...;` 一条声明；第一个变量省掉 ` = ` 两个空格，后续每个变量
+  从 `    int8_t tN = ` 变成 `,tN=`，固定少 12 B。节点仍按后序初始化，C 的声明符
+  顺序保证后面的表达式能读前面的临时变量。
+- 新增 `direct/emit/tables.rs` 与 `direct/emit/body/value.rs`，把“用了哪些表”和
+  “单个节点右值”从 `render` / 函数体循环里拆出，模块预算不抬高；表达式展开的
+  两万层测试移到 `inline/expr/tests.rs`。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 469→429 B、
+  `((a & b) | c) & (d | e)` 504→458 B、`((a => b) <=> (!a | b)) ^ c` 560→476 B、
+  11 变量混合式 665→569 B、深链 522→472 B、`(!(a & b)) => (!(c | d))` 487→445 B；
+  单表与无表样例 `!a` / `a & b` / `a <=> 0` / `(!a) => (!b)` / `(!a) <=> (!b)`
+  保持 331/403/331/398/404 B。扇出网表 `fan3` 574→492 B、两个共享节点 `fan5`
+  610→510 B。
+- 判据：`direct_c_size.rs` 六个多表预算收紧；新增 `direct_c_fanout.rs` 锁 `fan3`
+  492 B、`fan5` 510 B 与 `int8_t t0=...,t1=...` 单条声明，并在三代数下
+  `--verify-c` 81 行全过；`cargo test -p trit-build` 141 单元（140 passed / 1 ignored）
+  + 集成全绿；`mutation_check --pkg trit-build` 97/97 caught（新增多表基址错位、
+  临时变量不合并两条）；clippy、fmt、rustdoc、docs、module budget、test surface
+  与 alloc guard 全绿。
+
 ### Changed（第五十五轮：direct 生成 C 词法压缩）
 
 - `direct/emit/format/table.rs`：运算符表声明从 `static const int8_t T_AND[9] = { -1, -1, ..., };`

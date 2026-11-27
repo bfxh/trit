@@ -244,11 +244,15 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 80
+      "lines": 48
     },
     {
       "file": "crates/trit-build/src/direct/emit/body.rs",
-      "lines": 54
+      "lines": 46
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/body/value.rs",
+      "lines": 30
     },
     {
       "file": "crates/trit-build/src/direct/emit/format.rs",
@@ -264,11 +268,19 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/expr.rs",
-      "lines": 81
+      "lines": 68
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/expr/tests.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/plan.rs",
       "lines": 62
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+      "lines": 96
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests.rs",
@@ -289,6 +301,10 @@
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests/tree.rs",
       "lines": 42
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/tables.rs",
+      "lines": 46
     },
     {
       "file": "crates/trit-build/src/direct/emit/tests.rs",
@@ -569,6 +585,10 @@
     {
       "file": "crates/trit-build/tests/direct_c.rs",
       "lines": 139
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_fanout.rs",
+      "lines": 84
     },
     {
       "file": "crates/trit-build/tests/direct_c_relative.rs",
