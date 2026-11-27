@@ -157,8 +157,8 @@
 | [WORK-BENCH.md](engineering/WORK-BENCH.md) | 工作任务产物基准：20 个文档/数据/表格/邮件/日历/文件整理/合规任务、15 类、81 条确定性检查、参考 81/81 与负例 20/20；原生 XLSX 公式、`-Candidates` 与 182/182 自测 |
 | [CMD-DRIVER.md](engineering/CMD-DRIVER.md) | PTC 命令行降错：plan 预检、argv 无 shell、逐步 verify、无盲重试、错误分类与摘要/本地回执分离；34/34 自测，work-bench 4 步 13/13、81/81 质量不变 |
 | [CI-CD.md](engineering/CI-CD.md) | CI/CD 与发布：开发侧 work-bench/PTC 质量门、agent-quality workflow、Release 质量前置与用户侧资产过滤、CI 预算规则 |
-| [VERIFICATION.md](engineering/VERIFICATION.md) | 主库三值语义的验证锚点：Verus 的 K3/Ł3/B3/B4/位平面/批量证明、3×3 完备对拍、`scripts/verify.py` 统一入口与 CI；Lean 第二锚点的分工、SIMD 三层口径与路线图 |
-| [LEAN.md](engineering/LEAN.md) | Lean 4 第二锚点：零 Mathlib 小仓库如何对 `∀ len/∀ i` 直证 `TriVec` 单点操作与位平面公式（35 条定理）、与 Verus 的模型层/代码层分工、bulk 数据桥与公理审计计划 |
+| [VERIFICATION.md](engineering/VERIFICATION.md) | 主库三值语义的 Verus 验证锚点：K3 规格与代数律证明、3×3 完备对拍 `trit-core`、`scripts/verify.py` 统一入口（固定版本 + SHA-256）与 CI；覆盖范围与路线图 |
+| [LEAN.md](engineering/LEAN.md) | Lean 4 证明锚点（模型层）：零 Mathlib 小仓库直证 TriVec 单点与位平面公式，与 Verus 代码层分工同一批命题 |
 | [LOGGING.md](engineering/LOGGING.md) | 统一运行时日志：`TRIT_LOG` 级别/前缀过滤、文本与 JSONL、文件输出；诊断走 `trit_log`、结果留 stdout 的口径与迁移现状 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
@@ -184,6 +184,8 @@
 | [README-SPEC.md](specs/README-SPEC.md) | README 规范：首屏只放什么、性能数字怎么给 |
 | [DOC-INDEX.md](specs/DOC-INDEX.md) | 新增 / 搬迁 / 改名文档的流程与判红条件 |
 | [AGENT-TASK-STANDARD.md](AGENT-TASK-STANDARD.md) | 高智商智能体任务标准：自包含起点、机器可判验收、显式禁区、失败回退、S/A/B/C 分级 |
+| [FRONTIER.md](specs/FRONTIER.md) | 前沿设计宪章：默认 MCP/默认工具、反老旧设计三问、上帝对象上下游全禁、质量不变的超越（基线/读数/负结果） |
+| [FRONTIER-FORMATTER-TASK.md](specs/FRONTIER-FORMATTER-TASK.md) | S 级任务卡：prettier 类格式化器的 Rust 重写（oracle DIFF 0 + 幂等 + 吞吐/内存超越 + 负结果入册） |
 
 ## AGENT-TASKS/ — 可派发的任务包
 
