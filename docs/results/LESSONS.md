@@ -621,10 +621,23 @@
     M1.47 把 M1.46 唯一 5/5 的 Davidson L6 SVC 格放到 5 个
     全新 80/20 split 上：点估计 5/5 为正（`+0.17~+3.40pp`，
     均值 `+2.12pp`），但只有 1/5 的 CI 低端大于 0；预注册判为
-    `directional`，不是 supported。原切分的 `+6.90pp` 没有被
-    独立切分复现。**报告 split audit 时，点估计符号数与 CI
-    显著数是两个指标；“5/5 点正”不能写成“5/5 显著”，更不能
-    把单格 bootstrap 5/5 当跨切分稳定性**（M1.47）。
+    `directional`，不是 supported。原切分的 `+6.90pp` 在
+    M1.47 的 5 个切分中没有复现。**报告 split audit 时，点估计
+    符号数与 CI 显著数是两个指标；“5/5 点正”不能写成“5/5
+    显著”，更不能把单格 bootstrap 5/5 当跨切分稳定性**（M1.47）。
+
+64. **5 个切分的均值不是总体均值；切分扩展也要预注册并看
+    split-level 均值 CI**。M1.48 把 M1.47 的 5 个 split 扩到
+    20 个全新 80/20 split：20/20 点估计为正、16/20 CI 低端
+    大于 0，均值 `+4.65pp`（split-level 95% CI
+    `[+3.88,+5.40]pp`），预注册判为 `supported`。M1.47 的
+    `+2.12pp` 落在低端，M1.46 的 `+6.90pp` 落在 20-split
+    分布的高端；合并 25 个 split 的描述性均值约 `+4.14pp`。
+    **一个 5-split 的 `directional` 可以是低样本均值，不等于
+    效应归零；反过来，20-split 的 `supported` 也不把单语料、
+    test 重叠的格变成可部署 candidate。** 报告时同时给
+    per-split 符号数与 split-level 均值 CI，不把旧判决和新
+    扩展合并成新的 confirmatory（M1.48）。
 
 ## 4. 工程经验
 

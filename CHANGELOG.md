@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Changed（M1.48：Davidson L6 SVC 20-split 扩展）
+
+- 在 M1.47 的 5 个 split 之外新增 20 个独立 80/20 分层 split（seed
+  `201/203/.../239`），只扩展同一格：Davidson L6 SVC f32 的
+  `balanced − unweighted` macro-F1。C 每 split 在 f32 fit 上用 5 折
+  unweighted accuracy 重选，balanced/unweighted 共用；阈值仍为 `0.0`。
+- 结果：20/20 个 point delta 为正，均值 `+4.6509pp`、中位数 `+4.4002pp`、
+  范围 `+1.0736~+7.1234pp`；16/20 个 95% CI 低端大于 0，0 个 CI 为负。
+  split-level bootstrap 均值 95% CI `[+3.8768,+5.4044]pp`；预注册判为
+  `supported`（`supported=true`）。
+- 解释：M1.47 的 `+2.1158pp` 是 5-split 低端估计，M1.46 的 `+6.8989pp`
+  是单切分高端位置；合并 25 个 split 的描述性均值为 `+4.1439pp`。
+  split-level 方向更稳，但仍是单词料、test 重叠、L6 SVC f32 的 recall
+  tilt（hate recall `0.682–0.794`、non-hate `0.805–0.827`、accuracy
+  `0.801–0.821`，预测正例率 `0.204–0.228`，真实先验 `0.0577`）；
+  candidate 线仍关闭。
+- 新增 `docs/research/data/wsp-classify-m148-{prereg,splits,raw,primary,verdict}`
+  与 `docs/research/scripts/wsp_m148/split_replication.py`；更新
+  `WSP-BUDGET-RESULTS.md` §11.48/§12、`WSP-ALT.md`、`WSP-BERT6-RESULTS.md`
+  和 `LESSONS.md` #64。
+
 ### Changed（M1.47：Davidson L6 SVC 独立 split 稳定性审计）
 
 - 预注册 5 个全新 80/20 分层 split（seed `101/103/107/109/113`），只审计 M1.46 唯一
