@@ -729,7 +729,7 @@
  },
  {
   "name": "inline: 表索引偏移少一",
-  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "file": "crates/trit-build/src/direct/emit/inline/table/call.rs",
   "old": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset)",
   "new": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset - 1)",
   "pkg": "trit-build",
@@ -754,8 +754,8 @@
  {
   "name": "format: 取反丢负号",
   "file": "crates/trit-build/src/direct/emit/format.rs",
-  "old": "        format!(\"-{inner}\")",
-  "new": "        format!(\"{inner}\")",
+  "old": "format!(\"-{inner}\")",
+  "new": "format!(\"{inner}\")",
   "pkg": "trit-build",
   "filter": "single_use_and_is_inlined_into_not"
  },
@@ -785,7 +785,7 @@
  },
  {
   "name": "table: 单表退回长表名",
-  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "file": "crates/trit-build/src/direct/emit/inline/table/call.rs",
   "old": "format!(\"T[3*{left}{sign}{right}+{}]\", table.offset)",
   "new": "format!(\"T_AND[3*{left}{sign}{right}+{}]\", table.offset)",
   "pkg": "trit-build",
@@ -793,7 +793,7 @@
  },
  {
   "name": "table: 负右操作数退回 +-",
-  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "file": "crates/trit-build/src/direct/emit/inline/table/call.rs",
   "old": "    let sign = if right.starts_with('-') { \"\" } else { \"+\" };",
   "new": "    let sign = \"+\";",
   "pkg": "trit-build",
@@ -814,5 +814,53 @@
   "new": "         int trit_direct(const int8_t *v, unsigned n);\\n\\n\\",
   "pkg": "trit-build",
   "filter": "verify_c_matches_verilog_every_row"
+ },
+ {
+  "name": "emit: And 不借 Or 表",
+  "file": "crates/trit-build/src/direct/emit/tables.rs",
+  "old": "    if has_and && !has_or {",
+  "new": "    if has_and {",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
+ },
+ {
+  "name": "emit: And 借表但不取反",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "        Table::negated(self.or.expect(\"And 节点没有登记表\").offset)",
+  "new": "        Table::at(self.or.expect(\"And 节点没有登记表\").offset)",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_fanout_every_row"
+ },
+ {
+  "name": "simplify: K3 蕴含不降格",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
+  "old": "    if matches!(alg, Algebra::Kleene) {\n        kleene::implies(resolve, kept, consts, left, right);\n        return;\n    }",
+  "new": "    if false {\n        kleene::implies(resolve, kept, consts, left, right);\n        return;\n    }",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::kleene::k3_implication_shares_or_table_and_keeps_resolve_aligned"
+ },
+ {
+  "name": "simplify: K3 蕴含降成 And",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives/kleene.rs",
+  "old": "    absorb::or(resolve, kept, consts, left, right, Algebra::Kleene);",
+  "new": "    absorb::and(resolve, kept, consts, left, right, Algebra::Kleene);",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::kleene::k3_implication_shares_or_table_and_keeps_resolve_aligned"
+ },
+ {
+  "name": "simplify: K3 降格不截断 resolve",
+  "file": "crates/trit-build/src/direct/fold/simplify/connectives/kleene.rs",
+  "old": "    resolve.truncate(base);\n",
+  "new": "",
+  "pkg": "trit-build",
+  "filter": "direct::fold::simplify::connectives::tests::kleene::k3_implication_shares_or_table_and_keeps_resolve_aligned"
+ },
+ {
+  "name": "table: 同操作数不折 4*x",
+  "file": "crates/trit-build/src/direct/emit/inline/table/call.rs",
+  "old": "    let body = if left == right {",
+  "new": "    let body = if false {",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
  }
 ]

@@ -6,7 +6,6 @@ use trit_core::value::Ternary;
 use trit_core::{Algebra, Parser};
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
-
 #[test]
 fn implication_laws_hold_exactly_where_the_tables_say() {
     for alg in ALGS {
@@ -186,4 +185,5 @@ fn simplified_connectives_emit_one_statement_without_tables() {
     }
 }
 
+mod kleene;
 mod negated;

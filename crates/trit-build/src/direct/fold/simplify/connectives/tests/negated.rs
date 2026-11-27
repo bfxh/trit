@@ -1,14 +1,11 @@
 //! 取反对偶与 `⇔ F` 的判据：表对拍 + 化简形状 + 生成 C 不注册多余表。
-
 use crate::direct::emit;
 use crate::direct::fold::fold;
 use crate::direct::ir::Op;
 use trit_core::value::Ternary;
 use trit_core::{Algebra, Parser};
-
 const ALGS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
 const VALUES: [Ternary; 3] = [Ternary::False, Ternary::Unknown, Ternary::True];
-
 #[test]
 fn negated_operand_laws_match_the_tables() {
     for alg in ALGS {
@@ -25,7 +22,6 @@ fn negated_operand_laws_match_the_tables() {
         }
     }
 }
-
 #[test]
 fn false_equivalence_negates_the_other_operand() {
     for alg in ALGS {
@@ -43,7 +39,6 @@ fn false_equivalence_negates_the_other_operand() {
         }
     }
 }
-
 #[test]
 fn double_negated_operands_cancel() {
     for alg in ALGS {
@@ -57,11 +52,18 @@ fn double_negated_operands_cancel() {
             ],
             alg,
         );
-        assert!(!out.iter().any(|op| matches!(op, Op::Not(_))), "{alg:?}");
-        assert!(
-            matches!(out.last(), Some(Op::Implies(a, b)) if *a == 1 && *b == 0),
-            "{alg:?}: {out:?}"
-        );
+        if matches!(alg, Algebra::Kleene) {
+            assert!(
+                matches!(out.last(), Some(Op::Or(a, b)) if *a == 0 && matches!(out[*b], Op::Not(1))),
+                "{alg:?}: {out:?}"
+            );
+        } else {
+            assert!(!out.iter().any(|op| matches!(op, Op::Not(_))), "{alg:?}");
+            assert!(
+                matches!(out.last(), Some(Op::Implies(a, b)) if *a == 1 && *b == 0),
+                "{alg:?}: {out:?}"
+            );
+        }
         let out = fold(
             vec![
                 Op::Var(0),
@@ -82,7 +84,6 @@ fn double_negated_operands_cancel() {
         );
     }
 }
-
 #[test]
 fn false_equivalence_emits_one_return_without_tables() {
     for alg in ALGS {
@@ -94,11 +95,10 @@ fn false_equivalence_emits_one_return_without_tables() {
         assert!(c.contains("?0:-v[0];"), "{alg:?}: {c}");
     }
 }
-
 #[test]
 fn double_negated_operands_emit_without_extra_minus() {
     for (source, expected) in [
-        ("(!a) => (!b)", "T[3*v[1]+v[0]+4]"),
+        ("(!a) => (!b)", "T[3*v[0]-v[1]+4]"),
         ("(!a) <=> (!b)", "T[3*v[0]+v[1]+4]"),
     ] {
         let expr = Parser::parse(source).expect("解析");

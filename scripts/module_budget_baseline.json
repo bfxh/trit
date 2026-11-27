@@ -244,7 +244,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 42
+      "lines": 41
     },
     {
       "file": "crates/trit-build/src/direct/emit/body.rs",
@@ -256,7 +256,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit/format.rs",
-      "lines": 23
+      "lines": 22
     },
     {
       "file": "crates/trit-build/src/direct/emit/format/table.rs",
@@ -281,6 +281,10 @@
     {
       "file": "crates/trit-build/src/direct/emit/inline/table.rs",
       "lines": 86
+    },
+    {
+      "file": "crates/trit-build/src/direct/emit/inline/table/call.rs",
+      "lines": 19
     },
     {
       "file": "crates/trit-build/src/direct/emit/inline/tests.rs",
@@ -395,12 +399,20 @@
       "lines": 92
     },
     {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/kleene.rs",
+      "lines": 19
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
       "lines": 56
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests.rs",
       "lines": 189
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests/kleene.rs",
+      "lines": 14
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests/negated.rs",
