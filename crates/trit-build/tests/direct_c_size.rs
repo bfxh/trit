@@ -47,20 +47,20 @@ fn build(dir: &Path, name: &str, source: &str) -> usize {
 #[test]
 fn direct_c_bytes_stay_within_budget() {
     let fixtures = [
-        ("(a & b) | c", 277),
-        ("((a & b) | c) & (d | e)", 306),
-        ("((a => b) <=> (!a | b)) ^ c", 321),
+        ("(a & b) | c", 227),
+        ("((a & b) | c) & (d | e)", 256),
+        ("((a => b) <=> (!a | b)) ^ c", 271),
         (
             "(((a & b) | (c & d)) & ((e | f) ^ (g & h))) | !(i & (j | k))",
-            417,
+            367,
         ),
-        ("a & (b | (c & (d | (e & f))))", 320),
-        ("!a", 179),
-        ("a & b", 243),
-        ("a <=> 0", 179),
-        ("(!a) => (!b)", 240),
-        ("(!a) <=> (!b)", 240),
-        ("(!(a & b)) => (!(c | d))", 293),
+        ("a & (b | (c & (d | (e & f))))", 270),
+        ("!a", 129),
+        ("a & b", 193),
+        ("a <=> 0", 129),
+        ("(!a) => (!b)", 190),
+        ("(!a) <=> (!b)", 190),
+        ("(!(a & b)) => (!(c | d))", 243),
     ];
     let dir = scratch();
     for (index, (source, budget)) in fixtures.into_iter().enumerate() {

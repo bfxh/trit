@@ -11,7 +11,7 @@
 //! `docs/reference/TERNARY-TOOLCHAIN.md` §7「不做二进制后端」一致。
 //!
 //! 函数签名与 `lookup.c` 的 `trit_lookup` 平行：
-//! `int8_t trit_direct(const int8_t *v, unsigned n)`。
+//! `int8_t trit_direct(const int8_t*v,unsigned n)`。
 //! 入参不足（`n < 变量数`）一律返回 `0`（X），fail-closed，不读越界内存。
 
 use anyhow::Result;
