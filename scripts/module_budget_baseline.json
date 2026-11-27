@@ -3072,7 +3072,11 @@
     },
     {
       "file": "crates/trit-ops/src/simd.rs",
-      "lines": 506
+      "lines": 394
+    },
+    {
+      "file": "crates/trit-ops/src/simd/tests.rs",
+      "lines": 144
     },
     {
       "file": "crates/trit-ops/src/trit.rs",
@@ -6779,6 +6783,22 @@
       "lines": 7
     },
     {
+      "file": "verus/src/point.rs",
+      "lines": 340
+    },
+    {
+      "file": "verus/src/point/from_ternary.rs",
+      "lines": 170
+    },
+    {
+      "file": "verus/src/point/proofs.rs",
+      "lines": 221
+    },
+    {
+      "file": "verus/src/point/wf_lemmas.rs",
+      "lines": 66
+    },
+    {
       "file": "verus/src/table.rs",
       "lines": 61
     },
@@ -6797,6 +6817,10 @@
     {
       "file": "verus/tests/bridge_bulk.rs",
       "lines": 106
+    },
+    {
+      "file": "verus/tests/bridge_point.rs",
+      "lines": 86
     },
     {
       "file": "verus/tests/common/mod.rs",

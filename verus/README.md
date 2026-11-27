@@ -16,6 +16,7 @@ B3:  trit-core::algebra::Bochvar      ≡  b3.rs       （tests/bridge_algebra.r
 B4:  trit-belnap::B4                  ≡  b4.rs       （tests/bridge_algebra.rs，4×4）
 BITS: trit-core::bits::TriBit          ≡  bits.rs     （spec/exec + Verus 逐位证明 + 8×8×64 对拍）
 BULK: trit-core::bulk::TriVec          ≡  bulk.rs     （spec/exec + Verus 整向量证明 + tests/bridge_bulk.rs）
+POINT: trit-core::bulk::TriVec 单点     ≡  point.rs    （get/set/from_ternary 视图等价 + tests/bridge_point.rs）
 每行：执行版 ≡ spec（src/*.rs 的 Verus ensures）
 ```
 
@@ -35,11 +36,19 @@ BULK: trit-core::bulk::TriVec          ≡  bulk.rs     （spec/exec + Verus 整
 - `src/bits/proofs.rs`：位级参数化 lemma 与 `not` / `and` / `or` 的逐位等价证明。
 - `tests/bridge_bits.rs`：8 组边界平面 × 64 位 × 3 种代数，逐位对拍 `TriBit` 与标量 `Ternary`。
 - `src/bulk.rs`：位切片向量 `TriVec` 的 spec/exec（`not` / `and` / `or` 的 K3·Ł3 格序与 B3 毒值），
-  引入结构不变式 `wf`（两个平面在 `len` 位内互斥）；
+  以及结构不变式 `wf`（两个平面在 `len` 位内互斥）；
 - `src/bulk/proofs.rs`：整向量等价证明——结果视图逐位等于标量 `knot` / `tand` / `tor` /
-  `poison_and` / `poison_or`，复用 `TriBit` 的逐位 lemma；
+  `poison_and` / `poison_or`；
+- `src/point.rs`：单点 `get_at` / `set_planes` 的 spec/exec 与视图口径
+  `set_at_spec`（掩码 `mask_word` 显式参数化）；
+- `src/point/from_ternary.rs`：`from_ternary_planes` 逐点打包 + `prefix` 循环不变式；
+- `src/point/wf_lemmas.rs`：`wf` 保持性 lemma（`set_word_wf` / `wf_none`）；
+- `src/point/proofs.rs`：单点写的位级 lemma（`mask_bit_at` / `bit_self` /
+  `tri_of_word_ext` / 命中与未命中的三值形式）与 `set_view_equiv`；
 - `tests/bridge_bulk.rs`：边界长度（0/1/63/64/65/130）× 三种代数，对拍主库 `tri_core::TriVec`
-  与标量 `Ternary`，并覆盖 padding 掩码与二值/未知混合。
+  与标量 `Ternary`，并覆盖 padding 掩码与二值/未知混合；
+- `tests/bridge_point.rs`：get / try_get / try_set / from_ternary 与标量逐位对拍，
+  含越界错误、`unknowns()` 归一化与 padding。
 
 ## 本地运行
 
@@ -61,7 +70,7 @@ python scripts/verify.py --json             # 机器可读报告
 
 ## 范围与限制
 
-已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 152 verified）：
+已验证（有限域穷举 + Verus，当前 `cargo-verus verify` 为 188 verified）：
 
 - K3：`!` 对合、`&`/`|` 交换与 De Morgan、`teq` 自反/互补、`rank` 单射；
 - Ł3：格序 `∧/∨`、强加/强合交换、`U⊕U=T`、`U⊗U=F`、`U⇒U=T`、De Morgan、等价自反；
@@ -70,13 +79,17 @@ python scripts/verify.py --json             # 机器可读报告
   consensus/gullibility 交换、conflation 对合与知识序 De Morgan；
 - 位平面 `TriBit`：`not` / `and` / `or` 的 Verus 逐位等价（8×8×64 对拍保留为回归）；
 - 位切片向量 `TriVec`：`not` / `and` / `or`（K3·Ł3 格序 + B3 毒值）的整向量等价，
-  即 `view(len, out_planes, unknowns) == Seq::new(len, |i| scalar_op(a[i], b[i]))`。
+  即 `view(len, out_planes, unknowns) == Seq::new(len, |i| scalar_op(a[i], b[i]))`；
+- 位切片向量单点操作：`get_at`（读一位 == `tri_at`）、`set_planes`（写一位后视图 ==
+  `set_at_spec`，含「清空最后一个 `Unknown` 后归一为 `None`」的分支）、
+  `from_ternary_planes`（逐位写 == 标量序列），且三条 exec 都保持结构不变式
+  `wf`（两平面在 `len` 位内互斥；`point/wf_lemmas.rs::set_word_wf` / `wf_none`），由 `tests/bridge_point.rs`
+  与主库对拍（含越界错误与 `unknowns()` 归一化）。
 
 **未验证**（明确缺口，不当作已完成）：
 
-- `TriVec` 的 `set` / `get` / `from_ternary` 等单点操作与构造器（本轮只覆盖批量运算）；
 - 批量运算的 padding 掩码：`bulk.rs` 的 exec 省略了 `len` 之外的掩码写入（`view` 不读 padding），
-  padding 清零由 `tests/bridge_bulk.rs` 对拍主库覆盖；
+  padding 清零由 `tests/bridge_point.rs` / `tests/bridge_bulk.rs` 对拍主库覆盖；
 - 任何并发或 `unsafe` 代码；
 - Verus 本身的可靠性、z3 模型与 Rust 编译器的可信基。
 
