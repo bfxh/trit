@@ -13,14 +13,14 @@ fn single_use_and_is_inlined_into_not() {
         Algebra::Kleene,
     );
     assert_eq!(
-        source.matches("    int8_t t").count(),
+        source.matches("    int t").count(),
         0,
         "单用锥与根节点都直接展开，不留临时语句：{source}"
     );
-    assert!(source.contains("return -T_AND[3*v[0]+v[1]+4];"), "{source}");
+    assert!(source.contains("return -T[3*v[0]+v[1]+4];"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(
-        !source.contains("return t0;") && !source.contains("int8_t t0="),
+        !source.contains("return t0;") && !source.contains("int t0="),
         "{source}"
     );
 }
@@ -37,9 +37,9 @@ fn shared_and_stays_a_separate_statement() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("    int8_t t").count(), 1, "{source}");
-    assert!(source.contains("int8_t t0=T_AND["), "{source}");
-    assert!(source.contains("return T_AND[3*-t0"), "{source}");
+    assert_eq!(source.matches("    int t").count(), 1, "{source}");
+    assert!(source.contains("int t0=T["), "{source}");
+    assert!(source.contains("return T[3*-t0"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(!source.contains(",t1="), "{source}");
 }
@@ -50,17 +50,14 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
         &vars(),
         Algebra::Kleene,
     );
-    assert!(or_source.contains("-T_OR[3*v[0]+v[1]+4]"), "{or_source}");
+    assert!(or_source.contains("-T[3*v[0]+v[1]+4]"), "{or_source}");
     assert!(!or_source.contains("trit_bin("), "{or_source}");
     let xor_source = render(
         vec![Op::Var(0), Op::Var(1), Op::Xor2(0, 1), Op::Not(2)],
         &vars(),
         Algebra::Kleene,
     );
-    assert!(
-        xor_source.contains("-T_XOR2[3*v[0]+v[1]+4]"),
-        "{xor_source}"
-    );
+    assert!(xor_source.contains("-T[3*v[0]+v[1]+4]"), "{xor_source}");
     assert!(!xor_source.contains("trit_bin("), "{xor_source}");
 }
 mod many;

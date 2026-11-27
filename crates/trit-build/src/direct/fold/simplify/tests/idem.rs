@@ -48,13 +48,9 @@ fn idempotent_c_has_one_statement_and_no_tables() {
             let expr = Parser::parse(source).expect("解析");
             let vars = expr.variables();
             let c = emit(&expr, &vars, alg).expect("生成");
-            assert_eq!(
-                c.matches("    int8_t t").count(),
-                0,
-                "{source} {alg:?}: {c}"
-            );
+            assert_eq!(c.matches("    int t").count(), 0, "{source} {alg:?}: {c}");
             assert!(
-                !c.contains("static const int8_t T_"),
+                !c.contains("static const int8_t T[]"),
                 "{source} {alg:?}: {c}"
             );
         }

@@ -16,7 +16,7 @@ pub(super) fn body(
     if !vars.is_empty() {
         text.push_str("    if (n < ");
         text.push_str(&vars.len().to_string());
-        text.push_str("u) return 0; /* 入参不足：按 X 处理，fail-closed */\n");
+        text.push_str("u) return 0; /* n<变量数→X */\n");
     } else {
         text.push_str("    (void)n;\n");
     }
@@ -28,7 +28,7 @@ pub(super) fn body(
         }
         names[index] = Some(next);
         if next == 0 {
-            text.push_str("    int8_t t0=");
+            text.push_str("    int t0=");
         } else {
             text.push_str(&format!(",t{next}="));
         }

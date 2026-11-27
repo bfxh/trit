@@ -12,7 +12,7 @@ fn vars() -> Vec<String> {
 #[test]
 fn negated_single_use_variable_is_inlined() {
     let source = render(vec![Op::Var(0), Op::Not(0)], &vars(), Algebra::Kleene);
-    assert_eq!(source.matches("    int8_t t").count(), 0, "{source}");
+    assert_eq!(source.matches("    int t").count(), 0, "{source}");
     assert!(source.contains("return -v[0];"), "{source}");
 }
 mod depth;

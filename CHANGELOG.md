@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Changed（第五十七轮：direct 单表统一 `T[]`、临时变量改 `int`、头部注释压缩）
+
+- `direct/emit/inline/table.rs`：只用到一张表时也写 `T[]`，不再保留 `T_AND[]` 等原名；
+  `Table` 只剩基址，表值总是拼进同一个 `T`。单表单次引用与声明各少 3–6 B，
+  单表样例合计少 6–12 B，多表不变。
+- `direct/emit/body.rs`：临时变量类型从 `int8_t` 改成更短的 `int`；值域仍是
+  `-1/0/1`，返回时隐式收窄回 `int8_t`，语义不变。每个临时变量少 3 B。
+- `direct/emit.rs`：生成物头两行注释收成一行
+  `/* trit-build direct-c kleene vars=a,b,c */`；guard 注释从
+  `/* 入参不足：按 X 处理，fail-closed */` 收成 `/* n<变量数→X */`。中文注释的
+  UTF-8 字节省得更多，每个生成物固定少 152 B。
+- `direct/verify.rs`：驱动器把 `trit_direct` 声明成 `int`，而定义返回 `int8_t`，
+  ABI 不一致属于未定义行为；改成 `int8_t trit_direct(...)`，三代数逐行对拍不再靠
+  寄存器残留高位碰巧通过。
+- 读数（同机 CLI，K3；整个 `direct.c`）：`(a & b) | c` 429→277 B、
+  `((a & b) | c) & (d | e)` 458→306 B、`((a => b) <=> (!a | b)) ^ c` 476→321 B、
+  11 变量混合式 569→417 B、深链 472→320 B、`(!(a & b)) => (!(c | d))` 445→293 B；
+  单表 `a & b` 403→243 B、`(!a) => (!b)` 398→240 B、`(!a) <=> (!b)` 404→240 B；
+  扇出 `fan3` 492→337 B、`fan5` 510→355 B。
+- 判据：11 项 `direct_c_size` 预算收紧到 277/306/321/417/320/179/243/179/240/240/293 B；
+  `direct_c_fanout` 收紧到 337/355 B，仍锁单条 `int t0=...,t1=` 声明与三代数 81 行
+  对拍；`verify_c` 驱动器原型与生成函数签名一致。
+- 门禁：`cargo test -p trit-build`、clippy、fmt、rustdoc、docs、module budget、
+  test surface、alloc guard 与 100 条变异全绿。
+
 ### Changed（第五十六轮：direct 合并运算符表、临时变量单条声明）
 
 - `direct/emit/inline/table.rs`：只用到一张二元表时仍写 `T_AND[]`；用到两张及以上时，
