@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use trit_splat::camera::parse_transforms;
+use trit_splat::math::Vec3;
 use trit_splat::ply::parse_ply;
 use trit_splat::raster::{border_mean, render};
 use trit_splat::Frame;
@@ -31,6 +32,11 @@ fn main() -> std::process::ExitCode {
     let bg_mode = value(&argv, "--bg").unwrap_or_else(|| "auto".into());
     // SH 阶数裁剪：0=纯 DC，3=完整 SH3（默认）。用于隔离视角色项的对错。
     let sh_degree: usize = value(&argv, "--sh-degree").and_then(|v| v.parse().ok()).unwrap_or(3);
+    // Mip-Splatting 3D 滤波强度（默认 0=关：v0.3.0 导出无 SplatRenderMode 标记
+    // 且实验证明 floor 劣化该数据；新版 Brush 导出可用 --min-scale-factor 0.1）。
+    let min_scale_factor: f32 = value(&argv, "--min-scale-factor")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
 
     let run = || -> Result<Frame, String> {
         let ply_bytes = std::fs::read(&ply_path)
@@ -83,7 +89,33 @@ fn main() -> std::process::ExitCode {
         };
         println!("背景色 (auto=GT 边界均值): {background:?}");
 
-        let frame_img = render(&gaussians, &cam.c2w, &transforms.intrinsics, background);
+        // Mip-Splatting 3D 滤波：f_i = √factor · min_v(dist/focal)（Brush
+        // train.rs:98 口径，factor 默认 0.1 ≈ 0.32px 下限）。渲染分辨率=训练
+        // 分辨率时 focal 直接用内参值。
+        let min_scales = if min_scale_factor > 0.0 {
+            let fl = transforms.intrinsics.fl_x;
+            let mut f = vec![0.0f32; gaussians.len()];
+            for (idx, g) in gaussians.iter().enumerate() {
+                let mu = Vec3::new(g.position[0], g.position[1], g.position[2]);
+                let mut min_ratio = f32::INFINITY;
+                for frame in &transforms.frames {
+                    let c = frame.c2w.translation();
+                    let d = (mu.sub(c)).length();
+                    min_ratio = min_ratio.min(d / fl);
+                }
+                f[idx] = min_scale_factor.sqrt() * min_ratio;
+            }
+            Some(f)
+        } else {
+            None
+        };
+        let frame_img = render(
+            &gaussians,
+            &cam.c2w,
+            &transforms.intrinsics,
+            background,
+            min_scales.as_deref(),
+        );
         write_png(&out_path, &frame_img).map_err(|e| format!("写 PNG: {e}"))?;
         println!("写出 {out_path:?}");
         Ok(frame_img)

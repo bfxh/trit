@@ -98,13 +98,30 @@ pub fn eval_color(f_dc: [f32; 3], f_rest: &[f32], view_dir: Vec3) -> [f32; 3] {
 }
 
 /// 把一颗高斯投影成屏幕空间 2D 高斯；投影后方差过小/在相机后 → None。
+/// `min_scale`：Mip-Splatting 3D 滤波器的每 splat 世界尺度下限（Brush
+/// `apply_scale_floor` 语义——floored = √(scale²+f²) 每轴，opacity 按体积比
+/// rx·ry·rz 补偿）；None 表示关闭。
 #[allow(clippy::too_many_arguments)]
 pub fn project(
     g: &RawGaussian,
     c2w: &Mat4,
     intr: &crate::camera::Intrinsics,
+    min_scale: Option<f32>,
 ) -> Option<ScreenGaussian> {
-    let (scale, rot, base_alpha) = crate::ply::activate(g);
+    let (mut scale, rot, mut base_alpha) = crate::ply::activate(g);
+    if let Some(f) = min_scale {
+        let f2 = f * f;
+        let floored = [
+            (scale[0] * scale[0] + f2).sqrt(),
+            (scale[1] * scale[1] + f2).sqrt(),
+            (scale[2] * scale[2] + f2).sqrt(),
+        ];
+        let comp = (scale[0] / floored[0])
+            * (scale[1] / floored[1])
+            * (scale[2] / floored[2]);
+        scale = floored;
+        base_alpha *= comp;
+    }
     let pos = Vec3::new(g.position[0], g.position[1], g.position[2]);
     let cam = c2w.world_to_cam(pos);
     let depth = -cam.z;
@@ -231,7 +248,7 @@ mod tests {
     #[test]
     fn on_axis_gaussian_centers_on_principal_point() {
         let g = dummy();
-        let s = project(&g, &identity_cam_at_z5(), &intr()).unwrap();
+        let s = project(&g, &identity_cam_at_z5(), &intr(), None).unwrap();
         assert!((s.u - 480.0).abs() < 1e-3);
         assert!((s.v - 270.0).abs() < 1e-3);
         assert!((s.depth - 5.0).abs() < 1e-4);
@@ -242,13 +259,13 @@ mod tests {
     fn gaussian_behind_camera_is_culled() {
         let mut g = dummy();
         g.position = [0.0, 0.0, 9.0]; // 相机在 z=5，后方
-        assert!(project(&g, &identity_cam_at_z5(), &intr()).is_none());
+        assert!(project(&g, &identity_cam_at_z5(), &intr(), None).is_none());
     }
 
     #[test]
     fn covariance_inverse_is_positive_definite() {
         let g = dummy();
-        let s = project(&g, &identity_cam_at_z5(), &intr()).unwrap();
+        let s = project(&g, &identity_cam_at_z5(), &intr(), None).unwrap();
         let det = 1.0 / (s.inv_a * s.inv_c - s.inv_b * s.inv_b);
         assert!(det > 0.0);
         assert!(s.inv_a > 0.0 && s.inv_c > 0.0);

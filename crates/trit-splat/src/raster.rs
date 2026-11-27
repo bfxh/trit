@@ -28,16 +28,26 @@ fn screen_sigma(s: &ScreenGaussian) -> Option<f32> {
 }
 
 /// 渲染一帧。`gaussians` 顺序无关（内部按视深排序）。
+/// `min_scales`：每 splat 的 Mip-Splatting 3D 滤波下限（None=关闭）。
 pub fn render(
     gaussians: &[RawGaussian],
     c2w: &Mat4,
     intr: &Intrinsics,
     background: [f32; 3],
+    min_scales: Option<&[f32]>,
 ) -> Frame {
     let sigma_cap = MAX_SCREEN_SIGMA_RATIO * intr.width.max(intr.height) as f32;
     let mut splats: Vec<ScreenGaussian> = gaussians
         .iter()
-        .filter_map(|g| project(g, c2w, intr))
+        .enumerate()
+        .filter_map(|(idx, g)| {
+            project(
+                g,
+                c2w,
+                intr,
+                min_scales.and_then(|m| m.get(idx).copied()),
+            )
+        })
         .filter(|s| screen_sigma(s).is_none_or(|sigma| sigma < sigma_cap))
         .collect();
     splats.sort_by(|a, b| b.depth.partial_cmp(&a.depth).unwrap_or(std::cmp::Ordering::Equal));
@@ -151,7 +161,7 @@ mod tests {
     fn single_red_gaussian_paints_center() {
         // 高斯在光轴上 (0,0,0)，相机在 z=5：中心像素应为纯红
         let g = gaussian([0.0, 0.0, 0.0], pure_dc([1.0, 0.0, 0.0]), 0.2);
-        let frame = render(&[g], &cam_at(5.0), &intr_small(), [0.0, 0.0, 0.0]);
+        let frame = render(&[g], &cam_at(5.0), &intr_small(), [0.0, 0.0, 0.0], None);
         let o = (12 * 32 + 16) * 3;
         assert!(frame.rgb[o] > 200, "中心应偏红: {}", frame.rgb[o]);
         assert!(frame.rgb[o + 1] < 40, "中心绿应低: {}", frame.rgb[o + 1]);
@@ -165,7 +175,7 @@ mod tests {
         // 同轴两颗：近的绿 (z=3) 压过远的红 (z=0)，相机 z=5
         let far = gaussian([0.0, 0.0, 0.0], pure_dc([1.0, 0.0, 0.0]), 0.25);
         let near = gaussian([0.0, 0.0, 2.0], pure_dc([0.0, 1.0, 0.0]), 0.25);
-        let frame = render(&[far, near], &cam_at(5.0), &intr_small(), [0.0, 0.0, 0.0]);
+        let frame = render(&[far, near], &cam_at(5.0), &intr_small(), [0.0, 0.0, 0.0], None);
         let o = (12 * 32 + 16) * 3;
         assert!(frame.rgb[o + 1] > 200, "近的绿应胜出: {}", frame.rgb[o + 1]);
         assert!(frame.rgb[o] < 40, "远的红应被盖: {}", frame.rgb[o]);
@@ -190,7 +200,7 @@ mod tests {
         // 屏幕 σ 全屏覆盖 → 闸门应剔除它，不干净色盖掉小 splat。
         let giant = gaussian([0.0, 0.0, 4.0], pure_dc([1.0, 0.0, 0.0]), 266.0);
         let small = gaussian([0.0, 0.0, 0.0], pure_dc([0.0, 0.0, 1.0]), 0.2);
-        let frame = render(&[giant, small], &cam_at(5.0), &intr_small(), [0.0, 0.0, 0.0]);
+        let frame = render(&[giant, small], &cam_at(5.0), &intr_small(), [0.0, 0.0, 0.0], None);
         let o = (12 * 32 + 16) * 3;
         assert!(
             frame.rgb[o + 2] > 100,

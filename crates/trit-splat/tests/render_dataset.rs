@@ -46,7 +46,7 @@ fn three_splats_render_three_colors() {
     let gaussians = parse_ply(&build_ply()).unwrap();
     assert_eq!(gaussians.len(), 3);
     let t = parse_transforms(TRANSFORMS).unwrap();
-    let frame = render(&gaussians, &t.frames[0].c2w, &t.intrinsics, [0.0, 0.0, 0.0]);
+    let frame = render(&gaussians, &t.frames[0].c2w, &t.intrinsics, [0.0, 0.0, 0.0], None);
     assert_eq!(frame.rgb.len(), 32 * 24 * 3);
 
     let px = |x: usize, y: usize, c: usize| frame.rgb[(y * 32 + x) * 3 + c] as i32;
@@ -66,7 +66,7 @@ fn three_splats_render_three_colors() {
 fn background_where_no_splats() {
     let gaussians = parse_ply(&build_ply()).unwrap();
     let t = parse_transforms(TRANSFORMS).unwrap();
-    let frame = render(&gaussians, &t.frames[0].c2w, &t.intrinsics, [1.0, 1.0, 1.0]);
+    let frame = render(&gaussians, &t.frames[0].c2w, &t.intrinsics, [1.0, 1.0, 1.0], None);
     // 左上角远离三颗高斯 → 纯背景
     assert_eq!(frame.rgb[0], 255);
 }
