@@ -81,5 +81,5 @@ fn absorbing_c_has_one_statement_and_no_tables() {
     let expr = Parser::parse("a & (a | b)").expect("解析");
     let vars = expr.variables();
     let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
-    assert!(b3.contains("T_AND") && b3.contains("T_OR"), "{b3}");
+    assert!(b3.contains("static const int8_t T[]"), "{b3}");
 }

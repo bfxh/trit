@@ -1,6 +1,6 @@
 //! `direct.c` 字节数回归门：只设上界，优化缩小时同步下调。
 //!
-//! 样例覆盖单用链、扇出、取反、否定对偶、11 变量与深链；预算来自当前 CLI 产物，任何变大都要先解释；生成物用短参数名 `v/n`、紧凑表声明和 `3*l+r+4` 索引。
+//! 样例覆盖单用链、扇出、取反、否定对偶、11 变量与深链；预算来自当前 CLI 产物，任何变大都要先解释；生成物用短参数名 `v/n`、紧凑表声明和 `3*l+r+4` 索引，多张表合并进 `T[]`。
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -47,20 +47,20 @@ fn build(dir: &Path, name: &str, source: &str) -> usize {
 #[test]
 fn direct_c_bytes_stay_within_budget() {
     let fixtures = [
-        ("(a & b) | c", 469),
-        ("((a & b) | c) & (d | e)", 504),
-        ("((a => b) <=> (!a | b)) ^ c", 560),
+        ("(a & b) | c", 429),
+        ("((a & b) | c) & (d | e)", 458),
+        ("((a => b) <=> (!a | b)) ^ c", 476),
         (
             "(((a & b) | (c & d)) & ((e | f) ^ (g & h))) | !(i & (j | k))",
-            665,
+            569,
         ),
-        ("a & (b | (c & (d | (e & f))))", 522),
+        ("a & (b | (c & (d | (e & f))))", 472),
         ("!a", 331),
         ("a & b", 403),
         ("a <=> 0", 331),
         ("(!a) => (!b)", 398),
         ("(!a) <=> (!b)", 404),
-        ("(!(a & b)) => (!(c | d))", 487),
+        ("(!(a & b)) => (!(c | d))", 445),
     ];
     let dir = scratch();
     for (index, (source, budget)) in fixtures.into_iter().enumerate() {

@@ -729,17 +729,17 @@
  },
  {
   "name": "inline: 表索引偏移少一",
-  "file": "crates/trit-build/src/direct/emit/inline.rs",
-  "old": "format!(\"{table}[3*{left}+{right}+4]\")",
-  "new": "format!(\"{table}[3*{left}+{right}+3]\")",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "format!(\"{}[3*{left}+{right}+{}]\", table.name, table.offset)",
+  "new": "format!(\"{}[3*{left}+{right}+{}]\", table.name, table.offset - 1)",
   "pkg": "trit-build",
   "filter": "single_use_and_is_inlined_into_not"
  },
  {
   "name": "body: 与门错用或表",
-  "file": "crates/trit-build/src/direct/emit/body.rs",
-  "old": "Op::And(left, right) => bin(\"T_AND\", *left, *right),",
-  "new": "Op::And(left, right) => bin(\"T_OR\", *left, *right),",
+  "file": "crates/trit-build/src/direct/emit/body/value.rs",
+  "old": "Op::And(left, right) => bin(tables.and(), *left, *right),",
+  "new": "Op::And(left, right) => bin(tables.or(), *left, *right),",
   "pkg": "trit-build",
   "filter": "shared_and_stays_a_separate_statement"
  },
@@ -758,5 +758,21 @@
   "new": "        format!(\"{inner}\")",
   "pkg": "trit-build",
   "filter": "single_use_and_is_inlined_into_not"
+ },
+ {
+  "name": "table: 多表合并基址错位",
+  "file": "crates/trit-build/src/direct/emit/inline/table.rs",
+  "old": "tables.set(name, Table::merged(4 + merged.len()));",
+  "new": "tables.set(name, Table::merged(5 + merged.len()));",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_fanout_every_row"
+ },
+ {
+  "name": "body: 临时变量不合并声明",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
+  "old": "            text.push_str(&format!(\",t{next}=\"));",
+  "new": "            text.push_str(&format!(\"; int8_t t{next}=\"));",
+  "pkg": "trit-build",
+  "filter": "fanout_bytes_stay_within_budget"
  }
 ]

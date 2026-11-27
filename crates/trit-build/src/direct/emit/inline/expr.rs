@@ -2,15 +2,21 @@
 
 use super::super::super::code;
 use super::super::super::ir::Op;
-use super::call;
+use super::{Table, Tables, call};
 
 enum Frame {
     Visit(usize),
-    Bin(&'static str),
+    Bin(Table),
     Not,
 }
 /// 展开一个可能已内联的节点；未内联节点取已经发射的 `tN`。
-pub(crate) fn expr(ops: &[Op], names: &[Option<usize>], inlined: &[bool], index: usize) -> String {
+pub(crate) fn expr(
+    ops: &[Op],
+    names: &[Option<usize>],
+    inlined: &[bool],
+    index: usize,
+    tables: &Tables,
+) -> String {
     let mut work = vec![Frame::Visit(index)];
     let mut out = Vec::new();
     while let Some(frame) = work.pop() {
@@ -30,12 +36,12 @@ pub(crate) fn expr(ops: &[Op], names: &[Option<usize>], inlined: &[bool], index:
                         work.push(Frame::Not);
                         work.push(Frame::Visit(inner));
                     }
-                    Op::And(left, right) => push_bin("T_AND", left, right, &mut work),
-                    Op::Or(left, right) => push_bin("T_OR", left, right, &mut work),
-                    Op::Xor(left, right) => push_bin("T_XOR", left, right, &mut work),
-                    Op::Xor2(left, right) => push_bin("T_XOR2", left, right, &mut work),
-                    Op::Implies(left, right) => push_bin("T_IMPL", left, right, &mut work),
-                    Op::Equiv(left, right) => push_bin("T_EQUIV", left, right, &mut work),
+                    Op::And(left, right) => push_bin(tables.and(), left, right, &mut work),
+                    Op::Or(left, right) => push_bin(tables.or(), left, right, &mut work),
+                    Op::Xor(left, right) => push_bin(tables.xor(), left, right, &mut work),
+                    Op::Xor2(left, right) => push_bin(tables.xor2(), left, right, &mut work),
+                    Op::Implies(left, right) => push_bin(tables.implies(), left, right, &mut work),
+                    Op::Equiv(left, right) => push_bin(tables.equiv(), left, right, &mut work),
                 }
             }
             Frame::Bin(table) => {
@@ -52,30 +58,11 @@ pub(crate) fn expr(ops: &[Op], names: &[Option<usize>], inlined: &[bool], index:
     out.pop().expect("表达式栈为空")
 }
 
-fn push_bin(table: &'static str, left: usize, right: usize, work: &mut Vec<Frame>) {
+fn push_bin(table: Table, left: usize, right: usize, work: &mut Vec<Frame>) {
     work.push(Frame::Bin(table));
     work.push(Frame::Visit(right));
     work.push(Frame::Visit(left));
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::direct::ir::Op;
-    use trit_core::value::Ternary;
-
-    /// 两万层单用链只走显式栈，不靠递归。
-    #[test]
-    fn deep_inline_chain_does_not_recurse() {
-        let mut ops = vec![Op::Const(Ternary::False)];
-        for _ in 0..20_000 {
-            let last = ops.len() - 1;
-            ops.push(Op::And(last, 0));
-        }
-        let inlined = vec![true; ops.len()];
-        assert!(super::super::plan::targets(&ops).iter().all(|flag| *flag));
-        let names = vec![None; ops.len()];
-        let source = expr(&ops, &names, &inlined, ops.len() - 1);
-        assert!(source.starts_with("T_AND[") && source.ends_with(']'));
-    }
-}
+mod tests;
