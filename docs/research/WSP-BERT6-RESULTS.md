@@ -40,6 +40,39 @@ LayerNorm、GELU、残差都在 f32 里跑，只把线性权重三值化。目�
 > 三负一微负；accuracy `0.942–0.945` 但 hate recall `3.9–20.0%`、
 > macro-F1 `0.52–0.63`，94% 多数类把 accuracy 撑高。**第三语料仍不能
 > 升级 candidate。** 详见 `WSP-BUDGET-RESULTS.md` §11.45。
+>
+> **M1.46 fit-balanced prior-free 规则（2026-11-27）**：三语料 12 个
+> primary cell 只有 Davidson L6 SVC 过预注册 5/5（macro-F1
+> `+6.90pp`，CI `[+4.05,+9.62]pp`），总计 1/12，整体
+> `not_supported`。balanced 的稳定效应是 hate recall
+> `+3.4~+68.1pp`，代价是 non-hate recall `−7.4~−18.1pp`、
+> accuracy `−2.7~−13.4pp`；Davidson 预测正例率被抬到 `0.214–0.217`
+> 而真实先验 `0.0575`。**这是 recall tilt，不是 macro-F1 改进，
+> 也不是校准；量化臂没有被救回。** 5 个 seed 实际是同一组预测的
+> 5 次 bootstrap，唯一 5/5 格不是独立确认。详见
+> `WSP-BUDGET-RESULTS.md` §11.46。
+>
+> **M1.47 Davidson L6 SVC 独立 split 审计（2026-11-27）**：把 M1.46
+> 唯一 5/5 格放到 5 个全新 80/20 split 上重跑：点估计 5/5 为正
+> （`+0.17~+3.40pp`，均值 `+2.12pp`），但只有 1/5 的 95% CI
+> 低端大于 0；预注册判为 `directional`，不是 supported。
+> balanced 仍是 recall tilt：hate recall `0.696–0.738`、non-hate
+> recall `0.810–0.824`、accuracy `0.804–0.818`，预测正例率
+> `0.206–0.219`（真实 `0.0577`）。**M1.47 的 5 个切分没有
+> 复现 `+6.90pp`；candidate 仍关闭。** 详见
+> `WSP-BUDGET-RESULTS.md` §11.47。
+>
+> **M1.48 Davidson L6 SVC 20-split 扩展（2026-11-27）**：把 M1.47
+> 的 5 个 split 扩到 20 个全新 80/20 split：点估计 20/20 为正
+> （`+1.07~+7.12pp`），16/20 的 95% CI 低端大于 0，split-level
+> 均值 `+4.65pp`（CI `[+3.88,+5.40]pp`）；预注册判为 `supported`。
+> M1.47 的 `+2.12pp` 是 5-split 低端，M1.46 的 `+6.90pp` 是单切分
+> 高端；合并 25 个 split 的描述性均值约 `+4.14pp`。balanced 仍是
+> recall tilt：hate recall `0.682–0.794`、non-hate recall
+> `0.805–0.827`、accuracy `0.801–0.821`，预测正例率
+> `0.204–0.228`（真实 `0.0577`）。**split-level 更稳，但仍是
+> 单语料、test 重叠的 L6 SVC f32 操作点；candidate 仍关闭。**
+> 详见 `WSP-BUDGET-RESULTS.md` §11.48。
 
 ## 1. 协议
 

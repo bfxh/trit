@@ -25,6 +25,29 @@
 > accuracy 全部 0/5 正 CI；accuracy `0.942–0.945` 但 hate recall
 > `3.9–20.0%`、macro-F1 `0.52–0.63`，多数类把 accuracy 撑高。
 > **第三语料仍不能升级 candidate。** 详见 §11.45。
+> M1.46 用 fit-only `class_weight="balanced"` 做 prior-free 决策
+> 规则：三语料 12 个 primary cell 只有 Davidson L6 SVC 过 5/5
+> （macro-F1 `+6.90pp`），总计 1/12，整体 `not_supported`；
+> balanced 稳定提高 hate recall `+3.4~+68.1pp`，同时把 non-hate
+> recall 压低 `−7.4~−18.1pp`、accuracy 压低 `−2.7~−13.4pp`。
+> **这是 recall tilt，不是 macro-F1 改进；candidate 线保持关闭。**
+> 5 个 seed 实际是同一组预测的 5 次 bootstrap，唯一 5/5 格不是
+> 独立确认。详见 §11.46。
+> M1.47 再把这一格放到 5 个全新 80/20 split 上重跑：点估计
+> 5/5 为正（均值 `+2.12pp`），但只有 1/5 CI 低端大于 0；
+> 预注册判为 `directional`，不是 supported。balanced 仍稳定
+> 表现为 hate recall `0.696–0.738`、non-hate recall
+> `0.810–0.824`、accuracy `0.804–0.818` 的 recall tilt。
+> **M1.47 的 5 个切分没有复现 `+6.90pp`；candidate 关闭。**
+> 详见 §11.47。
+> M1.48 再把同一格扩到 20 个全新 80/20 split：20/20 点估计
+> 为正、16/20 CI 低端大于 0，均值 `+4.65pp`（95% CI
+> `[+3.88,+5.40]pp`），预注册判为 `supported`。M1.47 的
+> `+2.12pp` 是 5-split 低端估计，M1.46 的 `+6.90pp` 是单切分
+> 高端位置；合并 25 个 split 的描述性均值约 `+4.14pp`。
+> **这修正“5 个 split 的均值就是总体”的读法，但 split-level
+> 稳定仍不等于 candidate：单语料、test 重叠、L6 SVC f32、
+> recall tilt，candidate 线保持关闭。** 详见 §11.48。
 > 详见 `WSP-BUDGET-RESULTS.md`。
 > 其余方案仍是草案。层内预演只覆盖 L12 第 0 层 `query/key/value`，不是全模型，
 > 也不是 STS。文中所有“误差下降”都是层内重建或层输出范数，不能直接当
