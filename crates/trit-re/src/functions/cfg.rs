@@ -16,11 +16,8 @@
 //! 照旧要求精确源，N2 的「剥表 PE32 共现可判」半只在这里**保持诚实**：
 //! 换个名字不改变证据等级。
 
-use super::x86len;
-use super::{FuncSource, Function};
+use super::{Arch, FuncSource, Function, x86len};
 use std::collections::{BTreeMap, BTreeSet};
-
-use super::Arch;
 
 /// 一条直接控制流边（字节模式收割）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,6 +172,9 @@ pub(in crate::functions) fn walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>) -
                 break; // 停链：解不出就停，不猜
             };
             out.visited.insert(cur, d.len);
+            let Some(next) = cur.checked_add(d.len as u64) else {
+                break;
+            };
             // v3：取址目标 = 间接调用函数的起点信号——当种子继续走（不动点）
             if let Some(t) = d.addr_taken
                 && in_exec_any(t, exec)
@@ -190,7 +190,7 @@ pub(in crate::functions) fn walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>) -
                     {
                         stack.push(t);
                     }
-                    cur += d.len as u64; // call 有顺序后继
+                    cur = next; // call 有顺序后继
                 }
                 x86len::OpKind::Jump => {
                     if let Some(t) = d.target
@@ -209,10 +209,10 @@ pub(in crate::functions) fn walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>) -
                     {
                         stack.push(t);
                     }
-                    cur += d.len as u64; // 条件边 + 顺序边都走
+                    cur = next; // 条件边 + 顺序边都走
                 }
                 x86len::OpKind::Ret => break,
-                x86len::OpKind::Other => cur += d.len as u64,
+                x86len::OpKind::Other => cur = next,
             }
         }
     }

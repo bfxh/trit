@@ -370,6 +370,19 @@ jobs:
         run: python3 scripts/disk_guard.py --json
         continue-on-error: true
 
+  frontier:
+    name: frontier design (default tools / S-level gates)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@stable
+      # 判的是"默认件清单完整 + S 级任务包四门槛"，判不了设计是否真的更前沿（宪章 §3）。
+      - name: Default tools manifest + S-level task gates
+        run: cargo test -p trit-policy --test frontier_design
+      - name: God-object surface ratchet (pub fields / pub fns per type)
+        run: cargo test -p trit-policy --test god_object_surface
+
   agent-checks:
     name: agent checks (registry)
     runs-on: ubuntu-latest

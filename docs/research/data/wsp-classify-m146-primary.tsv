@@ -1,0 +1,13 @@
+corpus	depth	probe	metric	positive	n	mean_point	mean_boot	verdict
+hatexplain	l12	logreg	macro_f1	0	5	-0.009963554765055505	-0.009940708574995336	not_supported
+hatexplain	l12	linear_svc	macro_f1	0	5	-0.005775315592412955	-0.005743864679127837	not_supported
+hatexplain	l6	logreg	macro_f1	0	5	-0.015532851110759083	-0.015516700447893017	not_supported
+hatexplain	l6	linear_svc	macro_f1	0	5	-0.011545071959834896	-0.011546640955680434	not_supported
+tweet-hate	l12	logreg	macro_f1	0	5	-0.03893851587524244	-0.03896073061249517	not_supported
+tweet-hate	l12	linear_svc	macro_f1	0	5	-0.04090158795908594	-0.040933572630732246	not_supported
+tweet-hate	l6	logreg	macro_f1	0	5	-0.0438669717268283	-0.04390976324200302	not_supported
+tweet-hate	l6	linear_svc	macro_f1	0	5	-0.04872873985351034	-0.048769800703775554	not_supported
+davidson	l12	logreg	macro_f1	0	5	-0.032216418237404953	-0.03195959603101405	not_supported
+davidson	l12	linear_svc	macro_f1	0	5	0.011747693249412605	0.012004258831834376	not_supported
+davidson	l6	logreg	macro_f1	0	5	0.02024686688368449	0.020396753693077023	not_supported
+davidson	l6	linear_svc	macro_f1	5	5	0.06898920802207509	0.06909280890224476	supported

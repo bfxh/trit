@@ -1896,15 +1896,23 @@
     },
     {
       "file": "crates/trit-export/src/lib.rs",
-      "lines": 321
+      "lines": 317
     },
     {
       "file": "crates/trit-export/src/names.rs",
       "lines": 14
     },
     {
+      "file": "crates/trit-export/src/regions.rs",
+      "lines": 65
+    },
+    {
       "file": "crates/trit-export/tests/gguf.rs",
       "lines": 140
+    },
+    {
+      "file": "crates/trit-export/tests/gguf_overlap.rs",
+      "lines": 220
     },
     {
       "file": "crates/trit-export/tests/gguf_read_duplicate.rs",
@@ -2788,7 +2796,7 @@
     },
     {
       "file": "crates/trit-machines/src/main.rs",
-      "lines": 203
+      "lines": 202
     },
     {
       "file": "crates/trit-machines/src/snn.rs",
@@ -2809,6 +2817,10 @@
     {
       "file": "crates/trit-machines/tests/limits.rs",
       "lines": 61
+    },
+    {
+      "file": "crates/trit-machines/tests/ticks.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-machines/tests/vm_empty_stack.rs",
@@ -3060,7 +3072,11 @@
     },
     {
       "file": "crates/trit-ops/src/simd.rs",
-      "lines": 506
+      "lines": 394
+    },
+    {
+      "file": "crates/trit-ops/src/simd/tests.rs",
+      "lines": 144
     },
     {
       "file": "crates/trit-ops/src/trit.rs",
@@ -4527,8 +4543,16 @@
       "lines": 658
     },
     {
+      "file": "crates/trit-policy/tests/frontier_design.rs",
+      "lines": 159
+    },
+    {
       "file": "crates/trit-policy/tests/fuzz_smoke.rs",
       "lines": 88
+    },
+    {
+      "file": "crates/trit-policy/tests/god_object_surface.rs",
+      "lines": 317
     },
     {
       "file": "crates/trit-policy/tests/policy.rs",
@@ -4616,7 +4640,7 @@
     },
     {
       "file": "crates/trit-re/src/functions/cfg/tests.rs",
-      "lines": 193
+      "lines": 184
     },
     {
       "file": "crates/trit-re/src/functions/cooccurrence.rs",
@@ -5285,6 +5309,10 @@
     {
       "file": "crates/trit-texture/tests/ttx2_endpoint_checksum.rs",
       "lines": 37
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx2_trailing_bytes.rs",
+      "lines": 64
     },
     {
       "file": "crates/trit-texture/tests/ttx3.rs",
@@ -6775,6 +6803,10 @@
       "lines": 634
     },
     {
+      "file": "tools/tech-stack-mcp/src/main.rs",
+      "lines": 189
+    },
+    {
       "file": "verus/src/b3.rs",
       "lines": 215
     },
@@ -6815,6 +6847,22 @@
       "lines": 7
     },
     {
+      "file": "verus/src/point.rs",
+      "lines": 340
+    },
+    {
+      "file": "verus/src/point/from_ternary.rs",
+      "lines": 170
+    },
+    {
+      "file": "verus/src/point/proofs.rs",
+      "lines": 221
+    },
+    {
+      "file": "verus/src/point/wf_lemmas.rs",
+      "lines": 66
+    },
+    {
       "file": "verus/src/table.rs",
       "lines": 61
     },
@@ -6833,6 +6881,10 @@
     {
       "file": "verus/tests/bridge_bulk.rs",
       "lines": 106
+    },
+    {
+      "file": "verus/tests/bridge_point.rs",
+      "lines": 86
     },
     {
       "file": "verus/tests/common/mod.rs",

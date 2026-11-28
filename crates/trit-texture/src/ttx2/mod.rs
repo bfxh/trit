@@ -4,8 +4,7 @@
 //! **内容自己的基数**算，逐段验证，任何不一致都是结构化错误。TTX2 的校验尾
 //! 是 **GF(3) CRC-16**（生成多项式 x¹⁶+x⁷+2 本原，≤16 连续 trit 突发错全检）。
 //!
-//! 模型域（三值层/基 3 打包/层间衔接/GPU 双轨转换）在私有 `model` 子模块，
-//! 类型经本模块再导出。
+//! 模型域（三值层/基 3 打包/层间衔接/GPU 双轨转换）在私有 `model` 子模块，类型经本模块再导出。
 
 mod model;
 
@@ -28,8 +27,7 @@ pub const CHECKSUM_BYTES: usize = 4;
 pub const KIND_TEX: u8 = 0;
 /// kind：三值模型（基 3 打包权重）。
 pub const KIND_MOD: u8 = 1;
-/// `flags` 的布局位：置位表示 8×8 块（17 字节）。旧文件该位为 0（4×10 / 12 字节），
-/// 读到时显式报 `UnsupportedLayout`，而不是走到块数/校验和才炸。
+/// `flags` 的布局位：置位表示 8×8 块（17 字节）；旧文件该位为 0（4×10 / 12 字节）时显式报 `UnsupportedLayout`。
 pub const FLAG_LAYOUT_8X8: u8 = 0x01;
 
 /// 一份 TTX2 文档。
@@ -65,8 +63,7 @@ fn level_blocks(width: usize, height: usize) -> Option<usize> {
     }
     (width / BLOCK_WIDTH)
         .checked_mul(height / BLOCK_HEIGHT)
-        // checked 内层乘：32 位目标上 usize=u32，未检查的 blocks×12 会回绕
-        // 放行超大声明，后续切片越界 panic。
+        // checked 内层乘：32 位目标上 usize=u32，未检查的 blocks×12 会回绕放行超大声明，后续切片越界 panic。
         .filter(|blocks| {
             blocks
                 .checked_mul(TRIT_BLOCK_BYTES)
@@ -203,6 +200,9 @@ fn decode_texture_section(section: &[u8]) -> Result<Vec<TritTexture>, TextureErr
     }
     // mip 单调性与形状对账单一来源：与写侧共用 validate_levels。
     validate_levels(&levels)?;
+    if cursor != section.len() {
+        return Err(truncated());
+    }
     Ok(levels)
 }
 
@@ -259,13 +259,15 @@ fn decode_model_section(section: &[u8]) -> Result<TritModel, TextureError> {
         });
     }
     // 层间衔接与取值域单一来源：与写侧共用 TritModel::new。
+    if cursor != section.len() {
+        return Err(truncated());
+    }
     TritModel::new(layers)
 }
 
 /// 从 TTX2 容器加载：逐段校验（魔数/kind/flags/段长/形状/层间衔接/GF(3) CRC-16）。
 ///
-/// TTX1 文件会得到 `TtxMagic(['T','T','X','1'])`——v2 读 v1 是显式拒绝，
-/// 读 v1 请用 [`crate::ttx::from_ttx`]。
+/// TTX1 文件会得到 `TtxMagic(['T','T','X','1'])`——v2 读 v1 显式拒绝；读 v1 请用 [`crate::ttx::from_ttx`]。
 pub fn from_ttx2(bytes: &[u8]) -> Result<TtxDocument, TextureError> {
     if bytes.len() < HEADER_BYTES + CHECKSUM_BYTES {
         return Err(TextureError::TtxTruncated {
@@ -336,8 +338,7 @@ mod tests {
 
     #[test]
     fn model_container_rejects_absurd_dims_without_allocation() {
-        // 谎报 outputs 巨大：载荷按 checked 对账后拒成 TtxTruncated，
-        // 不做任何按声明的分配。
+        // 谎报 outputs 巨大：载荷按 checked 对账后拒成 TtxTruncated，不做任何按声明的分配。
         let layer = TritModelLayer::new(&[vec![1, -1, 0, 1, 0]], &[1]).unwrap();
         let bytes = to_ttx2(&TtxDocument::Model(TritModel::new(vec![layer]).unwrap())).unwrap();
         let outputs_field = HEADER_BYTES + 4 + 4; // count + inputs 之后
@@ -373,8 +374,7 @@ mod tests {
 
     #[test]
     fn contiguous_sixteen_trit_corruption_is_always_caught() {
-        // CRC-16 的强度主张：≤16 连续 trit 的突发错全检（错图样次数 < deg(g)，
-        // 不可能被 g 整除）。CRC-3 对此只有概率保证——这是升级的实义。
+        // CRC-16 的强度主张：≤16 连续 trit 的突发错全检（错图样次数 < deg(g)，不可能被 g 整除）；CRC-3 对此只有概率保证。
         let base: Vec<i8> = (0..40).map(|i| [1i8, -1, 0][i % 3]).collect();
         let clean = TritModelLayer::new(std::slice::from_ref(&base), &[0]).unwrap();
         let clean_bytes =

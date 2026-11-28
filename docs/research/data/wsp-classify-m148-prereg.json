@@ -1,0 +1,87 @@
+{
+  "run": "M1.48",
+  "status": "preregistered_before_model_scores",
+  "created_at_local": "2026-11-27T06:00:00+08:00",
+  "title": "Davidson L6 SVC 20-split replication of the balanced split-stability audit",
+  "parent": "M1.47",
+  "question": "M1.47 在 5 个全新 80/20 split 上得到 5/5 点估计为正、但只有 1/5 CI 正（均值 +2.12pp）。把独立 split 扩到 20 个后，balanced−unweighted 的 split-level 均值是否仍为正，单个 split 的 CI 正率是多少？",
+  "scope": "replication / split-distribution extension of M1.47; not candidate confirmatory",
+  "previous_result": {
+    "run": "M1.47",
+    "split_count": 5,
+    "point_positive_splits": 5,
+    "ci_positive_splits": 1,
+    "mean_point_delta": 0.021158233693756336,
+    "verdict": "directional",
+    "note": "The new 20 split seeds are disjoint from the 5 M1.47 seeds; the M1.47 rows are secondary context only."
+  },
+  "dataset": {
+    "name": "Davidson et al. 2017 hate speech and offensive language",
+    "local_path": "D:/trit-results/davidson/texts-l12.json",
+    "rows": 24781,
+    "label_mapping": "class=0 (hate) -> 1; class=1 (offensive) + class=2 (neither) -> 0",
+    "label_counts": {
+      "non_hate": 23352,
+      "hate": 1429
+    },
+    "hate_prior": 0.05766514668496025,
+    "duplicate_normalized_texts": 0,
+    "external_overlap_rows": 0
+  },
+  "splits": {
+    "kind": "twenty new independent stratified 80/20 train/test draws",
+    "implementation": "sklearn.model_selection.train_test_split(test_size=0.2, stratify=label, random_state=split_seed)",
+    "split_seeds": [201, 203, 205, 207, 209, 211, 213, 215, 217, 219, 221, 223, 225, 227, 229, 231, 233, 235, 237, 239],
+    "disjoint_from_m147": true,
+    "expected_fit_rows": 19824,
+    "expected_test_rows": 4957,
+    "expected_test_hate_rows": 286,
+    "independence_note": "Twenty separate partition draws from the same corpus. They are independent split draws, not independent corpora or independent samples; test sets overlap across draws."
+  },
+  "modeling": {
+    "encoder": "frozen all-MiniLM-L6-v2",
+    "depth": "l6",
+    "arm": "f32",
+    "probe": "LinearSVC",
+    "probe_settings": "LinearSVC(C=c, max_iter=10000, random_state=7, tol=1e-4)",
+    "threshold": 0.0,
+    "rules": ["unweighted", "balanced"],
+    "c_grid": [0.01, 0.1, 1.0, 10.0],
+    "c_selection": "per split: unweighted f32 fit only, 5-fold StratifiedKFold(shuffle=True, random_state=7), accuracy; the selected C is shared by both rules within that split",
+    "test_usage": "test labels and test scores are not used for C selection, threshold selection, or rule selection"
+  },
+  "primary": {
+    "metric": "macro_f1",
+    "contrast": "balanced f32 - unweighted f32",
+    "per_split_bootstrap": "10,000 paired test-level bootstrap resamples, 95% two-sided percentile CI",
+    "bootstrap_rng_seeds": [2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2019, 2021, 2023, 2025, 2027, 2029, 2031, 2033, 2035, 2037, 2039],
+    "aggregate": "mean, median, standard deviation, min, max of the 20 per-split point deltas; split-level bootstrap 10,000 over the 20 deltas for a 95% percentile CI of the mean delta",
+    "split_level_bootstrap_rng_seed": 3001,
+    "split_level_note": "The split-level bootstrap treats the 20 split draws as units. It measures split-to-split variability, not population sampling; splits share the same corpus and their test sets overlap, so the interval is approximate.",
+    "verdict_rule": {
+      "supported": "split-level 95% CI of the mean delta has low > 0 AND at least 16/20 per-split point deltas are > 0",
+      "directional": "mean delta > 0 AND at least 14/20 per-split point deltas are > 0, but the supported condition is not met",
+      "not_supported": "all other outcomes"
+    },
+    "sign_gate_rationale": "Under a null of 0.5 positive signs, P(X>=16 of 20)=0.0059 and P(X>=14 of 20)=0.0577; the 16/20 gate is the strong sign-stability requirement, while 14/20 is the directional band.",
+    "interpretation_limit": "Even if supported, this is a replication of one descriptive cell on one corpus. It does not reopen M1.46's candidate line, validate a deployable rule, or make Davidson an official-split benchmark."
+  },
+  "secondary": [
+    "per-split absolute accuracy, macro-F1, hate/non-hate recall, predicted positive rate, and selected C",
+    "distribution of per-split point deltas and CI verdicts",
+    "append M1.47's five rows as prior context only, not as additional independent splits"
+  ],
+  "exclusions": [
+    "no L12 or logreg",
+    "no quantized arm (f32 only)",
+    "no target_prior, fit-prior quantile, calibration, or threshold search",
+    "no new corpus, re-encoding, MLP, or fine-tuning",
+    "no candidate upgrade or promotion"
+  ],
+  "planned_outputs": [
+    "data/wsp-classify-m148-splits.tsv",
+    "data/wsp-classify-m148-raw.tsv",
+    "data/wsp-classify-m148-primary.tsv",
+    "data/wsp-classify-m148-verdict.json"
+  ]
+}

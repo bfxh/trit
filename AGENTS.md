@@ -8,12 +8,18 @@
 2. **缺实现就自己造**；不许拿 Python 训练、外部模型或二进制现成件顶替。Python 只作对齐基线，不交付。
 3. **模型权重与训练产物属于本仓**：代码进 `crates/`，大件进 `D:\KF\trit-data\`，不许放在 `.yanagent/`。
 4. **没做完必须当场说明缺口**，不得把"文档里写了规矩"当成实现。
+5. **前沿优先，不沿用老旧设计**（2026-11-28 用户口述）：主库与编程模型默认依赖 MCP 与默认工具
+   （清单 `docs/specs/DEFAULT-TOOLS.json`）；上帝对象**上游与下游一并禁止**；任何
+   "更强 / 更快 / 更省"必须同时给基线、读数与负结果。宪章 `docs/specs/FRONTIER.md`，
+   门禁 `cargo test -p trit-policy --test frontier_design`。
 
 ## 工程口径
 
 - 实验层 `publish = false`；单文件 ≤800 行（`python scripts/module_budget.py`，台账只减不增）。
 - 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`
-  + `python scripts/sync_handoff_snapshot.py --check`。第三条只校验**交接账本快照的新鲜度**
+  + `python scripts/sync_handoff_snapshot.py --check`
+  + `cargo test -p trit-policy --test frontier_design`（前沿设计门：默认件清单 + S 级四门槛）。
+  第三条只校验**交接账本快照的新鲜度**
   （CI 里的 `tech_collide` 只判快照自洽，判不了正本被别人改过）；本机没有
   `_handoff/` 正本时会打印 `SKIP` 并 rc0，不算失败。
 - 新 worktree 的构建产物默认落 E: 盘：post-checkout 钩子自动生成 `.cargo/config.toml`；没有钩子的环境跑 `python scripts/wt_target.py --all`（见 `docs/engineering/BUILD-PERF.md` §5）。
@@ -137,3 +143,20 @@
   `python tools/sandbox_run.py -Root . -Copy <相对输入> -- <命令>`，默认 cwd 在宿主外、
   policy 先拒、run_caps 兜底；宿主指纹变了且没开 `-AllowHostWrite` 就 exit 3。
   `sandbox_matrix.py --cases 40 --parallel 8` 是并发对抗矩阵；边界见 `AGENT-SANDBOX.md`。
+
+## 语言用途：新增 Python 只准测试代码（2026-11-28）
+
+**默认规则，适用于 bfxh/trit 三进制全部项目与所有智能体（含子智能体、外部 CLI 智能体）。**
+
+- 新增 `.py` 只能落在测试位置：`tests/`、`test/`、`spec/`、`test_*.py`、`*_test.py`、`conftest.py`；
+  生产路径（`src/`、`tools/`、仓库根等）一律**拒绝写入**。
+- **存量豁免**：本规则只约束新增/覆盖，不回溯清理已有 `.py`（`tools/*.py` 等旧脚本保持不动）。
+- 执行方式（硬约束，不是评分扣分）：
+  - `trit-agent-kernel` 的 `write_file` 已内置校验（`tech_stack::validate_write_path`）；
+  - 其它项目 / 外部智能体通过 MCP 调用：`tools/tech-stack-mcp`（`validate_path` / `policy`）；
+  - 子智能体回执里的 `stack.added` 越权同样判违约。
+- 唯一例外：用户在任务 brief 里显式授权（`explicit_override`）；授权是一次性的、写进 brief 的，
+  不是"允许模型偏好某语言"。
+- 其它语言（Rust / TS / Go / …）不受此限，仍按项目现有技术栈。
+
+策略文档：`docs/tech-stack-policy.md`；MCP：`tools/tech-stack-mcp/README.md`。
