@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 mod admission;
 mod budget;
+mod capability;
 mod claim;
 mod context;
 pub mod delivery;
@@ -8,6 +9,7 @@ mod digest;
 mod effects;
 mod error;
 mod evidence;
+mod exports;
 mod invariants;
 mod model;
 mod obligation;
@@ -23,8 +25,6 @@ mod trace;
 pub mod trace_invariants;
 mod trace_store;
 pub mod tritdb_backend;
-
-mod exports;
 pub use exports::*;
 #[cfg(test)]
 mod invariants_tests;
