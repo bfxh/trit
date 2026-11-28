@@ -17,7 +17,7 @@ mod parallel;
 use frames::{frame_paths, parse_frames, parse_threads};
 use load::load_gaussians;
 use metrics::{db_label, mean_psnr, write_psnr_json};
-const USAGE: &str = "用法: splat-render --dataset <root> --frame N|all|a..b|csv --ply <ply|spz> --out <png|dir|模板{frame}> [--threads N|auto] [--depth] [--depth-max M] [--color-in raw|srgb|bt1886] [--color-out raw|srgb|bt1886] [--gamut srgb|p3|rec2020] [--exposure EV] [--temperature K] [--tint T] [--saturation S] [--tone-map none|reinhard|aces] [--bg auto|r,g,b] [--sh-degree 0..3] [--min-scale-factor F] [--psnr] [--psnr-json <path>] [--fail-under DB]";
+const USAGE: &str = "用法: splat-render --dataset <root> --frame N|all|a..b|csv --ply <ply|spz> --out <png|dir|模板{frame}> [--threads N|auto] [--depth] [--depth-max M] [--color-in raw|srgb|bt1886] [--color-out raw|srgb|bt1886] [--gamut srgb|p3|rec2020] [--exposure EV] [--temperature K] [--tint T] [--saturation S] [--tone-map none|reinhard|aces] [--bg black|auto|r,g,b] [--sh-degree 0..3] [--min-scale-factor F] [--psnr] [--psnr-json <path>] [--fail-under DB]";
 pub fn run(argv: Vec<String>) -> ExitCode {
     match run_inner(&argv) {
         Ok(code) => code,
@@ -35,7 +35,7 @@ fn run_inner(argv: &[String]) -> Result<ExitCode, String> {
     };
     let ply_path = cli::value(argv, "--ply").unwrap_or_else(|| "scene_30000.ply".into());
     let out = cli::value(argv, "--out").unwrap_or_else(|| "splat.png".into());
-    let bg_mode = cli::value(argv, "--bg").unwrap_or_else(|| "auto".into());
+    let bg_mode = cli::value(argv, "--bg").unwrap_or_else(|| "black".into());
     let sh_degree: usize = cli::value(argv, "--sh-degree")
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);

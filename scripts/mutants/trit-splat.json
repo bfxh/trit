@@ -9,7 +9,7 @@
   },
   {
     "name": "splat: SH 每通道系数数按 4 划分（K=3 被误判成不足）",
-    "file": "crates/trit-splat/src/splat.rs",
+    "file": "crates/trit-splat/src/splat/color.rs",
     "old": "    let k = f_rest.len() / 3; // 每通道系数数（SH1=3, SH2=8, SH3=15）",
     "new": "    let k = f_rest.len() / 4; // 每通道系数数（SH1=3, SH2=8, SH3=15）",
     "pkg": "trit-splat",
@@ -102,5 +102,21 @@
     "new": "    dst",
     "pkg": "trit-splat",
     "filter": "config_maps_out_of_gamut_saturation_without_channel_clipping"
+  },
+  {
+    "name": "splat: SH 合成前去掉下界钳制（负辐亮度进入 alpha 合成）",
+    "file": "crates/trit-splat/src/splat/color.rs",
+    "old": "    }\n    color.map(|v| v.max(0.0))\n}",
+    "new": "    }\n    color\n}",
+    "pkg": "trit-splat",
+    "filter": "negative_sh_color_is_clamped_to_zero"
+  },
+  {
+    "name": "raster: 帧尾可见性判据取反（屏外巨尾被误剔）",
+    "file": "crates/trit-splat/src/raster/tail.rs",
+    "old": "    s.alpha * (-0.5 * d * d / (sigma * sigma)).exp() >= TAIL_ALPHA_CUTOFF",
+    "new": "    s.alpha * (-0.5 * d * d / (sigma * sigma)).exp() < TAIL_ALPHA_CUTOFF",
+    "pkg": "trit-splat",
+    "filter": "offscreen_giant_with_visible_tail_is_kept"
   }
 ]

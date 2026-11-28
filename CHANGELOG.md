@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Fixed（trit-splat v15：渲染核对齐 Brush 参考口径）
+
+- **去掉按屏幕 σ / 各向异性比例的硬剔 splat**。巨型与细长 splat 在近景、地面和
+  背景里是合法几何；旧闸门（σ > 0.6×画面最长边、σ_max/σ_min > 100）会把它们
+  整颗删掉，画面上留黑洞。改为**帧尾精确截断**：只有一颗高斯在最近帧像素上的
+  峰值 α 仍低于 1/255 才剔除——数学上等价于逐像素 α 截断，不改变可见输出。
+- SH 视角色**只做下界钳制**（`max(color, 0)`），不再逐 splat 截到 `[0,1]`；高光
+  的 HDR 分量保留到最终 RGB8 落盘。与 Brush rasterizer 的 `max(color, 0)` 一致。
+- 中间画布改为 **f32 全程 alpha 合成**，不再每颗 splat 读回 u8、round 后再写；
+  逐像素 α 上限 0.999，与 Brush `min(0.999, ...)` 对齐。
+- pinhole 雅可比第三列恢复 **15% 画面外余量截断**（Brush
+  `calculate_jacobian_clamp_limits` 口径），避免贴边巨型 splat 的协方差发散。
+- 背景默认改为 **纯黑**（Brush / gaussian-splatting eval 口径）；`--bg auto`
+  仍保留 GT 边界均值，供未训练 PLY、空洞场景或旧对拍使用。默认黑底是**有意的
+  输出变更**，不再承诺与 v9 逐字节一致。
+- 深度第二遍复用同一份截断后 splat 列表；`raster/render.rs` 拆出 `raster/depth.rs`，
+  `splat.rs` 拆出 `splat/color.rs`，模块预算只收紧不抬高。
+- 验证：
+  - `synthetic-orbit + train-brush-001` 48 帧均值 **31.21 → 36.72 dB（+5.51）**；
+    在 Brush `eval_30000` 的 6 个同帧上 **33.267 vs Brush 33.266 dB**。
+  - `scan-wasteland` 帧 16：**31.82 vs Brush 31.77 dB**；
+    `wasteland-orbit` 帧 16：**29.26 vs Brush 29.20 dB**。
+  - 未训练 `init.ply` 帧 16：黑底 12.47 dB，`--bg auto` 14.06 dB（故保留 auto）。
+  - 53 lib + 11 bin + 4 集成测试；mutation 15/15 caught；clippy `-D warnings`、
+    module budget / alloc guard / test surface / CI integrity 均绿。
+- 边界：仍是 CPU painter、编码空间 alpha 合成、逐 splat 中心视深排序；未做
+  tile 并行、单遍前向早停、线性光合成或 ICC 感知 intent。
+
 ### Added（trit-splat v14：感知色域映射）
 
 - 新增 `color::gamut::map::perceptual`：在目标原色线性 RGB 中以 Rec.709

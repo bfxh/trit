@@ -8,4 +8,4 @@ mod border;
 mod render;
 
 pub use border::border_mean;
-pub use render::{MAX_SCREEN_SIGMA_RATIO, render, render_with_depth};
+pub use render::{TAIL_ALPHA_CUTOFF, render, render_with_depth};

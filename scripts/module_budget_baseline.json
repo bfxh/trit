@@ -5324,11 +5324,15 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli.rs",
-      "lines": 45
+      "lines": 33
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli/args.rs",
       "lines": 13
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/cli/background.rs",
+      "lines": 22
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli/gt.rs",
@@ -5483,8 +5487,16 @@
       "lines": 29
     },
     {
+      "file": "crates/trit-splat/src/raster/depth.rs",
+      "lines": 62
+    },
+    {
       "file": "crates/trit-splat/src/raster/render.rs",
-      "lines": 236
+      "lines": 168
+    },
+    {
+      "file": "crates/trit-splat/src/raster/tail.rs",
+      "lines": 54
     },
     {
       "file": "crates/trit-splat/src/raster/tests.rs",
@@ -5504,7 +5516,11 @@
     },
     {
       "file": "crates/trit-splat/src/splat.rs",
-      "lines": 201
+      "lines": 138
+    },
+    {
+      "file": "crates/trit-splat/src/splat/color.rs",
+      "lines": 81
     },
     {
       "file": "crates/trit-splat/src/splat/tests.rs",
@@ -5529,6 +5545,10 @@
     {
       "file": "crates/trit-splat/tests/render_dataset.rs",
       "lines": 40
+    },
+    {
+      "file": "crates/trit-splat/tests/renderer_color_clamp.rs",
+      "lines": 20
     },
     {
       "file": "crates/trit-texture/benches/sample.rs",
