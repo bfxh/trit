@@ -244,7 +244,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/emit.rs",
-      "lines": 41
+      "lines": 37
     },
     {
       "file": "crates/trit-build/src/direct/emit/body.rs",
@@ -317,10 +317,6 @@
     {
       "file": "crates/trit-build/src/direct/emit/tests/decl.rs",
       "lines": 49
-    },
-    {
-      "file": "crates/trit-build/src/direct/emit/tests/many.rs",
-      "lines": 17
     },
     {
       "file": "crates/trit-build/src/direct/fold.rs",
@@ -536,7 +532,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/tests.rs",
-      "lines": 139
+      "lines": 136
     },
     {
       "file": "crates/trit-build/src/direct/tests/eval.rs",
@@ -604,7 +600,7 @@
     },
     {
       "file": "crates/trit-build/tests/direct_c.rs",
-      "lines": 139
+      "lines": 136
     },
     {
       "file": "crates/trit-build/tests/direct_c_fanout.rs",
@@ -620,7 +616,7 @@
     },
     {
       "file": "crates/trit-build/tests/direct_c_verilog.rs",
-      "lines": 92
+      "lines": 89
     },
     {
       "file": "crates/trit-build/tests/direct_lattice_xor.rs",

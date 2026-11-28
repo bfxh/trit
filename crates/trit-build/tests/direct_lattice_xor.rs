@@ -47,7 +47,7 @@ fn run(dir: &Path, alg: &str) -> String {
 fn strong_xor_meet_join_identity_drops_and_or_tables() {
     let dir = scratch();
     let k3 = run(&dir, "kleene");
-    assert_eq!(k3.len(), 135, "{k3}");
+    assert_eq!(k3.len(), 120, "{k3}");
     assert!(!k3.contains("T_AND") && !k3.contains("T_OR"), "{k3}");
     assert_eq!(k3.matches("T[3").count(), 1, "{k3}");
     for alg in ["lukasiewicz", "bochvar"] {
