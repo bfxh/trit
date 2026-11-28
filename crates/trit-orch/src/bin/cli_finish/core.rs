@@ -35,7 +35,7 @@ pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
 
     let allow_self_reported = flag_present("--allow-self-reported");
     let spec = EvidenceSpec {
-        min_assertions: request.min_assertions,
+        min_assertions: request.min_assertions.unwrap_or(0),
     };
 
     // 外部传入的 receipts 一律降级为 SelfReported：JSON 里的 `provenance`

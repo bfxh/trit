@@ -172,11 +172,10 @@ impl Progress {
                         task: task.to_owned(),
                     });
                 }
-                // 计划身份也必须由宿主钉住：缺绑定、revision 或任务定义摘要
-                // 任一不符，都说明这条回执属于另一份计划。自报逃生舱已由调用方
-                // 显式承担信任，不额外要求 plan 绑定。
+                // 计划身份必须由宿主钉住；自报逃生舱不要求 plan 绑定。
+                let required = spec.evidence(attest.spec.min_assertions);
                 if attest.trust == ReceiptTrust::HostMeasuredOnly {
-                    check::plan(task, receipt, snapshot, spec, attest.spec.min_assertions)?;
+                    check::plan(task, receipt, snapshot, spec, required.min_assertions)?;
                 }
                 // authorization / freshness / usage 也必须有宿主判定，且与快照一致：
                 // 只钉 evidence 会让模型靠自报授权/新鲜度/低报用量解锁完成。
@@ -193,7 +192,7 @@ impl Progress {
                         task: task.to_owned(),
                     });
                 };
-                let expected = receipt.report(&attest.spec);
+                let expected = receipt.report(&required);
                 if expected.epoch != evidence.epoch
                     || expected.checks != evidence.checks
                     || expected.result != evidence.result

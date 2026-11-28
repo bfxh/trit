@@ -24,7 +24,7 @@ fn spec(id: &str, cpu: u32, memory: u32, max_tokens: u64, duration: u32) -> Task
         },
         requirements: resources(cpu, memory),
         max_tokens,
-        epoch: 0,
+        policy: trit_orch::TaskPolicy::default(),
     }
 }
 

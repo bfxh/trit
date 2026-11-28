@@ -8,7 +8,7 @@ pub use crate::invariants::{
 };
 pub use crate::model::{
     BlockReason, CheckReport, CheckResult, Decision, EvidenceVerdict, Limits, Observation, Phase,
-    PlanPatch, Selection, Snapshot, TaskSpec, TokenUsage,
+    PlanPatch, Selection, Snapshot, TaskPolicy, TaskSpec, TokenUsage,
 };
 pub use crate::obligation::{
     AdmissionObligation, ObligationBatch, ObligationBudget, ObligationCost, ObligationKind,
