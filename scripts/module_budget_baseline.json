@@ -532,15 +532,27 @@
     },
     {
       "file": "crates/trit-build/src/direct/tests.rs",
-      "lines": 136
+      "lines": 119
     },
     {
       "file": "crates/trit-build/src/direct/tests/eval.rs",
       "lines": 35
     },
     {
+      "file": "crates/trit-build/src/direct/tests/render.rs",
+      "lines": 29
+    },
+    {
       "file": "crates/trit-build/src/direct/verify.rs",
-      "lines": 124
+      "lines": 112
+    },
+    {
+      "file": "crates/trit-build/src/direct/verify/compiler.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-build/src/direct/verify/tests.rs",
+      "lines": 13
     },
     {
       "file": "crates/trit-build/src/egraph.rs",
@@ -605,6 +617,10 @@
     {
       "file": "crates/trit-build/tests/direct_c_fanout.rs",
       "lines": 83
+    },
+    {
+      "file": "crates/trit-build/tests/direct_c_negative.rs",
+      "lines": 70
     },
     {
       "file": "crates/trit-build/tests/direct_c_relative.rs",
@@ -3267,10 +3283,6 @@
       "lines": 180
     },
     {
-      "file": "crates/trit-orch/src/capability.rs",
-      "lines": 223
-    },
-    {
       "file": "crates/trit-orch/src/capability/mod.rs",
       "lines": 166
     },
@@ -5289,10 +5301,6 @@
     {
       "file": "crates/trit-splat/src/color/gamut.rs",
       "lines": 52
-    },
-    {
-      "file": "crates/trit-splat/src/color/tests.rs",
-      "lines": 103
     },
     {
       "file": "crates/trit-splat/src/color/tests/core.rs",

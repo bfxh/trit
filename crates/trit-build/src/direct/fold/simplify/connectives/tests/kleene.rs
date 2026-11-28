@@ -7,7 +7,7 @@ use trit_core::{Algebra, Parser};
 fn k3_implication_shares_or_table_and_keeps_resolve_aligned() {
     let expr = Parser::parse("((a => b) <=> (!a | b)) ^ c").expect("解析");
     let c = emit(&expr, &expr.variables(), Algebra::Kleene).expect("生成");
-    assert_eq!(c.len(), 188, "{c}");
+    assert_eq!(c.len(), 171, "{c}");
     assert!(!c.contains("T_IMPL"), "{c}");
     assert!(c.contains("C t0=T[3*v[1]-v[0]+4];"), "{c}");
     assert!(c.contains("?0:T[3*T[4*t0+22]+v[2]+13];"), "{c}");

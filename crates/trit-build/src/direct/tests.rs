@@ -4,6 +4,7 @@ use trit_core::Parser;
 use trit_eval::eval::{Assignment, eval};
 
 mod eval;
+mod render;
 use eval::eval_ops;
 /// 用 `trit_eval` 独立算 3×3 表：与生成物里的表逐格相同才算语义一致。
 #[test]
@@ -86,24 +87,6 @@ fn lowered_ir_matches_eval_for_every_assignment() {
             }
         }
     }
-}
-
-/// 渲染出来的形状：函数签名/无 3^n 表/根节点直接返回。
-#[test]
-fn render_is_linear_not_a_truth_table() {
-    let expr = Parser::parse("a & b | !c").expect("解析");
-    let vars = expr.variables();
-    let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
-    assert!(source.starts_with("/*K3*/"), "{source}");
-    assert!(source.contains("C trit_direct(C*v,int n){"), "{source}");
-    assert!(source.contains("static C T[]"), "{source}");
-    assert!(source.contains("-v["), "{source}");
-    assert!(!source.contains("T_NOT"), "{source}");
-    assert!(
-        !source.contains("TRIT_TABLE"),
-        "直算后端不该有 3^n 表：{source}"
-    );
-    assert!(source.contains("?0:T["), "{source}");
 }
 
 #[test]

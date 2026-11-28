@@ -49,7 +49,7 @@ fn idempotent_c_has_one_statement_and_no_tables() {
             let vars = expr.variables();
             let c = emit(&expr, &vars, alg).expect("生成");
             assert_eq!(c.matches("int t").count(), 0, "{source} {alg:?}: {c}");
-            assert!(!c.contains("static C T[]"), "{source} {alg:?}: {c}");
+            assert!(!c.contains("C T[]"), "{source} {alg:?}: {c}");
         }
     }
 }

@@ -91,7 +91,7 @@ fn false_equivalence_emits_one_return_without_tables() {
         let vars = expr.variables();
         let c = emit(&expr, &vars, alg).expect("生成");
         assert_eq!(c.matches("int t").count(), 0, "{alg:?}: {c}");
-        assert!(!c.contains("static C T[]"), "{alg:?}: {c}");
+        assert!(!c.contains("C T[]"), "{alg:?}: {c}");
         assert!(c.contains("?0:-v[0];"), "{alg:?}: {c}");
     }
 }
