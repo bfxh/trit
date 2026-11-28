@@ -1,0 +1,28 @@
+[package]
+name = "trit-splat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "3DGS 泼溅渲染实验层：3DGS PLY 解析、nerfstudio 相机、SH3 视角色、EWA 投影与 CPU 深度排序 alpha 合成，出确定性 RGB8 帧（不属于稳定 API）"
+publish = false
+
+[features]
+# PNG 文件 I/O 与 splat-render CLI（默认关：渲染核零图像编码依赖）。
+# spz：直接读 .spz 资产（gaussforge/Brush 导出的交付物），免回转 PLY 中间步。
+default = []
+png = ["dep:png"]
+spz = ["dep:spz"]
+
+[dependencies]
+trit-log.workspace = true
+thiserror = "2.0.21"
+serde_json = "1.0"
+png = { version = "0.17", optional = true }
+spz = { version = "0.0.6", optional = true }
+
+[[bin]]
+name = "splat-render"
+path = "src/bin/splat-render.rs"
+required-features = ["png"]

@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+### Changed（trit-splat：拆文件收绿模块预算，纯搬运）
+
+- 按“每文件只减不增”的棘轮拆 5 个超出 v1 上限的文件：`ply/raster/splat` 的
+  `mod tests` 移入 `src/<mod>/tests.rs`；`SplatError` 移入 `src/error.rs`
+  （`crate::SplatError` re-export 不变）；`splat-render` 的参数取值、SH 裁剪、
+  GT 边界均值与 PNG 落盘移入 `src/bin/splat-render/cli.rs`（`#[path]` 接线）。
+- 行数：`bin/splat-render.rs` 192→117（上限 133）、`lib.rs` 67→50、
+  `ply.rs` 261→167、`raster.rs` 258→171、`splat.rs` 276→208；
+  新文件 90/21/93/86/67 行已登记。
+- 行为不变：同一 `.spz` 渲染与拆分前逐像素一致（∞ dB）；
+  `cargo test -p trit-splat --features png,spz` 23 lib + 2 集成全绿，
+  `cargo test --workspace` 全绿，`module_budget.py` 全仓 OK。
+
+### Added（trit-splat v6：.spz 直读）
+
+- `trit-splat` 增 `spz` feature（默认关）：直接读 gaussforge/Brush 交付的 `.spz`，
+  省掉回转 PLY 中间步；`splat-render --ply <asset>` 按扩展名分流。
+- 解码口径对齐 Brush PLY：scale log、alpha logit、f_dc raw、rotation 转 `[W,X,Y,Z]`、
+  SH 系数交错 → channel-major（逐点基址）。两处实测修复：SH 取址漏 `i*K*3`
+  （所有点都读第 0 点）；坐标系原先按 RUF 翻转 y/z，最近邻取证表明 gaussforge `.spz`
+  保留 Brush 世界系原值，改 RUB 恒等。
+- 验证（train-brush-001/scene_30000）：最近邻抽查 16667 点全命中，位置 mean |Δ| 1.17e-4；
+  frame_0016 与 gaussforge 回转 PLY 渲染逐像素一致，与源 PLY 渲染 32.96 dB，
+  对 GT 27.94 dB（源 PLY 29.48 dB）；scale 差来自 SPZ 对 log-scale 的 [-10,10] 截断。
+- 第二资产交叉验证（train-brush-wasteland-001，scan-wasteland frame_0016）：
+  与回转 PLY 93.92 dB，与源 PLY 34.72 dB；对 GT 11.80 dB（源 PLY 11.92 dB）。
+- 测试 25 条（23 lib + 2 集成），新增 `decodes_brush_ply_semantics_and_per_point_sh`
+  用合成 `.spz` 锁 SH 逐点基址、四元数顺序与激活口径。
+- `spz 0.0.6` 为可选依赖（feature 关闭不进构建）；Cargo.lock 增 tokio/rayon/clap 等传递项。
+
+### Added（trit-splat：3DGS 泼溅渲染实验层 v1）
+
+- 新 crate `crates/trit-splat`（`publish = false`）：把训练产物 3DGS PLY 用自家
+  Rust 渲染出图，不依赖 bevy_gaussian_splatting 等现成件。链路：PLY 头按属性名
+  建列映射解析（兼容 gaussforge 回转无 `end_header` 变体）→ nerfstudio
+  transforms.json（OPENCV 内参 + OpenGL c2w）→ SH3 视角色（channel-major 索引，
+  与 Brush ply 口径一致）→ EWA 投影（Jacobian + 0.3px 膨胀）→ 视深排序 painter
+  alpha 合成 → RGB8；`png` feature 后有 `splat-render` CLI。
+- **退化 splat 闸门**（`MAX_SCREEN_SIGMA_RATIO=0.3`）：MCM 训练会产生针状巨型
+  splat（实测 scan-wasteland 有 266m×14cm、opacity 0.999 的针贴着相机轨道），
+  屏幕 σ 全屏覆盖时以近乎满 opacity 盖掉整幅画面；闸门剔除 σ 超过
+  0.3×画面最长边者，并留回归测试（`degenerate_giant_splat_does_not_wash_frame`）。
+- 测试 24 条全绿（21 lib + 2 集成 + 1 doc）：PLY 解析/无头变体、相机投影
+  （+Y 上 vs 图像 v 向下的 − 号）、SH0/SH1、遮挡排序、退化闸门、端到端三色场景。
+- 实测：toy（synthetic-orbit）frame_0016 构图与 Brush eval 一致（PSNR 22.59 dB，
+  Brush 33.27）；scan-wasteland frame_0016 构图一致（17.55 dB，Brush 31.43）。
+  与 Brush 的质量差距（约 10 dB）属 v2 项：Mip-Splatting 尺度下限、tile 级排序
+  与 overflow、SH 方向核验、针状 splat 的各向异性处理。
+- 牵连：新 crate 无反向依赖者；根 `Cargo.toml` 仅 workspace members 增一行。
+
 ### Changed（M1.48：Davidson L6 SVC 20-split 扩展）
 
 - 在 M1.47 的 5 个 split 之外新增 20 个独立 80/20 分层 split（seed

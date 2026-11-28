@@ -1,16 +1,24 @@
 //! 二元表的 C 引用：所有表共用 `T[]`，每张表只记索引基址。
-
 /// 一张二元表在 `T[]` 里的索引基址。
 #[derive(Clone, Copy)]
 pub(crate) struct Table {
     pub(super) offset: usize,
+    negated: bool,
 }
 impl Table {
     pub(super) fn at(offset: usize) -> Self {
-        Self { offset }
+        Self {
+            offset,
+            negated: false,
+        }
+    }
+    fn negated(offset: usize) -> Self {
+        Self {
+            offset,
+            negated: true,
+        }
     }
 }
-
 /// 当前生成物用到的表，全部指向同一个 `T[]`。
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Tables {
@@ -21,7 +29,6 @@ pub(crate) struct Tables {
     implies: Option<Table>,
     equiv: Option<Table>,
 }
-
 impl Tables {
     /// 测试用：只登记一张表，基址 4。
     #[cfg(test)]
@@ -30,7 +37,6 @@ impl Tables {
         tables.set(name, 4);
         tables
     }
-
     pub(super) fn set(&mut self, name: &str, offset: usize) {
         let slot = match name {
             "T_AND" => &mut self.and,
@@ -43,27 +49,24 @@ impl Tables {
         };
         *slot = Some(Table::at(offset));
     }
-
     pub(crate) fn and(&self) -> Table {
-        self.and.expect("And 节点没有登记表")
+        if let Some(table) = self.and {
+            return table;
+        }
+        Table::negated(self.or.expect("And 节点没有登记表").offset)
     }
-
     pub(crate) fn or(&self) -> Table {
         self.or.expect("Or 节点没有登记表")
     }
-
     pub(crate) fn xor(&self) -> Table {
         self.xor.expect("Xor 节点没有登记表")
     }
-
     pub(crate) fn xor2(&self) -> Table {
         self.xor2.expect("Xor2 节点没有登记表")
     }
-
     pub(crate) fn implies(&self) -> Table {
         self.implies.expect("Implies 节点没有登记表")
     }
-
     pub(crate) fn equiv(&self) -> Table {
         self.equiv.expect("Equiv 节点没有登记表")
     }
@@ -79,8 +82,5 @@ pub(crate) fn tables(entries: &[(&'static str, [i8; 9])]) -> (Tables, Vec<i8>) {
     }
     (tables, merged)
 }
-
-pub(crate) fn call(table: Table, left: String, right: String) -> String {
-    let sign = if right.starts_with('-') { "" } else { "+" };
-    format!("T[3*{left}{sign}{right}+{}]", table.offset)
-}
+mod call;
+pub(crate) use call::call;
