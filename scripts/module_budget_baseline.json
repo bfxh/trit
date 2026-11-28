@@ -1968,7 +1968,7 @@
     },
     {
       "file": "crates/trit-fmt/src/bin/trit-fmt.rs",
-      "lines": 102
+      "lines": 101
     },
     {
       "file": "crates/trit-fmt/src/lib.rs",
@@ -1984,7 +1984,7 @@
     },
     {
       "file": "crates/trit-fmt/src/md/print.rs",
-      "lines": 247
+      "lines": 242
     },
     {
       "file": "crates/trit-fmt/src/md/table.rs",

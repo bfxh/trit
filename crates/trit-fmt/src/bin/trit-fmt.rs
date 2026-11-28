@@ -11,6 +11,11 @@ use trit_fmt::format_path;
 
 const HELP: &str = include_str!("help.txt");
 
+fn fail(message: &str, code: u8) -> ExitCode {
+    eprintln!("trit-fmt: {message}");
+    ExitCode::from(code)
+}
+
 fn main() -> ExitCode {
     let mut check = false;
     let mut write = false;
@@ -26,42 +31,32 @@ fn main() -> ExitCode {
                 print!("{HELP}");
                 return ExitCode::SUCCESS;
             }
-            other if other.starts_with('-') => {
-                eprintln!("trit-fmt: unknown flag {other}");
-                return ExitCode::from(2);
-            }
+            other if other.starts_with('-') => return fail(&format!("unknown flag {other}"), 2),
             other => files.push(other.to_owned()),
         }
     }
     if check && write {
-        eprintln!("trit-fmt: --check 与 --write 不能同时给");
-        return ExitCode::from(2);
+        return fail("--check 与 --write 不能同时给", 2);
     }
     let parser = parser.as_deref().unwrap_or("json");
     if !matches!(parser, "json" | "markdown" | "md") {
-        eprintln!("trit-fmt: 不认识的 parser: {parser}");
-        return ExitCode::from(2);
+        return fail(&format!("不认识的 parser: {parser}"), 2);
     }
     if files.is_empty() {
         let mut source = String::new();
         if let Err(error) = std::io::stdin().read_to_string(&mut source) {
-            eprintln!("trit-fmt: 读 stdin 失败: {error}");
-            return ExitCode::from(1);
+            return fail(&format!("读 stdin 失败: {error}"), 1);
         }
-        let name = if parser == "json" {
-            "stdin.json"
-        } else {
-            "stdin.md"
+        let name = match parser {
+            "json" => "stdin.json",
+            _ => "stdin.md",
         };
         return match format_path(name, &source) {
             Ok(out) => {
                 print!("{out}");
                 ExitCode::SUCCESS
             }
-            Err(error) => {
-                eprintln!("trit-fmt: {error}");
-                ExitCode::from(1)
-            }
+            Err(error) => fail(&format!("{error}"), 1),
         };
     }
 
