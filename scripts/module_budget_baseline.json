@@ -3179,6 +3179,10 @@
       "lines": 29
     },
     {
+      "file": "crates/trit-orch/src/bin/cli_capability/mod.rs",
+      "lines": 23
+    },
+    {
       "file": "crates/trit-orch/src/bin/cli_delivery/mod.rs",
       "lines": 125
     },
@@ -3253,6 +3257,10 @@
     {
       "file": "crates/trit-orch/src/budget.rs",
       "lines": 180
+    },
+    {
+      "file": "crates/trit-orch/src/capability.rs",
+      "lines": 223
     },
     {
       "file": "crates/trit-orch/src/claim.rs",
@@ -3645,6 +3653,10 @@
     {
       "file": "crates/trit-orch/tests/budget.rs",
       "lines": 346
+    },
+    {
+      "file": "crates/trit-orch/tests/capability.rs",
+      "lines": 127
     },
     {
       "file": "crates/trit-orch/tests/claim_case.rs",

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-orch：动作级 capability 内核，第六门）
+
+- `capability` 模块：`ActionClass`（read/write/exec/network）+
+  `CapabilityPolicy`（显式 `allow`、`allow_untrusted_origin`）+ `ActionSpec`
+  （类别、`from_untrusted_data`）。读放行；写/执行/网络默认拒；类别已授予但由
+  不可信数据触发 → `Unknown`（需人确认），显式提权才放行。`decide` 返回三值 + 理由。
+- `admit_with_capability`：把 capability 作第六门，与四门 + claim 做 K3 AND；
+  任一门 False 一票否决，`Unknown` 保持。
+- `trit-orch capability` 子命令：stdin 一份 `{policy, action}`，stdout 回
+  `{allow, decision}`；未知动作类别在解析层拒绝。
+- 用例：`capability.rs` 内 7 个单测 + `tests/capability.rs` 6 个集成用例
+  （只读放行/默认拒写/未知来源转人工/显式提权/未知类别报错/第六门合成）。
+- 边界：`tools/context_guard.py` / `sandbox_run.py` / `subagent_dispatch.py`
+  的调用面尚未读取该判定，per-target 白名单未做；这仍是策略内核，不是端到端防护。
+
 ### Added（trit-fmt：Markdown 块级格式化，与 prettier 3.10.1 对拍）
 
 - `trit-fmt` 增 `.md` / `.markdown` 分派：`crates/trit-fmt/src/md/`（`mod/parse/print/table/width`，

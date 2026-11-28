@@ -1,7 +1,5 @@
-//! `trit-orch` 的宿主桥：stdin 收一份 JSON，stdout 回一份 JSON。
-//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `trace` /
-//! `compact-gate` 以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` /
-//! `delivery` / `handoff-gate` / `admit-with-claim`。
+//! `trit-orch` 的宿主桥：stdin 收一份 JSON，stdout 回一份 JSON。子命令：`plan` / `select` / `dispatch` /
+//! `finish` / `recover` / `shadow` / `trace` / `compact-gate`，以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` / `delivery` / `handoff-gate` / `admit-with-claim` / `capability`。
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -10,6 +8,7 @@ use trit_orch::{
     builtin, compaction_gate, dispatch_ready, handoff_gate, handoff_obligation, receipt_obligation,
     replay,
 };
+mod cli_capability;
 mod cli_delivery;
 mod cli_finish;
 mod cli_inputs;
@@ -148,6 +147,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
             }))
         }
         "finish" => cli_finish::run(input),
+        "capability" => cli_capability::run(input),
         "trace" => cli_trace::run(input),
         "shadow" => {
             let request: ShadowInput = parse(input)?;
