@@ -1,8 +1,4 @@
-//! `Xor2`（Verilog 经典 XOR）的常量恒等式。
-//!
-//! 语义只认 `GateKind::XorClassic.eval` 的 3×3 表：`X` 吸收、布尔异或。
-//! 所以 `x ^ 0 = x`、`x ^ 1 = ¬x`、`x ^ X = X` 三代数都成立；
-//! `x ^ x` 不是常量（`X ^ X = X`），这里显式不做幂等。
+//! `Xor2`（Verilog 经典 XOR）的常量恒等式与格对偶：`(p ∨ q) ^ (p ∧ q) = p ^ q`。
 
 use trit_core::value::Ternary;
 
@@ -18,6 +14,10 @@ pub(super) fn push(
 ) {
     let left = resolve[left];
     let right = resolve[right];
+    if let Some((p, q)) = super::lattice::pair::meet_join(kept, left, right) {
+        push_node(resolve, kept, consts, Op::Xor2(p, q));
+        return;
+    }
     match (consts[left], consts[right]) {
         (Some(Ternary::Unknown), _) | (_, Some(Ternary::Unknown)) => {
             push_const(resolve, kept, consts, Ternary::Unknown);

@@ -46,12 +46,12 @@ const FANOUT: [(&str, &str, usize); 2] = [
     (
         "fan3",
         "module fan3(input a, input b, input c, input d, output y);\n  wire w, p, q;\n  and g1 (w, a, b);\n  or  g2 (p, w, c);\n  xor g3 (q, w, d);\n  and g4 (y, p, q);\nendmodule\n",
-        230,
+        204,
     ),
     (
         "fan5",
         "module fan5(input a, input b, input c, input d, output y);\n  wire w1, w2, p, q;\n  xor g1 (w1, a, b);\n  xor g2 (w2, c, d);\n  or  g3 (p, w1, w2);\n  and g4 (q, w1, w2);\n  xor g5 (y, p, q);\nendmodule\n",
-        245,
+        162,
     ),
 ];
 
@@ -66,8 +66,7 @@ fn fanout_bytes_stay_within_budget() {
             "{name}: {bytes} B 超过预算 {budget} B\n{text}"
         );
         if name == "fan5" {
-            assert!(text.contains("int t0="), "{text}");
-            assert!(text.contains(",t1="), "两个临时变量应在一条声明里：{text}");
+            assert_eq!(text.matches("T[3").count(), 3, "{text}");
         }
     }
     let _ = fs::remove_dir_all(&dir);

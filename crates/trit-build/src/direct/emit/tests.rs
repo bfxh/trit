@@ -13,14 +13,14 @@ fn single_use_and_is_inlined_into_not() {
         Algebra::Kleene,
     );
     assert_eq!(
-        source.matches("int t").count(),
+        source.matches("C t0=").count(),
         0,
         "单用锥与根节点都直接展开，不留临时语句：{source}"
     );
     assert!(source.contains("?0:-T[3*v[0]+v[1]+4];"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(
-        !source.contains("return t0;") && !source.contains("int t0="),
+        !source.contains("return t0;") && !source.contains("C t0="),
         "{source}"
     );
 }
@@ -37,8 +37,8 @@ fn shared_and_stays_a_separate_statement() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("int t").count(), 1, "{source}");
-    assert!(source.contains("int t0=T["), "{source}");
+    assert_eq!(source.matches("C t0=").count(), 1, "{source}");
+    assert!(source.contains("C t0=T["), "{source}");
     assert!(source.contains("?0:T[3*-t0"), "{source}");
     assert!(!source.contains("trit_bin("), "{source}");
     assert!(!source.contains(",t1="), "{source}");
@@ -60,4 +60,4 @@ fn or_and_xor2_are_inlined_with_their_own_tables() {
     assert!(xor_source.contains("-T[3*v[0]+v[1]+4]"), "{xor_source}");
     assert!(!xor_source.contains("trit_bin("), "{xor_source}");
 }
-mod many;
+mod decl;

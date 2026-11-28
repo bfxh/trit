@@ -25,8 +25,8 @@ pub(super) fn render(ops: Vec<Op>, vars: &[String], alg: Algebra) -> String {
         prefix.push(' ');
         prefix.push_str(&vars.join(","));
     }
-    prefix.push_str("*/\n");
-    prefix.push_str("#include <stdint.h>\n");
+    prefix.push_str("*/");
+    prefix.push_str("typedef signed char C;");
     let (tables, merged) = inline::tables(&binary_tables);
     if !merged.is_empty() {
         push_table(&mut prefix, "T", &merged);
