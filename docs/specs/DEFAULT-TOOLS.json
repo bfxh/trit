@@ -40,12 +40,12 @@
       "name": "trit-fmt",
       "kind": "tool",
       "path": "crates/trit-fmt",
-      "role": "仓库内手写 JSON 的格式化与 --check 门（`TRIT_FMT=0` 可回退）",
-      "replaces": "prettier 在 JSON 这一条路径上的调用",
-      "baseline": "prettier 3.10.1（`--parser json`）：84 KB 文档 1.48 MiB/s、RSS 264–277 MB",
+      "role": "仓库内手写 JSON 与 Markdown 的格式化与 --check 门（`TRIT_FMT=0` 可回退）",
+      "replaces": "prettier 在 JSON 全量与 Markdown 块级两条路径上的调用",
+      "baseline": "prettier 3.10.1：JSON 84 KB 1.48 MiB/s、RSS 264–277 MB；Markdown 47 组夹具逐字节 DIFF 0，仓内 199 篇 135 篇一致",
       "receipt": "cargo test -p trit-fmt && cargo run -q -p trit-fmt --bin trit-fmt -- --check <白名单>",
-      "negative": "只覆盖 JSON；JS/TS/Markdown 明确拒绝；单线程；printWidth 固定 80",
-      "why_frontier": "同文档 12.90 MiB/s（8.7 倍）、零第三方依赖、与 prettier golden DIFF 0"
+      "negative": "Markdown 只做块级：围栏内嵌语言不二次格式化、列表懒惰续行不收、setext/frontmatter 明确拒绝；JS/TS 明确拒绝；printWidth 固定 80",
+      "why_frontier": "JSON 12.90 MiB/s（8.7 倍）；Markdown 199 篇真实文档 0 崩溃、135 篇逐字节一致；零第三方依赖"
     },
     {
       "name": "verify",
