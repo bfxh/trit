@@ -132,6 +132,11 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
   任务数申请。`--untrusted-origin` 声明 prompt 来自不可信数据，是否放行由策略的
   `allow_untrusted_origin` 决定；二进制定位同 `sandbox_run`，缺失即拒绝。
   不给策略时行为不变。
+- 可选 `--claim-who <宿主:会话id>`（或 `TRIT_ORCH_CLAIM_WHO`）把认领生命周期接进派发：
+  capability 与容量都通过后、provider 调用前，自动向 `scripts/agent_claims.py` 登记
+  本批任务的 `out` 路径；收工自动 release。声明冲突返回 `claim-refused`，刚写入的
+  声明会回滚，provider 不会被调用。`--claims-ledger` / `--claim-repo` / `--claim-ttl`
+  （1..240 分钟）可覆盖默认值；`--no-claim` 显式关闭。
 - 输出路径、任务 id 必须唯一；`out` 拒绝绝对路径、`..`、`.git/.agent/node_modules/target`，
   已存在默认拒绝，`--overwrite` 或任务内 `overwrite: true` 才覆盖。
 - 预算是**声明制**：`budget_tokens<=0` 调用前拒绝；声明了预算但 provider 不报 `usage`

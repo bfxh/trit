@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added（subagent-dispatch：自动 claim/release）
+
+- 新增 `--claim-who`（或 `TRIT_ORCH_CLAIM_WHO`）：capability/容量通过后、provider 调用前
+  自动认领本批任务的 `out` 路径；收工自动 release；冲突整批 `claim-refused` 并回滚声明。
+- `scripts/agent_claims.py claim --json` 输出机器可读的声明（id/who/repo/paths/ttl/overlap）。
+- 自测新增 3 条：认领后释放、冲突拒绝且回滚、冲突时 provider 不调用。
+
 ### Added（trit-orch finish：claim_audit 第二证据链）
 
 - `claim_audit.py -Json` 输出机器可读报告（`ok`/`exit`/`verdict`/`summary`/逐条 verdict）。
