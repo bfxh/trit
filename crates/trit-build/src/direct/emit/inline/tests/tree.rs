@@ -16,8 +16,8 @@ fn single_use_binary_tree_collapses_into_root() {
         Algebra::Kleene,
     );
     assert_eq!(source.matches("int t").count(), 0, "{source}");
-    assert!(source.contains("?0:T[3*T["), "{source}");
-    assert!(source.contains("+v[2]+13];"), "{source}");
+    assert!(source.contains("?0:T[3*-T["), "{source}");
+    assert!(source.contains("+v[2]+4];"), "{source}");
 }
 /// 单用锥整个并进根返回：`Not(And(Or(a,b),c))` 不留临时语句。
 #[test]
@@ -36,7 +36,7 @@ fn multilevel_single_use_cone_fits_one_statement() {
     );
     assert_eq!(source.matches("int t").count(), 0, "{source}");
     assert!(
-        source.contains("?0:-T[3*T[3*v[0]+v[1]+13]+v[2]+4];"),
+        source.contains("?0:T[3*-T[3*v[0]+v[1]+4]-v[2]+4];"),
         "{source}"
     );
 }

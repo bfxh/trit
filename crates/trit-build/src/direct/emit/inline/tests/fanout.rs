@@ -11,6 +11,6 @@ fn fanout_stops_the_descent() {
         Algebra::Kleene,
     );
     assert_eq!(source.matches("int t").count(), 1, "{source}");
-    assert!(source.contains("int t0=T["), "{source}");
-    assert!(source.contains("?0:T[3*t0+t0+13];"), "{source}");
+    assert!(source.contains("int t0=-T["), "{source}");
+    assert!(source.contains("?0:T[4*t0+4];"), "{source}");
 }

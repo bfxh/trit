@@ -1,5 +1,4 @@
 //! 叶子复用边界：≤5 次直写，≥6 次保留读取；常量总是直写。
-
 use super::*;
 
 #[test]
@@ -17,7 +16,8 @@ fn variable_reuse_boundary() {
         Algebra::Kleene,
     );
     assert_eq!(five.matches("int t").count(), 0, "{five}");
-    assert_eq!(five.matches("v[0]").count(), 5, "{five}");
+    assert_eq!(five.matches("v[0]").count(), 2, "{five}");
+    assert!(five.contains("4*-v[0]"), "{five}");
     let six = render(
         vec![
             Op::Var(0),

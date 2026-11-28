@@ -24,7 +24,7 @@ pub(super) fn used(ops: &[Op], alg: Algebra) -> Vec<(&'static str, [i8; 9])> {
         }
     }
     let mut tables = Vec::new();
-    if has_and {
+    if has_and && !has_or {
         tables.push(("T_AND", binary_table(alg, Algebra::and)));
     }
     if has_or {

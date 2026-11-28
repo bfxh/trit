@@ -7,10 +7,9 @@ mod table;
 pub(super) use table::push_table;
 
 pub(super) fn neg(inner: String) -> String {
-    if inner.starts_with('-') {
-        format!("-({inner})")
-    } else {
-        format!("-{inner}")
+    match inner.strip_prefix('-') {
+        Some(rest) => rest.to_string(),
+        None => format!("-{inner}"),
     }
 }
 
