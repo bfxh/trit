@@ -420,11 +420,15 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/lattice.rs",
-      "lines": 28
+      "lines": 27
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/lattice/chain.rs",
       "lines": 29
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/lattice/pair.rs",
+      "lines": 16
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
@@ -464,11 +468,11 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/idem.rs",
-      "lines": 58
+      "lines": 55
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice.rs",
-      "lines": 81
+      "lines": 78
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/tests/lattice/chain.rs",
@@ -496,7 +500,7 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests.rs",
-      "lines": 131
+      "lines": 128
     },
     {
       "file": "crates/trit-build/src/direct/fold/tests/factor.rs",
@@ -600,7 +604,7 @@
     },
     {
       "file": "crates/trit-build/tests/direct_c_fanout.rs",
-      "lines": 84
+      "lines": 83
     },
     {
       "file": "crates/trit-build/tests/direct_c_relative.rs",
@@ -613,6 +617,10 @@
     {
       "file": "crates/trit-build/tests/direct_c_verilog.rs",
       "lines": 92
+    },
+    {
+      "file": "crates/trit-build/tests/direct_lattice_xor.rs",
+      "lines": 59
     },
     {
       "file": "crates/trit-build/tests/egraph_equiv.rs",

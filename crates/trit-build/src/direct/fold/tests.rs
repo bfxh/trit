@@ -90,10 +90,7 @@ fn constant_c_has_one_statement_and_no_operator_tables() {
     for alg in ALGS {
         let source = emit(&expr, &vars, alg).expect("生成");
         assert_eq!(source.matches("int t").count(), 0, "{alg:?}: {source}");
-        assert!(
-            !source.contains("static const int8_t T[]"),
-            "{alg:?}: {source}"
-        );
+        assert!(!source.contains("static C T[]"), "{alg:?}: {source}");
         assert!(!source.contains("trit_bin("), "{alg:?}: {source}");
         assert!(!source.contains("trit_not("), "{alg:?}: {source}");
         assert!(source.contains("return "), "{alg:?}: {source}");

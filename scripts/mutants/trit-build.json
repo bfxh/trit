@@ -862,5 +862,61 @@
   "new": "    let body = if false {",
   "pkg": "trit-build",
   "filter": "direct_c_bytes_stay_within_budget"
+ },
+ {
+  "name": "lattice: 不识别同一对 p/q",
+  "file": "crates/trit-build/src/direct/fold/simplify/lattice/pair.rs",
+  "old": "            if (p == r && q == s) || (p == s && q == r) {",
+  "new": "            if false {",
+  "pkg": "trit-build",
+  "filter": "strong_xor_meet_join_identity_drops_and_or_tables"
+ },
+ {
+  "name": "xor: 强加不做格对偶",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor.rs",
+  "old": "        push_node(resolve, kept, consts, Op::Xor(p, q));",
+  "new": "        push_node(resolve, kept, consts, Op::Xor(left, right));",
+  "pkg": "trit-build",
+  "filter": "strong_xor_meet_join_identity_drops_and_or_tables"
+ },
+ {
+  "name": "xor2: 经典 XOR 不做格对偶",
+  "file": "crates/trit-build/src/direct/fold/simplify/xor2.rs",
+  "old": "        push_node(resolve, kept, consts, Op::Xor2(p, q));",
+  "new": "        push_node(resolve, kept, consts, Op::Xor2(left, right));",
+  "pkg": "trit-build",
+  "filter": "fanout_bytes_stay_within_budget"
+ },
+ {
+  "name": "format: C 别名改成 unsigned char",
+  "file": "crates/trit-build/src/direct/emit.rs",
+  "old": "prefix.push_str(\"typedef signed char C;\");",
+  "new": "prefix.push_str(\"typedef unsigned char C;\");",
+  "pkg": "trit-build",
+  "filter": "verify_c_matches_verilog_every_row"
+ },
+ {
+  "name": "format: 类型别名后补换行",
+  "file": "crates/trit-build/src/direct/emit.rs",
+  "old": "prefix.push_str(\"typedef signed char C;\");",
+  "new": "prefix.push_str(\"typedef signed char C;\\n\");",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
+ },
+ {
+  "name": "table: 表声明加回 const",
+  "file": "crates/trit-build/src/direct/emit/format/table.rs",
+  "old": "    text.push_str(\"static C \");",
+  "new": "    text.push_str(\"static const C \");",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
+ },
+ {
+  "name": "body: 签名退回 int8_t",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
+  "old": "String::from(\"C trit_direct(const C*v,unsigned n){\")",
+  "new": "String::from(\"int8_t trit_direct(const int8_t*v,unsigned n){\")",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
  }
 ]

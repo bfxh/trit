@@ -11,7 +11,7 @@ pub(super) fn body(
     inlined: &[bool],
     tables: &inline::Tables,
 ) -> String {
-    let mut text = String::from("int8_t trit_direct(const int8_t*v,unsigned n){\n");
+    let mut text = String::from("C trit_direct(const C*v,unsigned n){");
     let guard = if vars.is_empty() {
         None
     } else {
@@ -33,7 +33,7 @@ pub(super) fn body(
         next += 1;
     }
     if next > 0 {
-        text.push_str(";\n");
+        text.push(';');
     }
     text.push_str("return ");
     if let Some(guard) = &guard {
@@ -41,6 +41,6 @@ pub(super) fn body(
     }
     let root = inline::expr(ops, &names, inlined, ops.len() - 1, tables);
     text.push_str(&root);
-    text.push_str(";\n}");
+    text.push_str(";}");
     text
 }
