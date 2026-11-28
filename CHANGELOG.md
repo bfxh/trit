@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed（trit-splat：拆文件收绿模块预算，纯搬运）
+
+- 按“每文件只减不增”的棘轮拆 5 个超出 v1 上限的文件：`ply/raster/splat` 的
+  `mod tests` 移入 `src/<mod>/tests.rs`；`SplatError` 移入 `src/error.rs`
+  （`crate::SplatError` re-export 不变）；`splat-render` 的参数取值、SH 裁剪、
+  GT 边界均值与 PNG 落盘移入 `src/bin/splat-render/cli.rs`（`#[path]` 接线）。
+- 行数：`bin/splat-render.rs` 192→117（上限 133）、`lib.rs` 67→50、
+  `ply.rs` 261→167、`raster.rs` 258→171、`splat.rs` 276→208；
+  新文件 90/21/93/86/67 行已登记。
+- 行为不变：同一 `.spz` 渲染与拆分前逐像素一致（∞ dB）；
+  `cargo test -p trit-splat --features png,spz` 23 lib + 2 集成全绿，
+  `cargo test --workspace` 全绿，`module_budget.py` 全仓 OK。
+
 ### Added（trit-splat v6：.spz 直读）
 
 - `trit-splat` 增 `spz` feature（默认关）：直接读 gaussforge/Brush 交付的 `.spz`，

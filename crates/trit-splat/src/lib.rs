@@ -16,6 +16,7 @@
 //! 渲染核零外部依赖；PNG 落盘与 CLI 在 `png` feature 后（`splat-render` bin）。
 
 pub mod camera;
+mod error;
 pub mod math;
 pub mod ply;
 pub mod raster;
@@ -23,25 +24,7 @@ pub mod splat;
 #[cfg(feature = "spz")]
 pub mod spz;
 
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum SplatError {
-    #[error("PLY 头缺 end_header")]
-    MissingEndHeader,
-    #[error("PLY 不支持格式: {0}")]
-    UnsupportedFormat(String),
-    #[error("PLY 缺必需属性: {0}")]
-    MissingProperty(String),
-    #[error("PLY 数据段不足: 需要 {need} 字节, 实际 {got}")]
-    TruncatedData { need: usize, got: usize },
-    #[error("transforms.json 解析失败: {0}")]
-    Transforms(String),
-    #[error("渲染参数非法: {0}")]
-    InvalidArgs(String),
-    #[error("SPZ 解析失败: {0}")]
-    Spz(String),
-}
+pub use error::SplatError;
 
 /// 渲染结果：w×h 的 RGB8 帧（行主序，无 padding）。
 #[derive(Clone)]

@@ -5080,15 +5080,23 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render.rs",
-      "lines": 133
+      "lines": 117
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/cli.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-splat/src/camera.rs",
       "lines": 193
     },
     {
+      "file": "crates/trit-splat/src/error.rs",
+      "lines": 21
+    },
+    {
       "file": "crates/trit-splat/src/lib.rs",
-      "lines": 63
+      "lines": 50
     },
     {
       "file": "crates/trit-splat/src/math.rs",
@@ -5096,15 +5104,27 @@
     },
     {
       "file": "crates/trit-splat/src/ply.rs",
-      "lines": 244
+      "lines": 167
+    },
+    {
+      "file": "crates/trit-splat/src/ply/tests.rs",
+      "lines": 93
     },
     {
       "file": "crates/trit-splat/src/raster.rs",
-      "lines": 204
+      "lines": 171
+    },
+    {
+      "file": "crates/trit-splat/src/raster/tests.rs",
+      "lines": 86
     },
     {
       "file": "crates/trit-splat/src/splat.rs",
-      "lines": 233
+      "lines": 208
+    },
+    {
+      "file": "crates/trit-splat/src/splat/tests.rs",
+      "lines": 67
     },
     {
       "file": "crates/trit-splat/src/spz.rs",
