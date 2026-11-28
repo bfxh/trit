@@ -15,7 +15,7 @@ fn event() -> TraceEvent {
                 },
                 requirements: Resources::new(1, 1),
                 max_tokens: 100,
-                epoch: 0,
+                policy: trit_orch::TaskPolicy::default(),
             }],
         },
     )

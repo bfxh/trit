@@ -7,18 +7,10 @@ pub use token::TokenUsage;
 mod check;
 pub use check::CheckReport;
 
-use crate::{AdmissionObligation, Effect, Resources, Task, Ternary};
+use crate::{AdmissionObligation, Effect, Resources, Ternary};
 
-/// 一个任务的完整定义。`epoch` 是该定义自己的版本号：补丁替换定义时递增，
-/// 旧 epoch 的执行与验收结果因此自动失效，与全局计划 revision 解耦。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskSpec {
-    pub task: Task,
-    pub requirements: Resources,
-    pub max_tokens: u64,
-    #[serde(default)]
-    pub epoch: u64,
-}
+mod policy;
+pub use policy::{TaskPolicy, TaskSpec};
 
 /// 一次有限资源的准入上限。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

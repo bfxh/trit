@@ -88,6 +88,19 @@
 - 边界：只做 sRGB/Rec.709 → Display P3 的线性原色矩阵；未做 P3 → sRGB 反向、
   Rec.2020、ICC 嵌入或色域映射（超出 P3 时仍按通道截断）。
 
+### Added（agent 层：TaskSpec 权威验收阈值）
+
+- `TaskSpec` 增加 `#[serde(flatten)] policy: TaskPolicy`，把 `epoch` 与
+  `min_assertions` 收进 `TaskPolicy`；`TaskSpec` 保持 4 个顶层字段，旧 JSON
+  缺 `min_assertions` 时默认 1，顶层 `epoch` 位置不变。
+- `finish` 的 `min_assertions` 改为可选全局下限：有效阈值取
+  `max(TaskSpec.policy.min_assertions, 全局下限)`，调用方只能抬高、不能压低
+  任务自己的下限；宿主测量与完成闸都按同一有效阈值生成/校验
+  `acceptance_digest`。
+- 验证：新增任务下限抬高、全局不能压低、全局抬高后回执不匹配、旧 JSON 默认 1
+  四例；`finish` CLI 新增任务阈值覆盖回归例；`cargo test -p trit-orch -j 2`
+  与 `god_object_surface` 通过。
+
 ### Added（agent 工具：capability 动作门接入 sandbox_run 与 subagent_dispatch）
 
 - `sandbox_run.py` 新增 `--capability-policy/--capability-bin/--untrusted-origin`：

@@ -152,7 +152,8 @@ echo '{"dependencies":"True","authorization":"True","resources":"True","freshnes
 - `finish` 默认 fail-closed：snapshot 里的 `CheckReport` 只是声明，必须有同 task 的
   executor `Receipt` 才能重算并通过；`--allow-unattested` 只用于旧快照兼容。
 - settled 任务还必须 `authorization == True`；`False` / `Unknown` 不会被算成完成。
-- `receipts` 默认 `min_assertions=1`，零断言不会被当成 `Passed`。
+- 有效 `min_assertions = max(TaskSpec.policy.min_assertions, CLI 全局下限)`；旧 JSON
+  缺省 1，零断言不会被当成 `Passed`。
 
 ---
 

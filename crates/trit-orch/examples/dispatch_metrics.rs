@@ -29,7 +29,7 @@ fn fixture(count: usize) -> (Vec<TaskSpec>, Snapshot) {
             },
             requirements: Resources::new(1, 8),
             max_tokens: 1024,
-            epoch: 0,
+            policy: trit_orch::TaskPolicy::default(),
         });
         let mut observation = Observation {
             authorization: Ternary::True,

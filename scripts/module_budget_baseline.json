@@ -3252,7 +3252,7 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure_all.rs",
-      "lines": 35
+      "lines": 33
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/mod.rs",
@@ -3272,7 +3272,7 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_inputs/finish_input.rs",
-      "lines": 55
+      "lines": 52
     },
     {
       "file": "crates/trit-orch/src/bin/cli_inputs/mod.rs",
@@ -3452,11 +3452,15 @@
     },
     {
       "file": "crates/trit-orch/src/model.rs",
-      "lines": 184
+      "lines": 176
     },
     {
       "file": "crates/trit-orch/src/model/check.rs",
       "lines": 33
+    },
+    {
+      "file": "crates/trit-orch/src/model/policy.rs",
+      "lines": 63
     },
     {
       "file": "crates/trit-orch/src/model/token.rs",
@@ -3512,7 +3516,7 @@
     },
     {
       "file": "crates/trit-orch/src/progress/finish/core.rs",
-      "lines": 220
+      "lines": 219
     },
     {
       "file": "crates/trit-orch/src/progress/finish/legacy.rs",
@@ -3863,6 +3867,10 @@
       "lines": 60
     },
     {
+      "file": "crates/trit-orch/tests/finish_threshold.rs",
+      "lines": 43
+    },
+    {
       "file": "crates/trit-orch/tests/handoff_signature.rs",
       "lines": 58
     },
@@ -3905,6 +3913,10 @@
     {
       "file": "crates/trit-orch/tests/receipt_plan.rs",
       "lines": 2
+    },
+    {
+      "file": "crates/trit-orch/tests/receipt_task_threshold.rs",
+      "lines": 83
     },
     {
       "file": "crates/trit-orch/tests/receipt_threshold.rs",

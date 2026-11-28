@@ -3,10 +3,6 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use trit_orch::{Receipt, RoundReport, Snapshot, TaskSpec, Ternary, TokenUsage};
 
-fn default_min_assertions() -> u32 {
-    1
-}
-
 /// 宿主亲自执行的一条验收命令。命令用 argv 表示，不经过 shell。
 ///
 /// 这是默认完成闸唯一接受的 receipt 来源：`trit-orch finish` 自己 spawn 它、
@@ -49,7 +45,8 @@ pub(crate) struct FinishInput {
     /// 宿主生成的挑战；给了就要求每条测量回执的 nonce 与它一致（防跨轮重放）。
     #[serde(default)]
     pub(crate) challenge: Option<String>,
-    /// 回执重算验收报告时的最低断言数；默认 1，零断言不会变成 Passed。
-    #[serde(default = "default_min_assertions")]
-    pub(crate) min_assertions: u32,
+    /// 全局验收下限：显式给出时只能抬高单个 `TaskSpec.min_assertions`，
+    /// 不能压低；缺省时完全采用任务自己的阈值。
+    #[serde(default)]
+    pub(crate) min_assertions: Option<u32>,
 }
