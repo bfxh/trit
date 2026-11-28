@@ -106,27 +106,38 @@ node tools/frontier/bench_prettier.js --corpus <语料目录> --out target/prett
 
 ## 实现进度（2026-11-28）
 
-实现位于 `crates/trit-fmt`（prod 层，零第三方依赖），当前范围是 JSON。
+实现位于 `crates/trit-fmt`（prod 层，零第三方依赖），当前范围是 JSON 全量 + Markdown 块级子集。
 
 | 判据 | 结果 | 复算 |
 |---|---|---|
-| G1 语义保持 | 13 份语料（含 84,048 字节大文档）与 prettier golden **DIFF 0**；另用 `serde_json` 交叉验证语义相等 | `cargo test -p trit-fmt --test corpus` |
-| G2 幂等 | 全部语料 0 反例 | 同上 |
+| G1 语义保持（JSON） | 13 份语料（含 84,048 字节大文档）与 prettier golden **DIFF 0**；另用 `serde_json` 交叉验证语义相等 | `cargo test -p trit-fmt --test corpus` |
+| G1 语义保持（Markdown） | 47 组夹具与 prettier 3.10.1 **DIFF 0**；仓内真实语料 199 篇 `.md` 全部可格式化，**135 篇（67.8%）逐字节一致**，其余差异类型见负结果 | `cargo test -p trit-fmt --test markdown`；真实语料对拍脚本在仓外 |
+| G2 幂等 | JSON 13 份 + Markdown 47 份，0 反例 | `cargo test -p trit-fmt` |
 | G3 吞吐（大文档 84,048 字节） | trit-fmt **12.90 MiB/s** vs prettier 3.10.1 **1.48 MiB/s**（8.7 倍） | `cargo bench -p trit-fmt --bench format`；prettier 侧 `node bench_single.js big.json 200` |
 | G3 吞吐（小文档 95 字节） | trit-fmt **1.76 µs/doc** vs prettier **213.35 µs/doc** | 同上 |
 | G3 并发（4,235,301 字节 / 797 文档） | 4 线程 **3.32×**、8 线程 **3.90×**（按字节分块；按文档数分块只有 2.83×） | `cargo bench -p trit-fmt --bench threads` |
-| G4 注释与空行 | JSON 没有注释；空行规则未覆盖（见负结果） | — |
-| G5 接入默认链 | 已接入：CI 的 `frontier` job 对 4 个手写 JSON 跑 `--check`，`TRIT_FMT=0` 回退；已登记进 `docs/specs/DEFAULT-TOOLS.json` | — |
+| G4 注释与空行 | JSON 没有注释；Markdown 块间只保留一个空行、列表松散度保留（与 prettier 不完全一致，见负结果） | — |
+| G5 接入默认链 | 已接入：CI 的 `frontier` job 对 4 个手写 JSON 跑 `--check`，`TRIT_FMT=0` 回退；已登记进 `docs/specs/DEFAULT-TOOLS.json`；Markdown 尚未进 CI | — |
 
 ### 负结果（保留，不删）
 
-- 范围只有 JSON（`.json` / `.jsonc`）；JS/TS/Markdown 返回 `FormatError::Unsupported`，没有半成品实现。
+- Markdown 只做**块级**：围栏里内嵌语言（json / javascript 围栏）不做二次格式化（prettier 会）；
+  行内代码跨行的特殊缩进不复现（`benchmarks/gpulib-vulkan-compare/README.md` 的
+  “`SHADER_WRITE →` 换行续写”即反例）。
+- 列表的**懒惰续行**不收：块后紧跟的非块行不并进上一项末段，真实文档里表现为多一个空行
+  （`AGENTS.md` 工程口径节、`AGENT-GUARDRAILS.md` 各有一处实例）。
+- 表格宽度按字符宽度近似：CJK 与常见 emoji 按 2 列对齐，但 ZWJ/组合 emoji 的 grapheme 拆解没做，
+  个别组合仍差 1 列。
+- 分隔线：容器内首块用 `***`、其余用 `---`（prettier 实测规则）；`___`/`***` 输入同样按此重排。
+- 强调符归一（`*x*`→`_x_`、`__x__`→`**x**`）只做保守配对：开符前须是行首/空白/标点，闭符后同理；
+  错配时保持原文，不猜。
+- setext 标题（`Title` + `=====`）与 frontmatter 明确 `Unsupported`，不静默改写。
+- 范围只有 JSON 与 Markdown；JS/TS 返回 `FormatError::Unsupported`，没有半成品实现。
 - 4 线程 **3.32×** 已在 24 核机器验证（`benches/threads.rs`）；8 线程 3.90×，继续加线程受内存带宽限制。
   分块必须按**字节**：按文档数会把 84 KB 大文档压到一个线程，实测只有 2.83×。
 - 接入面只有 4 个手写 JSON（`crates/trit-wspace/mcp.example.json`、`examples/policy.json`、
   `jobs/example.json`、`.github/data-pipeline.json`）；机器生成的基线文件（`scripts/*baseline*.json`）
   仍是 `json.dump` 风格，没有接进来——它们与 prettier 风格的差异会产生巨大 diff，需要单独一轮迁移。
-- JS/TS/Markdown 仍未接入（没有实现），prettier 在这三类上仍是唯一选择。
 - 解析器按字节处理：非法 UTF-8 输入未做严格拒绝；重复键保留原序（与 prettier 一致）。
 - 只覆盖 prettier 的 `printWidth=80` 默认值；`--width` 等选项未实现。
 - 小文档那一行的 121 倍放大来自固定开销（prettier 每个文档约 213 µs 的解析器初始化），

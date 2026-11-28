@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（trit-fmt：Markdown 块级格式化，与 prettier 3.10.1 对拍）
+
+- `trit-fmt` 增 `.md` / `.markdown` 分派：`crates/trit-fmt/src/md/`（`mod/parse/print/table/width`，
+  零第三方依赖）。覆盖标题、段落（proseWrap=preserve、硬换行）、围栏（语言紧贴、`~~~` 归一、
+  正文含三反引号行时自动加长、未闭合自动补）、缩进代码原样、引用块递归、有序/无序列表
+  （标记归一与相邻列表交替、全 1 编号规则）、分隔线（首块 `***`、其余 `---`）、
+  GFM 表格（按显示宽度对齐、CJK/emoji 2 列、无竖线行也收）、HTML 块透传。
+- 行内只做保守归一：折叠代码段外空白、行内代码去首尾空格、`*x*`→`_x_`、`__x__`→`**x**`
+  （开闭符边界不满足时保持原文）。
+- 对拍：47 组夹具（`tests/fixtures/markdown/`）与 `npx prettier@3.10.1 --parser markdown`
+  逐字节 **DIFF 0**；幂等 0 反例；`cargo test -p trit-fmt --test markdown`。
+- 真实语料读数（仓内 199 篇 `.md`）：全部可格式化，**135 篇（67.8%）与 prettier 逐字节一致**；
+  不一致类型（围栏内嵌 JSON / 列表懒惰续行 / 跨行行内代码缩进 / 组合 emoji 宽度）已写进
+  `docs/specs/FRONTIER-FORMATTER-TASK.md` 负结果表。
+- `trit-fmt --parser markdown` 走 stdin；文件模式按扩展名自动分派。
+  `crates/trit-fmt/src/bin/trit-fmt.rs` 的用法文本移入 `src/bin/help.txt`（`include_str!`），
+  行数 127→102，台账同轮收紧。
 ### Added（trit-splat v8：批量帧并行渲染）
 
 - `splat-render` 增 `--threads N|auto`（默认 1；`auto`/`0` 取可用并行度）；

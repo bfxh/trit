@@ -1968,11 +1968,31 @@
     },
     {
       "file": "crates/trit-fmt/src/bin/trit-fmt.rs",
-      "lines": 109
+      "lines": 101
     },
     {
       "file": "crates/trit-fmt/src/lib.rs",
       "lines": 107
+    },
+    {
+      "file": "crates/trit-fmt/src/md/mod.rs",
+      "lines": 90
+    },
+    {
+      "file": "crates/trit-fmt/src/md/parse.rs",
+      "lines": 710
+    },
+    {
+      "file": "crates/trit-fmt/src/md/print.rs",
+      "lines": 242
+    },
+    {
+      "file": "crates/trit-fmt/src/md/table.rs",
+      "lines": 100
+    },
+    {
+      "file": "crates/trit-fmt/src/md/width.rs",
+      "lines": 73
     },
     {
       "file": "crates/trit-fmt/src/parse.rs",
@@ -1985,6 +2005,10 @@
     {
       "file": "crates/trit-fmt/tests/corpus.rs",
       "lines": 89
+    },
+    {
+      "file": "crates/trit-fmt/tests/markdown.rs",
+      "lines": 73
     },
     {
       "file": "crates/trit-fmt/tests/parallel.rs",
