@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v8：批量帧并行渲染）
+
+- `splat-render` 增 `--threads N|auto`（默认 1；`auto`/`0` 取可用并行度）；
+  按连续帧块分给工作线程，资产、相机表与 Mip 尺度只读共享，渲染核不变。
+- 并行结果按输入帧序汇总，PSNR/JSON 与串行口径一致；单帧/串行路径保持原行为。
+- 实测 synthetic-orbit/init.ply 全 48 帧（480×270）：串行 31.36s → 4 线程 7.91s
+  （3.97×）；48 张 PNG 的 SHA256 与串行逐字节一致。
+- 新拆 `batch/frames.rs`、`batch/metrics.rs`、`batch/parallel.rs`；模块预算
+  1756 files、debt=0；bin 测试 8 条。
+
 ### Added（trit-splat v7：批量帧渲染 + PSNR 评测）
 
 - `splat-render` 的帧选择扩成 `--frame N|all|a..b|csv`（兼容原 `--frame N`），
