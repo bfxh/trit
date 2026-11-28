@@ -14,11 +14,11 @@
 //! 纯 splat 场景用深度排序；与 mesh 混合的 CDF 截断在 C0b 落地，接口留在本层。
 //!
 //! 渲染核零外部依赖；PNG 落盘与 CLI 在 `png` feature 后（`splat-render` bin）。
-
 pub mod camera;
 mod error;
 pub mod math;
 pub mod ply;
+mod psnr;
 pub mod raster;
 pub mod splat;
 #[cfg(feature = "spz")]
