@@ -68,14 +68,11 @@ fn absorbing_c_has_one_statement_and_no_tables() {
             let vars = expr.variables();
             let c = emit(&expr, &vars, alg).expect("生成");
             assert_eq!(c.matches("int t").count(), 0, "{source} {alg:?}: {c}");
-            assert!(
-                !c.contains("static const int8_t T[]"),
-                "{source} {alg:?}: {c}"
-            );
+            assert!(!c.contains("static C T[]"), "{source} {alg:?}: {c}");
         }
     }
     let expr = Parser::parse("a & (a | b)").expect("解析");
     let vars = expr.variables();
     let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
-    assert!(b3.contains("static const int8_t T[]"), "{b3}");
+    assert!(b3.contains("static C T[]"), "{b3}");
 }

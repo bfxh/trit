@@ -34,7 +34,7 @@ fn absorbing_c_depends_on_the_algebra() {
         let vars = expr.variables();
         let k3 = emit(&expr, &vars, Algebra::Kleene).expect("生成");
         assert_eq!(k3.matches("int t").count(), 0, "{source}: {k3}");
-        assert!(!k3.contains("static const int8_t T[]") && k3.contains("return "));
+        assert!(!k3.contains("static C T[]") && k3.contains("return "));
 
         let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
         assert!(b3.contains("T["), "{source} B3 应保留算子表: {b3}");
