@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+### Added（trit-orch：动作级 capability 内核与目标白名单，第六门）
 ### Added（trit-splat v10：输出端色彩管理）
 
 - 新增 `color` 模块：`ColorSpace::{Raw,Srgb}`、`ToneMap::{None,Reinhard,Aces}`、
@@ -19,18 +20,21 @@
 
 ### Added（trit-orch：动作级 capability 内核，第六门）
 
-- `capability` 模块：`ActionClass`（read/write/exec/network）+
-  `CapabilityPolicy`（显式 `allow`、`allow_untrusted_origin`）+ `ActionSpec`
-  （类别、`from_untrusted_data`）。读放行；写/执行/网络默认拒；类别已授予但由
-  不可信数据触发 → `Unknown`（需人确认），显式提权才放行。`decide` 返回三值 + 理由。
+- `capability` 模块（`crates/trit-orch/src/capability/`）：`ActionClass`
+  （read/write/exec/network）+ `CapabilityPolicy`（显式 `allow`、
+  `allow_untrusted_origin`、按类别配置的 `allow_targets`）+ `ActionSpec`
+  （类别、目标、`from_untrusted_data`）。读放行；写/执行/网络默认拒；类别已授予
+  但由不可信数据触发 → `Unknown`（需人确认）；目标白名单精确匹配，缺目标或越界
+  一律 `False`，类别未授予时目标不参与判定。`decide` 返回三值 + 理由 + 目标。
 - `admit_with_capability`：把 capability 作第六门，与四门 + claim 做 K3 AND；
   任一门 False 一票否决，`Unknown` 保持。
 - `trit-orch capability` 子命令：stdin 一份 `{policy, action}`，stdout 回
   `{allow, decision}`；未知动作类别在解析层拒绝。
-- 用例：`capability.rs` 内 7 个单测 + `tests/capability.rs` 6 个集成用例
-  （只读放行/默认拒写/未知来源转人工/显式提权/未知类别报错/第六门合成）。
+- 用例：`capability/tests.rs` 12 个单测 + `tests/capability.rs` 9 个集成用例
+  + `tests/capability_targets.rs` 3 个目标白名单用例。
 - 边界：`tools/context_guard.py` / `sandbox_run.py` / `subagent_dispatch.py`
-  的调用面尚未读取该判定，per-target 白名单未做；这仍是策略内核，不是端到端防护。
+  的调用面尚未读取该判定；路径规范化/域名小写/通配未做。这仍是策略内核，不是
+  端到端防护。
 ### Added（trit-splat v9：深度输出）
 
 - 渲染核拆成 `raster.rs` 外壳 + `raster/render.rs`；`render` 保持原 RGB 接口，

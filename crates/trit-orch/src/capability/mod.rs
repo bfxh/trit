@@ -4,12 +4,15 @@
 //! **即使模型被骗，它能不能真的做出高权限动作。** 策略是三值的：
 //! - `True`：类别已显式授予，且不是由不可信数据触发；
 //! - `Unknown`：类别授予了，但动作由不可信数据触发——需要人确认或一次性提权；
-//! - `False`：类别没授予。读之外一律默认拒绝。
+//! - `False`：类别没授予，或目标不在白名单。
 //!
-//! 边界（如实）：这是**策略内核**；per-target 白名单、以及 `tools/sandbox_run.py` /
+//! 目标白名单是**精确匹配**：不做路径规范化、域名小写化或通配；调用方要先把路径/域名归一，否则换写法会被拒（有意保守，不是漏洞）。
+//! `Read` 不做目标白名单：读不改变状态，外传由 `Network` 门管。
+//!
+//! 边界（如实）：这是**策略内核**；`tools/sandbox_run.py` /
 //! `tools/subagent_dispatch.py` 的调用面接入尚未做，不能把它当端到端能力防护。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -40,12 +43,16 @@ impl ActionClass {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionSpec {
     pub class: ActionClass,
+    /// 目标（文件路径 / 域名 / 命令名）。类别只做类别级授予时可为 `None`；
+    /// 策略一旦给该类别配了目标白名单，`None` 会被判 `False`。
+    #[serde(default)]
+    pub target: Option<String>,
     /// 动作是否由**不可信数据**（网页 / issue / 工具输出 / 子智能体产物）触发。
     #[serde(default)]
     pub from_untrusted_data: bool,
 }
 
-/// 显式授予的动作类别；不给就是拒绝。
+/// 显式授予的动作类别与目标；不给就是拒绝。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityPolicy {
     #[serde(default)]
@@ -53,6 +60,10 @@ pub struct CapabilityPolicy {
     /// 是否允许不可信数据触发写/执行/网络（默认 false → 判 `Unknown`）。
     #[serde(default)]
     pub allow_untrusted_origin: bool,
+    /// 类别 → 允许的目标集合。只有**列出的类别**才做目标级校验；
+    /// 没列出的类别沿用类别级授予（v1 兼容）。空集合表示该类别任何目标都不允许。
+    #[serde(default)]
+    pub allow_targets: BTreeMap<ActionClass, BTreeSet<String>>,
 }
 
 impl CapabilityPolicy {
@@ -68,20 +79,26 @@ impl CapabilityPolicy {
 pub enum CapabilityReason {
     /// `Read`：不改状态，放行。
     ReadOnly,
-    /// 类别已授予，来源可信。
+    /// 类别已授予，来源可信，目标通过。
     Granted,
     /// 类别已授予，且策略允许不可信来源。
     GrantedForUntrustedOrigin,
     /// 类别没在 `allow` 里。
     ClassNotGranted,
+    /// 该类别配了目标白名单，但动作没带目标。
+    TargetRequired,
+    /// 动作目标不在该类别白名单里。
+    TargetNotAllowed,
     /// 类别授予了，但不可信来源需要人确认。
     UntrustedOriginRequiresConfirmation,
 }
 
-/// 一次判定：三值结论 + 理由。
+/// 一次判定：三值结论 + 理由 + 目标（便于回执审计）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityDecision {
     pub action: ActionClass,
+    #[serde(default)]
+    pub target: Option<String>,
     pub verdict: Ternary,
     pub reason: CapabilityReason,
 }
@@ -98,7 +115,28 @@ pub fn decide(policy: &CapabilityPolicy, action: &ActionSpec) -> CapabilityDecis
         (Ternary::True, CapabilityReason::ReadOnly)
     } else if !policy.allow.contains(&class) {
         (Ternary::False, CapabilityReason::ClassNotGranted)
-    } else if action.from_untrusted_data && !policy.allow_untrusted_origin {
+    } else if let Some(targets) = policy.allow_targets.get(&class) {
+        match action.target.as_deref() {
+            None => (Ternary::False, CapabilityReason::TargetRequired),
+            Some(target) if !targets.contains(target) => {
+                (Ternary::False, CapabilityReason::TargetNotAllowed)
+            }
+            Some(_) => origin_verdict(policy, action),
+        }
+    } else {
+        origin_verdict(policy, action)
+    };
+    CapabilityDecision {
+        action: class,
+        target: action.target.clone(),
+        verdict,
+        reason,
+    }
+}
+
+/// 目标通过后，再看动作是否来自不可信数据。
+fn origin_verdict(policy: &CapabilityPolicy, action: &ActionSpec) -> (Ternary, CapabilityReason) {
+    if action.from_untrusted_data && !policy.allow_untrusted_origin {
         (
             Ternary::Unknown,
             CapabilityReason::UntrustedOriginRequiresConfirmation,
@@ -107,11 +145,6 @@ pub fn decide(policy: &CapabilityPolicy, action: &ActionSpec) -> CapabilityDecis
         (Ternary::True, CapabilityReason::GrantedForUntrustedOrigin)
     } else {
         (Ternary::True, CapabilityReason::Granted)
-    };
-    CapabilityDecision {
-        action: class,
-        verdict,
-        reason,
     }
 }
 
@@ -130,94 +163,4 @@ pub fn admit_with_capability(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn spec(class: ActionClass, tainted: bool) -> ActionSpec {
-        ActionSpec {
-            class,
-            from_untrusted_data: tainted,
-        }
-    }
-
-    fn policy(classes: &[ActionClass], allow_untrusted_origin: bool) -> CapabilityPolicy {
-        CapabilityPolicy {
-            allow: classes.iter().copied().collect(),
-            allow_untrusted_origin,
-        }
-    }
-
-    #[test]
-    fn read_is_allowed_even_from_untrusted_data() {
-        let decision = decide(&policy(&[], false), &spec(ActionClass::Read, true));
-        assert_eq!(decision.verdict, Ternary::True);
-        assert_eq!(decision.reason, CapabilityReason::ReadOnly);
-    }
-
-    #[test]
-    fn side_effecting_classes_are_denied_by_default() {
-        for class in [ActionClass::Write, ActionClass::Exec, ActionClass::Network] {
-            let decision = decide(&CapabilityPolicy::read_only(), &spec(class, false));
-            assert_eq!(decision.verdict, Ternary::False, "{class:?}");
-            assert_eq!(decision.reason, CapabilityReason::ClassNotGranted);
-        }
-    }
-
-    #[test]
-    fn granted_side_effect_is_true_when_trusted() {
-        let decision = decide(
-            &policy(&[ActionClass::Write], false),
-            &spec(ActionClass::Write, false),
-        );
-        assert_eq!(decision.verdict, Ternary::True);
-        assert_eq!(decision.reason, CapabilityReason::Granted);
-    }
-
-    #[test]
-    fn untrusted_origin_turns_grant_into_confirmation() {
-        let decision = decide(
-            &policy(&[ActionClass::Network], false),
-            &spec(ActionClass::Network, true),
-        );
-        assert_eq!(decision.verdict, Ternary::Unknown);
-        assert_eq!(
-            decision.reason,
-            CapabilityReason::UntrustedOriginRequiresConfirmation
-        );
-    }
-
-    #[test]
-    fn explicit_untrusted_grant_is_true_and_reported() {
-        let decision = decide(
-            &policy(&[ActionClass::Exec], true),
-            &spec(ActionClass::Exec, true),
-        );
-        assert_eq!(decision.verdict, Ternary::True);
-        assert_eq!(decision.reason, CapabilityReason::GrantedForUntrustedOrigin);
-    }
-
-    #[test]
-    fn gate_matches_decide() {
-        let policy = policy(&[ActionClass::Write], false);
-        assert_eq!(
-            capability_gate(&policy, &spec(ActionClass::Write, true)),
-            Ternary::Unknown
-        );
-        assert_eq!(
-            capability_gate(&policy, &spec(ActionClass::Network, false)),
-            Ternary::False
-        );
-    }
-
-    #[test]
-    fn policy_parses_from_json_and_refuses_unknown_class() {
-        let parsed: CapabilityPolicy =
-            serde_json::from_str(r#"{"allow":["read","write"],"allow_untrusted_origin":false}"#)
-                .expect("policy");
-        assert!(parsed.allow.contains(&ActionClass::Write));
-        assert!(!parsed.allow_untrusted_origin);
-
-        let bad = serde_json::from_str::<ActionSpec>(r#"{"class":"shell"}"#);
-        assert!(bad.is_err(), "未知动作类别必须在解析层拒绝");
-    }
-}
+mod tests;
