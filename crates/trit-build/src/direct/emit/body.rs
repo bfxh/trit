@@ -41,6 +41,6 @@ pub(super) fn body(
     }
     let root = inline::expr(ops, &names, inlined, ops.len() - 1, tables);
     text.push_str(&root);
-    text.push_str(";\n}\n");
+    text.push_str(";\n}");
     text
 }

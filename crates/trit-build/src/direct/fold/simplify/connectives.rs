@@ -1,12 +1,11 @@
 //! `⇒` / `⇔` 的常量律与形状规则：只做能真正减少节点的规则，按代数分派。
 //! K3/Ł3 的 `x ⇒ T = T`、`F ⇒ x = T`；B3 在 `X ⇒ T`、`F ⇒ X` 上返回 `U`，不做。
 //! Ł3 的 `x ⇒ x = T`、`x ⇔ x = T`；K3/B3 保留原式。取反对偶与 `⇔ F` 在 `negated`。
-use trit_core::Algebra;
-use trit_core::value::Ternary;
-
 use super::build::{push_const, push_node};
 use crate::direct::ir::Op;
-
+use trit_core::Algebra;
+use trit_core::value::Ternary;
+mod kleene;
 mod negated;
 pub(super) fn implies(
     resolve: &mut Vec<usize>,
@@ -16,8 +15,7 @@ pub(super) fn implies(
     right: usize,
     alg: Algebra,
 ) {
-    let left = resolve[left];
-    let right = resolve[right];
+    let (left, right) = (resolve[left], resolve[right]);
     if !matches!(alg, Algebra::Bochvar) && consts[right] == Some(Ternary::True) {
         push_const(resolve, kept, consts, Ternary::True);
         return;
@@ -44,12 +42,15 @@ pub(super) fn implies(
         resolve.push(right);
         return;
     }
+    if matches!(alg, Algebra::Kleene) {
+        kleene::implies(resolve, kept, consts, left, right);
+        return;
+    }
     if negated::implies(resolve, kept, consts, left, right) {
         return;
     }
     push_node(resolve, kept, consts, Op::Implies(left, right));
 }
-
 pub(super) fn equiv(
     resolve: &mut Vec<usize>,
     kept: &mut Vec<Op>,
@@ -87,6 +88,5 @@ pub(super) fn equiv(
     }
     push_node(resolve, kept, consts, Op::Equiv(left, right));
 }
-
 #[cfg(test)]
 mod tests;

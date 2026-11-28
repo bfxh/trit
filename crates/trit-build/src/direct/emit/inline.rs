@@ -9,7 +9,7 @@ mod table;
 
 pub(super) use expr::expr;
 pub(super) use plan::targets;
-pub(super) use table::{Table, Tables, call, tables};
+pub(crate) use table::{Table, Tables, call, tables};
 
 #[cfg(test)]
 mod tests;
