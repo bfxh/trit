@@ -5184,7 +5184,19 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch.rs",
-      "lines": 269
+      "lines": 146
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/frames.rs",
+      "lines": 117
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/metrics.rs",
+      "lines": 49
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/parallel.rs",
+      "lines": 114
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/tests.rs",
