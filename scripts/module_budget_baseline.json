@@ -5207,6 +5207,10 @@
       "lines": 140
     },
     {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/color_args.rs",
+      "lines": 64
+    },
+    {
       "file": "crates/trit-splat/src/bin/splat-render/batch/frames.rs",
       "lines": 117
     },
@@ -5257,6 +5261,14 @@
     {
       "file": "crates/trit-splat/src/camera/tests.rs",
       "lines": 53
+    },
+    {
+      "file": "crates/trit-splat/src/color.rs",
+      "lines": 178
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests.rs",
+      "lines": 103
     },
     {
       "file": "crates/trit-splat/src/error.rs",

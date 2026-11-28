@@ -1,11 +1,9 @@
 //! 单帧落盘：RGB PNG 与可选 16-bit 深度 PNG。
-//!
 //! 深度 PNG 为灰度 16-bit，按 `--depth-max` 线性量化（0..65535）；
 //! 未覆盖背景与超出 range 的远点都饱和到 65535。
-
 use std::path::{Path, PathBuf};
-
 use trit_splat::camera::Transforms;
+use trit_splat::color::ColorConfig;
 use trit_splat::ply::RawGaussian;
 use trit_splat::raster::{render, render_with_depth};
 
@@ -21,12 +19,13 @@ pub(super) fn render_slot(
     want_psnr: bool,
     want_depth: bool,
     depth_max: f32,
+    color: &ColorConfig,
     frame_idx: usize,
     path: &Path,
 ) -> Result<Option<f64>, String> {
     let cam = &transforms.frames[frame_idx];
     let background = cli::background(bg_mode, dataset, &cam.file_path);
-    let image = if want_depth {
+    let mut image = if want_depth {
         let (image, depth) = render_with_depth(
             gaussians,
             &cam.c2w,
@@ -47,6 +46,7 @@ pub(super) fn render_slot(
             min_scales,
         )
     };
+    color.apply(&mut image);
     cli::write_png(path, &image).map_err(|e| format!("写 PNG: {e}"))?;
     if !want_psnr {
         return Ok(None);

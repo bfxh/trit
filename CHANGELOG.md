@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v10：输出端色彩管理）
+
+- 新增 `color` 模块：`ColorSpace::{Raw,Srgb}`、`ToneMap::{None,Reinhard,Aces}`、
+  `ColorConfig`。管线为输入解码（可选）→ 曝光 → 白平衡 → 饱和度 → tone map →
+  输出编码（可选）；默认 `raw/raw`、EV=0、无白平衡、饱和度=1、`None` 为恒等。
+- 实现 sRGB（IEC 61966-2-1）传递函数、Tanner Helland 色温近似（6500K 中性）、
+  Reinhard 与 ACES filmic（Narkowicz 近似）。
+- `splat-render` 新增 `--color-in` / `--color-out`、`--exposure EV`、
+  `--temperature K`、`--tint`、`--saturation`、`--tone-map`。
+- 验证：36 lib + 8 bin + 2 集成测试全绿；真实 synthetic-orbit/init.ply frame 0
+  默认输出 SHA256 与 v9 逐字节一致；tint/曝光/tone map 能改动输出，非法
+  `--tone-map` 退出码 1。
+- 边界：当前做的是输出端 post-process，alpha 合成仍在源空间；暂不做
+  P3/Rec.2020 色域转换，后续可在 `ColorSpace` 上扩展。
+
 ### Added（trit-orch：动作级 capability 内核，第六门）
 
 - `capability` 模块：`ActionClass`（read/write/exec/network）+

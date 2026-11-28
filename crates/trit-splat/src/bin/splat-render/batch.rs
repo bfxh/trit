@@ -1,11 +1,11 @@
-//! 批量渲染编排：资产只读一次，逐帧复用；可选 PSNR 报表与阈值门。
-//!
-//! `--threads` > 1 时按连续帧块分给工作线程；渲染核本身不变。
+//! 批量渲染编排：资产只读一次；支持并行帧、PSNR 门与输出端色彩处理。
 use crate::cli;
 use crate::mip;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use trit_splat::camera::parse_transforms;
+#[path = "batch/color_args.rs"]
+mod color_args;
 #[path = "batch/frames.rs"]
 mod frames;
 #[path = "batch/load.rs"]
@@ -17,9 +17,7 @@ mod parallel;
 use frames::{frame_paths, parse_frames, parse_threads};
 use load::load_gaussians;
 use metrics::{db_label, mean_psnr, write_psnr_json};
-
-const USAGE: &str = "用法: splat-render --dataset <root> --frame N|all|a..b|csv --ply <ply|spz> --out <png|dir|模板{frame}> [--threads N|auto] [--depth] [--depth-max M] [--bg auto|r,g,b] [--sh-degree 0..3] [--min-scale-factor F] [--psnr] [--psnr-json <path>] [--fail-under DB]";
-
+const USAGE: &str = "用法: splat-render --dataset <root> --frame N|all|a..b|csv --ply <ply|spz> --out <png|dir|模板{frame}> [--threads N|auto] [--depth] [--depth-max M] [--color-in raw|srgb] [--color-out raw|srgb] [--exposure EV] [--temperature K] [--tint T] [--saturation S] [--tone-map none|reinhard|aces] [--bg auto|r,g,b] [--sh-degree 0..3] [--min-scale-factor F] [--psnr] [--psnr-json <path>] [--fail-under DB]";
 pub fn run(argv: Vec<String>) -> ExitCode {
     match run_inner(&argv) {
         Ok(code) => code,
@@ -67,6 +65,7 @@ fn run_inner(argv: &[String]) -> Result<ExitCode, String> {
     if want_depth && !(depth_max > 0.0 && depth_max.is_finite()) {
         return Err(format!("--depth-max 必须为正有限值: {depth_max}"));
     }
+    let color = color_args::parse(argv)?;
 
     let transforms_path = PathBuf::from(&dataset).join("transforms.json");
     let text = std::fs::read_to_string(&transforms_path)
@@ -89,6 +88,7 @@ fn run_inner(argv: &[String]) -> Result<ExitCode, String> {
         want_psnr,
         want_depth,
         depth_max,
+        &color,
         &frames,
         &paths,
         threads,
