@@ -1334,6 +1334,11 @@ def main(argv):
         print("sandbox-run: " + args["error"], file=sys.stderr)
         return 2
     root = args["root"] or os.getcwd()
+    capability_policy = args["capability_policy"]
+    if not capability_policy:
+        default_policy = os.path.join(root, ".agent", "capability.json")
+        if os.path.isfile(default_policy):
+            capability_policy = default_policy
     work = args["work"]
     if not work:
         work = os.path.join(tempfile.gettempdir(), "trit-sandbox-" + uuid.uuid4().hex[:10])

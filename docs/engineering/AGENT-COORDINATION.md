@@ -103,8 +103,9 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
 - 不是分布式锁、不做共识、不做跨机同步；单机文件 + 调用方传 `now`。
 - `state_hash` 只覆盖 `-Root` 下 git 看得见的东西：子模块只覆盖 gitlink，树外写入不在范围；
   它是出处指纹，不是防篡改。
-- 认领门是 **opt-in**：不传 `--claim-gate` 时行为与以前完全一样。是否在 `--agent-id` 存在时
-  强制，尚未定；子代理规范要求带门，但工具不替调用者做身份推断。
+- 认领门**默认开启**：不传 `--claim-gate` 也会检查，且必须给 `--claim-who <host:session>`；
+  缺身份在参数校验阶段直接拒绝（exit 2），不会进入检查链。显式 `--no-claim-gate` 是 legacy
+  逃生门；它和 `--claim-who`/`--claims-ledger` 同时给会报冲突，避免“以为在检查”。
 - 交接门只验“同一棵树”，不验“上一棒做对了没有”；`DeliveryReceipt` 的
   Sent→Delivered→Read→Acted 四态账本已在 Rust `trit-orch delivery` 落地
   （见 [AGENT-DELIVERY.md](AGENT-DELIVERY.md)），`gate` 只在交接门为 `True` 时

@@ -195,12 +195,12 @@ HELP = f"""agent-verify: chain preflight -> policy -> constraints -> alignment -
   claims:       [--claims-file f.jsonl] [--claims-receipts glob]... [--second-opinion]
                 [--derivations (default on) | --no-derivations]  (audit model statements;
                 number claims carrying derivations are re-executed by mre, REJECTED refuses)
-  coordination: [--claim-gate --claim-who <host:session> [--claims-ledger <CLAIMS.md>]]
-                [--handoff <packet.json>]
+  coordination: [--claim-gate (default) | --no-claim-gate] --claim-who <host:session>
+                [--claims-ledger <CLAIMS.md>] [--handoff <packet.json>]
                 (multi-agent gate: the changed paths must be fully claimed by --claim-who
                 (false or unknown refuses); a handoff packet's base_commit/state_hash must
-                match this tree (unknown or false refuses). Both are opt-in; no flag means
-                the chain is exactly what it was.)
+                match this tree (unknown or false refuses). The claim gate is ON by default;
+                --no-claim-gate is the explicit legacy escape hatch.)
   receipt:      [--compact] [--model-receipt <path>] [--settings <file>]
                 (settings resolve builtin < user < project .agent/settings.json
                 < explicit file; explicit CLI flags win; full receipt stays the
@@ -324,7 +324,7 @@ def parse_args(argv):
            "alignment": "", "alignment_lenient": False,
            "stability": "", "no_stability": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
-           "claim_gate": False, "claim_who": "", "claims_ledger": "", "handoff": "",
+           "claim_gate": True, "claim_who": "", "claims_ledger": "", "handoff": "",
            "second_opinion": False, "no_derivations": False, "delta": False,
            "against": "", "rebuild": "", "delta_full": "", "out": "",
            "gate_deadline_affected": "600", "gate_deadline_policy": "600",
@@ -346,9 +346,14 @@ def parse_args(argv):
             continue
         if name in ("dryrun", "allownetwork", "caps", "compact", "secondopinion",
                     "second-opinion", "derivations", "noderivations", "no-derivations",
-                    "delta", "claimgate", "claim-gate"):
+                    "delta", "claimgate", "claim-gate", "noclaimgate", "no-claim-gate"):
             # --derivations is the default-on no-op; --no-derivations opts out of the
             # mre re-execution pass (legacy single-source shape).
+            if name in ("noclaimgate", "no-claim-gate"):
+                out["claim_gate"] = False
+                out["_given"].add("no_claim_gate")
+                i += 1
+                continue
             out["no_derivations"] = name in ("noderivations", "no-derivations")
             out["dry_run" if name == "dryrun"
                 else "allow_network" if name == "allownetwork"
@@ -1142,14 +1147,15 @@ def main(argv):
     if a.get("claim_gate"):
         claim_who = str(a.get("claim_who", "")).strip()
         if not claim_who:
-            print("agent-verify: --claim-gate needs --claim-who <host:session> "
-                  "(the claim ledger compares owners literally; --agent-id is a run label, not a claim owner)")
+            print("agent-verify: 认领门默认开启，需要 --claim-who <host:session> "
+                  "(the claim ledger compares owners literally; --agent-id is a run "
+                  "label, not a claim owner)；临时关闭用 --no-claim-gate")
             return 2
         if MACHINE_PATH_RX.search(claim_who):
             print("agent-verify: --claim-who 带本机绝对路径 -- 用规范形 <host:session>（例 qoder:abc12345）")
             return 2
     elif a.get("claim_who") or a.get("claims_ledger"):
-        print("agent-verify: --claim-who/--claims-ledger only carry meaning with --claim-gate")
+        print("agent-verify: --no-claim-gate 已关闭认领门，--claim-who/--claims-ledger 不再生效")
         return 2
     if a.get("handoff"):
         packet = str(a["handoff"]).strip()

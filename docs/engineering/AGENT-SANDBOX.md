@@ -157,5 +157,5 @@ python tools/sandbox_matrix.py --cases 100 --parallel 12 --scenario hostwrite --
 2. 默认模式的网络 egress 仍只有 policy 的命令级拒绝；要真断网用 `-Isolation wsl`。
 3. 沙盒产物清单与哈希化回收（`-Keep` 后由主智能体决定哪些落回宿主）。
 4. 把 `sandbox_run` 接进 `agent_verify` 的 run 段（现在它是独立入口，回执格式未合并）。
-5. capability 门目前是 opt-in：默认没给 `-CapabilityPolicy` 就不判；把它抬成默认、
-   并把 `subagent_dispatch` 的 provider 动作门一起纳入统一调度，尚未落地。
+5. capability 门**默认检测** `<root>/.agent/capability.json`：存在即启用；显式
+   `-CapabilityPolicy` 优先。`subagent_dispatch` 用同一规则。没有策略文件时保持旧行为。

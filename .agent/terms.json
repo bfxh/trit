@@ -51,7 +51,7 @@
       "mix": "co",
       "anchors": [
         "AGENT-GUARDRAILS.md:846:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
-        "tools/agent_verify.py:1899:\"clean\" if je[\"code\"] == 0 else (\"changed\" if je[\"code\"] == 1 else \"failed\"))"
+        "tools/agent_verify.py:1905:\"clean\" if je[\"code\"] == 0 else (\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -203,7 +203,7 @@
       "mix": "none",
       "anchors": [
         "AGENT-GUARDRAILS.md:827:1. **`verdict`**——只有这几种，各是什么一眼定论：",
-        "tools/agent_verify.py:1984:verdict = (\"command failed\" if not ran_ok else"
+        "tools/agent_verify.py:1990:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -1052,6 +1052,20 @@
       "action": "update",
       "term": "verdict",
       "reason": "line moved by stability gate integration; quote unchanged",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-28T22:40:08+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "认领门默认化在 agent_verify.py docstring 增加两行，锚点行号后移 6 行",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-28T22:40:09+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "认领门默认化在 agent_verify.py docstring 增加两行，锚点行号后移 6 行",
       "loosened": "drop-anchor"
     }
   ]

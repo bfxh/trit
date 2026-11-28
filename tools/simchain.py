@@ -231,7 +231,7 @@ def chain(scen, receipt_name, plan, extra=(), wait=True):
             os.path.join(scen["root"], "pkg", "core.py"), "-Lang", "python",
             "-Plan", plan, "-Store", scen["store"],
             "-Receipt", os.path.join(scen["base"], receipt_name),
-            "--task-id", TASK, "--spent-token", "4200"] + list(extra)
+            "--task-id", TASK, "--spent-token", "4200", "--no-claim-gate"] + list(extra)
     if not wait:
         return subprocess.Popen([PY] + args, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True,
