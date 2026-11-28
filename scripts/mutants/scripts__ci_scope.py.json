@@ -11,8 +11,8 @@
   {
     "name": "ci_scope: 纯文档不跳过 Rust 矩阵（#247 快路径失效）",
     "file": "scripts/ci_scope.py",
-    "old": "    if not code:",
-    "new": "    if False:",
+    "old": "    if not code:\n        out[\"full\"] = False",
+    "new": "    if not code:\n        out[\"full\"] = True",
     "pkg": "scripts/ci_scope.py",
     "filter": "",
     "runner": "python"

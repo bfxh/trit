@@ -5,11 +5,9 @@
 //! 二元形状由 `de_morgan` 回收，节点数 4→1；三叶以上的同算子链由 `negchain` 在化简前处理。
 //! 单侧取反仍要新建 `Not`，不减少节点，保留原式。
 //! `Not(Const)` 当场折成常量：否则父节点在本遍看不到这个毒值，会错过吸收。
-
 mod de_morgan;
-
-use self::de_morgan::de_morgan;
-use super::build::{push_const, push_node};
+mod resolved;
+pub(super) use self::resolved::push_resolved;
 use crate::direct::ir::Op;
 use trit_core::value::Ternary;
 
@@ -20,19 +18,7 @@ pub(super) fn push(
     inner: usize,
 ) {
     let inner = resolve[inner];
-    if let Some(value) = consts[inner] {
-        push_const(resolve, kept, consts, !value);
-        return;
-    }
-    if let Op::Not(target) = kept[inner] {
-        resolve.push(target);
-        return;
-    }
-    if let Some(op) = de_morgan(kept, inner) {
-        push_node(resolve, kept, consts, op);
-        return;
-    }
-    push_node(resolve, kept, consts, Op::Not(inner));
+    push_resolved(resolve, kept, consts, inner);
 }
 
 #[cfg(test)]

@@ -415,6 +415,10 @@
       "lines": 14
     },
     {
+      "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests/kleene_resolve.rs",
+      "lines": 11
+    },
+    {
       "file": "crates/trit-build/src/direct/fold/simplify/connectives/tests/negated.rs",
       "lines": 126
     },
@@ -432,11 +436,15 @@
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
-      "lines": 39
+      "lines": 25
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/negation/de_morgan.rs",
       "lines": 26
+    },
+    {
+      "file": "crates/trit-build/src/direct/fold/simplify/negation/resolved.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-build/src/direct/fold/simplify/negation/tests.rs",
@@ -637,6 +645,10 @@
     {
       "file": "crates/trit-build/tests/direct_lattice_xor.rs",
       "lines": 59
+    },
+    {
+      "file": "crates/trit-build/tests/direct_random_diff.rs",
+      "lines": 157
     },
     {
       "file": "crates/trit-build/tests/egraph_equiv.rs",

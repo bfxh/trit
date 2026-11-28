@@ -14,7 +14,7 @@ pub(super) fn implies(
     right: usize,
 ) -> bool {
     if consts[right] == Some(Ternary::False) {
-        negation::push(resolve, kept, consts, left);
+        negation::push_resolved(resolve, kept, consts, left);
         return true;
     }
     if let (Op::Not(a), Op::Not(b)) = (kept[left], kept[right]) {
@@ -33,11 +33,11 @@ pub(super) fn equiv(
     alg: Algebra,
 ) -> bool {
     if consts[left] == Some(Ternary::False) {
-        negation::push(resolve, kept, consts, right);
+        negation::push_resolved(resolve, kept, consts, right);
         return true;
     }
     if consts[right] == Some(Ternary::False) {
-        negation::push(resolve, kept, consts, left);
+        negation::push_resolved(resolve, kept, consts, left);
         return true;
     }
     if let (Op::Not(a), Op::Not(b)) = (kept[left], kept[right]) {

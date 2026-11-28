@@ -401,7 +401,7 @@
  },
  {
   "name": "negation: 双重否定不消",
-  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation/resolved.rs",
   "old": "    if let Op::Not(target) = kept[inner] {\n        resolve.push(target);\n        return;\n    }",
   "new": "    if let Op::Not(_target) = kept[inner] {\n        resolve.push(inner);\n        return;\n    }",
   "pkg": "trit-build",
@@ -593,7 +593,7 @@
  },
  {
   "name": "negation: 常量否定不折",
-  "file": "crates/trit-build/src/direct/fold/simplify/negation.rs",
+  "file": "crates/trit-build/src/direct/fold/simplify/negation/resolved.rs",
   "old": "    if let Some(value) = consts[inner] {\n        push_const(resolve, kept, consts, !value);\n        return;\n    }",
   "new": "    if let Some(_value) = consts[inner] {\n        push_node(resolve, kept, consts, Op::Not(inner));\n        return;\n    }",
   "pkg": "trit-build",
@@ -674,8 +674,8 @@
  {
   "name": "negated: ⇔F 否定反侧",
   "file": "crates/trit-build/src/direct/fold/simplify/connectives/negated.rs",
-  "old": "        negation::push(resolve, kept, consts, right);",
-  "new": "        negation::push(resolve, kept, consts, left);",
+  "old": "        negation::push_resolved(resolve, kept, consts, right);",
+  "new": "        negation::push_resolved(resolve, kept, consts, left);",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::connectives::tests::negated::false_equivalence_negates_the_other_operand"
  },
@@ -834,16 +834,16 @@
  {
   "name": "simplify: K3 蕴含不降格",
   "file": "crates/trit-build/src/direct/fold/simplify/connectives.rs",
-  "old": "    if matches!(alg, Algebra::Kleene) {\n        kleene::implies(resolve, kept, consts, left, right);\n        return;\n    }",
-  "new": "    if false {\n        kleene::implies(resolve, kept, consts, left, right);\n        return;\n    }",
+  "old": "    if matches!(alg, Algebra::Kleene) {\n        kleene::implies(resolve, kept, consts, raw_left, raw_right);\n        return;\n    }",
+  "new": "    if false {\n        kleene::implies(resolve, kept, consts, raw_left, raw_right);\n        return;\n    }",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::connectives::tests::kleene::k3_implication_shares_or_table_and_keeps_resolve_aligned"
  },
  {
   "name": "simplify: K3 蕴含降成 And",
   "file": "crates/trit-build/src/direct/fold/simplify/connectives/kleene.rs",
-  "old": "    absorb::or(resolve, kept, consts, left, right, Algebra::Kleene);",
-  "new": "    absorb::and(resolve, kept, consts, left, right, Algebra::Kleene);",
+  "old": "    absorb::or(resolve, kept, consts, left_index, right, Algebra::Kleene);",
+  "new": "    absorb::and(resolve, kept, consts, left_index, right, Algebra::Kleene);",
   "pkg": "trit-build",
   "filter": "direct::fold::simplify::connectives::tests::kleene::k3_implication_shares_or_table_and_keeps_resolve_aligned"
  },

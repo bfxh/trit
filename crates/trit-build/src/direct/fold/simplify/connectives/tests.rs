@@ -184,6 +184,6 @@ fn simplified_connectives_emit_one_statement_without_tables() {
         assert!(!c.contains("C T[]"), "{source}: {c}");
     }
 }
-
 mod kleene;
+mod kleene_resolve;
 mod negated;

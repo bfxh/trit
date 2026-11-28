@@ -11,11 +11,11 @@ pub(super) fn implies(
     resolve: &mut Vec<usize>,
     kept: &mut Vec<Op>,
     consts: &mut Vec<Option<Ternary>>,
-    left: usize,
-    right: usize,
+    raw_left: usize,
+    raw_right: usize,
     alg: Algebra,
 ) {
-    let (left, right) = (resolve[left], resolve[right]);
+    let (left, right) = (resolve[raw_left], resolve[raw_right]);
     if !matches!(alg, Algebra::Bochvar) && consts[right] == Some(Ternary::True) {
         push_const(resolve, kept, consts, Ternary::True);
         return;
@@ -43,7 +43,7 @@ pub(super) fn implies(
         return;
     }
     if matches!(alg, Algebra::Kleene) {
-        kleene::implies(resolve, kept, consts, left, right);
+        kleene::implies(resolve, kept, consts, raw_left, raw_right);
         return;
     }
     if negated::implies(resolve, kept, consts, left, right) {
