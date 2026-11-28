@@ -521,6 +521,22 @@ def impact_report(path: pathlib.Path, argv: list[str], repo: str, paths: list[st
 
 
 def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
+    json_mode = "--json" in argv
+
+    def say(text: str) -> None:
+        if not json_mode:
+            _say(text)
+
+    def emit(payload: dict, code: int = 0) -> int:
+        if json_mode:
+            print(json.dumps(payload, ensure_ascii=False))
+        return code
+
+    def fail(reason: str, code: int = 1) -> int:
+        say(reason)
+        return emit({"tool": "agent-claims-claim", "ok": False,
+                     "reason": reason}, code)
+
     def value(flag: str, default: str = "") -> str:
         return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else default
 
@@ -539,61 +555,67 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
     repo = value("--repo")
     paths = [p for p in values("--paths") if p]
     if not raw_who or not repo:
-        _say("claim 需要 --who <会话名> 与 --repo <o/r>（谁在动哪个仓，缺一项就没法提醒对方）")
-        return 1
+        return fail("claim 需要 --who <会话名> 与 --repo <o/r>（谁在动哪个仓，缺一项就没法提醒对方）")
     if not who:
-        _say(f"FAIL --who {raw_who!r} 归不出「宿主:会话id」（宿主限定 {', '.join(HOSTS)}）。"
-             "新声明一律写规范形，否则 release --who 精确匹配收不掉自己的声明")
-        return 1
+        return fail(f"FAIL --who {raw_who!r} 归不出「宿主:会话id」（宿主限定 {', '.join(HOSTS)}）。"
+                    "新声明一律写规范形，否则 release --who 精确匹配收不掉自己的声明")
     claims = read_claims(path)
     # 一个会话可以同时守几个仓；只有"同仓 + 同路径"才是重复声明
     dupes = [c for c in claims if c["who"] == who and c["repo"] == repo
              and overlaps([x.rstrip("/") for x in c["paths"]], [x.rstrip("/") for x in paths])]
     if dupes:
-        _say(f"{who} 已在 {repo} 声明过这些路径：{dupes[0]['paths'] or '(整个仓)'}"
-             "（要换范围先 release）")
-        return 1
+        return fail(f"{who} 已在 {repo} 声明过这些路径：{dupes[0]['paths'] or '(整个仓)'}"
+                    "（要换范围先 release）")
     ttl = int(value("--ttl", "90"))
     if ttl <= 0:
-        _say("ttl 必须是正数分钟（不许用 0 表示永久占用，那样别人永远解不开）")
-        return 1
+        return fail("ttl 必须是正数分钟（不许用 0 表示永久占用，那样别人永远解不开）")
     if ttl > TTL_CAP_MIN:
-        _say(f"FAIL ttl={ttl} 超过上限 {TTL_CAP_MIN} 分钟：长任务用 `renew` 续期，"
-             "一次占到底会让过期声明长期占位（实测有一本账里 3/4 条过期未收）")
-        return 1
+        return fail(f"FAIL ttl={ttl} 超过上限 {TTL_CAP_MIN} 分钟：长任务用 `renew` 续期，"
+                    "一次占到底会让过期声明长期占位（实测有一本账里 3/4 条过期未收）")
     plan = value("--plan")
     if "--plan-file" in argv:
         plan_path = pathlib.Path(value("--plan-file"))
         try:
             plan = plan_path.read_text(encoding="utf-8")
         except OSError as exc:
-            _say(f"FAIL 读不到方案文件 {plan_path}：{exc}")
-            return 1
+            return fail(f"FAIL 读不到方案文件 {plan_path}：{exc}")
     taken = {c["id"] for c in claims}
     serial = 1
     while f"c{serial}" in taken:
         serial += 1
     new_id = f"c{serial}"
+    note = value("--note")
     claims.append({"id": new_id, "who": who, "repo": repo, "paths": paths,
-                   "ts": now(), "ttl": ttl, "note": value("--note")})
+                   "ts": now(), "ttl": ttl, "note": note})
     write_claims(path, claims)
     if plan.strip():
         plans = plans_dir(path)
         plans.mkdir(parents=True, exist_ok=True)
         (plans / f"{new_id}.md").write_text(plan.strip() + "\n", encoding="utf-8")
-    _say(f"已登记：{who} @ {repo} {paths or '(整个仓)'}（{ttl} 分钟；上限 {TTL_CAP_MIN}，"
-         "超时请 renew）")
+    say(f"已登记：{who} @ {repo} {paths or '(整个仓)'}（{ttl} 分钟；上限 {TTL_CAP_MIN}，"
+        "超时请 renew）")
     if not plan.strip():
-        _say("提示：未提供 --plan。与别人重叠时无法按方案质量裁决（规则：质量优先，不是先到先得）。")
-    rc_impact = impact_report(path, argv, repo, paths)
+        say("提示：未提供 --plan。与别人重叠时无法按方案质量裁决（规则：质量优先，不是先到先得）。")
+    # JSON 是给调度器消费的单文档输出：impact 的文本会污染 stdout，跳过它
+    # （调用方仍可单独跑 claim 看牵连面，或在 --json 之外再跑一次）。
+    rc_impact = 0 if json_mode else impact_report(path, argv, repo, paths)
     result = check(path)
     mine = [line for line in result["red"] if who in line]
     if mine:
-        _say("提醒：这条与别人的在效声明重叠 ⇒ 双方都要对齐后再动手（下面已点名双方）")
+        say("提醒：这条与别人的在效声明重叠 ⇒ 双方都要对齐后再动手（下面已点名双方）")
         for line in mine:
-            _say(f"  - {line}")
-        return 1
-    return rc_impact
+            say(f"  - {line}")
+    payload = {
+        "tool": "agent-claims-claim",
+        "ok": not mine and rc_impact == 0,
+        "claim": {"id": new_id, "who": who, "repo": repo, "paths": paths,
+                  "ttl": ttl, "note": note},
+        "overlap": bool(mine),
+        "red": mine,
+    }
+    if json_mode:
+        return emit(payload, 1 if mine or rc_impact else 0)
+    return 1 if mine else rc_impact
 
 
 def cmd_renew(path: pathlib.Path, argv: list[str]) -> int:

@@ -117,7 +117,11 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
 1. ~~DeliveryReceipt 四态 + 账本：谁在什么时候读到了包、有没有真的动手。~~
    **已落地** Rust `trit-orch delivery`（`cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check`
    9/9）；只读 `check` 可一次给出交接门 + 账本状态，自动接进 `agent_verify --handoff` 仍是下一棒。
-2. 认领生命周期自动化：dispatch 前自动 claim、收工自动 release；现在是调用者手动两步。
+2. ~~认领生命周期自动化：dispatch 前自动 claim、收工自动 release；现在是调用者手动两步。~~
+   **已落地** `subagent_dispatch --claim-who <宿主:会话id>`：路由、capability、容量都通过后，
+   在 provider 调用前自动 claim 本批任务的 `out` 路径；收工自动 release。声明冲突时整批
+   `claim-refused`，并把刚写入的声明回滚，不留垃圾行。`--claims-ledger` / `--claim-repo` /
+   `--claim-ttl` 可覆盖默认账本、仓名与 TTL；`TRIT_ORCH_CLAIM_WHO` 可代替 CLI 参数。
 3. 调度环 `plan/select/dispatch` 的宿主侧驱动：Rust CLI 有原语，Python 还没有通用循环；
    `tools/subagent_dispatch.py` 只是“按 role 分模型并行调用”的模型派发环，不消费
    `trit-orch` 的 `Plan::select`，也不自动 claim/release；容量准入已在 provider 前
