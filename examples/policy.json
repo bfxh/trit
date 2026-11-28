@@ -5,7 +5,13 @@
     "reject": "infeasible | (hopeless & contended)"
   },
   "assertions": [
-    { "name": "hard constraint: infeasible must reject", "expr": "infeasible => reject" },
-    { "name": "free slot must not reject on unknown hopelessness", "expr": "(!contended & !infeasible) => !reject" }
+    {
+      "name": "hard constraint: infeasible must reject",
+      "expr": "infeasible => reject"
+    },
+    {
+      "name": "free slot must not reject on unknown hopelessness",
+      "expr": "(!contended & !infeasible) => !reject"
+    }
   ]
 }
