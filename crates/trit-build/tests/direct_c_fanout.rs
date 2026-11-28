@@ -10,7 +10,6 @@ fn scratch(name: &str) -> PathBuf {
     fs::create_dir_all(&dir).expect("创建临时目录");
     dir
 }
-
 fn run(dir: &Path, name: &str, source: &str, verify: Option<&str>) -> String {
     let source_path = dir.join(format!("{name}.v"));
     let out = dir.join(format!("{name}-out"));
@@ -71,7 +70,6 @@ fn fanout_bytes_stay_within_budget() {
     }
     let _ = fs::remove_dir_all(&dir);
 }
-
 #[cfg(unix)]
 #[test]
 fn verify_c_matches_fanout_every_row() {
