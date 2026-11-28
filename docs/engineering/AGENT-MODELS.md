@@ -131,7 +131,7 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
   capability 预检在容量租约之前完成，被拒任务不占 worker 名额，租约按真正可运行的
   任务数申请。`--untrusted-origin` 声明 prompt 来自不可信数据，是否放行由策略的
   `allow_untrusted_origin` 决定；二进制定位同 `sandbox_run`，缺失即拒绝。
-  不给策略时行为不变。
+  不给策略时，检测 `<root>/.agent/capability.json`，存在即启用；都没有则行为不变。
 - 可选 `--claim-who <宿主:会话id>`（或 `TRIT_ORCH_CLAIM_WHO`）把认领生命周期接进派发：
   capability 与容量都通过后、provider 调用前，自动向 `scripts/agent_claims.py` 登记
   本批任务的 `out` 路径；收工自动 release。声明冲突返回 `claim-refused`，刚写入的

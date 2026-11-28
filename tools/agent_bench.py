@@ -263,6 +263,7 @@ def _run_one(t, variant, parent, candidate_root=None, timeout=120):
             "-Store", store,
             "-Receipt", receipt,
             "-Agent-ID", f"bench:{t['id']}",
+            "--no-claim-gate",
         ]
         if t.get("profile"):
             args += ["-Profile", t["profile"]]

@@ -21,6 +21,9 @@ $ErrorActionPreference = 'Stop'
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
+# Python 3.14 writes __pycache__ during fixture runs; alignment post treats every
+# actual change as coverage, so pycache debris would read as an unlinked change.
+$env:PYTHONDONTWRITEBYTECODE = '1'
 $repo = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $tools = Join-Path $repo 'tools'
 New-Item -ItemType Directory -Force -Path $Work | Out-Null
@@ -339,7 +342,7 @@ New-File (Join-Path $I1 'pkg\core.py') "def f(): return 1`n"
 New-File (Join-Path $I1 'pkg\__init__.py') "from .core import f`n"
 New-File (Join-Path $I1 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
 $rc1 = Join-Path $Work 'rc1.json'
-& pwsh -NoProfile -File $av -Root $I1 -Changed (Join-Path $I1 'pkg\core.py') -Lang python -Profile workspace-write -Receipt $rc1 -Store (Join-Path $Work 'store1') | Out-Null
+& pwsh -NoProfile -File $av -Root $I1 -Changed (Join-Path $I1 'pkg\core.py') -Lang python -Profile workspace-write -Receipt $rc1 -Store (Join-Path $Work 'store1') --no-claim-gate | Out-Null
 $code1 = $LASTEXITCODE
 $doc1 = Get-Content $rc1 -Raw | ConvertFrom-Json
 $stepNames = @($doc1.steps | ForEach-Object { $_.step })
@@ -357,7 +360,7 @@ New-File (Join-Path $I5 'conftest.py') ''
 New-File (Join-Path $I5 'pkg\lonely.py') "def g(): return 2`n"
 New-File (Join-Path $I5 'tests\test_core.py') "def test_x(): assert True`n"
 $rc5 = Join-Path $Work 'rc5.json'
-& pwsh -NoProfile -File $av -Root $I5 -Changed (Join-Path $I5 'pkg\lonely.py') -Lang python -DryRun -Receipt $rc5 | Out-Null
+& pwsh -NoProfile -File $av -Root $I5 -Changed (Join-Path $I5 'pkg\lonely.py') -Lang python -DryRun -Receipt $rc5 --no-claim-gate | Out-Null
 $code5 = $LASTEXITCODE
 $doc5 = Get-Content $rc5 -Raw | ConvertFrom-Json
 Assert-True ($code5 -eq 0) 'I5 unproven 时 dry-run 仍 exit=0（只说明不拦）' "exit=$code5"
@@ -369,7 +372,7 @@ New-File (Join-Path $I8 'conftest.py') ''
 New-File (Join-Path $I8 'pkg\core.py') "def f(): return 1`n"
 New-File (Join-Path $I8 'tests\test_core.py') "from pkg.core import f`ndef test_write():`n    open('out.txt','w').write('x')`ndef test_fail(): assert f() == 2`n"
 $rc8 = Join-Path $Work 'rc8.json'
-& pwsh -NoProfile -File $av -Root $I8 -Changed (Join-Path $I8 'pkg\core.py') -Lang python -Profile workspace-write -Receipt $rc8 -Store (Join-Path $Work 'store8') | Out-Null
+& pwsh -NoProfile -File $av -Root $I8 -Changed (Join-Path $I8 'pkg\core.py') -Lang python -Profile workspace-write -Receipt $rc8 -Store (Join-Path $Work 'store8') --no-claim-gate | Out-Null
 $code8 = $LASTEXITCODE
 $doc8 = Get-Content $rc8 -Raw | ConvertFrom-Json
 Assert-True ($code8 -eq 1) 'I8 用例失败时整体 exit=1（失败不会被吞掉）' "exit=$code8"
@@ -438,7 +441,7 @@ New-File (Join-Path $J3 'pkg\core.py') "def f(): return 1`n"
 New-File (Join-Path $J3 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
 & pwsh -NoProfile -File $mem -Mode init -Root $J3 | Out-Null
 $rc3 = Join-Path $Work 'rc3.json'
-& pwsh -NoProfile -File $av -Root $J3 -Changed (Join-Path $J3 'pkg\core.py') -Lang python -Receipt $rc3 -Store (Join-Path $Work 'store3') | Out-Null
+& pwsh -NoProfile -File $av -Root $J3 -Changed (Join-Path $J3 'pkg\core.py') -Lang python -Receipt $rc3 -Store (Join-Path $Work 'store3') --no-claim-gate | Out-Null
 $doc3 = Get-Content $rc3 -Raw | ConvertFrom-Json
 $names3 = @($doc3.steps | ForEach-Object { $_.step })
 Assert-True ($names3[-1] -eq 'memory-note') 'J15 开了记忆时最后一步是落账' ($names3 -join ',')
@@ -909,7 +912,7 @@ if (-not $bashExe) {
     $planT = Join-Path $T 'plan.json'
     [IO.File]::WriteAllText($planT, '{"proven":true,"commands":["echo hello > out.txt"],"unproven":[]}', $enc)
     $rcT = Join-Path $T 'receipt.json'
-    $t1 = @(& $bashExe $shAV -Root (ToPosix $T) -Changed 'crates/x/src/a.rs' -Lang rust -Plan (ToPosix $planT) -Receipt (ToPosix $rcT) 2>&1)
+    $t1 = @(& $bashExe $shAV -Root (ToPosix $T) -Changed 'crates/x/src/a.rs' -Lang rust -Plan (ToPosix $planT) -Receipt (ToPosix $rcT) --no-claim-gate 2>&1)
     $t1Exit = $LASTEXITCODE
     Assert-True ($t1Exit -eq 0 -and (Test-Path "$T\out.txt")) 'T1 允许路径跑完并真的写盘' "exit=$t1Exit"
 
@@ -935,17 +938,17 @@ if (-not $bashExe) {
     # 拒绝路径：约束表命中必须停在 constraints，run 不能出现
     [IO.File]::WriteAllText("$T\crates\x\src\a.rs", "pub fn a() {}$nl pub fn b() { println!(`"hi`"); }$nl", $enc)
     $rcT2 = Join-Path $T 'receipt2.json'
-    $t6 = @(& $bashExe $shAV -Root (ToPosix $T) -Changed 'crates/x/src/a.rs' -Lang rust -Receipt (ToPosix $rcT2) 2>&1)
+    $t6 = @(& $bashExe $shAV -Root (ToPosix $T) -Changed 'crates/x/src/a.rs' -Lang rust -Receipt (ToPosix $rcT2) --no-claim-gate 2>&1)
     $t6Exit = $LASTEXITCODE
     $doc2 = [IO.File]::ReadAllText($rcT2, $enc) | ConvertFrom-Json
     $order2 = @($doc2.steps | ForEach-Object { $_.step })
     Assert-True ($t6Exit -eq 1 -and $doc2.verdict -eq 'refused by constraints' -and ($order2 -notcontains 'run')) 'T6 拒绝时中止在 run 之前，回执照写' "exit=$t6Exit verdict=$($doc2.verdict) steps=$($order2 -join ',')"
 
-    $t7 = @(& $bashExe $shAV -Root (ToPosix $T) -Lang rust 2>&1)
+    $t7 = @(& $bashExe $shAV -Root (ToPosix $T) -Lang rust --no-claim-gate 2>&1)
     Assert-True ($LASTEXITCODE -eq 2) 'T7 缺 -Changed 直接 exit 2（参数不全不算通过）' "exit=$LASTEXITCODE"
 
     [IO.File]::WriteAllText("$T\crates\x\src\a.rs", "pub fn a() {}$nl", $enc)
-    $t8 = @(& $bashExe $shAV -Root (ToPosix $T) -Changed 'a.rs' -Lang rust -DryRun -Receipt (ToPosix (Join-Path $T 'rc3.json')) 2>&1)
+    $t8 = @(& $bashExe $shAV -Root (ToPosix $T) -Changed 'a.rs' -Lang rust -DryRun -Receipt (ToPosix (Join-Path $T 'rc3.json')) --no-claim-gate 2>&1)
     $doc3 = [IO.File]::ReadAllText((Join-Path $T 'rc3.json'), $enc) | ConvertFrom-Json
     Assert-True ($LASTEXITCODE -eq 0 -and $doc3.verdict -eq 'dry-run' -and (@($doc3.steps) -notcontains 'run')) 'T8 dry-run 不写盘也不跑（journal/run 都不出现）' "verdict=$($doc3.verdict)"
 
@@ -1345,7 +1348,7 @@ if (-not $bashExe) {
     New-File (Join-Path $Yav 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
     $yrc = Join-Path $Work 'y-gate-rc.json'
     & $bashExe $shAVy -Root (ToPosix $Yav) -Changed 'pkg/core.py' -Lang python `
-        --budget-token 0 --task-id t-budget -Receipt (ToPosix $yrc) 2>&1 | Out-Null
+        --budget-token 0 --task-id t-budget -Receipt (ToPosix $yrc) --no-claim-gate 2>&1 | Out-Null
     $y17 = $LASTEXITCODE
     $yDoc = Get-Content $yrc -Raw | ConvertFrom-Json
     $yNames = @($yDoc.steps | ForEach-Object { $_.step })
@@ -1369,7 +1372,7 @@ if (-not $bashExe) {
     New-File (Join-Path $Yf 'tests\test_core.py') "from pkg.core import f`ndef test_fail(): assert f() == 2`n"
     $yrc2 = Join-Path $Work 'y-fail-rc.json'
     & $bashExe $shAVy -Root (ToPosix $Yf) -Changed 'pkg/core.py' -Lang python `
-        --task-id t-fail -Receipt (ToPosix $yrc2) 2>&1 | Out-Null
+        --task-id t-fail -Receipt (ToPosix $yrc2) --no-claim-gate 2>&1 | Out-Null
     $y20 = $LASTEXITCODE
     $yDoc2 = Get-Content $yrc2 -Raw | ConvertFrom-Json
     Assert-True ($y20 -eq 1 -and $yDoc2.verdict -eq 'command failed') `
@@ -1389,7 +1392,7 @@ if (-not $bashExe) {
     # 声明额度为正时闸门不拦（声明制：>0 就放行去跑）
     $yrc3 = Join-Path $Work 'y-ok-rc.json'
     & $bashExe $shAVy -Root (ToPosix $Yav) -Changed 'pkg/core.py' -Lang python `
-        --budget-token 5 -Receipt (ToPosix $yrc3) 2>&1 | Out-Null
+        --budget-token 5 -Receipt (ToPosix $yrc3) --no-claim-gate 2>&1 | Out-Null
     $yDoc3 = Get-Content $yrc3 -Raw | ConvertFrom-Json
     Assert-True ($LASTEXITCODE -eq 0 -and $yDoc3.verdict -match '^passed') `
         'Y21 声明额度为正时正常跑完（闸门只拦 <= 0）' "exit=$LASTEXITCODE verdict=$($yDoc3.verdict)"
@@ -1475,7 +1478,7 @@ if (-not $bashExe) {
         New-File (Join-Path $Zav 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
         $zrc = Join-Path $Work 'z-caps-rc.json'
         & $bashExe $shAVz -Root (ToPosix $Zav) -Changed 'pkg/core.py' -Lang python `
-            --caps --caps-seconds 120 -Receipt (ToPosix $zrc) 2>&1 | Out-Null
+            --caps --caps-seconds 120 -Receipt (ToPosix $zrc) --no-claim-gate 2>&1 | Out-Null
         $z9 = $LASTEXITCODE
         $zDoc = Get-Content $zrc -Raw | ConvertFrom-Json
         Assert-True ($z9 -eq 0 -and $zDoc.verdict -match '^passed' `
@@ -1486,7 +1489,7 @@ if (-not $bashExe) {
 
         $zrc2 = Join-Path $Work 'z-plain-rc.json'
         & $bashExe $shAVz -Root (ToPosix $Zav) -Changed 'pkg/core.py' -Lang python `
-            -Receipt (ToPosix $zrc2) 2>&1 | Out-Null
+            -Receipt (ToPosix $zrc2) --no-claim-gate 2>&1 | Out-Null
         $zDoc2 = Get-Content $zrc2 -Raw | ConvertFrom-Json
         Assert-True ($LASTEXITCODE -eq 0 `
             -and ($zDoc2.run[0].PSObject.Properties.Name -notcontains 'caps') `
@@ -2049,7 +2052,7 @@ if (-not $bashExe) {
     $shAv2 = Join-Path $tools 'agent-verify.sh'
     $acRc = Join-Path $Work 'ac-av-rc.json'
     & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python --agent-id 'sub-9' `
-        -Receipt (ToPosix $acRc) -Store (Join-Path $Work 'ac-av-store') 2>&1 | Out-Null
+        -Receipt (ToPosix $acRc) -Store (Join-Path $Work 'ac-av-store') --no-claim-gate 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) 'AC23 带 --agent-id 全链路 exit=0' "exit=$LASTEXITCODE"
     $ac23 = Get-Content $acRc -Raw | ConvertFrom-Json
     $ac23core = (@($ac23.steps | ForEach-Object { $_.step }) |
@@ -2061,7 +2064,7 @@ if (-not $bashExe) {
 
     $acRc2 = Join-Path $Work 'ac-av-rc2.json'
     & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python `
-        -Receipt (ToPosix $acRc2) -Store (Join-Path $Work 'ac-av-store') 2>&1 | Out-Null
+        -Receipt (ToPosix $acRc2) -Store (Join-Path $Work 'ac-av-store') --no-claim-gate 2>&1 | Out-Null
     $ac24 = Get-Content $acRc2 -Raw | ConvertFrom-Json
     $ac24runIds = @($ac24.run | ForEach-Object { $_.PSObject.Properties.Name -contains 'agent_id' })
     Assert-True ($LASTEXITCODE -eq 0 -and ($ac24.PSObject.Properties.Name -notcontains 'agent_id') `
@@ -2069,7 +2072,7 @@ if (-not $bashExe) {
     Assert-True ($ac24.verdict -match 'proven subset') 'AC24b verdict 与 I4 同口径' $ac24.verdict
 
     & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python --agent-id 'D:\elsewhere\x' `
-        -Receipt (ToPosix (Join-Path $Work 'ac-av-rc3.json')) 2>&1 | Out-Null
+        -Receipt (ToPosix (Join-Path $Work 'ac-av-rc3.json')) --no-claim-gate 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 2 -and -not (Test-Path (Join-Path $Work 'ac-av-rc3.json'))) `
         'AC25 agent-id 带盘符路径 exit=2 拒收且不落回执' "exit=$LASTEXITCODE"
 }
@@ -2456,7 +2459,7 @@ if (-not $afPy) {
     function Invoke-Av([string]$root, [string]$store, [string]$receipt, [string[]]$extra,
                        [string]$lang = 'python', [string]$changed = 'pkg\core.py') {
         $plan = if (Test-Path (Join-Path $root 'plan.json')) { Join-Path $root 'plan.json' } else { '' }
-        $argsAv = @($avPy, '-Root', $root, '-Changed', (Join-Path $root $changed), '-Lang', $lang)
+        $argsAv = @($avPy, '-Root', $root, '-Changed', (Join-Path $root $changed), '-Lang', $lang, '--no-claim-gate')
         if ($plan) { $argsAv += @('-Plan', $plan) }
         $argsAv += @('-Store', $store, '-Receipt', $receipt) + $extra
         & $afPy @argsAv 2>&1
@@ -2481,7 +2484,7 @@ if (-not $afPy) {
     New-File (Join-Path $AfA 'plan.json') '{"proven":true,"commands":["sleep 6"],"unproven":[]}'
     $storeA = Join-Path $Work 'af-store-conc'
     $avArgs = @($avPy, '-Root', $AfA, '-Changed', (Join-Path $AfA 'pkg\core.py'), '-Lang', 'python',
-                '-Plan', (Join-Path $AfA 'plan.json'), '-Store', $storeA)
+                '-Plan', (Join-Path $AfA 'plan.json'), '-Store', $storeA, '--no-claim-gate')
     $p1 = Start-Process -FilePath $afPy -ArgumentList ($avArgs + @('-Receipt', (Join-Path $Work 'af-c1.json'))) `
         -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-c1.out') -RedirectStandardError (Join-Path $Work 'af-c1.err')
     $p2 = Start-Process -FilePath $afPy -ArgumentList ($avArgs + @('-Receipt', (Join-Path $Work 'af-c2.json'))) `
@@ -2499,7 +2502,7 @@ if (-not $afPy) {
     New-File (Join-Path $AfB 'plan.json') '{"proven":true,"commands":["sleep 8"],"unproven":[]}'
     $storeB = Join-Path $Work 'af-store-crash'
     $pB = Start-Process -FilePath $afPy -ArgumentList @($avPy, '-Root', $AfB, '-Changed', (Join-Path $AfB 'pkg\core.py'), `
-        '-Lang', 'python', '-Plan', (Join-Path $AfB 'plan.json'), '-Store', $storeB, '-Receipt', (Join-Path $Work 'af-crash.json')) `
+        '-Lang', 'python', '-Plan', (Join-Path $AfB 'plan.json'), '-Store', $storeB, '-Receipt', (Join-Path $Work 'af-crash.json'), '--no-claim-gate') `
         -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-crash.out') -RedirectStandardError (Join-Path $Work 'af-crash.err')
     Start-Sleep -Seconds 4
     $afWasAlive = (-not $pB.HasExited)
@@ -2785,11 +2788,11 @@ if (-not $afPy) {
     New-File (Join-Path $AfSB 'plan.json') '{"proven":true,"commands":["echo sb > sb.txt"],"unproven":[]}'
     $pA = Start-Process -FilePath $afPy -ArgumentList @($avPy, '-Root', $AfSA, '-Changed', (Join-Path $AfSA 'pkg\core.py'), `
         '-Lang', 'python', '-Plan', (Join-Path $AfSA 'plan.json'), '-Store', (Join-Path $Work 'af-store-sa'), `
-        '-Receipt', (Join-Path $Work 'af-sa.json'), '--compact', '--agent-id', 'sub-a') `
+        '-Receipt', (Join-Path $Work 'af-sa.json'), '--compact', '--agent-id', 'sub-a', '--no-claim-gate') `
         -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-sa.out') -RedirectStandardError (Join-Path $Work 'af-sa.err')
     $pB = Start-Process -FilePath $afPy -ArgumentList @($avPy, '-Root', $AfSB, '-Changed', (Join-Path $AfSB 'pkg\core.py'), `
         '-Lang', 'python', '-Plan', (Join-Path $AfSB 'plan.json'), '-Store', (Join-Path $Work 'af-store-sb'), `
-        '-Receipt', (Join-Path $Work 'af-sb.json'), '--compact', '--agent-id', 'sub-b') `
+        '-Receipt', (Join-Path $Work 'af-sb.json'), '--compact', '--agent-id', 'sub-b', '--no-claim-gate') `
         -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-sb.out') -RedirectStandardError (Join-Path $Work 'af-sb.err')
     $null = $pA.WaitForExit(); $null = $pB.WaitForExit()
     Assert-True ($pA.ExitCode -eq 0 -and $pB.ExitCode -eq 0) `
@@ -2926,7 +2929,8 @@ if (-not $agPy) {
     }
     function Invoke-AgAv([string]$root, [string]$store, [string]$receipt, [string[]]$extra) {
         $argsAv = @($avPy, '-Root', $root, '-Changed', (Join-Path $root 'pkg\core.py'), '-Lang', 'python',
-                    '-Plan', (Join-Path $root 'plan.json'), '-Store', $store, '-Receipt', $receipt) + $extra
+                    '-Plan', (Join-Path $root 'plan.json'), '-Store', $store, '-Receipt', $receipt,
+                    '--no-claim-gate') + $extra
         & $agPy @argsAv 2>&1 | Out-Null
         return $LASTEXITCODE
     }
@@ -3730,7 +3734,8 @@ if (-not $ajPy) {
     }
     function Invoke-AjAv([string]$root, [string]$store, [string]$receipt, [string[]]$extra) {
         $argsAv = @($avPy, '-Root', $root, '-Changed', (Join-Path $root 'pkg\core.py'), '-Lang', 'python',
-                    '-Plan', (Join-Path $root 'plan.json'), '-Store', $store, '-Receipt', $receipt) + $extra
+                    '-Plan', (Join-Path $root 'plan.json'), '-Store', $store, '-Receipt', $receipt,
+                    '--no-claim-gate') + $extra
         & $script:ajPy @argsAv 2>&1 | Out-Null
         return $LASTEXITCODE
     }
@@ -3988,7 +3993,7 @@ if (-not $akPy) {
     function Invoke-AkAv([string]$root, [string]$store, [string]$receipt, [string[]]$extra) {
         $argsAv = @($script:akAvPy, '-Root', $root, '-Changed', (Join-Path $root 'pkg\core.py'),
                     '-Lang', 'python', '-Plan', (Join-Path $root 'plan.json'), '-Store', $store,
-                    '-Receipt', $receipt) + $extra
+                    '-Receipt', $receipt, '--no-claim-gate') + $extra
         & $script:akPy @argsAv 2>&1 | Out-Null
         return $LASTEXITCODE
     }
@@ -4469,7 +4474,8 @@ def build_fx():
 def chain(receipt, extra=(), cwd=FX):
     p = subprocess.run([PY, AV, "-Root", cwd, "-Changed", "pkg/core.py",
                         "-Lang", "python", "-Plan", os.path.join(cwd, "plan.json"),
-                        "-Store", STORE, "-Receipt", receipt] + list(extra),
+                        "-Store", STORE, "-Receipt", receipt, "--no-claim-gate"]
+                       + list(extra),
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     return p.returncode
 
@@ -4779,7 +4785,8 @@ print("ALDRV done")
     function Invoke-AlAv([string]$receipt, [string[]]$extra, [switch]$NoPlan, [string]$PlanPath, [string]$ChangedFile = 'pkg/core.py') {
         $argsAv = @((Join-Path $tools "agent_verify.py"), "-Root", $AlW,
                     "-Changed", $ChangedFile, "-Lang", "python",
-                    "-Store", (Join-Path $Work "al-wd-store"), "-Receipt", $receipt)
+                    "-Store", (Join-Path $Work "al-wd-store"), "-Receipt", $receipt,
+                    "--no-claim-gate")
         if (-not $NoPlan) {
             $planFile = if ($PlanPath) { $PlanPath } else { Join-Path $AlW "plan.json" }
             $argsAv += @("-Plan", $planFile)
@@ -4821,7 +4828,7 @@ print("ALDRV done")
         "AL21 constraints 门超时→fail-closed 拒绝并点名门" "e=$al21 v=$($al21doc.verdict)"
 
     & $alPy (Join-Path $tools 'agent_verify.py') -Root $AlW -Changed 'pkg/core.py' `
-        -Lang python --gate-deadline-affected 0 2>&1 | Out-Null
+        -Lang python --gate-deadline-affected 0 --no-claim-gate 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 2) "AL22 deadline 0/负数→exit 2（坏调用，不是关掉看门狗）" "e=$LASTEXITCODE"
 
     # --- AL27-AL32: alignment gate 接入 chain（目标/需求/产物/证据/变更） -------------
@@ -5123,7 +5130,7 @@ raise SystemExit(0 if n == 0 else 1)
         $argsAv = @((Join-Path $tools 'agent_verify.py'), '-Root', $StW,
                     '-Changed', 'a.py', '-Lang', 'python',
                     '-Store', (Join-Path $Work 'st-wd-store'), '-Receipt', $receipt,
-                    '-Plan', (Join-Path $StW 'plan.json')) + $extra
+                    '-Plan', (Join-Path $StW 'plan.json'), '--no-claim-gate') + $extra
         & $alPy @argsAv 2>&1 | Out-Null
         return $LASTEXITCODE
     }
@@ -5526,8 +5533,8 @@ if (-not $anPy) {
     $skipped++
 } else {
     $aoOut = @(& $anPy (Join-Path $tools 'subagent_dispatch.py') --self-test 2>&1)
-    Assert-True ($LASTEXITCODE -eq 0 -and (($aoOut -join ' ') -match 'subagent-dispatch self-test: 27/27')) `
-        'AO1 子智能体派发 27/27：三角色分模型/并行产出/已有产物拒绝/重复 id 与 out 拒绝/硬链接与符号链接拒绝/根内 junction 拒绝/大小写与尾点拒绝/零预算拒绝/无 usage 预算拒绝/无路由拒绝/dry-run 不落写/prompt guard 前置隔离/输出侧污染隔离与 warn 留痕/二进制文本抽取/capability 两例' "e=$LASTEXITCODE"
+    Assert-True ($LASTEXITCODE -eq 0 -and (($aoOut -join ' ') -match 'subagent-dispatch self-test: 32/32')) `
+        'AO1 子智能体派发 32/32：三角色分模型/并行产出/已有产物拒绝/重复 id 与 out 拒绝/硬链接与符号链接拒绝/根内 junction 拒绝/大小写与尾点拒绝/零预算拒绝/无 usage 预算拒绝/无路由拒绝/dry-run 不落写/prompt guard 前置隔离/输出侧污染隔离与 warn 留痕/二进制文本抽取/capability 两例/claim-release 三例/orch-select 两例' "e=$LASTEXITCODE"
 }
 
 
@@ -5701,7 +5708,7 @@ if (-not $anPy) {
     $avReceipt = Join-Path $Work 'av-security-refuse.json'
     & $anPy (Join-Path $tools 'agent_verify.py') -Root $avRoot -Changed (Join-Path $avRoot 'pkg\core.py') `
         -Lang python -Plan (Join-Path $avRoot 'plan.json') -Store (Join-Path $Work 'av-security-store') `
-        -Receipt $avReceipt --security 2>&1 | Out-Null
+        -Receipt $avReceipt --security --no-claim-gate 2>&1 | Out-Null
     $avRc = $LASTEXITCODE
     $avDoc = if (Test-Path $avReceipt) { Get-Content $avReceipt -Raw | ConvertFrom-Json } else { $null }
     $avSteps = @($avDoc.steps | ForEach-Object { $_.step })
@@ -5716,7 +5723,7 @@ if (-not $anPy) {
     $avGoodReceipt = Join-Path $Work 'av-security-good.json'
     & $anPy (Join-Path $tools 'agent_verify.py') -Root $avGood -Changed (Join-Path $avGood 'pkg\core.py') `
         -Lang python -Plan (Join-Path $avGood 'plan.json') -Store (Join-Path $Work 'av-security-good-store') `
-        -Receipt $avGoodReceipt --security 2>&1 | Out-Null
+        -Receipt $avGoodReceipt --security --no-claim-gate 2>&1 | Out-Null
     $avGoodRc = $LASTEXITCODE
     $avReport = Join-Path $avGood 'target\agent-security\security-gate.json'
     $avAuditOut = @(& $anPy (Join-Path $tools 'agent_audit.py') --root $avGood `

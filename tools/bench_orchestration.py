@@ -145,7 +145,8 @@ def direct_wall(fixture, commands, bash):
 
 def chain_wall(fixture, plan_path, store, receipt, extra=()):
     args = [PY, AV, "-Root", fixture, "-Changed", "pkg/core.py", "-Lang", "python",
-            "-Plan", plan_path, "-Store", store, "-Receipt", receipt] + list(extra)
+            "-Plan", plan_path, "-Store", store, "-Receipt", receipt,
+            "--no-claim-gate"] + list(extra)
     t0 = time.time()
     p = sh(args)
     return time.time() - t0, p.returncode
@@ -205,7 +206,7 @@ def crash_round(fixture, slow_plan, store, py):
     proc = subprocess.Popen(
         [py, AV, "-Root", fixture, "-Changed", "pkg/core.py", "-Lang", "python",
          "-Plan", slow_plan, "-Store", store, "-Receipt",
-         os.path.join(fixture, "rc-crash.json")],
+         os.path.join(fixture, "rc-crash.json"), "--no-claim-gate"],
         stdout=out, stderr=subprocess.STDOUT)
     time.sleep(2.5)
     alive = proc.poll() is None
@@ -218,7 +219,7 @@ def crash_round(fixture, slow_plan, store, py):
     t0 = time.time()
     p = sh([py, AV, "-Root", fixture, "-Changed", "pkg/core.py", "-Lang", "python",
             "-Plan", slow_plan, "-Store", store, "-Receipt",
-            os.path.join(fixture, "rc-detect.json")])
+            os.path.join(fixture, "rc-detect.json"), "--no-claim-gate"])
     detect_s = time.time() - t0
     if p.returncode != 1:
         return None

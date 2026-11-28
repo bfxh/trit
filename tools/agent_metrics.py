@@ -621,7 +621,7 @@ def self_test():
         receipt = os.path.join(real, "receipt.json")
         av = _call([AV, "-Root", real, "-Changed", "pkg/core.py", "-Lang", "python",
                     "-Plan", plan, "-Store", os.path.join(real, "store"),
-                    "-Receipt", receipt, "-DryRun"])
+                    "-Receipt", receipt, "-DryRun", "--no-claim-gate"])
         check("real agent_verify rc", av.returncode == 0, av.stdout + av.stderr)
         real_rec = load_receipt(receipt) if os.path.exists(receipt) else {"error": "no receipt"}
         check("real receipt parse", not real_rec.get("error"), str(real_rec.get("error")))
@@ -649,7 +649,8 @@ def self_test():
         ]:
             rc_path = os.path.join(real, f"rc-{name}.json")
             res = _call([AV, "-Root", real, "-Changed", "pkg/core.py", "-Lang", "python",
-                         "-Plan", plan, "-Store", store, "-Receipt", rc_path] + list(extra))
+                         "-Plan", plan, "-Store", store, "-Receipt", rc_path,
+                         "--no-claim-gate"] + list(extra))
             check(f"live {name} rc", res.returncode == want_rc, res.stdout + res.stderr)
             rec = load_receipt(rc_path) if os.path.exists(rc_path) else {"error": "no receipt"}
             check(f"live {name} receipt", not rec.get("error") and rec.get("vclass") == want_class,

@@ -27,7 +27,8 @@
      折成 Exec（命令 basename），HTTP provider 折成 Network（`base_url` 的 host），
      任一不是 True 就拒绝该任务并写 capability-denied；`--untrusted-origin` 声明
      prompt 来自不可信数据（是否放行由策略的 `allow_untrusted_origin` 决定）；
-     未给策略时完全保持旧行为；二进制定位同 sandbox_run，缺失即拒绝。capability
+     未给策略时检测 `<root>/.agent/capability.json`，存在即启用；都没有则保持旧行为。
+     二进制定位同 sandbox_run，缺失即拒绝。capability
      判定在容量租约之前完成，被拒任务不会占用 worker 名额；
   4. 真并行：--parallel N 个任务同时跑，但输出路径/任务 id 必须唯一；
   5. 容量准入：--capacity enforce 在调用任何 provider 前先向 tools/capacity_lease.py
@@ -650,6 +651,10 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
     # policy already rejects must not reserve a worker slot. The lease is sized
     # to the tasks that can actually run, so a denied task never holds capacity.
     capability_policy = getattr(args, "capability_policy", "")
+    if not capability_policy:
+        default_policy = os.path.join(root, ".agent", "capability.json")
+        if os.path.isfile(default_policy):
+            capability_policy = default_policy
     capability_bin = getattr(args, "capability_bin", "")
     untrusted_origin = getattr(args, "untrusted_origin", False)
     capability_runner = getattr(args, "capability_runner", None)

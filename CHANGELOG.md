@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed（默认化：claim-gate 默认开启 / capability 自动发现）
+
+- `agent_verify.py` 的认领门默认开启：不传 `--claim-gate` 也会检查，必须给
+  `--claim-who <host:session>`；`--no-claim-gate` 是显式 legacy 逃生门。
+- `sandbox_run` / `subagent_dispatch` 未显式给策略时自动检测
+  `<root>/.agent/capability.json`，存在即启用；没有策略文件时保持旧行为。
+- 项目内非认领场景的调用点（selftest/bench/metrics/simchain）迁移到 `--no-claim-gate`。
+
 ### Added（subagent-dispatch：消费 trit-orch select）
 
 - 新增 `--orch-select <SelectInput.json>`：先调 `trit-orch select`，只派发 selected 任务；
