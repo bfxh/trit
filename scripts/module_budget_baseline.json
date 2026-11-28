@@ -3271,6 +3271,14 @@
       "lines": 223
     },
     {
+      "file": "crates/trit-orch/src/capability/mod.rs",
+      "lines": 166
+    },
+    {
+      "file": "crates/trit-orch/src/capability/tests.rs",
+      "lines": 188
+    },
+    {
       "file": "crates/trit-orch/src/claim.rs",
       "lines": 3
     },
@@ -3665,6 +3673,10 @@
     {
       "file": "crates/trit-orch/tests/capability.rs",
       "lines": 127
+    },
+    {
+      "file": "crates/trit-orch/tests/capability_targets.rs",
+      "lines": 60
     },
     {
       "file": "crates/trit-orch/tests/claim_case.rs",
@@ -5277,6 +5289,10 @@
     {
       "file": "crates/trit-splat/src/color/gamut.rs",
       "lines": 52
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests.rs",
+      "lines": 103
     },
     {
       "file": "crates/trit-splat/src/color/tests/core.rs",
