@@ -12,7 +12,7 @@ pub struct RawGaussian {
 }
 
 /// 3DGS 激活：scale = exp(log_scale)，opacity = sigmoid(logit)。
-/// rot：Brush 的 PLY rot_0..3 是 **[W,X,Y,Z]** 顺序（brush-serde quant.rs:63-67
+/// rot：Brush 的 PLY rot_0..3 是 **`[W,X,Y,Z]`** 顺序（brush-serde quant.rs:63-67
 /// `w = quat[0]`，raw 导入原样透传到内部 WXYZ 张量）——这里转成 xyzw 供
 /// quat_to_mat3 使用。按 XYZW 解读会让所有各向异性 splat 旋转全错
 /// （实测：cov2d 非对角元差 61×，整幅涂抹感，PSNR −10dB）。

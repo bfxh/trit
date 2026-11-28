@@ -34,10 +34,10 @@ pub struct ScreenGaussian {
     pub color: [f32; 3],
 }
 
-/// SH 视角色。`f_dc` 即 gaussian-splatting 的 sh[0]（0 阶）；`f_rest` 按 Brush ply 的
+/// SH 视角色。`f_dc` 即 gaussian-splatting 的 `sh[0]`（0 阶）；`f_rest` 按 Brush ply 的
 /// channel-major 布局（f_rest_{c·K + k} = 通道 c 的第 k 个后续系数，K = len/3；
 /// SH3 → K=15）。基函数索引与 gaussian-splatting eval_sh 同源：
-/// l1: sh[1..3]（−y, z, x），l2: sh[4..8]，l3: sh[9..15]。
+/// l1: `sh[1..3]`（−y, z, x），l2: `sh[4..8]`，l3: `sh[9..15]`。
 /// `view_dir` 从高斯指向相机（归一化）。
 pub fn eval_color(f_dc: [f32; 3], f_rest: &[f32], view_dir: Vec3) -> [f32; 3] {
     let mut color = [

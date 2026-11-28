@@ -5104,7 +5104,7 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render.rs",
-      "lines": 109
+      "lines": 107
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli.rs",

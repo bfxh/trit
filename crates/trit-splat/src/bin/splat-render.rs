@@ -1,8 +1,6 @@
 //! splat-render：读 3DGS .ply/.spz + nerfstudio transforms.json，渲染指定帧出 PNG。
 //!
-//! 用法：
-//!   splat-render --dataset <root> --frame 16 --ply scene_30000.ply --out out.png [--bg auto]
-//!   splat-render --dataset <root> --frame 16 --ply scene_30000.spz --out out.png
+//! 用法：`splat-render --dataset <root> --frame N --ply <ply|spz> --out <png> [--bg auto]`
 
 use std::path::PathBuf;
 

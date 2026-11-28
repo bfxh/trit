@@ -6,8 +6,8 @@
 //! - scales  解码 = log 空间（(packed/16)−10）→ 与 Brush ply 的 log_scale 一致；
 //! - alphas  解码 = inv_sigmoid → logit，与 Brush ply 的 opacity 一致；
 //! - colors  解码 = (packed/255−0.5)/0.15 → RAW f_dc；
-//! - rotations 解码 = xyzw（w 在末位重建）→ 存储时转成 PLY 的 [W,X,Y,Z]；
-//! - SH      解码 = 逐系数交错 [r,g,b] → 重排为 channel-major（Brush ply 口径）；
+//! - rotations 解码 = xyzw（w 在末位重建）→ 存储时转成 PLY 的 `[W,X,Y,Z]`；
+//! - SH      解码 = 逐系数交错 `[r,g,b]` → 重排为 channel-major（Brush ply 口径）；
 //! - 坐标系  ：SPZ 容器名义上是 RUB，但 gaussforge 写出的 .spz 保留 Brush PLY
 //!   世界系原值（位置 100% 最近邻命中、均值误差 1.17e-4 = 24-bit 定点网格），
 //!   因此 unpack 目标取 RUB（恒等），不做 y/z 翻转；
