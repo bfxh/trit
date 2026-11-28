@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed（回执 HMAC 规范编码）
+
+- `Receipt::signing_bytes` 改为版本化规范编码：固定字段顺序、定长整数 + 长度前缀字符串，
+  以 `trit-orch-receipt-hmac-v1\0` 作域分隔，不再依赖 `serde_json` 字段序。
+- 跨语言实现可按同一字节契约复算；旧 serde_json 签名不再兼容（尚无外部使用方）。
+- 新增 3 条单元测试覆盖域前缀、签名不自反馈、每个签名字段变化都会改字节。
+
 ### Changed（sandbox 默认放行）
 
 - `sandbox_run` 默认改为 `-Profile full`、联网、`-AllowHostWrite`，不再逐条拦普通命令；
