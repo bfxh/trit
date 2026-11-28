@@ -120,6 +120,10 @@ printf '%s' '{"tasks":[{"task":{"id":"a","priority":0,"duration":1,"deps":[]},
   `effective_threshold = max(TaskSpec.policy.min_assertions, 调用方全局下限)`；缺绑定/不符返回
   `receipt_observation_mismatch`，`field` 取 `plan` / `revision` /
   `acceptance_digest`；显式 `--allow-self-reported` 逃生舱不要求 `plan` 绑定。
+- `Receipt::signing_bytes` 是版本化规范编码：固定字段顺序、定长整数 + 长度前缀字符串，
+  HMAC 输入以 `trit-orch-receipt-hmac-v1\0` 作域分隔，不依赖 `serde_json` 的字段序或
+  数字格式；跨语言实现只要写同一字节契约即可复算。`acceptance_digest` 仍走
+  `serde_json`（TaskSpec 结构等价），两者边界不同：签名防字段改动，摘要防换阈值/换定义。
 - `acceptance_digest` 固定的是 `TaskSpec` 的 `serde_json` 字节（现在包含
   `policy.min_assertions`）加本次有效阈值，属于结构等价而非跨语言语义规范哈希；
   它防「测量后换阈值」，但不证明阈值本身合理。
@@ -134,6 +138,5 @@ printf '%s' '{"tasks":[{"task":{"id":"a","priority":0,"duration":1,"deps":[]},
 
 ## 5. 后续待办
 
-- 把 `signing_bytes` 升级为跨语言规范编码，摆脱 `serde_json` 字段序依赖；
 - 把 `claim_audit` 报告从可选输入抬成默认要求（与 capability 门、`--claim-gate` 的默认化
   一起做，见调度闭环）。
