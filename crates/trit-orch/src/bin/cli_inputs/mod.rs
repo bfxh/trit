@@ -2,7 +2,7 @@ use serde::Deserialize;
 use trit_orch::*;
 mod finish;
 pub(crate) mod stdin;
-pub(crate) use finish::{Execution, FinishInput};
+pub(crate) use finish::{ClaimAuditReport, Execution, FinishInput};
 
 #[derive(Deserialize)]
 pub(crate) struct PlanInput {

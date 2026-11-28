@@ -38,6 +38,11 @@ snapshot 里写一个 `Passed`，`finish` 就会报完成，不需要任何 exec
 - `finish --receipt-hmac-key-file <path>`（或 `TRIT_ORCH_RECEIPT_HMAC_KEY_FILE`）启用
   宿主 HMAC-SHA256：宿主测量回执逐条签名；外部传入的 `HostMeasured` 回执只有验签通过
   才保留来源，否则降级为 `SelfReported`。密钥文件按原始字节读取，少于 16 字节拒绝。
+- `finish` 的 stdin 可带 `claim_audit`（`claim_audit.py -Json` 的完整报告）。它作为
+  第二证据链：要求 `ok:true`、`summary.total>0`、`summary.verified==total`、无
+  `unverified`/`fabricated`，且逐条 verdict 都是 `VERIFIED`；非绿报告返回
+  `claim_audit_refused`，空报告或 `ok` 与 summary/rows 自相矛盾返回
+  `claim_audit_invalid`。`--allow-unattested` legacy 逃生门不经过此检查。
 - `trit-orch finish --allow-unattested` 是显式 legacy 逃生门，只接受无回执的旧快照；
   正式完成声明不应使用它。
 - 错误 kind 固定为 `unattested_evidence` / `receipt_mismatch`，方便宿主和测试按 kind 判定。
@@ -66,6 +71,10 @@ snapshot 里写一个 `Passed`，`finish` 就会报完成，不需要任何 exec
 | `crates/trit-orch/tests/receipt_signature.rs::missing_signature_is_refused` | 缺签名 → `receipt_observation_missing`，`field=signature` |
 | `crates/trit-orch/tests/receipt_signature.rs::wrong_key_or_tampering_is_refused` | 错密钥或签名后改字段 → `receipt_observation_mismatch` |
 | `crates/trit-orch/tests/receipt_signature.rs::unsigned_legacy_gate_still_accepts_unsigned_receipts` | 未启用密钥时旧的无签名路径不变 |
+| `crates/trit-orch/tests/finish_claim_audit.rs::passing_claim_audit_is_accepted_as_a_second_evidence_chain` | 全绿 claim audit 与完成回执一起放行 |
+| `crates/trit-orch/tests/finish_claim_audit.rs::unverified_claim_audit_refuses_completion` | UNVERIFIED → `claim_audit_refused` |
+| `crates/trit-orch/tests/finish_claim_audit.rs::fabricated_claim_audit_refuses_completion` | FABRICATED → `claim_audit_refused` |
+| `crates/trit-orch/tests/finish_claim_audit.rs::self_contradictory_claim_audit_report_is_refused` | `ok:true` 但明细非绿 → 拒绝；空报告 → `claim_audit_invalid` |
 | `crates/trit-orch/tests/unauthorized_finish.rs::finish_with_receipts_rejects_unauthorized_settled_task` | `authorization=False` 的 settled 任务不能报完成 |
 
 本轮实测：
@@ -80,6 +89,7 @@ cargo test -p trit-orch --test receipt_threshold -> 2 passed / 0 failed
 cargo test -p trit-orch --test receipt_task_threshold -> 3 passed / 0 failed
 cargo test -p trit-orch --test finish_threshold -> 1 passed / 0 failed
 cargo test -p trit-orch --test receipt_signature -> 4 passed / 0 failed
+cargo test -p trit-orch --test finish_claim_audit -> 4 passed / 0 failed
 cargo test -p trit-orch --test unauthorized_finish -> 1 passed / 0 failed
 cargo test -p trit-orch --test progress     -> 8 passed / 0 failed
 cargo clippy -p trit-orch --all-targets -- -D warnings -> ok
@@ -119,9 +129,11 @@ printf '%s' '{"tasks":[{"task":{"id":"a","priority":0,"duration":1,"deps":[]},
 - 只覆盖 `Proved` / `Refuted` 的 decisive 结果；`inconclusive` / `conflicts` 仍然直接拒绝完成。
 - `min_assertions` 默认 1 是保守下限，不是任务充分性证明；真实任务阈值应写进 `TaskSpec`。
 - 不替代 `tools/claim_audit.py`：`claim_audit` 审模型文本 claim，本门审完成声明与执行回执的
-  一致性；两者可以串联，但尚未自动串联。
+  一致性。现在两者可串联：`finish` 接收 `claim_audit` 报告，非绿报告拒绝完成；但报告本身
+  仍由调用方生成，完成闸不替调用方决定 claims 集是否覆盖了全部工作。
 
 ## 5. 后续待办
 
 - 把 `signing_bytes` 升级为跨语言规范编码，摆脱 `serde_json` 字段序依赖；
-- 把 `claim_audit.py` 的 `test-pass` / `number` / `aggregate` 结论作为第二证据链接入完成门。
+- 把 `claim_audit` 报告从可选输入抬成默认要求（与 capability 门、`--claim-gate` 的默认化
+  一起做，见调度闭环）。

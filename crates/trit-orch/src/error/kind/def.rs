@@ -91,6 +91,8 @@ impl Error {
             Error::ReceiptFailed { .. } => "receipt_failed",
             Error::ReceiptAlreadyActed { .. } => "receipt_already_acted",
             Error::ReceiptSkip { .. } => "receipt_skip",
+            Error::ClaimAuditRefused { .. } => "claim_audit_refused",
+            Error::ClaimAuditInvalid { .. } => "claim_audit_invalid",
             Error::HandoffFieldBlank { .. } => "handoff_field_blank",
             Error::HandoffExpired { .. } => "handoff_expired",
             Error::InvalidTransition { .. } => "invalid_transition",
