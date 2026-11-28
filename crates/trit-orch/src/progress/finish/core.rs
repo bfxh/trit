@@ -8,6 +8,9 @@ use crate::{
 use crate::progress::decisive;
 use crate::progress::{Progress, Summary};
 
+#[path = "check.rs"]
+mod check;
+
 /// 完成闸对回执来源的信任档位。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ReceiptTrust {
@@ -113,7 +116,7 @@ impl Progress {
         let mut in_flight = 0usize;
         let mut inconclusive = 0usize;
         let mut conflicts = 0usize;
-        let mut decisive_observations: Vec<(&str, &Observation)> = Vec::new();
+        let mut decisive_observations: Vec<(&str, &Observation, &TaskSpec)> = Vec::new();
         for spec in tasks {
             let Some(observation) = snapshot.observations.get(&spec.task.id) else {
                 pending += 1;
@@ -126,11 +129,11 @@ impl Progress {
                     match decisive(observation, spec) {
                         Some(EvidenceVerdict::Proved) => {
                             confirmed += 1;
-                            decisive_observations.push((spec.task.id.as_str(), observation));
+                            decisive_observations.push((spec.task.id.as_str(), observation, spec));
                         }
                         Some(EvidenceVerdict::Refuted) => {
                             refuted += 1;
-                            decisive_observations.push((spec.task.id.as_str(), observation));
+                            decisive_observations.push((spec.task.id.as_str(), observation, spec));
                         }
                         Some(EvidenceVerdict::Conflicted) => conflicts += 1,
                         _ => inconclusive += 1,
@@ -150,7 +153,7 @@ impl Progress {
 
         if let Some(attest) = attest {
             let mut unattested = Vec::new();
-            for (task, observation) in decisive_observations {
+            for (task, observation, spec) in decisive_observations {
                 let Some(receipt) = attest.receipts.get(task) else {
                     unattested.push(task.to_owned());
                     continue;
@@ -169,16 +172,22 @@ impl Progress {
                         task: task.to_owned(),
                     });
                 }
+                // 计划身份也必须由宿主钉住：缺绑定、revision 或任务定义摘要
+                // 任一不符，都说明这条回执属于另一份计划。自报逃生舱已由调用方
+                // 显式承担信任，不额外要求 plan 绑定。
+                if attest.trust == ReceiptTrust::HostMeasuredOnly {
+                    check::plan(task, receipt, snapshot, spec)?;
+                }
                 // authorization / freshness / usage 也必须有宿主判定，且与快照一致：
                 // 只钉 evidence 会让模型靠自报授权/新鲜度/低报用量解锁完成。
-                check_observation(
+                check::observation(
                     task,
                     "authorization",
                     receipt.authorization,
                     observation.authorization,
                 )?;
-                check_observation(task, "freshness", receipt.freshness, observation.freshness)?;
-                check_observation(task, "usage", receipt.usage, observation.usage)?;
+                check::observation(task, "freshness", receipt.freshness, observation.freshness)?;
+                check::observation(task, "usage", receipt.usage, observation.usage)?;
                 let Some(evidence) = observation.evidence.as_ref() else {
                     return Err(Error::ReceiptMismatch {
                         task: task.to_owned(),
@@ -207,25 +216,5 @@ impl Progress {
             refuted,
             rounds: self.rounds().len(),
         })
-    }
-}
-
-/// 回执里的 observation 证明必须存在且与快照一致；缺失按拒绝处理。
-fn check_observation<T: PartialEq + Copy>(
-    task: &str,
-    field: &'static str,
-    claimed: Option<T>,
-    actual: T,
-) -> Result<(), Error> {
-    match claimed {
-        None => Err(Error::ReceiptObservationMissing {
-            task: task.to_owned(),
-            field,
-        }),
-        Some(value) if value == actual => Ok(()),
-        Some(_) => Err(Error::ReceiptObservationMismatch {
-            task: task.to_owned(),
-            field,
-        }),
     }
 }

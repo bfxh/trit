@@ -48,6 +48,10 @@ snapshot 里写一个 `Passed`，`finish` 就会报完成，不需要任何 exec
 | `crates/trit-orch/tests/finish.rs::legacy_allow_unattested_is_explicit_only` | `--allow-unattested` 只有显式给出时才接受旧快照 |
 | `crates/trit-orch/tests/finish_receipts.rs::finish_with_receipts_requires_matching_executor_receipt` | 匹配 receipt 通过；缺 receipt → `UnattestedEvidence`；receipt 与 evidence 不一致 → `ReceiptMismatch` |
 | `crates/trit-orch/tests/finish_receipts.rs::finish_with_receipts_rejects_failed_receipt_for_passed_claim` | 失败 receipt 不能支撑 `Passed` 声明 |
+| `crates/trit-orch/tests/receipt_plan.rs::receipt_without_plan_binding_is_refused` | 缺 `plan` 绑定 → `receipt_observation_mismatch`，`field=plan` |
+| `crates/trit-orch/tests/receipt_plan.rs::receipt_from_another_revision_is_refused` | 回执 revision 与快照不符 → `field=revision` |
+| `crates/trit-orch/tests/receipt_plan.rs::changed_task_definition_invalidates_the_receipt` | 同名任务改定义（`max_tokens += 1`）→ `field=task_digest` |
+| `crates/trit-orch/tests/receipt_plan.rs::self_reported_receipt_is_refused_by_default` | 默认拒绝自报回执；仅 `--allow-self-reported` 逃生舱接受 |
 | `crates/trit-orch/tests/unauthorized_finish.rs::finish_with_receipts_rejects_unauthorized_settled_task` | `authorization=False` 的 settled 任务不能报完成 |
 
 本轮实测：
@@ -55,8 +59,9 @@ snapshot 里写一个 `Passed`，`finish` 就会报完成，不需要任何 exec
 ```text
 cargo check -p trit-orch --all-targets      -> ok
 cargo test -p trit-orch --test cli          -> 18 passed / 0 failed
-cargo test -p trit-orch --test finish       -> 3 passed / 0 failed
-cargo test -p trit-orch --test finish_receipts -> 2 passed / 0 failed
+cargo test -p trit-orch --test finish       -> 4 passed / 0 failed
+cargo test -p trit-orch --test finish_receipts -> 3 passed / 0 failed
+cargo test -p trit-orch --test receipt_plan -> 4 passed / 0 failed
 cargo test -p trit-orch --test unauthorized_finish -> 1 passed / 0 failed
 cargo test -p trit-orch --test progress     -> 8 passed / 0 failed
 cargo clippy -p trit-orch --all-targets -- -D warnings -> ok
@@ -78,8 +83,13 @@ printf '%s' '{"tasks":[{"task":{"id":"a","priority":0,"duration":1,"deps":[]},
 
 - `Receipt` 只是**执行器自报**的 exit/断言数，不是密码学签名。恶意宿主可以伪造一条 receipt；
   本层解决的是「模型只写 CheckReport、不提供执行回执」这一类幻觉，不解决「宿主本身不可信」。
-- `finish_with_receipts` 不校验 `snapshot.revision`；settled 任务现在要求
-  `authorization == True`，但 `Snapshot` 的 revision 与任务定义哈希仍未钉到 receipt。
+- `finish_with_receipts` 的默认 `HostMeasuredOnly` 路径已要求每条 decisive 回执带
+  `plan`：`revision` 必须等于 `snapshot.revision`，`task_digest` 必须等于
+  `task_spec_digest(spec)`（见 `crates/trit-orch/src/progress/finish/check.rs`）。
+  缺绑定/不符返回 `receipt_observation_mismatch`，`field` 取 `plan` / `revision` /
+  `task_digest`；显式 `--allow-self-reported` 逃生舱不要求 `plan` 绑定。
+- 任务摘要固定的是 `TaskSpec` 的 `serde_json` 字节，属于结构等价而非跨语言语义规范
+  哈希；字段改名或重排会改摘要，这是有意的保守方向。
 - 只覆盖 `Proved` / `Refuted` 的 decisive 结果；`inconclusive` / `conflicts` 仍然直接拒绝完成。
 - `min_assertions` 默认 1 是保守下限，不是任务充分性证明；真实任务阈值应由 `TaskSpec` 或
   调用方显式给出。
@@ -88,7 +98,7 @@ printf '%s' '{"tasks":[{"task":{"id":"a","priority":0,"duration":1,"deps":[]},
 
 ## 5. 后续待办
 
-- `trit-orch finish` 是否还要把 `snapshot.revision` 钉到 receipt 的 epoch/任务定义哈希；
 - 是否给 `Receipt` 加宿主侧 HMAC / 签名，区分「执行器自报」与「宿主可验证」；
+- 是否把 `task_spec_digest` 升级为跨语言规范编码，摆脱 `serde_json` 字节序依赖；
 - 是否把 `claim_audit.py` 的 `test-pass` / `number` / `aggregate` 结论作为第二证据链接入完成门；
 - 是否要求 `min_assertions` 来自 `TaskSpec`，而不是 CLI 默认值。

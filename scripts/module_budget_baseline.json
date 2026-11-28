@@ -3204,11 +3204,15 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure/core.rs",
-      "lines": 320
+      "lines": 267
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure/io.rs",
       "lines": 22
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_finish/measure/tests.rs",
+      "lines": 61
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/mod.rs",
@@ -3352,15 +3356,39 @@
     },
     {
       "file": "crates/trit-orch/src/evidence/core.rs",
-      "lines": 74
+      "lines": 69
     },
     {
       "file": "crates/trit-orch/src/evidence/digest.rs",
       "lines": 40
     },
     {
+      "file": "crates/trit-orch/src/evidence/exit.rs",
+      "lines": 10
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/plan.rs",
+      "lines": 11
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/provenance.rs",
+      "lines": 16
+    },
+    {
       "file": "crates/trit-orch/src/evidence/receipt.rs",
-      "lines": 111
+      "lines": 67
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/receipt_ctor.rs",
+      "lines": 49
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/receipt_plan.rs",
+      "lines": 15
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/task_digest.rs",
+      "lines": 15
     },
     {
       "file": "crates/trit-orch/src/exports.rs",
@@ -3439,8 +3467,12 @@
       "lines": 2
     },
     {
+      "file": "crates/trit-orch/src/progress/finish/check.rs",
+      "lines": 52
+    },
+    {
       "file": "crates/trit-orch/src/progress/finish/core.rs",
-      "lines": 231
+      "lines": 220
     },
     {
       "file": "crates/trit-orch/src/progress/finish/legacy.rs",
@@ -3780,7 +3812,11 @@
     },
     {
       "file": "crates/trit-orch/tests/finish_receipts/core.rs",
-      "lines": 127
+      "lines": 108
+    },
+    {
+      "file": "crates/trit-orch/tests/finish_receipts/plan.rs",
+      "lines": 115
     },
     {
       "file": "crates/trit-orch/tests/handoff_signature.rs",
@@ -3821,6 +3857,10 @@
     {
       "file": "crates/trit-orch/tests/receipt_matrix/core.rs",
       "lines": 234
+    },
+    {
+      "file": "crates/trit-orch/tests/receipt_plan.rs",
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/recovery.rs",
@@ -5309,6 +5349,10 @@
     {
       "file": "crates/trit-splat/src/color/tests/core.rs",
       "lines": 79
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/gamut.rs",
+      "lines": 44
     },
     {
       "file": "crates/trit-splat/src/color/tests/gamut/mod.rs",

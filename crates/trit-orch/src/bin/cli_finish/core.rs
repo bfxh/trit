@@ -54,7 +54,6 @@ pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
     if let Some(task) = self_reported_tasks.first() {
         return Err(trit_orch::Error::ReceiptSelfReported { task: task.clone() });
     }
-
     // 宿主自己执行验收命令，回执的每个数字都来自真实进程。
     let nonce = request.challenge.clone().unwrap_or_else(host_nonce);
     for execution in &request.executions {
@@ -65,7 +64,8 @@ pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
             .ok_or_else(|| trit_orch::Error::ReceiptUnknownTask {
                 task: execution.task.clone(),
             })?;
-        let receipt = measure::run_execution(execution, task_spec.epoch, &nonce)?;
+        let receipt =
+            measure::run_execution(execution, request.snapshot.revision, task_spec, &nonce)?;
         receipts.insert(execution.task.clone(), receipt);
     }
 

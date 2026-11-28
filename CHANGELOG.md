@@ -28,6 +28,20 @@
 - 边界：只做 sRGB/Rec.709 → Display P3 的线性原色矩阵；未做 P3 → sRGB 反向、
   Rec.2020、ICC 嵌入或色域映射（超出 P3 时仍按通道截断）。
 
+### Added（trit-orch：完成回执钉住计划 revision 与任务定义摘要）
+
+- `Receipt` 新增 `plan: Option<ReceiptPlan>`（库内 `pub(crate)`，外部经 `with_plan`
+  绑定）；`ReceiptPlan { revision, task_digest }`，`task_spec_digest` 对 `TaskSpec` 的
+  `serde_json` 字节做 SHA-256。
+- 默认 `HostMeasuredOnly` 完成闸逐条 decisive 回执校验 plan：缺失/不符返回
+  `receipt_observation_mismatch`，`field=plan|revision|task_digest`；旧 JSON 缺 plan
+  不会静默通过。
+- `trit-orch finish` 的宿主测量路径在 `measure::run_execution` 用 `snapshot.revision`
+  与 `TaskSpec` 绑定回执；显式 `--allow-self-reported` 逃生舱不要求 plan。
+- 验证：`finish` 4、`finish_receipts` 3、`receipt_plan` 4；`cargo test -p trit-orch`
+  exit 0；`cargo clippy -p trit-orch --all-targets -- -D warnings` 通过。
+- 边界：`task_digest` 绑定 `serde_json` 字节序，不是跨语言规范哈希；仍未加 HMAC/签名。
+
 ### Added（trit-orch：动作级 capability 内核与目标白名单，第六门）
 ### Added（trit-splat v10：输出端色彩管理）
 

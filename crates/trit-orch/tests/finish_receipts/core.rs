@@ -1,17 +1,18 @@
 use std::collections::BTreeMap;
 
-use trit_orch::{Error, EvidenceSpec, Exit, Phase, Progress, Receipt, Ternary, TokenUsage};
+use trit_orch::{
+    Error, EvidenceSpec, Exit, Phase, Progress, Receipt, TaskSpec, Ternary, TokenUsage,
+    task_spec_digest,
+};
 
 #[path = "../progress_support/mod.rs"]
 mod progress_support;
 use progress_support::*;
 
-fn host_receipt(passed: u32, failed: u32) -> Receipt {
-    Receipt::host_measured(0, Exit::Completed { code: 0 }, passed, failed).with_observation(
-        Ternary::True,
-        Ternary::True,
-        TokenUsage::default(),
-    )
+fn host_receipt(passed: u32, failed: u32, task: &TaskSpec, revision: u64) -> Receipt {
+    Receipt::host_measured(task.epoch, Exit::Completed { code: 0 }, passed, failed)
+        .with_plan(revision, task_spec_digest(task).expect("task digest"))
+        .with_observation(Ternary::True, Ternary::True, TokenUsage::default())
 }
 
 fn spec() -> EvidenceSpec {
@@ -31,7 +32,10 @@ fn settled() -> (Vec<trit_orch::TaskSpec>, trit_orch::Snapshot) {
 fn finish_with_receipts_requires_matching_executor_receipt() {
     let (tasks, state) = settled();
     let mut receipts = BTreeMap::new();
-    receipts.insert("a".to_owned(), host_receipt(1, 0));
+    receipts.insert(
+        "a".to_owned(),
+        host_receipt(1, 0, &tasks[0], state.revision),
+    );
     let summary = Progress::new()
         .finish_with_receipts(&tasks, &state, &receipts, spec())
         .unwrap();
@@ -48,7 +52,10 @@ fn finish_with_receipts_requires_matching_executor_receipt() {
     );
 
     let mut mismatch = BTreeMap::new();
-    mismatch.insert("a".to_owned(), host_receipt(2, 0));
+    mismatch.insert(
+        "a".to_owned(),
+        host_receipt(2, 0, &tasks[0], state.revision),
+    );
     assert_eq!(
         Progress::new().finish_with_receipts(&tasks, &state, &mismatch, spec()),
         Err(Error::ReceiptMismatch {
@@ -62,7 +69,10 @@ fn finish_with_receipts_requires_matching_executor_receipt() {
 fn finish_with_receipts_rejects_failed_receipt_for_passed_claim() {
     let (tasks, state) = settled();
     let mut receipts = BTreeMap::new();
-    receipts.insert("a".to_owned(), host_receipt(0, 1));
+    receipts.insert(
+        "a".to_owned(),
+        host_receipt(0, 1, &tasks[0], state.revision),
+    );
     assert_eq!(
         Progress::new().finish_with_receipts(&tasks, &state, &receipts, spec()),
         Err(Error::ReceiptMismatch {
@@ -73,42 +83,13 @@ fn finish_with_receipts_rejects_failed_receipt_for_passed_claim() {
 }
 
 #[test]
-fn self_reported_receipt_is_refused_by_default() {
-    let (tasks, state) = settled();
-    let mut receipts = BTreeMap::new();
-    receipts.insert(
-        "a".to_owned(),
-        Receipt::self_reported(0, Exit::Completed { code: 0 }, 1, 0).with_observation(
-            Ternary::True,
-            Ternary::True,
-            TokenUsage::default(),
-        ),
-    );
-    assert_eq!(
-        Progress::new().finish_with_receipts(&tasks, &state, &receipts, spec()),
-        Err(Error::ReceiptSelfReported {
-            task: "a".to_owned()
-        }),
-        "ORCH_FINISH_SELF_REPORTED"
-    );
-
-    // 显式逃生舱才接受；它对应"外部已有独立信任锚"的场景。
-    assert_eq!(
-        Progress::new()
-            .finish_with_self_reported_receipts(&tasks, &state, &receipts, spec())
-            .unwrap()
-            .confirmed,
-        1
-    );
-}
-
-#[test]
 fn host_nonce_binding_rejects_replayed_receipt() {
     let (tasks, state) = settled();
     let mut receipts = BTreeMap::new();
     receipts.insert(
         "a".to_owned(),
-        host_receipt(1, 0).with_audit("run-2", vec!["cargo".into(), "test".into()]),
+        host_receipt(1, 0, &tasks[0], state.revision)
+            .with_audit("run-2", vec!["cargo".into(), "test".into()]),
     );
     assert_eq!(
         Progress::new().finish_with_receipts_for_nonce(&tasks, &state, &receipts, spec(), "run-1"),
