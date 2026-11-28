@@ -67,6 +67,7 @@ import json
 import os
 import re
 import sandbox_run as sb
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -513,6 +514,56 @@ def default_claim_repo(root):
     return "local/" + (os.path.basename(os.path.abspath(root)) or "repo")
 
 
+def orch_binary(root, explicit=""):
+    """定位 trit-orch；显式路径优先，其次仓内 target，最后 PATH。"""
+    if explicit:
+        return explicit
+    for rel in ("target/debug/trit-orch.exe", "target/debug/trit-orch",
+                "target/release/trit-orch.exe", "target/release/trit-orch"):
+        path = os.path.join(root, rel)
+        if os.path.isfile(path):
+            return path
+    return shutil.which("trit-orch") or ""
+
+
+def orch_select_ids(root, path, binary="", runner=None):
+    """消费 `trit-orch select`：返回 (selected ids, error)。
+
+    `runner(payload) -> (rc, doc)` 是测试缝；默认起 trit-orch 子进程。
+    """
+    try:
+        payload = read_json(path)
+    except (OSError, ValueError) as exc:
+        return None, f"select input unreadable: {exc}"
+    if not isinstance(payload, dict):
+        return None, "select input must be a JSON object"
+    if runner is not None:
+        rc, doc = runner(payload)
+    else:
+        exe = orch_binary(root, binary)
+        if not exe:
+            return None, "trit-orch binary not found; pass --orch-bin"
+        try:
+            proc = subprocess.run([exe, "select"], input=json.dumps(payload),
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", cwd=root)
+        except OSError as exc:
+            return None, f"trit-orch select failed to start: {exc}"
+        try:
+            doc = json.loads(proc.stdout.strip())
+        except ValueError:
+            return None, (f"select output is not json (rc={proc.returncode}): "
+                          f"{(proc.stdout or '')[:200]}")
+        rc = proc.returncode
+    if rc != 0 or not isinstance(doc, dict) or not doc.get("ok"):
+        reason = doc.get("error") if isinstance(doc, dict) else None
+        return None, reason or f"select refused (rc={rc})"
+    selected = (doc.get("selection") or {}).get("selected")
+    if not isinstance(selected, list):
+        return None, "select output missing selection.selected"
+    return [str(item) for item in selected], None
+
+
 def acquire_claim(root, who, repo, paths, ledger, ttl, note):
     """派发前登记声明；返回 (claim_doc, error)。失败时 error 非空，调用方拒绝整批。"""
     argv = [PY, CLAIMS_SCRIPT, "claim", "--who", who, "--repo", repo,
@@ -562,10 +613,34 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
     if problems:
         return {"tool": "subagent-dispatch", "ok": False, "exit": 2, "status": "bad-plan",
                 "problems": problems, "tasks": []}, 2
-    routed, route_errors = route_all(cfg, normalized["tasks"], args.prefer)
-    by_id = {t["id"]: t for t, _, _ in routed}
+    orch_select = getattr(args, "orch_select", "")
+    orch_meta = {"enabled": False}
+    plan_tasks = normalized["tasks"]
     tasks = []
-    for task in normalized["tasks"]:
+    if orch_select:
+        selected, error = orch_select_ids(
+            root, orch_select, getattr(args, "orch_bin", ""),
+            getattr(args, "orch_runner", None))
+        if error:
+            return {"tool": "subagent-dispatch", "ok": False, "exit": 2,
+                    "status": "select-refused",
+                    "orch_select": {"error": error}, "tasks": []}, 2
+        known = {task["id"] for task in plan_tasks}
+        selected_set = set(selected)
+        orch_meta = {"enabled": True,
+                     "source": os.path.basename(orch_select),
+                     "selected": [item for item in selected if item in known],
+                     "not_in_plan": [item for item in selected if item not in known]}
+        for task in plan_tasks:
+            if task["id"] not in selected_set:
+                rec = task_result(task, None, "not selected by trit-orch",
+                                  "not-selected")
+                rec.update({"ok": True, "exit": 0})
+                tasks.append(rec)
+        plan_tasks = [task for task in plan_tasks if task["id"] in selected_set]
+    routed, route_errors = route_all(cfg, plan_tasks, args.prefer)
+    by_id = {t["id"]: t for t, _, _ in routed}
+    for task in plan_tasks:
         if task["id"] not in by_id:
             hit = next((e for e in route_errors if e["id"] == task["id"]), {})
             tasks.append(task_result(task, None, hit.get("error", "no model"),
@@ -740,6 +815,7 @@ def dispatch(root, plan, cfg, cfg_path, args, cfg_sha=""):
            "root": os.path.basename(os.path.abspath(root)),
            "parallel": args.parallel, "dry_run": args.dry_run, "guard": guard,
            "claim": claim_meta,
+           "orch_select": orch_meta,
            "capacity": capacity_meta,
            "plan_sha256": sha256_bytes(json.dumps(plan, ensure_ascii=False,
                                                   sort_keys=True).encode("utf-8")),
@@ -775,6 +851,8 @@ def make_parser():
     p.add_argument("--claim-repo", default="")
     p.add_argument("--claim-ttl", type=int, default=90)
     p.add_argument("--no-claim", action="store_true")
+    p.add_argument("--orch-select", default="")
+    p.add_argument("--orch-bin", default="")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--self-test", action="store_true")
@@ -1066,6 +1144,47 @@ def self_test():
            and not os.path.exists(os.path.join(root, "out/cap-deny.md")),
            f"rc={rc_deny} status={doc_deny['tasks'][0]['status']} "
            f"capacity={doc_deny['capacity']}")
+
+        select_path = os.path.join(tmp, "select.json")
+        write_json(select_path, {"revision": 1, "tasks": [],
+                                 "snapshot": {"revision": 1, "observations": {}},
+                                 "limits": {"workers": 2}})
+
+        def fake_select(_payload):
+            return 0, {"ok": True, "selection": {"selected": ["sel-doc"]}}
+
+        select_args = make_parser().parse_args(
+            ["--plan", "x", "--root", root, "--orch-select", select_path,
+             "--artifact-dir", os.path.join(root, ".agent", "sub")])
+        select_args.orch_runner = fake_select
+        select_plan = {"version": 1, "tasks": [
+            {"id": "sel-doc", "role": "docs", "prompt": "selected",
+             "out": "out/sel-doc.md"},
+            {"id": "sel-code", "role": "code", "prompt": "skipped",
+             "out": "out/sel-code.txt"}]}
+        doc_sel, rc_sel = dispatch(root, select_plan, cfg, cfg_path, select_args)
+        by_sel = {t["id"]: t for t in doc_sel["tasks"]}
+        ck("orch-select filters dispatch to selected tasks",
+           rc_sel == 0 and doc_sel["orch_select"]["selected"] == ["sel-doc"]
+           and by_sel["sel-doc"]["ok"]
+           and os.path.exists(os.path.join(root, "out/sel-doc.md"))
+           and by_sel["sel-code"]["status"] == "not-selected"
+           and not os.path.exists(os.path.join(root, "out/sel-code.txt")),
+           f"rc={rc_sel} orch={doc_sel.get('orch_select')} "
+           f"status={by_sel.get('sel-code', {}).get('status')}")
+
+        fail_args = make_parser().parse_args(
+            ["--plan", "x", "--root", root, "--orch-select", select_path,
+             "--artifact-dir", os.path.join(root, ".agent", "sub")])
+        fail_args.orch_runner = lambda _payload: (1, {"ok": False, "error": "cycle"})
+        fail_plan = {"version": 1, "tasks": [
+            {"id": "sel-doc", "role": "docs", "prompt": "x",
+             "out": "out/sel-fail.md"}]}
+        doc_fail, rc_fail = dispatch(root, fail_plan, cfg, cfg_path, fail_args)
+        ck("orch-select refusal stops before provider call",
+           rc_fail == 2 and doc_fail["status"] == "select-refused"
+           and not os.path.exists(os.path.join(root, "out/sel-fail.md")),
+           f"rc={rc_fail} status={doc_fail.get('status')}")
 
         claim_ledger = os.path.join(tmp, "CLAIMS.md")
         claim_args = make_parser().parse_args(

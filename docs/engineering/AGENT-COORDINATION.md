@@ -122,9 +122,13 @@ python tools/agent_verify.py -Root . -Changed pkg/core.py -Lang python `
    在 provider 调用前自动 claim 本批任务的 `out` 路径；收工自动 release。声明冲突时整批
    `claim-refused`，并把刚写入的声明回滚，不留垃圾行。`--claims-ledger` / `--claim-repo` /
    `--claim-ttl` 可覆盖默认账本、仓名与 TTL；`TRIT_ORCH_CLAIM_WHO` 可代替 CLI 参数。
-3. 调度环 `plan/select/dispatch` 的宿主侧驱动：Rust CLI 有原语，Python 还没有通用循环；
+3. ~~调度环 `plan/select/dispatch` 的宿主侧驱动：Rust CLI 有原语，Python 还没有通用循环；
    `tools/subagent_dispatch.py` 只是“按 role 分模型并行调用”的模型派发环，不消费
    `trit-orch` 的 `Plan::select`，也不自动 claim/release；容量准入已在 provider 前
-   接入（`tools/capacity_lease.py`，见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)）。
+   接入（`tools/capacity_lease.py`，见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)）。~~
+   **已接上主链**：`subagent_dispatch --orch-select <SelectInput.json>` 消费
+   `trit-orch select`，只派发 selected 任务；自动 claim/release 见第 2 条。
+   仍缺的是“执行后自动更新 snapshot/ledger 并开始下一轮”的完整多轮循环——当前由宿主
+   在轮间更新状态文件后重跑；这是有意的边界，避免派发器替执行器猜状态。
 4. 跨机包传输与签名：现在只能 `--out` 到共享盘，没有来源认证。
 5. 把 `--claim-gate` 从 opt-in 提升为默认（需先量旧夹具/旧命令的兼容成本）。

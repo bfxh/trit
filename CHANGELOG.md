@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added（subagent-dispatch：消费 trit-orch select）
+
+- 新增 `--orch-select <SelectInput.json>`：先调 `trit-orch select`，只派发 selected 任务；
+  未选中任务回执 `not-selected`（ok=true、exit=0），不调用 provider、不占容量/认领。
+- `--orch-bin` 指定 trit-orch；select 失败整批 `select-refused`。
+- 自测 32/32（新增 select 过滤与拒绝两条）。
+
 ### Added（subagent-dispatch：自动 claim/release）
 
 - 新增 `--claim-who`（或 `TRIT_ORCH_CLAIM_WHO`）：capability/容量通过后、provider 调用前
