@@ -41,10 +41,12 @@
     任意命令沙盒，也不提供 Windows 主机的文件系统/网络 namespace。
   * 宿主指纹能发现"改了又改回"以外的变化；构建缓存子树和超出 64 MiB 预算的文件仍
     可能被恢复 size/mtime 逃过，这一点不承诺。
-  * 默认不联网（policy 的 network 轴）；WSL 模式直接 `--unshare-all`，`-AllowNetwork`
-    与之不兼容并会被拒绝。
-  * 子智能体要写仓库，必须显式 `-AllowHostWrite` 或把产物从 workdir 取回后由
-    主智能体另行落盘；默认拒绝，避免"沙盒里跑完悄悄改了宿主"。
+  * 默认联网并允许宿主写（宽松默认，用户显式要求"全部放行"）：`-Profile full`、
+    `-AllowNetwork`、`-AllowHostWrite` 都是默认值。要收紧就显式传
+    `-Profile read-only|workspace-write`，或不要给 `-AllowNetwork`/`-AllowHostWrite`。
+    WSL 模式仍直接 `--unshare-all`，`-AllowNetwork` 与之不兼容并会被拒绝。
+  * 宽松默认不改变不可逆操作的门：删除仍必须走 `trash.py`，git 历史破坏仍要
+    `git_safe.py` 检查点；这些是独立于 profile 的硬规则，不是逐次批准。
   * capability 门是**动作级**的，不替代 policy：一条 `python script.py` 内部实际
     写哪些路径、连哪些域名不可预知，所以策略若给 Write/Network 配了目标白名单，
     本工具会保守拒绝；只声明类别放行（`allow`）才可通过。
@@ -641,8 +643,8 @@ def build_wsl_bwrap_command(work, command, distro=""):
 
 
 
-def run_sandbox(root, work, command, copies=(), profile="workspace-write",
-                allow_network=False, allow_host_write=False, mem_mb=2048,
+def run_sandbox(root, work, command, copies=(), profile="full",
+                allow_network=True, allow_host_write=True, mem_mb=2048,
                 procs=64, seconds=1800, max_output=MAX_OUTPUT_BYTES, keep=False,
                 role="", model="", max_input_bytes=MAX_INPUT_BYTES,
                 max_input_files=MAX_INPUT_FILES, isolation="none", wsl_distro="",
@@ -832,8 +834,8 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
 
 
 def parse_args(argv):
-    out = {"root": "", "work": "", "copies": [], "profile": "workspace-write",
-           "allow_network": False, "allow_host_write": False, "mem_mb": 2048,
+    out = {"root": "", "work": "", "copies": [], "profile": "full",
+           "allow_network": True, "allow_host_write": True, "mem_mb": 2048,
            "procs": 64, "seconds": 1800, "max_output": MAX_OUTPUT_BYTES,
            "keep": False, "receipt": "", "role": "", "model": "", "command": [],
            "self_test": False, "self_test_wsl": False,
@@ -906,6 +908,11 @@ def self_test():
     def ck(name, cond, detail=""):
         checks.append((name, bool(cond), detail))
 
+    defaults = parse_args([])
+    ck("default profile/network/host-write are permissive",
+       defaults["profile"] == "full" and defaults["allow_network"]
+       and defaults["allow_host_write"])
+
     tmp = tempfile.mkdtemp(prefix="sandbox-self-")
     host = os.path.join(tmp, "host")
     os.makedirs(host)
@@ -920,6 +927,9 @@ def self_test():
     os.makedirs(workroot)
 
     def case(name, argv, copies=(), **kw):
+        # Selftest fixtures keep the strict host-write gate unless a case opts in;
+        # production defaults are covered by the parse_args assertion above.
+        kw.setdefault("allow_host_write", False)
         work = os.path.join(workroot, "w-" + uuid.uuid4().hex[:10])
         rec = run_sandbox(host, work, argv, copies=copies, **kw)
         return rec, work
@@ -993,7 +1003,7 @@ def self_test():
 
     rec, _ = case("capability allow", [PY, "-c", "print('cap-ok')"],
                   capability_policy=cap_path, capability_bin="fake-trit-orch",
-                  capability_runner=cap_allow)
+                  capability_runner=cap_allow, allow_network=False)
     ck("capability policy admits exec+write", rec["ok"]
        and rec["capability"]["ok"] and "cap-ok" in rec["run"]["stdout_tail"]
        and [d["action"]["class"] for d in rec["capability"]["actions"]] == ["exec", "write"],
@@ -1045,8 +1055,9 @@ def self_test():
     rec, _ = case("stderr", [PY, "-c", "import sys; print('ERR', file=sys.stderr)"])
     ck("stderr captured separately", rec["ok"] and "ERR" in rec["run"]["stderr_tail"], rec["verdict"])
 
-    rec, _ = case("network deny", ["curl", "https://example.com"])
-    ck("policy denies network by default", rec["verdict"] == "policy-denied", rec["verdict"])
+    rec, _ = case("network deny", ["curl", "https://example.com"], allow_network=False)
+    ck("policy denies network when explicitly disabled", rec["verdict"] == "policy-denied",
+       rec["verdict"])
 
     rec, _ = case("deletion deny", ["rm", "in.txt"])
     ck("policy denies raw deletion", rec["verdict"] == "policy-denied", rec["verdict"])
@@ -1219,34 +1230,39 @@ def self_test():
         fh.write("keep\n")
     agent_hole = os.path.join(exroot, ".agent", "hole.txt")
     rec = run_sandbox(exroot, os.path.join(workroot, "exagent"),
-                      [PY, "-c", f"open({agent_hole!r},'w').write('HOST-WRITE')"])
+                      [PY, "-c", f"open({agent_hole!r},'w').write('HOST-WRITE')"],
+                      allow_host_write=False)
     ck("excluded .agent write is host-mutated", rec["verdict"] == "host-mutated"
        and rec["exit"] == 3 and os.path.exists(agent_hole), rec["verdict"])
     git_hole = os.path.join(exroot, ".git", "hooks", "post-checkout")
     os.makedirs(os.path.dirname(git_hole), exist_ok=True)
     rec = run_sandbox(exroot, os.path.join(workroot, "exgit"),
-                      [PY, "-c", f"open({git_hole!r},'w').write('HOST-WRITE')"])
+                      [PY, "-c", f"open({git_hole!r},'w').write('HOST-WRITE')"],
+                      allow_host_write=False)
     ck("excluded .git hook write is host-mutated", rec["verdict"] == "host-mutated"
        and rec["exit"] == 3 and os.path.exists(git_hole), rec["verdict"])
     git_index = os.path.join(exroot, ".git", "index")
     with open(git_index, "wb") as fh:
         fh.write(b"DIRC\x00baseline")
     rec = run_sandbox(exroot, os.path.join(workroot, "exindex"),
-                      [PY, "-c", f"open({git_index!r},'ab').write(b'X')"])
+                      [PY, "-c", f"open({git_index!r},'ab').write(b'X')"],
+                      allow_host_write=False)
     ck("git index content rewrite is host-mutated", rec["verdict"] == "host-mutated"
        and rec["exit"] == 3, rec["verdict"])
     target_dir = os.path.join(exroot, "target")
     os.makedirs(target_dir)
     target_hole = os.path.join(target_dir, "evil.bin")
     rec = run_sandbox(exroot, os.path.join(workroot, "extarget"),
-                      [PY, "-c", f"open({target_hole!r},'wb').write(b'evil')"])
+                      [PY, "-c", f"open({target_hole!r},'wb').write(b'evil')"],
+                      allow_host_write=False)
     ck("build-cache directory write is host-mutated", rec["verdict"] == "host-mutated"
        and rec["exit"] == 3 and os.path.exists(target_hole), rec["verdict"])
     target_existing = os.path.join(target_dir, "existing.bin")
     with open(target_existing, "wb") as fh:
         fh.write(b"OLD")
     rec = run_sandbox(exroot, os.path.join(workroot, "extarget-overwrite"),
-                      [PY, "-c", f"open({target_existing!r},'wb').write(b'NEWER')"])
+                      [PY, "-c", f"open({target_existing!r},'wb').write(b'NEWER')"],
+                      allow_host_write=False)
     ck("existing build-cache file overwrite is host-mutated", rec["verdict"] == "host-mutated"
        and rec["exit"] == 3, rec["verdict"])
 
@@ -1260,7 +1276,8 @@ def self_test():
                       [PY, "-c",
                        f"open({same_file!r},'wb').write(b'BBBB'); "
                        f"import os; os.utime({same_file!r}, ns=({same_st.st_atime_ns}, "
-                       f"{same_st.st_mtime_ns}))"])
+                       f"{same_st.st_mtime_ns}))"],
+                      allow_host_write=False)
     ck("same-size write with restored mtime is host-mutated", rec["verdict"] == "host-mutated"
        and rec["exit"] == 3, rec["verdict"])
 
@@ -1275,7 +1292,8 @@ def self_test():
                       [PY, "-c",
                        f"p={large_file!r}; data=open(p,'rb').read(); "
                        f"open(p,'wb').write(b'B'*len(data)); import os; "
-                       f"os.utime(p, ns=({large_st.st_atime_ns}, {large_st.st_mtime_ns}))"])
+                       f"os.utime(p, ns=({large_st.st_atime_ns}, {large_st.st_mtime_ns}))"],
+                      allow_host_write=False)
     ck("large same-size write with restored mtime is host-mutated",
        rec["verdict"] == "host-mutated" and rec["exit"] == 3, rec["verdict"])
     os.unlink(large_file)
@@ -1284,7 +1302,8 @@ def self_test():
     # host mutation and must be visible to the fingerprint.
     lock_file = os.path.join(exroot, ".git", "index.lock")
     rec = run_sandbox(exroot, os.path.join(workroot, "exlock"),
-                      [PY, "-c", f"open({lock_file!r},'w').write('LOCK')"])
+                      [PY, "-c", f"open({lock_file!r},'w').write('LOCK')"],
+                      allow_host_write=False)
     ck("leftover .git/index.lock is host-mutated", rec["verdict"] == "host-mutated"
        and rec["exit"] == 3 and os.path.exists(lock_file), rec["verdict"])
     if os.path.exists(lock_file):
@@ -1310,7 +1329,8 @@ def self_test():
     with open(os.path.join(nogit, "a.txt"), "w", encoding="utf-8") as fh:
         fh.write("a")
     evil2 = os.path.join(nogit, "evil.txt")
-    rec = run_sandbox(nogit, os.path.join(workroot, "nogit"), [PY, "-c", f"open({evil2!r},'w').write('x')"])
+    rec = run_sandbox(nogit, os.path.join(workroot, "nogit"), [PY, "-c", f"open({evil2!r},'w').write('x')"],
+                      allow_host_write=False)
     ck("non-git fallback detects host write", rec["verdict"] == "host-mutated" and os.path.exists(evil2),
        rec["verdict"])
     os.unlink(evil2)

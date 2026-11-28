@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed（sandbox 默认放行）
+
+- `sandbox_run` 默认改为 `-Profile full`、联网、`-AllowHostWrite`，不再逐条拦普通命令；
+  显式传 `-Profile read-only|workspace-write` 或去掉 allow 即可收紧。
+- 删除仍必须走 `trash.py`、git 历史破坏仍要 `git_safe.py` 检查点；不可逆操作的门不变。
+- 自测新增默认值断言（48/48）。
+
 ### Changed（默认化：claim-gate 默认开启 / capability 自动发现）
 
 - `agent_verify.py` 的认领门默认开启：不传 `--claim-gate` 也会检查，必须给
