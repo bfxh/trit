@@ -382,6 +382,17 @@ jobs:
         run: cargo test -p trit-policy --test frontier_design
       - name: God-object surface ratchet (pub fields / pub fns per type)
         run: cargo test -p trit-policy --test god_object_surface
+      # 真实调用点：仓库里手写的 JSON 必须已经符合 trit-fmt 的输出（= prettier 风格）。
+      # 回退开关：设 TRIT_FMT=0 跳过本步（格式化器出问题时不必回滚整条 CI）。
+      - name: JSON formatting (trit-fmt; set TRIT_FMT=0 to skip)
+        if: ${{ env.TRIT_FMT != '0' }}
+        run: |
+          set -euo pipefail
+          cargo run -q -p trit-fmt --bin trit-fmt -- --check \
+            crates/trit-wspace/mcp.example.json \
+            examples/policy.json \
+            jobs/example.json \
+            .github/data-pipeline.json
 
   agent-checks:
     name: agent checks (registry)
