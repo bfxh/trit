@@ -1,10 +1,10 @@
 use super::*;
 use crate::camera::Intrinsics;
 use crate::ply::RawGaussian;
-
+#[path = "tests/border.rs"]
 mod border;
+#[path = "tests/degenerate.rs"]
 mod degenerate;
-
 const SH0_REF: f32 = 0.282_094_8;
 
 /// 纯色 DC 系数：color = f_dc·C0 + 0.5，⇒ f_dc = (target−0.5)/C0。

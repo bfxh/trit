@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v9：深度输出）
+
+- 渲染核拆成 `raster.rs` 外壳 + `raster/render.rs`；`render` 保持原 RGB 接口，
+  新增 `render_with_depth` 返回 `(Frame, Vec<f32>)`。深度为相机空间视深，
+  按近→远前向 alpha 合成做加权期望；无覆盖像素为 `+∞`。
+- `splat-render` 增 `--depth`（布尔）与 `--depth-max M`（默认 100.0 米）；
+  每帧 RGB 旁写 `<stem>.depth.png`，16-bit 灰度，按 `--depth-max` 线性量化，
+  背景/超限深度饱和到 65535。
+- 深度 pass 仅在 `--depth` 时执行；不开深度时 RGB 路径与 v8 逐字节一致
+  （synthetic-orbit/init.ply 全 48 帧 SHA256 对比，0 差异），PSNR 读数不变。
+- 新拆 `batch/load.rs`、`batch/slot.rs`、`raster/render.rs`、
+  `raster/tests/depth.rs`；模块预算 1760 files、debt=0；测试 28 lib + 8 bin + 2 集成。
+- 实测 synthetic-orbit/init.ply frame 0（480×270，`--depth-max 10`）：
+  深度范围 4.22–8.98 m，中心 4.79 m；`--depth` 不改变 PSNR（13.26 dB）。
+
 ### Added（trit-splat v8：批量帧并行渲染）
 
 - `splat-render` 增 `--threads N|auto`（默认 1；`auto`/`0` 取可用并行度）；

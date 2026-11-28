@@ -1,27 +1,24 @@
 //! 批量渲染编排：资产只读一次，逐帧复用；可选 PSNR 报表与阈值门。
 //!
 //! `--threads` > 1 时按连续帧块分给工作线程；渲染核本身不变。
-
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-
-use trit_splat::camera::parse_transforms;
-use trit_splat::ply::{RawGaussian, parse_ply};
-
 use crate::cli;
 use crate::mip;
-
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use trit_splat::camera::parse_transforms;
 #[path = "batch/frames.rs"]
 mod frames;
+#[path = "batch/load.rs"]
+mod load;
 #[path = "batch/metrics.rs"]
 mod metrics;
 #[path = "batch/parallel.rs"]
 mod parallel;
-
 use frames::{frame_paths, parse_frames, parse_threads};
+use load::load_gaussians;
 use metrics::{db_label, mean_psnr, write_psnr_json};
 
-const USAGE: &str = "用法: splat-render --dataset <root> --frame N|all|a..b|csv --ply <ply|spz> --out <png|dir|模板{frame}> [--threads N|auto] [--bg auto|r,g,b] [--sh-degree 0..3] [--min-scale-factor F] [--psnr] [--psnr-json <path>] [--fail-under DB]";
+const USAGE: &str = "用法: splat-render --dataset <root> --frame N|all|a..b|csv --ply <ply|spz> --out <png|dir|模板{frame}> [--threads N|auto] [--depth] [--depth-max M] [--bg auto|r,g,b] [--sh-degree 0..3] [--min-scale-factor F] [--psnr] [--psnr-json <path>] [--fail-under DB]";
 
 pub fn run(argv: Vec<String>) -> ExitCode {
     match run_inner(&argv) {
@@ -59,6 +56,17 @@ fn run_inner(argv: &[String]) -> Result<ExitCode, String> {
         })
         .transpose()?;
     let want_psnr = cli::flag(argv, "--psnr") || psnr_json.is_some() || fail_under.is_some();
+    let want_depth = cli::flag(argv, "--depth");
+    let depth_max: f32 = cli::value(argv, "--depth-max")
+        .map(|v| {
+            v.parse::<f32>()
+                .map_err(|_| format!("--depth-max 非法: {v}"))
+        })
+        .transpose()?
+        .unwrap_or(100.0);
+    if want_depth && !(depth_max > 0.0 && depth_max.is_finite()) {
+        return Err(format!("--depth-max 必须为正有限值: {depth_max}"));
+    }
 
     let transforms_path = PathBuf::from(&dataset).join("transforms.json");
     let text = std::fs::read_to_string(&transforms_path)
@@ -79,6 +87,8 @@ fn run_inner(argv: &[String]) -> Result<ExitCode, String> {
         &dataset,
         &bg_mode,
         want_psnr,
+        want_depth,
+        depth_max,
         &frames,
         &paths,
         threads,
@@ -123,22 +133,6 @@ fn run_inner(argv: &[String]) -> Result<ExitCode, String> {
         }
     }
     Ok(ExitCode::SUCCESS)
-}
-
-fn load_gaussians(path: &str) -> Result<Vec<RawGaussian>, String> {
-    if path.to_ascii_lowercase().ends_with(".spz") {
-        #[cfg(feature = "spz")]
-        {
-            return trit_splat::spz::load_spz(Path::new(path))
-                .map_err(|e| format!("SPZ 解析: {e}"));
-        }
-        #[cfg(not(feature = "spz"))]
-        {
-            return Err("读 .spz 需要构建时启用 spz feature".into());
-        }
-    }
-    let bytes = std::fs::read(path).map_err(|e| format!("读 ply 失败 {path}: {e}"))?;
-    parse_ply(&bytes).map_err(|e| format!("PLY 解析: {e}"))
 }
 
 #[cfg(test)]
