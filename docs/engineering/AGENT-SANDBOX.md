@@ -1,8 +1,10 @@
 # AGENT-SANDBOX：子智能体命令的 workspace 沙盒
 
 > 定位：给“子智能体要跑命令、但不想让它悄悄改宿主”的场景。
-> 一句话：**默认 cwd 在宿主外的空 workdir，只复制声明输入，policy 先拒，caps 兜底，
-> 跑完用宿主指纹证明有没有写坏；需要真隔离时显式走 `-Isolation wsl` 的 WSL+bwrap 内核命名空间。**
+> 一句话：**默认 cwd 在宿主外的空 workdir，只复制声明输入，policy 先判，caps 兜底，
+> 跑完用宿主指纹记录有没有写坏；默认 `-Profile full`、联网、允许宿主写（用户要求的
+> 宽松默认），要收紧就显式传 `-Profile read-only|workspace-write` 并去掉对应 allow；
+> 需要真隔离时走 `-Isolation wsl` 的 WSL+bwrap 内核命名空间。**
 > 边界：默认模式不是内核沙盒；`-Isolation wsl` 只接受 Linux 命令。见 §4。
 > 状态：**已跑通**（`tools/sandbox_run.py --self-test` 47/47；`sandbox_matrix.py --cases 40` 40/40；
 > `hostwrite` 独立宿主 100 例 100/100；WSL+bwrap 隔离回归 **11/11**）。红队已补的洞见
@@ -20,7 +22,8 @@
 - 跑完以后，没有人证明“宿主到底被没被写”。
 
 workspace 沙盒补的就是这个空档：把 cwd 移出宿主、只给声明输入、跑完对比宿主指纹。
-它不阻止蓄意逃逸，但让“悄悄改宿主”从默认可能变成默认被拒 + 有证据。
+它不阻止蓄意逃逸，但让“悄悄改宿主”从不可见变成有指纹证据；默认 `-AllowHostWrite`
+开启时放行但留证，显式关闭才拒绝。
 
 ## 2. 一次 run 的六步
 
@@ -54,8 +57,8 @@ workspace 沙盒补的就是这个空档：把 cwd 移出宿主、只给声明�
    `.git/index.lock` 不进 manifest，运行后若从无到有、且经过 0.35 秒仍存在，才判
    `host-mutated`（并发 `git status` 的瞬时锁不算）；
    超过 200000 文件判 `host-unprovable`，不静默降级。
-6. 宿主变了且没有 `-AllowHostWrite` → `host-mutated`，exit 3；成功默认清掉 workdir，
-   `-Keep` 留现场。
+6. 宿主变了仍记 `host-mutated` 证据；默认 `-AllowHostWrite` 开启所以放行，
+   显式关闭才 exit 3；成功默认清掉 workdir，`-Keep` 留现场。
 
 ## 3. 命令与判据
 
@@ -119,8 +122,8 @@ python tools/sandbox_matrix.py --cases 100 --parallel 12 --scenario hostwrite --
   被别的进程清掉，仍可逃过这一项。
 - `-Copy` 拒绝硬链接是因为根内相对硬链接可以指向根外 inode；`nlink>1` 也意味着同一
   文件在别处被链接，拒绝比“猜链接目标”更安全。
-- 默认模式的“不联网”指 policy 的 network 轴；`-AllowNetwork` 只让 policy 放行，运行期没有
-  内核网络隔离。WSL 模式直接 `--unshare-all`，因此 `-AllowNetwork` 与之不兼容，直接拒绝。
+- 默认模式联网（policy 的 `full` + `-AllowNetwork`）；运行期没有内核网络隔离。
+  WSL 模式直接 `--unshare-all`，因此 `-AllowNetwork` 与之不兼容，直接拒绝。
 - `run_caps` 的 `procs` 帽在 POSIX 没有等价物（见其 docstring），本工具不伪造。
 - workdir 里生成的文件默认随成功清理；要取产物必须 `-Keep` 或显式从 workdir 复制回来，
   不存在“沙盒自动把产物落回宿主”的隐式路径。
@@ -154,7 +157,7 @@ python tools/sandbox_matrix.py --cases 100 --parallel 12 --scenario hostwrite --
 
 1. Windows 原生内核隔离后端（AppContainer/Job + WFP）尚未落地；Linux 侧已用
    WSL2+bwrap 提供 `-Isolation wsl`，并做了“后端不可用就拒绝”的能力探测。
-2. 默认模式的网络 egress 仍只有 policy 的命令级拒绝；要真断网用 `-Isolation wsl`。
+2. 默认模式的网络是 policy 放行，不是内核断网；要真断网用 `-Isolation wsl`。
 3. 沙盒产物清单与哈希化回收（`-Keep` 后由主智能体决定哪些落回宿主）。
 4. 把 `sandbox_run` 接进 `agent_verify` 的 run 段（现在它是独立入口，回执格式未合并）。
 5. capability 门**默认检测** `<root>/.agent/capability.json`：存在即启用；显式
