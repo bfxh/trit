@@ -2517,7 +2517,14 @@
     "verus/src/bits.rs::type::TriBit": 2,
     "verus/src/bits/proofs.rs::impl::TriBit": 0,
     "verus/src/k3.rs::type::Trit": 0,
-    "verus/src/l3.rs::type::Trit": 0
+    "verus/src/l3.rs::type::Trit": 0,
+    "crates/trit-fmt/src/md/mod.rs::impl::Align": 0,
+    "crates/trit-fmt/src/md/mod.rs::type::Align": 0,
+    "crates/trit-fmt/src/md/mod.rs::type::Block": 0,
+    "crates/trit-fmt/src/md/mod.rs::type::List": 4,
+    "crates/trit-fmt/src/md/mod.rs::type::ListItem": 2,
+    "crates/trit-fmt/src/md/mod.rs::type::Table": 3,
+    "crates/trit-fmt/src/md/parse.rs::type::Marker": 0
   },
   "limit": 32,
   "note": "单类型职责面棘轮：key = <相对路径>::type|impl::<名字>，value = pub 字段数（struct/enum）或 pub fn 数（impl）。只减不增；新类型首次登记不得高于 limit。",

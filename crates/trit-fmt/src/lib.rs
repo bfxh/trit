@@ -1,6 +1,6 @@
 //! 前沿格式化器：JSON 与 Markdown，目标是**与 prettier 3 逐字节一致**。
 //!
-//! 范围（如实）：JSON 全量；Markdown 是块级子集（见 [`md`] 的模块注释）；JS/TS 返回
+//! 范围（如实）：JSON 全量；Markdown 是块级子集（见 md 模块注释）；JS/TS 返回
 //! [`FormatError::Unsupported`]——这是 S 级任务卡（`docs/specs/FRONTIER-FORMATTER-TASK.md`）里的负结果。
 //! JSON 打印规则来自对 prettier 3.10.1 的实测（`--parser json`，`printWidth=80`）：
 //! - 空容器 `{}` / `[]`；单行对象带内边距 `{ "k": 1 }`，单行数组无内边距 `[1, 2]`；

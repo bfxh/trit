@@ -227,12 +227,7 @@ fn table_row(cells: &[String], widths: &[usize], align: &[Align]) -> String {
             Align::Center => (padding / 2, padding - padding / 2),
             Align::None | Align::Left => (0, padding),
         };
-        out.push(format!(
-            "{}{}{}",
-            " ".repeat(left),
-            cell,
-            " ".repeat(right)
-        ));
+        out.push(format!("{}{}{}", " ".repeat(left), cell, " ".repeat(right)));
     }
     format!("| {} |", out.join(" | "))
 }

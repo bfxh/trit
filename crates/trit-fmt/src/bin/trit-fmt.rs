@@ -48,7 +48,11 @@ fn main() -> ExitCode {
             eprintln!("trit-fmt: 读 stdin 失败: {error}");
             return ExitCode::from(1);
         }
-        let name = if parser == "json" { "stdin.json" } else { "stdin.md" };
+        let name = if parser == "json" {
+            "stdin.json"
+        } else {
+            "stdin.md"
+        };
         return match format_path(name, &source) {
             Ok(out) => {
                 print!("{out}");
