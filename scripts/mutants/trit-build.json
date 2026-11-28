@@ -749,7 +749,7 @@
   "old": "|value| value.to_string()",
   "new": "|value| (*value + 1).to_string()",
   "pkg": "trit-build",
-  "filter": "verify_c_matches_verilog_every_row"
+  "filter": "binary_and_table_is_exact"
  },
  {
   "name": "format: 取反丢负号",
@@ -781,7 +781,7 @@
   "old": "        Some(format!(\"n<{}?0:\", vars.len()))",
   "new": "        Some(format!(\"1?0:\"))",
   "pkg": "trit-build",
-  "filter": "verify_c_matches_verilog_every_row"
+  "filter": "render_is_linear_not_a_truth_table"
  },
  {
   "name": "table: 单表退回长表名",
@@ -810,10 +810,10 @@
  {
   "name": "verify: 驱动器返回类型写成 int",
   "file": "crates/trit-build/src/direct/verify.rs",
-  "old": "         int8_t trit_direct(int8_t *v, int n);\\n\\n\\",
-  "new": "         int trit_direct(int8_t *v, int n);\\n\\n\\",
+  "old": "         int8_t f(int8_t *v, int n);\\n\\n\\",
+  "new": "         int f(int8_t *v, int n);\\n\\n\\",
   "pkg": "trit-build",
-  "filter": "verify_c_matches_verilog_every_row"
+  "filter": "driver_source_declares_int8_return"
  },
  {
   "name": "emit: And 不借 Or 表",
@@ -904,18 +904,18 @@
   "filter": "direct_c_bytes_stay_within_budget"
  },
  {
-  "name": "table: 表声明加回 const",
+  "name": "table: 表声明加回 static",
   "file": "crates/trit-build/src/direct/emit/format/table.rs",
-  "old": "    text.push_str(\"static C \");",
-  "new": "    text.push_str(\"static const C \");",
+  "old": "    text.push_str(\"C \");",
+  "new": "    text.push_str(\"static C \");",
   "pkg": "trit-build",
   "filter": "direct_c_bytes_stay_within_budget"
  },
  {
   "name": "body: 签名退回 int8_t",
   "file": "crates/trit-build/src/direct/emit/body.rs",
-  "old": "String::from(\"C trit_direct(C*v,int n){\")",
-  "new": "String::from(\"int8_t trit_direct(int8_t*v,unsigned n){\")",
+  "old": "String::from(\"C f(C*v,int n){\")",
+  "new": "String::from(\"int8_t f(int8_t*v,unsigned n){\")",
   "pkg": "trit-build",
   "filter": "direct_c_bytes_stay_within_budget"
  },
@@ -926,5 +926,13 @@
   "new": "    prefix.push_str(alg_tag(alg));\n    if !vars.is_empty() {\n        prefix.push(' ');\n        prefix.push_str(&vars.join(\",\"));\n    }",
   "pkg": "trit-build",
   "filter": "render_is_linear_not_a_truth_table"
+ },
+ {
+  "name": "body: 函数名退回 trit_direct",
+  "file": "crates/trit-build/src/direct/emit/body.rs",
+  "old": "String::from(\"C f(C*v,int n){\")",
+  "new": "String::from(\"C trit_direct(C*v,int n){\")",
+  "pkg": "trit-build",
+  "filter": "direct_c_bytes_stay_within_budget"
  }
 ]

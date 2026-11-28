@@ -94,10 +94,10 @@ fn chain_absorbing_c_drops_tables() {
         let vars = expr.variables();
         let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
         assert_eq!(c.matches("int t").count(), 0, "{source}: {c}");
-        assert!(!c.contains("static C T[]"), "{source}: {c}");
+        assert!(!c.contains("C T[]"), "{source}: {c}");
     }
     let expr = Parser::parse("a & (a | b | c)").expect("解析");
     let vars = expr.variables();
     let b3 = emit(&expr, &vars, Algebra::Bochvar).expect("生成");
-    assert!(b3.contains("static C T[]"), "{b3}");
+    assert!(b3.contains("C T[]"), "{b3}");
 }

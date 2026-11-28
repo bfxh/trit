@@ -181,7 +181,7 @@ fn simplified_connectives_emit_one_statement_without_tables() {
         let vars = expr.variables();
         let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
         assert_eq!(c.matches("int t").count(), 0, "{source}: {c}");
-        assert!(!c.contains("static C T[]"), "{source}: {c}");
+        assert!(!c.contains("C T[]"), "{source}: {c}");
     }
 }
 

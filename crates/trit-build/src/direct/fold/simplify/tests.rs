@@ -50,7 +50,7 @@ fn simplified_c_has_one_statement_and_no_tables() {
         let vars = expr.variables();
         let c = emit(&expr, &vars, Algebra::Kleene).expect("生成");
         assert_eq!(c.matches("int t").count(), 0, "{source}: {c}");
-        assert!(!c.contains("static C T[]"), "{source}: {c}");
+        assert!(!c.contains("C T[]"), "{source}: {c}");
         assert!(c.contains("?0:v[0];"), "{source}: {c}");
     }
 }

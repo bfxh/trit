@@ -413,7 +413,7 @@ pub(crate) fn build_source(
         let result = direct::verify(out_dir, &vars, values.len())?;
         verified["c"] = json!({
             "backend": "direct",
-            "function": "trit_direct",
+            "function": "f",
             "rows": values.len(),
             "result": result,
         });

@@ -1,13 +1,16 @@
 //! `--verify-c`：用宿主 C 编译器编译 `direct.c`，逐行读 `truth.csv` 对拍。
 //!
 //! 与 `direct.rs` 的代码生成分开，避免把「产物生成」和「宿主工具链调用」
-//! 混在同一个模块里；两者共用 `trit_direct` 的签名契约。
+//! 混在同一个模块里；两者共用 `f` 的签名契约。
 
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+
+mod compiler;
+use compiler::find_compiler;
 /// 生成 C 驱动器，用 `cc` 编译 `direct.c` + 驱动器，逐行读 `truth.csv` 对拍。
 /// 需要 C 编译器（`CC` / `cc` / `gcc` / `clang` 任一）；没有就明确报错，不静默跳过。
 pub(crate) fn verify(out_dir: &Path, vars: &[String], expected_rows: usize) -> Result<String> {
@@ -65,31 +68,13 @@ pub(crate) fn verify(out_dir: &Path, vars: &[String], expected_rows: usize) -> R
     Ok(format!("{stdout}（{compiler}）"))
 }
 
-fn find_compiler() -> Result<String> {
-    if let Ok(cc) = std::env::var("CC")
-        && !cc.trim().is_empty()
-    {
-        return Ok(cc);
-    }
-    for name in ["cc", "gcc", "clang"] {
-        if Command::new(name)
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-        {
-            return Ok(name.to_string());
-        }
-    }
-    bail!("没有可用的 C 编译器（试过 CC / cc / gcc / clang）")
-}
-
 fn driver_source(nvars: usize) -> String {
     let slots = nvars.max(1);
     format!(
         "#include <stdint.h>\n\
          #include <stdio.h>\n\
          #include <stdlib.h>\n\n\
-         int8_t trit_direct(int8_t *v, int n);\n\n\
+         int8_t f(int8_t *v, int n);\n\n\
          int main(int argc, char **argv) {{\n\
          \x20   if (argc != 2) {{ fprintf(stderr, \"usage: %s truth.csv\\n\", argv[0]); return 2; }}\n\
          \x20   FILE *file = fopen(argv[1], \"r\");\n\
@@ -108,7 +93,7 @@ fn driver_source(nvars: usize) -> String {
          \x20           if (*cursor == ',') cursor++;\n\
          \x20       }}\n\
          \x20       const int want = (int)strtol(cursor, &cursor, 10);\n\
-         \x20       const int got = (int)trit_direct(vars, NV);\n\
+         \x20       const int got = (int)f(vars, NV);\n\
          \x20       if (got != want) {{\n\
          \x20           if (bad < 5) fprintf(stderr, \"row %lu: got %d want %d\\n\", rows, got, want);\n\
          \x20           bad++;\n\
@@ -122,3 +107,6 @@ fn driver_source(nvars: usize) -> String {
          }}\n"
     )
 }
+
+#[cfg(test)]
+mod tests;

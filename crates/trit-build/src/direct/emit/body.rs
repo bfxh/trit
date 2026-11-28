@@ -11,7 +11,7 @@ pub(super) fn body(
     inlined: &[bool],
     tables: &inline::Tables,
 ) -> String {
-    let mut text = String::from("C trit_direct(C*v,int n){");
+    let mut text = String::from("C f(C*v,int n){");
     let guard = if vars.is_empty() {
         None
     } else {
