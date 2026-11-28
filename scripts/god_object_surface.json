@@ -116,6 +116,7 @@
     "crates/trit-build/src/schedule.rs::type::Prefer": 0,
     "crates/trit-build/src/schedule.rs::type::Track": 0,
     "crates/trit-build/src/verilog.rs::type::Design": 5,
+    "crates/trit-build/tests/direct_random_diff.rs::type::Rng": 0,
     "crates/trit-build/tests/m2.rs::impl::P": 0,
     "crates/trit-build/tests/m2.rs::type::P": 0,
     "crates/trit-capacity/src/lib.rs::impl::MemSource": 1,
