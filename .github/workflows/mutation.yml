@@ -89,7 +89,9 @@ jobs:
     name: mutation (full shard ${{ matrix.shard }}/4)
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      PYTHONUNBUFFERED: "1"
     strategy:
       fail-fast: false
       matrix:
