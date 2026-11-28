@@ -1,30 +1,30 @@
-use super::{cam_at, gaussian, intr_small, pure_dc};
-use crate::raster::render;
+use super::{intr_small, tail_visible};
+use crate::splat::ScreenGaussian;
+
+fn sg(u: f32, sigma: f32) -> ScreenGaussian {
+    ScreenGaussian {
+        u,
+        v: 12.0,
+        inv_a: 1.0 / (sigma * sigma),
+        inv_b: 0.0,
+        inv_c: 1.0 / (sigma * sigma),
+        alpha: 1.0,
+        depth: 5.0,
+        color: [1.0, 0.0, 0.0],
+    }
+}
 
 #[test]
-fn degenerate_giant_splat_does_not_wash_frame() {
-    // 复现 scan-wasteland 病理：266m 针状 splat（opacity≈1）贴着相机，
-    // 屏幕 σ 全屏覆盖 → 闸门应剔除它，不干净色盖掉小 splat。
-    let giant = gaussian([0.0, 0.0, 4.0], pure_dc([1.0, 0.0, 0.0]), 266.0);
-    let small = gaussian([0.0, 0.0, 0.0], pure_dc([0.0, 0.0, 1.0]), 0.2);
-    let frame = render(
-        &[giant, small],
-        &cam_at(5.0),
-        &intr_small(),
-        [0.0, 0.0, 0.0],
-        None,
-    );
-    let o = (12 * 32 + 16) * 3;
-    assert!(
-        frame.rgb[o + 2] > 100,
-        "小蓝 splat 应可见: r={} g={} b={}",
-        frame.rgb[o],
-        frame.rgb[o + 1],
-        frame.rgb[o + 2]
-    );
-    assert!(
-        frame.rgb[o] < 100,
-        "巨红 splat 应被闸门剔除: r={}",
-        frame.rgb[o]
-    );
+fn offscreen_tiny_gaussian_is_culled() {
+    assert!(!tail_visible(&sg(1000.0, 1.0), &intr_small()));
+}
+
+#[test]
+fn offscreen_giant_with_visible_tail_is_kept() {
+    assert!(tail_visible(&sg(1000.0, 1000.0), &intr_small()));
+}
+
+#[test]
+fn on_screen_giant_is_kept() {
+    assert!(tail_visible(&sg(16.0, 1000.0), &intr_small()));
 }

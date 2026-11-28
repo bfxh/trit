@@ -6,20 +6,11 @@
 use crate::math::{Mat4, Vec3, covariance};
 use crate::ply::RawGaussian;
 
-/// SH 视角色用的常量（3DGS 标准系数）。保留参考实现的完整十进制精度，
-/// 截断到 f32 可表示位数会改变末位、影响逐像素对拍。
-#[allow(clippy::excessive_precision)]
-const SH_C0: f32 = 0.282_094_791_773_878_14;
-#[allow(clippy::excessive_precision)]
-const SH_C1: f32 = 0.488_602_511_902_919_89;
-#[allow(clippy::excessive_precision)]
-const SH_C2: [f32; 5] = [
-    1.092_548_430_592_079_2,
-    -1.092_548_430_592_079_2,
-    0.315_391_565_252_520_05,
-    -1.092_548_430_592_079_2,
-    0.546_274_215_296_039_6,
-];
+mod color;
+
+#[cfg(test)]
+pub(crate) use color::SH_C0;
+pub use color::eval_color;
 
 /// 屏幕空间高斯：中心像素坐标、2D 协方差的逆 (a b; b c)、每像素 α、颜色。
 #[derive(Clone, Copy, Debug)]
@@ -34,65 +25,6 @@ pub struct ScreenGaussian {
     pub color: [f32; 3],
 }
 
-/// SH 视角色。`f_dc` 即 gaussian-splatting 的 `sh[0]`（0 阶）；`f_rest` 按 Brush ply 的
-/// channel-major 布局（f_rest_{c·K + k} = 通道 c 的第 k 个后续系数，K = len/3；
-/// SH3 → K=15）。基函数索引与 gaussian-splatting eval_sh 同源：
-/// l1: `sh[1..3]`（−y, z, x），l2: `sh[4..8]`，l3: `sh[9..15]`。
-/// `view_dir` 从高斯指向相机（归一化）。
-pub fn eval_color(f_dc: [f32; 3], f_rest: &[f32], view_dir: Vec3) -> [f32; 3] {
-    let mut color = [
-        f_dc[0] * SH_C0 + 0.5,
-        f_dc[1] * SH_C0 + 0.5,
-        f_dc[2] * SH_C0 + 0.5,
-    ];
-    let (x, y, z) = (view_dir.x, view_dir.y, view_dir.z);
-    let k = f_rest.len() / 3; // 每通道系数数（SH1=3, SH2=8, SH3=15）
-    if k < 3 {
-        return color.map(|v| v.clamp(0.0, 1.0));
-    }
-    let coeff = |idx: usize, c: usize| f_rest[c * k + idx]; // channel-major（Brush 导出口径）
-    let (xx, yy, zz) = (x * x, y * y, z * z);
-    let (xy, yz, xz) = (x * y, y * z, x * z);
-    for (c, channel) in color.iter_mut().enumerate() {
-        *channel += SH_C1 * (-y * coeff(0, c) + z * coeff(1, c) - x * coeff(2, c));
-        if k >= 8 {
-            *channel += SH_C2[0] * xy * coeff(3, c)
-                + SH_C2[1] * yz * coeff(4, c)
-                + SH_C2[2] * (2.0 * zz - xx - yy) * coeff(5, c)
-                + SH_C2[3] * xz * coeff(6, c)
-                + SH_C2[4] * (xx - yy) * coeff(7, c);
-        }
-        if k >= 15 {
-            // l3 用 Brush/Sloan(JCGT 2013) 的多项式形式——与 3DGS 教科书版
-            // (sh_utils.py) 在 l3 段基函数不同，系数是按 Brush 约定烘的。
-            let z2 = zz;
-            let f0c = -2.285_229 * z2 + 0.457_045_8;
-            let f1b = 1.445_305_7 * z;
-            let f2a = -0.590_043_6;
-            let fc1 = xx - yy;
-            let fs1 = 2.0 * xy;
-            let fc2 = x * fc1 - y * fs1;
-            let fs2 = x * fs1 + y * fc1;
-            let p9 = f2a * fs2;
-            let p10 = f1b * fs1;
-            let p11 = f0c * y;
-            let p12 = z * (1.865_881_7 * z2 - 1.119_529);
-            let p13 = f0c * x;
-            let p14 = f1b * fc1;
-            let p15 = f2a * fc2;
-            *channel += p9 * coeff(8, c)
-                + p10 * coeff(9, c)
-                + p11 * coeff(10, c)
-                + p12 * coeff(11, c)
-                + p13 * coeff(12, c)
-                + p14 * coeff(13, c)
-                + p15 * coeff(14, c);
-        }
-    }
-    color.map(|v| v.clamp(0.0, 1.0))
-}
-
-/// 把一颗高斯投影成屏幕空间 2D 高斯；投影后方差过小/在相机后 → None。
 /// `min_scale`：Mip-Splatting 3D 滤波器的每 splat 世界尺度下限（Brush
 /// `apply_scale_floor` 语义——floored = √(scale²+f²) 每轴，opacity 按体积比
 /// rx·ry·rz 补偿）；None 表示关闭。
@@ -140,17 +72,22 @@ pub fn project(
         }
     }
 
-    // J = ∂(u,v)/∂(x_cam,y_cam,z_cam)（OpenGL −Z 前）
+    // J = ∂(u,v)/∂(x_cam,y_cam,z_cam)（OpenGL −Z 前；v = cy − fl·y/depth，
+    // ∂v/∂y 与 ∂v/∂z 均为负——y 行符号错了会镜像各向异性 splat 的朝向）。
+    // 第三列用归一化坐标 x/z、y/z 的 15% 画面外余量截断，与 Brush pinhole
+    // `calculate_jacobian_clamp_limits` 一致：视锥边缘的透视投影会发散，
+    // 不截断会让贴边巨型 splat 的协方差被放大成整屏涂抹。
     let fl_x = intr.fl_x;
     let fl_y = intr.fl_y;
-    // J = ∂(u,v)/∂(x_cam,y_cam,z_cam)。v = cy − fl·y/depth ⇒ ∂v/∂y 与 ∂v/∂z
-    // 均为负——y 行符号错了会镜像各向异性 splat 的朝向（cov2d 非对角元翻转）。
-    // 注意：Brush 的 pinhole 雅可比虽带 x/z 钳制（视锥外 15% 余量），但实验
-    // 证明钳制会破坏背景巨型 splat 的合法贡献（29.17→22.91），已移除。
-    // Brush 实际走 RT8 路径（"OPENCV"→RT8），其 lim_r 语义待 v4 单独验证。
+    let lim_pos_x = (1.15 * intr.width as f32 - intr.cx) / fl_x;
+    let lim_neg_x = (-0.15 * intr.width as f32 - intr.cx) / fl_x;
+    let lim_pos_y = (1.15 * intr.height as f32 - intr.cy) / fl_y;
+    let lim_neg_y = (-0.15 * intr.height as f32 - intr.cy) / fl_y;
+    let nx = (cam.x / depth).clamp(lim_neg_x, lim_pos_x);
+    let ny = (cam.y / depth).clamp(lim_neg_y, lim_pos_y);
     let j = [
-        [fl_x / depth, 0.0, fl_x * cam.x / (depth * depth)],
-        [0.0, -fl_y / depth, -fl_y * cam.y / (depth * depth)],
+        [fl_x / depth, 0.0, fl_x * nx / depth],
+        [0.0, -fl_y / depth, -fl_y * ny / depth],
     ];
     // Σ_2d = J Σ_cam Jᵀ + 0.3·I（0.3px 膨胀，标准做法；实验证伪了 Mip 补偿变体）。
     let jt = [[j[0][0], j[1][0]], [j[0][1], j[1][1]], [j[0][2], j[1][2]]];
