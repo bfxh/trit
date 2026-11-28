@@ -47,7 +47,7 @@ pub(super) fn render_slot(
         )
     };
     color.apply(&mut image);
-    cli::write_png(path, &image).map_err(|e| format!("写 PNG: {e}"))?;
+    cli::write_png(path, &image, color).map_err(|e| format!("写 PNG: {e}"))?;
     if !want_psnr {
         return Ok(None);
     }
