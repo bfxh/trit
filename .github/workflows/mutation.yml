@@ -30,6 +30,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+      - name: Install numpy for script self-tests
+        run: python3 -m pip install --user numpy
       - name: Collect changed crates
         id: crates
         env:
@@ -98,8 +100,12 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+      - name: Install numpy for script self-tests
+        run: python3 -m pip install --user numpy
       - name: mutation gate (shard ${{ matrix.shard }}/4)
-        run: python3 scripts/mutation_check.py --shard ${{ matrix.shard }}/4 2>&1 | tee "shard-${{ matrix.shard }}.log"
+        run: |
+          set -o pipefail
+          python3 scripts/mutation_check.py --shard ${{ matrix.shard }}/4 2>&1 | tee "shard-${{ matrix.shard }}.log"
       - name: upload shard log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
