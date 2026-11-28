@@ -6,7 +6,8 @@
 > `tools/handoff.py`；不覆盖跨机信封、分布式锁；四态确认账本见
 > [AGENT-DELIVERY.md](AGENT-DELIVERY.md)。
 > 状态：**已跑通**（claim/handoff 门在 AF23/AF24 共 8 条断言；四态账本
-> Rust `trit-orch delivery` 9/9；Python 全仓 716/0/0）。
+> Rust `trit-orch delivery` 9/9；Python 全仓最近一次 715/3（3 项失败均为本机缺
+> openpyxl 的 work-bench 用例，与本门无关））。
 > 容量/并发协调另见 [AGENT-CAPACITY.md](AGENT-CAPACITY.md)：硬件探针 + 跨项目租约 +
 > `subagent_dispatch --capacity auto|enforce` 的 provider 前准入。本文只覆盖认领与交接。
 

@@ -34,7 +34,7 @@ workspace 沙盒补的就是这个空档：把 cwd 移出宿主、只给声明�
    Exec（命令 basename）、Write（`profile` 非 `read-only`）、Network（`-AllowNetwork`）；
    任一判定不是 `True` 就判 `capability-denied`，不运行。二进制按 `-CapabilityBin` /
    `TRIT_ORCH_BIN` / PATH / `CARGO_TARGET_DIR` / 仓库 `target` 定位，找不到即拒绝。
-   未给策略时行为与旧版完全一致。
+   未显式给策略时，检测 `<root>/.agent/capability.json`，存在即启用；都没有则保持旧行为。
 4. `run_caps.py` 套内核资源帽（mem/procs/seconds）；stdin 接 DEVNULL；环境只留白名单，
    密钥类变量摘掉（回执只记变量名，不记值）。显式 `-CapacityLease <id>` 时，
    `run_caps --lease` 会先校验租约仍存活、租约内存是上限，再执行；过期/缺失/超额

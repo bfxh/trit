@@ -1112,12 +1112,35 @@ def self_test():
         write_json(cap_policy, {"allow": ["read", "write", "exec", "network"],
                                 "allow_untrusted_origin": True})
 
+        # Default discovery: no --capability-policy, but <root>/.agent/capability.json
+        # exists. The pre-check must use it before capacity/claim/provider.
+        auto_policy = os.path.join(root, ".agent", "capability.json")
+        os.makedirs(os.path.dirname(auto_policy), exist_ok=True)
+        write_json(auto_policy, {"allow": ["read", "write", "exec", "network"],
+                                 "allow_untrusted_origin": True})
+
         def cap_ok(_exe, payload):
             return {"ok": True, "allow": True,
                     "decision": {"class": payload["action"]["class"]}}
 
         def cap_deny(_exe, _payload):
             return {"ok": True, "allow": False, "decision": {"verdict": "False"}}
+
+        auto_args = make_parser().parse_args(
+            ["--plan", "x", "--root", root,
+             "--capability-bin", "fake-trit-orch",
+             "--untrusted-origin",
+             "--artifact-dir", os.path.join(root, ".agent", "sub")])
+        auto_args.capability_runner = cap_deny
+        auto_plan = {"version": 1, "tasks": [
+            {"id": "auto-cap", "role": "docs", "prompt": "auto",
+             "out": "out/auto-cap.md"}]}
+        doc_auto, rc_auto = dispatch(root, auto_plan, cfg, cfg_path, auto_args)
+        ck("capability policy auto-discovered from .agent/capability.json",
+           rc_auto == 1 and doc_auto["tasks"][0]["status"] == "capability-denied"
+           and not os.path.exists(os.path.join(root, "out/auto-cap.md")),
+           f"rc={rc_auto} status={doc_auto['tasks'][0]['status']}")
+        os.remove(auto_policy)
 
         cap_args = make_parser().parse_args(
             ["--plan", "x", "--root", root, "--capability-policy", cap_policy,
