@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use trit_orch::{
     Error, EvidenceSpec, Exit, Phase, Progress, Receipt, TaskSpec, Ternary, TokenUsage,
-    task_spec_digest,
+    acceptance_digest,
 };
 
 #[path = "../progress_support/mod.rs"]
@@ -11,7 +11,7 @@ use progress_support::*;
 
 fn host_receipt(passed: u32, failed: u32, task: &TaskSpec, revision: u64) -> Receipt {
     Receipt::host_measured(task.epoch, Exit::Completed { code: 0 }, passed, failed)
-        .with_plan(revision, task_spec_digest(task).expect("task digest"))
+        .with_plan(revision, acceptance_digest(task, 1).expect("digest"))
         .with_observation(Ternary::True, Ternary::True, TokenUsage::default())
 }
 

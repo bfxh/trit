@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use trit_orch::{
     Error, EvidenceSpec, Exit, Phase, Progress, Receipt, TaskSpec, Ternary, TokenUsage,
-    task_spec_digest,
+    acceptance_digest,
 };
 
 #[path = "../progress_support/mod.rs"]
@@ -11,7 +11,7 @@ use progress_support::*;
 
 fn host_receipt(passed: u32, failed: u32, task: &TaskSpec, revision: u64) -> Receipt {
     Receipt::host_measured(task.epoch, Exit::Completed { code: 0 }, passed, failed)
-        .with_plan(revision, task_spec_digest(task).expect("task digest"))
+        .with_plan(revision, acceptance_digest(task, 1).expect("digest"))
         .with_observation(Ternary::True, Ternary::True, TokenUsage::default())
 }
 
@@ -78,7 +78,7 @@ fn changed_task_definition_invalidates_the_receipt() {
         Progress::new().finish_with_receipts(&changed, &state, &receipts, spec()),
         Err(Error::ReceiptObservationMismatch {
             task: "a".to_owned(),
-            field: "task_digest",
+            field: "acceptance_digest",
         }),
         "ORCH_FINISH_PLAN_TASK_DIGEST"
     );
@@ -92,7 +92,7 @@ fn self_reported_receipt_is_refused_by_default() {
         Receipt::self_reported(0, Exit::Completed { code: 0 }, 1, 0)
             .with_plan(
                 state.revision,
-                task_spec_digest(&tasks[0]).expect("task digest"),
+                acceptance_digest(&tasks[0], 1).expect("digest"),
             )
             .with_observation(Ternary::True, Ternary::True, TokenUsage::default()),
     );

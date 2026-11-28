@@ -1,14 +1,13 @@
-use crate::{Error, Receipt, Snapshot, TaskSpec, task_spec_digest};
+use crate::{Error, Receipt, Snapshot, TaskSpec, acceptance_digest};
 
-/// 回执必须钉住当前计划：revision 与任务定义摘要逐项相等。
-///
-/// 这三种不符都归到 `ReceiptObservationMismatch`，用 `field` 区分
-/// `plan` / `revision` / `task_digest`，不新增错误类型。
+/// 回执必须钉住当前计划：revision 与验收身份摘要逐项相等；不符按
+/// `field=plan|revision|acceptance_digest` 归到 `ReceiptObservationMismatch`。
 pub(super) fn plan(
     task: &str,
     receipt: &Receipt,
     snapshot: &Snapshot,
     spec: &TaskSpec,
+    min_assertions: u32,
 ) -> Result<(), Error> {
     let Some(plan) = receipt.plan.as_ref() else {
         return Err(Error::ReceiptObservationMismatch {
@@ -22,10 +21,10 @@ pub(super) fn plan(
             field: "revision",
         });
     }
-    if plan.task_digest != task_spec_digest(spec)? {
+    if plan.acceptance_digest != acceptance_digest(spec, min_assertions)? {
         return Err(Error::ReceiptObservationMismatch {
             task: task.to_owned(),
-            field: "task_digest",
+            field: "acceptance_digest",
         });
     }
     Ok(())

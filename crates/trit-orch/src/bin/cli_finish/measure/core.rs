@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use trit_orch::{Error, Exit, Receipt, TaskSpec, task_spec_digest};
+use trit_orch::{Error, Exit, Receipt, TaskSpec, acceptance_digest};
 
 use crate::cli_inputs::Execution;
 
@@ -24,12 +24,12 @@ use io::read_capped;
 pub(crate) const DEFAULT_TIMEOUT_MS: u64 = 600_000;
 pub(crate) const MAX_TIMEOUT_MS: u64 = 3_600_000;
 
-/// 执行一条验收命令并生成宿主测量回执。`plan_revision` 与 `spec` 由宿主从
-/// 请求快照/任务定义读出，执行器无法填写。
+/// 执行验收命令并生成宿主回执；revision/spec/阈值均由宿主从请求读出。
 pub(crate) fn run_execution(
     exec: &Execution,
     plan_revision: u64,
     spec: &TaskSpec,
+    min_assertions: u32,
     nonce: &str,
 ) -> Result<Receipt, Error> {
     let Some((program, args)) = exec.command.split_first() else {
@@ -64,7 +64,7 @@ pub(crate) fn run_execution(
     } else {
         Some(trit_orch::test_files_digest(&exec.test_files)?)
     };
-    let plan_digest = task_spec_digest(spec)?;
+    let plan_digest = acceptance_digest(spec, min_assertions)?;
 
     let timeout = Duration::from_millis(
         exec.timeout_ms
