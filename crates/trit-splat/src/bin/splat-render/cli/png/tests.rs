@@ -1,9 +1,8 @@
 //! RGB PNG 色域标记测试。
-
-use super::*;
+use super::write_png;
 use std::fs::File;
-use trit_splat::color::Gamut;
-
+use trit_splat::Frame;
+use trit_splat::color::{ColorConfig, ColorSpace, Gamut};
 fn write_red_png(name: &str, gamut: Gamut, output: ColorSpace) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!(
         "trit-splat-{name}-{}-{:?}.png",

@@ -54,5 +54,29 @@
     "new": "        Gamut::Rec2020 => c,",
     "pkg": "trit-splat",
     "filter": "rec2020_red_is_converted_from_srgb"
+  },
+  {
+    "name": "color: 默认 sRGB/raw 错误写 ICC",
+    "file": "crates/trit-splat/src/color/icc.rs",
+    "old": "        (Gamut::Srgb, ColorSpace::Raw) => return None,",
+    "new": "        (Gamut::Srgb, ColorSpace::Raw) => SRGB,",
+    "pkg": "trit-splat",
+    "filter": "default_srgb_raw_has_no_icc"
+  },
+  {
+    "name": "color: Display P3 的 ICC 被换成 sRGB",
+    "file": "crates/trit-splat/src/color/icc.rs",
+    "old": "        (Gamut::DisplayP3, ColorSpace::Srgb) => DISPLAY_P3,",
+    "new": "        (Gamut::DisplayP3, ColorSpace::Srgb) => SRGB,",
+    "pkg": "trit-splat",
+    "filter": "standard_combinations_use_v4_profiles"
+  },
+  {
+    "name": "color: BT.1886 的 ICC TRC 未改写",
+    "file": "crates/trit-splat/src/color/icc.rs",
+    "old": "            profile[offset..offset + 16].copy_from_slice(&curve);",
+    "new": "            let _ = (&profile[offset..offset + 16], &curve);",
+    "pkg": "trit-splat",
+    "filter": "patched_gamma_replaces_shared_curve_only"
   }
 ]

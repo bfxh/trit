@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v13：PNG ICC 嵌入）
+
+- 新增 `color::icc_profile`：按输出色域与传递函数选择自带紧凑 ICC v4
+  matrix/TRC 配置（sRGB、Display P3、Rec.2020），PNG 落盘写入 `iCCP`；
+  默认 `srgb + raw` 仍不写 ICC，保持 v9 的 48 帧逐字节输出。
+- 非 sRGB 传递函数在 profile 的共享 `rTRC`/`gTRC`/`bTRC` 槽内改写为
+  16-byte `curv` gamma：BT.1886 用 2.4，raw 用 1.0；header、colorants、
+  `wtpt`、`chad` 不动。Java `ICC_Profile` 可加载。
+- sRGB 与 Display P3 的 `iCCP` 为 480 字节，Rec.2020 为 464 字节；
+  `--gamut p3 --color-out srgb` 的 profile 与 `DisplayP3-v4.icc` 逐字节一致。
+  Rec.2020 + BT.1886 输出仍同时写 cHRM/gAMA 与原色标记。
+- 验证：46 lib + 11 bin + 2 集成测试；默认 synthetic-orbit 48 帧与 v9
+  SHA256 0 差异；P3/Rec.2020/BT.1886/raw 样例的 `iCCP` 可解压、可被
+  Java `ICC_Profile` 读取；mutation 10/10 caught。
+- 边界：`Rec.2020 + sRGB` 不是标准 profile 组合，暂不写 ICC，仅保留
+  cHRM/gAMA；ICC 只做输出标记，不做输入解释、感知色域映射或跨 profile
+  转换。
+
 ### Added（trit-splat v12：Rec.2020 输出与 BT.1886）
 
 - `Gamut` 增加 `Rec2020`；sRGB/Rec.709 线性光按矩阵转到 BT.2020 原色（D65 白点），
