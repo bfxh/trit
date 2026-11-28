@@ -137,6 +137,10 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
   本批任务的 `out` 路径；收工自动 release。声明冲突返回 `claim-refused`，刚写入的
   声明会回滚，provider 不会被调用。`--claims-ledger` / `--claim-repo` / `--claim-ttl`
   （1..240 分钟）可覆盖默认值；`--no-claim` 显式关闭。
+- 可选 `--orch-select <json>` 把 `trit-orch select` 接进派发：先按 `SelectInput`
+  调 select，只路由/派发 `selection.selected` 里的任务；未选中的任务回执
+  `not-selected`（ok=true、exit=0），不调用 provider、不占容量与认领。`--orch-bin`
+  指定 trit-orch 路径，缺省在仓内 target 与 PATH 查找；select 失败整批 `select-refused`。
 - 输出路径、任务 id 必须唯一；`out` 拒绝绝对路径、`..`、`.git/.agent/node_modules/target`，
   已存在默认拒绝，`--overwrite` 或任务内 `overwrite: true` 才覆盖。
 - 预算是**声明制**：`budget_tokens<=0` 调用前拒绝；声明了预算但 provider 不报 `usage`
