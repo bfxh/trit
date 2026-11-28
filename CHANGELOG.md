@@ -46,6 +46,26 @@
 - 边界：只做 sRGB/Rec.709 → Display P3 的线性原色矩阵；未做 P3 → sRGB 反向、
   Rec.2020、ICC 嵌入或色域映射（超出 P3 时仍按通道截断）。
 
+### Added（agent 工具：capability 动作门接入 sandbox_run 与 subagent_dispatch）
+
+- `sandbox_run.py` 新增 `--capability-policy/--capability-bin/--untrusted-origin`：
+  在 policy 预分类后、命令执行前，把 Exec（命令 basename）、Write（profile 非
+  read-only）、Network（`--allow-network`）折成 `ActionSpec`，逐条调
+  `trit-orch capability`；任一判定不是 `True` 判 `capability-denied` 并不执行，
+  回执写 `capability.policy_sha256` 与逐条 decisions。未给策略时行为不变。
+- `subagent_dispatch.py` 新增同名三个参数：provider 调用前把 `command` provider
+  折成 Exec、HTTP provider 折成 Network（`base_url` host）；拒绝即
+  `capability-denied`，不调 provider。`--untrusted-origin` 映射
+  `from_untrusted_data`，由策略的 `allow_untrusted_origin` 决定放行。
+- 二进制定位顺序：显式参数 / `TRIT_ORCH_BIN` / PATH / `CARGO_TARGET_DIR` / 仓库
+  `target/{debug,release}`；找不到或策略不可读都 fail-closed。
+- 验证：`sandbox_run --self-test` 47/47（新增放行、拒绝即不执行、二进制缺失、
+  策略不可读四例）；`subagent_dispatch --self-test` 27/27（新增 command provider
+  放行与拒绝两例）；真实 `trit-orch capability` 端到端：read+exec 策略放行并输出
+  `REAL-CAP-OK`，仅 read 策略对 Exec 判 `capability-denied` exit 1。
+- 边界：动作级准入不是运行期隔离；策略若给 Write/Network 配目标白名单，sandbox
+  因无法预知命令内部目标而保守拒绝。默认未启用，仍需调用方显式传策略。
+
 ### Added（trit-orch：完成回执钉住计划 revision 与验收身份）
 
 - `Receipt` 新增 `plan: Option<ReceiptPlan>`（库内 `pub(crate)`，外部经 `with_plan`

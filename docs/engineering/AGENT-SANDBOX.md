@@ -4,7 +4,7 @@
 > 一句话：**默认 cwd 在宿主外的空 workdir，只复制声明输入，policy 先拒，caps 兜底，
 > 跑完用宿主指纹证明有没有写坏；需要真隔离时显式走 `-Isolation wsl` 的 WSL+bwrap 内核命名空间。**
 > 边界：默认模式不是内核沙盒；`-Isolation wsl` 只接受 Linux 命令。见 §4。
-> 状态：**已跑通**（`tools/sandbox_run.py --self-test` 43/43；`sandbox_matrix.py --cases 40` 40/40；
+> 状态：**已跑通**（`tools/sandbox_run.py --self-test` 47/47；`sandbox_matrix.py --cases 40` 40/40；
 > `hostwrite` 独立宿主 100 例 100/100；WSL+bwrap 隔离回归 **11/11**）。红队已补的洞见
 > `AGENT-REDTEAM.md`：workdir junction、硬链接输入、git-ignored 宿主写、
 > 根内 junction 复制、`.agent/.git` 排除目录、`.git/index` 与构建缓存漏检、
@@ -30,6 +30,11 @@ workspace 沙盒补的就是这个空档：把 cwd 移出宿主、只给声明�
    组件；组件比较做大小写 + Windows 尾点归一；默认上限 64 MB / 5000 文件。
    `-Work` 也先 `realpath`，junction/符号链接指向别处直接拒绝。
 3. `policy.py -Profile <profile> -Root <workdir> -Command <命令>` 预分类；policy 拒绝就**不运行**。
+3b. 可选 `-CapabilityPolicy <json>` 时，先把动作折出来问 `trit-orch capability`：
+   Exec（命令 basename）、Write（`profile` 非 `read-only`）、Network（`-AllowNetwork`）；
+   任一判定不是 `True` 就判 `capability-denied`，不运行。二进制按 `-CapabilityBin` /
+   `TRIT_ORCH_BIN` / PATH / `CARGO_TARGET_DIR` / 仓库 `target` 定位，找不到即拒绝。
+   未给策略时行为与旧版完全一致。
 4. `run_caps.py` 套内核资源帽（mem/procs/seconds）；stdin 接 DEVNULL；环境只留白名单，
    密钥类变量摘掉（回执只记变量名，不记值）。显式 `-CapacityLease <id>` 时，
    `run_caps --lease` 会先校验租约仍存活、租约内存是上限，再执行；过期/缺失/超额
@@ -72,6 +77,10 @@ python tools/sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04
 python tools/sandbox_run.py -Root . -CapacityLease cap-... -CapacityDir <state> `
   -CapsMemMb 1024 -- python tool.py
 
+# 动作级 capability 门（opt-in）：策略放行 read+exec 才跑
+python tools/sandbox_run.py -Root . -CapabilityPolicy .agent/capability.json `
+  -CapabilityBin target/debug/trit-orch -- python tools/some_generator.py
+
 # 批量对抗：40 个独立沙盒并发
 python tools/sandbox_matrix.py --cases 40 --parallel 8 --json
 
@@ -85,6 +94,7 @@ python tools/sandbox_matrix.py --cases 100 --parallel 12 --scenario hostwrite --
 |---|---|---|
 | `ok` | policy 放行、run 成功、宿主指纹未变 | 0 |
 | `policy-denied` | policy 在运行前拒绝（网络/删除/越界写等） | 1 |
+| `capability-denied` | 给了 `-CapabilityPolicy`，动作门拒绝或判定器不可用 | 1 |
 | `host-mutated` | 跑完发现宿主指纹变了，且没开 `-AllowHostWrite` | 3 |
 | `host-unprovable` | 宿主指纹读不出（不是“干净”） | 3 |
 | `run-timeout` | run_caps 的秒帽触发（124） | 124 |
@@ -115,15 +125,19 @@ python tools/sandbox_matrix.py --cases 100 --parallel 12 --scenario hostwrite --
 - workdir 里生成的文件默认随成功清理；要取产物必须 `-Keep` 或显式从 workdir 复制回来，
   不存在“沙盒自动把产物落回宿主”的隐式路径。
 - 不替代 `journal.py` 的撤销证据；沙盒的宿主指纹只回答“变没变”，不回答“怎么撤”。
+- capability 门是**动作级准入**，不是运行期隔离：一条 `python script.py` 内部写哪些
+  路径、连哪些域名不可预知，所以策略若给 Write/Network 配了目标白名单，本工具会
+  保守拒绝；只声明类别放行（`allow`）才可通过。它也不能替代 policy 的命令分类。
 
 ## 5. 测试
 
-- `sandbox_run.py --self-test` 37 条：相对写、成功清理、复制输入、宿主写检测/显式允许、
+- `sandbox_run.py --self-test` 47 条：相对写、成功清理、复制输入、宿主写检测/显式允许、
   超时 124、内存帽、密钥环境摘除、PATH 保留、非零退出、命令缺失 127、输出截断、stdin EOF、
   stderr 分离、网络/删除 policy 拒绝、复制穿越/字节帽、硬链接拒绝、workdir junction 拒绝、
   git-ignored 宿主写检测、嵌套复制、keep、workdir 在宿主内拒绝、并发隔离、非 git 宿主回退、
   `.agent`/`.git` 忽略目录写、`.git/index` 改写、缓存新建/覆盖、同 size+恢复 mtime、
-  **大于 1 MiB 文件同 size+恢复 mtime**、`.git/index.lock` 后置残留。
+  **大于 1 MiB 文件同 size+恢复 mtime**、`.git/index.lock` 后置残留，以及 capability
+  四条：放行、拒绝即不执行、二进制缺失 fail-closed、策略不可读 fail-closed。
 - `sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04`：WSL+bwrap 11/11，
   workdir 可读、绝对路径读/写、网络、子进程四项全阻断，`.exe`/Windows 绝对路径参数拒绝。
 - `sandbox_matrix.py --cases 40 --parallel 8`：40 个独立 workdir 并发，40/40 通过，
@@ -143,3 +157,5 @@ python tools/sandbox_matrix.py --cases 100 --parallel 12 --scenario hostwrite --
 2. 默认模式的网络 egress 仍只有 policy 的命令级拒绝；要真断网用 `-Isolation wsl`。
 3. 沙盒产物清单与哈希化回收（`-Keep` 后由主智能体决定哪些落回宿主）。
 4. 把 `sandbox_run` 接进 `agent_verify` 的 run 段（现在它是独立入口，回执格式未合并）。
+5. capability 门目前是 opt-in：默认没给 `-CapabilityPolicy` 就不判；把它抬成默认、
+   并把 `subagent_dispatch` 的 provider 动作门一起纳入统一调度，尚未落地。

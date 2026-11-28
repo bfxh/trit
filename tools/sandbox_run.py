@@ -8,6 +8,8 @@
     python tools/sandbox_run.py --self-test
     python tools/sandbox_run.py -Root . -Copy script.py -Isolation wsl \
         -WslDistro Ubuntu-24.04 -- python3 script.py
+    python tools/sandbox_run.py -Root . -CapabilityPolicy .agent/cap.json \
+        -CapabilityBin target/debug/trit-orch -- python tools/some_generator.py
     python tools/sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04
 
 它做什么（逐条，默认模式别当成"内核沙盒"）：
@@ -15,6 +17,11 @@
   2. 只把 -Copy 明确列出的相对路径复制进去（拒绝绝对路径、`..`、符号链接、
      `.git/.agent/node_modules/target` 组件，以及超量/超大输入）；
   3. 用 policy.py 按 workdir 为根预分类命令；policy 拒绝就**不运行**；
+  3b. 可选 `-CapabilityPolicy <json>`：把 Exec（命令 basename）、Write
+      （profile 非 read-only 时）、Network（`-AllowNetwork` 时）折成动作，逐条
+      问 `trit-orch capability`；任一不是 True 就不运行，回执记 decisions。
+      未给策略时完全保持旧行为；二进制按 `-CapabilityBin` / `TRIT_ORCH_BIN` /
+      PATH / 仓库 target 目录定位，缺失即拒绝（fail-closed）。
   4. 用 run_caps.py 套内核资源帽（内存/进程数/超时），stdin 接 DEVNULL，
      环境变量只留白名单（密钥类变量会摘掉，回执只记变量名不记值）；
   4b. 只有显式 `-Isolation wsl` 才走 WSL2+bwrap `--unshare-all`：空根只读 bind
@@ -37,6 +44,9 @@
     与之不兼容并会被拒绝。
   * 子智能体要写仓库，必须显式 `-AllowHostWrite` 或把产物从 workdir 取回后由
     主智能体另行落盘；默认拒绝，避免"沙盒里跑完悄悄改了宿主"。
+  * capability 门是**动作级**的，不替代 policy：一条 `python script.py` 内部实际
+    写哪些路径、连哪些域名不可预知，所以策略若给 Write/Network 配了目标白名单，
+    本工具会保守拒绝；只声明类别放行（`allow`）才可通过。
 """
 
 from __future__ import annotations
@@ -391,6 +401,94 @@ def copy_inputs(root, work, specs, max_bytes=MAX_INPUT_BYTES, max_files=MAX_INPU
     return {"files": files[0], "bytes": total[0]}
 
 
+def _capability_binary(root, explicit):
+    if explicit:
+        return explicit
+    env = os.environ.get("TRIT_ORCH_BIN", "")
+    if env:
+        return env
+    found = shutil.which("trit-orch")
+    if found:
+        return found
+    roots = [root, os.environ.get("CARGO_TARGET_DIR", "")]
+    for target_root in [r for r in roots if r]:
+        for rel in ("target/debug/trit-orch", "target/release/trit-orch",
+                    "debug/trit-orch", "release/trit-orch"):
+            base = os.path.join(target_root, rel)
+            for cand in (base, base + ".exe"):
+                if os.path.isfile(cand):
+                    return cand
+    return ""
+
+
+def _invoke_capability(binary, payload):
+    try:
+        proc = subprocess.run([binary, "capability"], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": f"capability call failed: {exc}"}
+    try:
+        doc = json.loads((proc.stdout or "").strip())
+    except ValueError:
+        return {"ok": False, "error": f"capability returned non-JSON (exit {proc.returncode})"}
+    if proc.returncode != 0 or not doc.get("ok"):
+        return {"ok": False, "error": doc.get("error") or f"capability exit {proc.returncode}"}
+    return doc
+
+
+def capability_decide(policy_path, actions, root="", binary="", runner=None):
+    """按给定动作列表查 `trit-orch capability`；未给策略时返回 None。"""
+    if not policy_path:
+        return None
+    path = os.path.abspath(policy_path)
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            policy = json.load(fh)
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "stage": "config", "error": f"policy unreadable: {exc}"}
+    if not isinstance(policy, dict):
+        return {"ok": False, "stage": "config", "error": "policy must be a JSON object"}
+    if not isinstance(actions, list) or not actions:
+        return {"ok": False, "stage": "config", "error": "actions must be a non-empty list"}
+    exe = binary or _capability_binary(root, "")
+    if not exe and runner is None:
+        return {"ok": False, "stage": "config", "error": "capability binary not found"}
+    invoke = runner or _invoke_capability
+    decisions = []
+    for action in actions:
+        decision = invoke(exe, {"policy": policy, "action": action})
+        decisions.append({"action": action, "decision": decision})
+        if not decision.get("ok") or not decision.get("allow"):
+            return {"ok": False, "stage": "decision", "policy_sha256":
+                    sha256_bytes(raw), "actions": decisions}
+    return {"ok": True, "policy_sha256": sha256_bytes(raw), "actions": decisions}
+
+
+def capability_check(root, command, profile, allow_network, policy_path,
+                     untrusted_origin=False, binary="", runner=None):
+    """把 sandbox 动作折成 capability 判定；未给策略时返回 None（旧行为）。
+
+    `runner` 是测试缝：默认起 `trit-orch capability` 子进程；测试可注入纯函数。
+    策略声明了 Write/Network 目标白名单时会拒绝本调用，因为一条命令内部实际
+    写哪些路径/连哪些域名不可预知；这是有意保守。
+    """
+    if not policy_path:
+        return None
+    untrusted = bool(untrusted_origin)
+    actions = [{"class": "exec", "target": os.path.basename(command[0]),
+                "from_untrusted_data": untrusted}]
+    if profile != "read-only":
+        actions.append({"class": "write", "target": None,
+                        "from_untrusted_data": untrusted})
+    if allow_network:
+        actions.append({"class": "network", "target": None,
+                        "from_untrusted_data": untrusted})
+    return capability_decide(policy_path, actions, root, binary, runner)
+
+
 def policy_check(work, command, profile, allow_network):
     cmdstr = shlex.join(command) if os.name != "nt" else subprocess.list2cmdline(command)
     argv = [PY, POLICY, "-Profile", profile, "-Root", work, "-Command", cmdstr]
@@ -547,14 +645,16 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
                 procs=64, seconds=1800, max_output=MAX_OUTPUT_BYTES, keep=False,
                 role="", model="", max_input_bytes=MAX_INPUT_BYTES,
                 max_input_files=MAX_INPUT_FILES, isolation="none", wsl_distro="",
-                capacity_lease="", capacity_dir=""):
+                capacity_lease="", capacity_dir="", capability_policy="",
+                capability_bin="", untrusted_origin=False, capability_runner=None):
     root = os.path.abspath(root)
     work = os.path.abspath(work)
     receipt = {"tool": "sandbox-run", "role": role, "model": model,
                "root": os.path.basename(root), "work": work,
                "command_sha256": sha256_bytes(" ".join(command).encode("utf-8")),
                "profile": profile, "ok": False, "exit": 2, "verdict": "bad-invocation",
-               "copies": [], "policy": None, "run": None, "env_removed": [],
+               "copies": [], "policy": None, "capability": None, "run": None,
+               "env_removed": [],
                "capacity": {"mode": "none"},
                "host": {"before": None, "after": None, "kind": "", "mutated": None},
                "isolation": {"mode": "none", "kernel": False}}
@@ -662,6 +762,15 @@ def run_sandbox(root, work, command, copies=(), profile="workspace-write",
                                 "wsl_work": wsl_work,
                                 "network": "unshared",
                                 "filesystem": "bwrap-empty-root"}
+    capability = capability_check(root, command, profile, allow_network,
+                                  capability_policy, untrusted_origin, capability_bin,
+                                  capability_runner)
+    receipt["capability"] = capability
+    if capability is not None and not capability.get("ok"):
+        receipt.update({"verdict": "capability-denied", "exit": 1})
+        if not keep:
+            shutil.rmtree(work, ignore_errors=True)
+        return receipt
     policy = policy_check(work, command, profile, allow_network)
     receipt["policy"] = policy
     if policy["exit"] != 0:
@@ -728,7 +837,8 @@ def parse_args(argv):
            "keep": False, "receipt": "", "role": "", "model": "", "command": [],
            "self_test": False, "self_test_wsl": False,
            "isolation": "none", "wsl_distro": "",
-           "capacity_lease": "", "capacity_dir": ""}
+           "capacity_lease": "", "capacity_dir": "",
+           "capability_policy": "", "capability_bin": "", "untrusted_origin": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -745,19 +855,23 @@ def parse_args(argv):
             continue
         name = a.lstrip("-").lower().replace("_", "").replace("-", "")
         if name in ("root", "work", "profile", "receipt", "role", "model", "copy",
-                    "copies", "isolation", "wsldistro", "capacitylease", "capacitydir"):
+                    "copies", "isolation", "wsldistro", "capacitylease", "capacitydir",
+                    "capabilitypolicy", "capabilitybin"):
             val = argv[i + 1] if i + 1 < len(argv) else ""
             if name in ("copy", "copies"):
                 out["copies"].append(val)
             else:
                 key = {"wsldistro": "wsl_distro", "capacitylease": "capacity_lease",
-                       "capacitydir": "capacity_dir"}.get(name, name)
+                       "capacitydir": "capacity_dir",
+                       "capabilitypolicy": "capability_policy",
+                       "capabilitybin": "capability_bin"}.get(name, name)
                 out[key] = val
             i += 2
             continue
-        if name in ("allownetwork", "allowhostwrite", "keep"):
+        if name in ("allownetwork", "allowhostwrite", "keep", "untrustedorigin"):
             out["allow_network" if name == "allownetwork" else
-                "allow_host_write" if name == "allowhostwrite" else "keep"] = True
+                "allow_host_write" if name == "allowhostwrite" else
+                "untrusted_origin" if name == "untrustedorigin" else "keep"] = True
             i += 1
             continue
         if name in ("capsmemmb", "capsprocs", "capsseconds", "maxoutputbytes"):
@@ -863,6 +977,46 @@ def self_test():
     ck("expired lease fails closed", rec["verdict"] == "bad-invocation"
        and "expired" in rec.get("error", ""), rec.get("error", ""))
     capacity.release(lease["lease"]["id"], cstate)
+
+    cap_path = os.path.join(tmp, "capability.json")
+    with open(cap_path, "w", encoding="utf-8") as fh:
+        json.dump({"allow": ["read", "write", "exec", "network"],
+                   "allow_untrusted_origin": False}, fh)
+
+    def cap_allow(exe, payload):
+        return {"ok": True, "allow": True, "decision": {"class": payload["action"]["class"]}}
+
+    def cap_deny_network(exe, payload):
+        allow = payload["action"]["class"] != "network"
+        return {"ok": True, "allow": allow, "decision": {"class": payload["action"]["class"]}}
+
+    rec, _ = case("capability allow", [PY, "-c", "print('cap-ok')"],
+                  capability_policy=cap_path, capability_bin="fake-trit-orch",
+                  capability_runner=cap_allow)
+    ck("capability policy admits exec+write", rec["ok"]
+       and rec["capability"]["ok"] and "cap-ok" in rec["run"]["stdout_tail"]
+       and [d["action"]["class"] for d in rec["capability"]["actions"]] == ["exec", "write"],
+       str(rec.get("capability")))
+
+    rec, _ = case("capability deny", [PY, "-c", "print('must-not-run')"],
+                  allow_network=True, capability_policy=cap_path,
+                  capability_bin="fake-trit-orch", capability_runner=cap_deny_network)
+    ck("capability deny stops before execution", rec["verdict"] == "capability-denied"
+       and rec["exit"] == 1 and not rec.get("run")
+       and rec["capability"]["actions"][-1]["action"]["class"] == "network",
+       str(rec.get("capability")))
+
+    rec, _ = case("capability missing binary", [PY, "-c", "print('must-not-run')"],
+                  capability_policy=cap_path,
+                  capability_bin=os.path.join(tmp, "no-such-trit-orch"))
+    ck("missing capability binary fails closed", rec["verdict"] == "capability-denied"
+       and "capability call failed" in str(rec.get("capability")), str(rec.get("capability")))
+
+    rec, _ = case("capability unreadable policy", [PY, "-c", "print('must-not-run')"],
+                  capability_policy=os.path.join(tmp, "no-such-policy.json"),
+                  capability_bin="fake-trit-orch", capability_runner=cap_allow)
+    ck("unreadable capability policy fails closed", rec["verdict"] == "capability-denied"
+       and "policy unreadable" in str(rec.get("capability")), str(rec.get("capability")))
 
     os.environ["TRIT_SANDBOX_SECRET"] = "must-not-leak"
     rec, _ = case("env secret", [PY, "-c",
@@ -1191,7 +1345,10 @@ def main(argv):
                       role=args["role"], model=args["model"],
                       isolation=args["isolation"], wsl_distro=args["wsl_distro"],
                       capacity_lease=args["capacity_lease"],
-                      capacity_dir=args["capacity_dir"])
+                      capacity_dir=args["capacity_dir"],
+                      capability_policy=args["capability_policy"],
+                      capability_bin=args["capability_bin"],
+                      untrusted_origin=args["untrusted_origin"])
     if args["receipt"]:
         write_receipt(args["receipt"], rec)
     if rec.get("run"):

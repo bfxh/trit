@@ -5506,8 +5506,8 @@ if (-not $anPy) {
 
     $anOut2 = @(& $anPy (Join-Path $tools 'sandbox_run.py') --self-test 2>&1)
     $anRc2 = $LASTEXITCODE
-    Assert-True ($anRc2 -eq 0 -and (($anOut2 -join ' ') -match 'sandbox-run self-test: 43/43')) `
-        'AN2 workspace 沙盒自测 43/43（宿主写检测/超时/内存帽/容量租约附着与超额拒绝/密钥环境/复制穿越/硬链接拒绝/workdir junction 拒绝/忽略文件写检测/根内 junction 与大小写/尾点拒绝/排除目录与缓存覆盖检测/同 size+恢复 mtime 内容哈希/大于 1 MiB 内容哈希/index.lock/并发隔离）' "e=$anRc2"
+    Assert-True ($anRc2 -eq 0 -and (($anOut2 -join ' ') -match 'sandbox-run self-test: 47/47')) `
+        'AN2 workspace 沙盒自测 47/47（宿主写检测/超时/内存帽/容量租约附着与超额拒绝/密钥环境/复制穿越/硬链接拒绝/workdir junction 拒绝/忽略文件写检测/根内 junction 与大小写/尾点拒绝/排除目录与缓存覆盖检测/同 size+恢复 mtime 内容哈希/大于 1 MiB 内容哈希/index.lock/并发隔离/capability 四例）' "e=$anRc2"
 
     $anMatrix = Join-Path $Work 'an-sandbox-matrix.json'
     $anOut3 = @(& $anPy (Join-Path $tools 'sandbox_matrix.py') --cases 40 --parallel 8 --receipt $anMatrix 2>&1)
@@ -5526,8 +5526,8 @@ if (-not $anPy) {
     $skipped++
 } else {
     $aoOut = @(& $anPy (Join-Path $tools 'subagent_dispatch.py') --self-test 2>&1)
-    Assert-True ($LASTEXITCODE -eq 0 -and (($aoOut -join ' ') -match 'subagent-dispatch self-test: 25/25')) `
-        'AO1 子智能体派发 25/25：三角色分模型/并行产出/已有产物拒绝/重复 id 与 out 拒绝/硬链接与符号链接拒绝/根内 junction 拒绝/大小写与尾点拒绝/零预算拒绝/无 usage 预算拒绝/无路由拒绝/dry-run 不落写/prompt guard 前置隔离/输出侧污染隔离与 warn 留痕/二进制文本抽取' "e=$LASTEXITCODE"
+    Assert-True ($LASTEXITCODE -eq 0 -and (($aoOut -join ' ') -match 'subagent-dispatch self-test: 27/27')) `
+        'AO1 子智能体派发 27/27：三角色分模型/并行产出/已有产物拒绝/重复 id 与 out 拒绝/硬链接与符号链接拒绝/根内 junction 拒绝/大小写与尾点拒绝/零预算拒绝/无 usage 预算拒绝/无路由拒绝/dry-run 不落写/prompt guard 前置隔离/输出侧污染隔离与 warn 留痕/二进制文本抽取/capability 两例' "e=$LASTEXITCODE"
 }
 
 
