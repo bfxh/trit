@@ -25,6 +25,9 @@ CI/CL 证明的是**这份改动本身**通过检查，不证明：
 provider，也不静默降级到串行。批准后，租约的 worker/内存/deadline 会被写成
 `CAPACITY CONTRACT` 注入每条 prompt。
 
+申请前先做 capability 预检（`--capability-policy`）：被策略拒绝的任务直接标
+`capability-denied`，不进入可调用任务数，也不占 worker；租约按剩余任务数申请。
+
 ## 2. 探针：先看机器，不信任务自报
 
 `capacity_lease.py probe` 读取：

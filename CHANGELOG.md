@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed（subagent-dispatch：capability 预检先于容量租约）
+
+- `--capability-policy` 的判定移到申请容量租约之前；被拒任务标
+  `capability-denied` 后不再进入可运行集合，不占 worker，租约按剩余任务数申请。
+- 自测新增断言：`--capacity enforce` 下单个被拒任务不申请租约（27/27 仍通过）。
+
 ### Added（trit-splat v14：感知色域映射）
 
 - 新增 `color::gamut::map::perceptual`：在目标原色线性 RGB 中以 Rec.709

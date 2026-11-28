@@ -128,7 +128,8 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
 - 可选 `--capability-policy <json>` 在 provider 调用前过动作门：`command` provider
   折成 Exec（命令 basename），HTTP provider 折成 Network（`base_url` 的 host）；
   任一判定不是 `True` 就把该任务标 `capability-denied`，不调用 provider、不落 `out`。
-  `--untrusted-origin` 声明 prompt 来自不可信数据，是否放行由策略的
+  capability 预检在容量租约之前完成，被拒任务不占 worker 名额，租约按真正可运行的
+  任务数申请。`--untrusted-origin` 声明 prompt 来自不可信数据，是否放行由策略的
   `allow_untrusted_origin` 决定；二进制定位同 `sandbox_run`，缺失即拒绝。
   不给策略时行为不变。
 - 输出路径、任务 id 必须唯一；`out` 拒绝绝对路径、`..`、`.git/.agent/node_modules/target`，
