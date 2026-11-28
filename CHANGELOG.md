@@ -17,6 +17,20 @@
 - 边界：当前做的是输出端 post-process，alpha 合成仍在源空间；暂不做
   P3/Rec.2020 色域转换，后续可在 `ColorSpace` 上扩展。
 
+### Added（trit-orch：动作级 capability 内核，第六门）
+
+- `capability` 模块：`ActionClass`（read/write/exec/network）+
+  `CapabilityPolicy`（显式 `allow`、`allow_untrusted_origin`）+ `ActionSpec`
+  （类别、`from_untrusted_data`）。读放行；写/执行/网络默认拒；类别已授予但由
+  不可信数据触发 → `Unknown`（需人确认），显式提权才放行。`decide` 返回三值 + 理由。
+- `admit_with_capability`：把 capability 作第六门，与四门 + claim 做 K3 AND；
+  任一门 False 一票否决，`Unknown` 保持。
+- `trit-orch capability` 子命令：stdin 一份 `{policy, action}`，stdout 回
+  `{allow, decision}`；未知动作类别在解析层拒绝。
+- 用例：`capability.rs` 内 7 个单测 + `tests/capability.rs` 6 个集成用例
+  （只读放行/默认拒写/未知来源转人工/显式提权/未知类别报错/第六门合成）。
+- 边界：`tools/context_guard.py` / `sandbox_run.py` / `subagent_dispatch.py`
+  的调用面尚未读取该判定，per-target 白名单未做；这仍是策略内核，不是端到端防护。
 ### Added（trit-splat v9：深度输出）
 
 - 渲染核拆成 `raster.rs` 外壳 + `raster/render.rs`；`render` 保持原 RGB 接口，

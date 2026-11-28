@@ -6,4 +6,4 @@ pub use crate::effects::{
 };
 pub use crate::error::Error;
 pub use crate::evidence::{EvidenceSpec, Exit, Receipt, ReceiptProvenance, test_files_digest};
-pub use crate::plan::Plan;
+pub use crate::{capability::*, plan::Plan};

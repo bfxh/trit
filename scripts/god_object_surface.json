@@ -2529,7 +2529,15 @@
     "crates/trit-fmt/src/md/mod.rs::type::List": 4,
     "crates/trit-fmt/src/md/mod.rs::type::ListItem": 2,
     "crates/trit-fmt/src/md/mod.rs::type::Table": 3,
-    "crates/trit-fmt/src/md/parse.rs::type::Marker": 0
+    "crates/trit-fmt/src/md/parse.rs::type::Marker": 0,
+    "crates/trit-orch/src/bin/cli_capability/mod.rs::type::Request": 0,
+    "crates/trit-orch/src/capability.rs::impl::ActionClass": 1,
+    "crates/trit-orch/src/capability.rs::impl::CapabilityPolicy": 1,
+    "crates/trit-orch/src/capability.rs::type::ActionClass": 0,
+    "crates/trit-orch/src/capability.rs::type::ActionSpec": 2,
+    "crates/trit-orch/src/capability.rs::type::CapabilityDecision": 3,
+    "crates/trit-orch/src/capability.rs::type::CapabilityPolicy": 2,
+    "crates/trit-orch/src/capability.rs::type::CapabilityReason": 0
   },
   "limit": 32,
   "note": "单类型职责面棘轮：key = <相对路径>::type|impl::<名字>，value = pub 字段数（struct/enum）或 pub fn 数（impl）。只减不增；新类型首次登记不得高于 limit。",
