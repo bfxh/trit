@@ -17,7 +17,7 @@
  "crate/trit-eval": 28,
  "crate/trit-export": 16,
  "crate/trit-float": 26,
- "crate/trit-fmt": 11,
+ "crate/trit-fmt": 16,
  "crate/trit-fuzz": 11,
  "crate/trit-gamescan": 26,
  "crate/trit-gpu": 53,

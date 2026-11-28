@@ -1,16 +1,14 @@
 //! 前沿格式化器：JSON 与 Markdown，目标是**与 prettier 3 逐字节一致**。
 //!
-//! 范围（如实）：JSON 全量；Markdown 是块级子集（见 [`md`] 的模块注释）；
-//! JS/TS 返回 [`FormatError::Unsupported`]——这是 S 级任务卡
-//! （`docs/specs/FRONTIER-FORMATTER-TASK.md`）里的负结果，不是遗漏。
-//!
+//! 范围（如实）：JSON 全量；Markdown 是块级子集（见 [`md`] 的模块注释）；JS/TS 返回
+//! [`FormatError::Unsupported`]——这是 S 级任务卡（`docs/specs/FRONTIER-FORMATTER-TASK.md`）里的负结果。
 //! JSON 打印规则来自对 prettier 3.10.1 的实测（`--parser json`，`printWidth=80`）：
 //! - 空容器 `{}` / `[]`；单行对象带内边距 `{ "k": 1 }`，单行数组无内边距 `[1, 2]`；
-//! - **源码里跨行的容器保持跨行**；成员之间若有空行，break 时保留一个空行；
-//! - 单行放不下时：对象每成员一行；数组若全是标量则 fill，含容器则每元素一行；
-//! - 数组元素里还有数组时强制展开，且向上传播到父对象；
-//! - 数字与字符串保持原文（prettier 不改写数字字面量与转义序列）。
+//! - **源码里跨行的容器保持跨行**；成员间有空行时 break 保留一个空行；单行放不下则
+//!   对象每成员一行，数组全是标量时 fill、含容器时每元素一行；
+//! - 数组元素里还有数组时强制展开并向上传播；数字与字符串保持原文（不改写字面量与转义）。
 
+mod batch;
 mod md;
 mod parse;
 mod print;
@@ -78,6 +76,8 @@ pub(crate) struct Field {
     pub blank_before: bool,
 }
 
+pub use batch::{available_jobs, format_many};
+
 /// 按文件名推断语法并格式化；不认识的扩展名明确拒绝，不猜。
 pub fn format_path(name: &str, source: &str) -> Result<String, FormatError> {
     let lower = name.to_ascii_lowercase();
@@ -104,34 +104,4 @@ pub fn format_json(source: &str) -> Result<String, FormatError> {
     print::print_value(&value, 0, &mut out);
     out.push('\n');
     Ok(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_containers_have_no_padding() {
-        assert_eq!(format_json("{}").unwrap(), "{}\n");
-        assert_eq!(format_json("[]").unwrap(), "[]\n");
-    }
-
-    #[test]
-    fn inline_object_has_padding() {
-        assert_eq!(format_json(r#"{"a":1}"#).unwrap(), "{ \"a\": 1 }\n");
-    }
-
-    #[test]
-    fn numbers_and_strings_keep_their_source_text() {
-        let out = format_json(r#"{"e":1e10,"f":-0.5,"s":"a\"b\\c"}"#).unwrap();
-        assert!(out.contains("1e10"));
-        assert!(out.contains("-0.5"));
-        assert!(out.contains(r#""a\"b\\c""#));
-    }
-
-    #[test]
-    fn dispatches_markdown_by_extension() {
-        assert!(format_path("x.md", "# hi").is_ok());
-        assert!(format_path("x.markdown", "# hi").is_ok());
-    }
 }

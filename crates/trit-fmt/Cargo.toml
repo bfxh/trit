@@ -15,3 +15,7 @@ serde_json = "1.0.154"
 [[bench]]
 name = "format"
 harness = false
+
+[[bench]]
+name = "threads"
+harness = false
