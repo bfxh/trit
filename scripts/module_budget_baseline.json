@@ -319,6 +319,10 @@
       "lines": 49
     },
     {
+      "file": "crates/trit-build/src/direct/emit/tests/many.rs",
+      "lines": 17
+    },
+    {
       "file": "crates/trit-build/src/direct/fold.rs",
       "lines": 54
     },
@@ -5192,11 +5196,15 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch.rs",
-      "lines": 146
+      "lines": 140
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/frames.rs",
       "lines": 117
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/load.rs",
+      "lines": 21
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/metrics.rs",
@@ -5204,7 +5212,11 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/parallel.rs",
-      "lines": 114
+      "lines": 79
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/slot.rs",
+      "lines": 121
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/tests.rs",
@@ -5276,11 +5288,15 @@
     },
     {
       "file": "crates/trit-splat/src/raster.rs",
-      "lines": 146
+      "lines": 11
     },
     {
       "file": "crates/trit-splat/src/raster/border.rs",
       "lines": 29
+    },
+    {
+      "file": "crates/trit-splat/src/raster/render.rs",
+      "lines": 236
     },
     {
       "file": "crates/trit-splat/src/raster/tests.rs",
@@ -5293,6 +5309,10 @@
     {
       "file": "crates/trit-splat/src/raster/tests/degenerate.rs",
       "lines": 30
+    },
+    {
+      "file": "crates/trit-splat/src/raster/tests/depth.rs",
+      "lines": 63
     },
     {
       "file": "crates/trit-splat/src/splat.rs",
