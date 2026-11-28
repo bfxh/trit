@@ -1,15 +1,17 @@
-//! 前沿格式化器：JSON 打印，目标是**与 prettier 3 逐字节一致**。
+//! 前沿格式化器：JSON 与 Markdown，目标是**与 prettier 3 逐字节一致**。
 //!
-//! 范围（如实）：只做 JSON。JS/TS/Markdown 返回 [`FormatError::Unsupported`]——
-//! 这是 S 级任务卡（`docs/specs/FRONTIER-FORMATTER-TASK.md`）里的负结果，不是遗漏。
+//! 范围（如实）：JSON 全量；Markdown 是块级子集（见 [`md`] 的模块注释）；
+//! JS/TS 返回 [`FormatError::Unsupported`]——这是 S 级任务卡
+//! （`docs/specs/FRONTIER-FORMATTER-TASK.md`）里的负结果，不是遗漏。
 //!
-//! 打印规则来自对 prettier 3.10.1 的实测（`--parser json`，`printWidth=80`）：
+//! JSON 打印规则来自对 prettier 3.10.1 的实测（`--parser json`，`printWidth=80`）：
 //! - 空容器 `{}` / `[]`；单行对象带内边距 `{ "k": 1 }`，单行数组无内边距 `[1, 2]`；
 //! - **源码里跨行的容器保持跨行**；成员之间若有空行，break 时保留一个空行；
 //! - 单行放不下时：对象每成员一行；数组若全是标量则 fill，含容器则每元素一行；
 //! - 数组元素里还有数组时强制展开，且向上传播到父对象；
 //! - 数字与字符串保持原文（prettier 不改写数字字面量与转义序列）。
 
+mod md;
 mod parse;
 mod print;
 
@@ -19,7 +21,7 @@ const PRINT_WIDTH: usize = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormatError {
-    /// 语法不在这一版支持面内（JS/TS/Markdown）。
+    /// 语法不在这一版支持面内（JS/TS，以及 Markdown 里明确不做的构造）。
     Unsupported(&'static str),
     /// 输入不是合法 JSON（含位置）。
     Syntax { offset: usize, message: String },
@@ -82,12 +84,13 @@ pub fn format_path(name: &str, source: &str) -> Result<String, FormatError> {
     if lower.ends_with(".json") || lower.ends_with(".jsonc") {
         return format_json(source);
     }
+    if lower.ends_with(".md") || lower.ends_with(".markdown") {
+        return md::format_markdown(source);
+    }
     let kind = if lower.ends_with(".js") || lower.ends_with(".mjs") || lower.ends_with(".cjs") {
         "javascript"
     } else if lower.ends_with(".ts") || lower.ends_with(".mts") || lower.ends_with(".cts") {
         "typescript"
-    } else if lower.ends_with(".md") || lower.ends_with(".markdown") {
-        "markdown"
     } else {
         "unknown"
     };
@@ -127,14 +130,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_json_syntax_by_extension() {
-        assert!(matches!(
-            format_path("x.js", "let a = 1;"),
-            Err(FormatError::Unsupported("javascript"))
-        ));
-        assert!(matches!(
-            format_path("x.md", "# hi"),
-            Err(FormatError::Unsupported("markdown"))
-        ));
+    fn dispatches_markdown_by_extension() {
+        assert!(format_path("x.md", "# hi").is_ok());
+        assert!(format_path("x.markdown", "# hi").is_ok());
     }
 }

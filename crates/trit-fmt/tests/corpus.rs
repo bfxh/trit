@@ -68,7 +68,6 @@ fn unsupported_syntaxes_are_rejected_not_guessed() {
     for (name, source, kind) in [
         ("x.js", "let a = 1;", "javascript"),
         ("x.ts", "let a: number = 1;", "typescript"),
-        ("x.md", "# hi", "markdown"),
         ("x.txt", "hi", "unknown"),
     ] {
         match format_path(name, source) {
@@ -77,6 +76,7 @@ fn unsupported_syntaxes_are_rejected_not_guessed() {
         }
     }
     assert!(format_path("x.json", "{\"a\":1}").is_ok());
+    assert!(format_path("x.md", "# hi").is_ok());
 }
 
 #[test]
