@@ -5375,6 +5375,10 @@
       "lines": 41
     },
     {
+      "file": "crates/trit-splat/src/color/gamut/map.rs",
+      "lines": 32
+    },
+    {
       "file": "crates/trit-splat/src/color/gamut/matrices.rs",
       "lines": 33
     },
@@ -5389,6 +5393,10 @@
     {
       "file": "crates/trit-splat/src/color/tests/core.rs",
       "lines": 79
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/gamut/map.rs",
+      "lines": 55
     },
     {
       "file": "crates/trit-splat/src/color/tests/gamut/mod.rs",

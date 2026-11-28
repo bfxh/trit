@@ -1,13 +1,13 @@
 //! 原色转换矩阵：sRGB/Rec.709 到 Display P3 / Rec.2020（均为 D65 白点）。
-
 use super::Gamut;
-
+use super::map::perceptual;
 pub(crate) fn convert(c: [f32; 3], gamut: Gamut) -> [f32; 3] {
-    match gamut {
+    let dst = match gamut {
         Gamut::Srgb => c,
         Gamut::DisplayP3 => mul(SRGB_TO_P3, c),
         Gamut::Rec2020 => mul(SRGB_TO_2020, c),
-    }
+    };
+    perceptual(dst)
 }
 
 /// sRGB/Rec.709 → Display P3 原色（DCI-P3 原色 + D65 白点）。

@@ -4,8 +4,8 @@
 //! BT.2020 原色与 D65 白点，8-bit SDR 输出应配 BT.1886（`ColorSpace::Bt1886`）。
 //! 转换矩阵由 sRGB/Rec.709 与目标原色的 RGB→XYZ 矩阵（D65）合成，无需色适应。
 
+pub(super) mod map;
 mod matrices;
-
 pub(super) use matrices::convert;
 
 /// 输出原色色域。

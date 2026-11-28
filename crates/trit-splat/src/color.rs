@@ -1,7 +1,7 @@
 //! 输出端色彩管理：传递函数、曝光、白平衡、饱和度、色域转换与 tone mapping。
 //!
-//! 管线：输入解码（可选）→ 曝光 → 白平衡 → 饱和度 → 色域转换 → tone map →
-//! 输出编码（可选）。源原色按 sRGB/Rec.709 解释；默认 `raw`/`raw`、sRGB 色域、
+//! 管线：输入解码（可选）→ 曝光 → 白平衡 → 饱和度 → 色域转换（含感知映射）→
+//! tone map → 输出编码（可选）。源原色按 sRGB/Rec.709 解释；默认 `raw`/`raw`、sRGB 色域、
 //! EV=0、无白平衡、饱和度=1、`None` 为恒等，不改变既有输出。
 
 mod gamut;
@@ -31,7 +31,7 @@ pub enum ColorSpace {
 /// 线性光 tone mapping。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToneMap {
-    /// 不压缩，仅由输出端截断。
+    /// 不压缩；超出色域由感知映射收边。
     None,
     /// Reinhard：`x / (1 + x)`。
     Reinhard,
