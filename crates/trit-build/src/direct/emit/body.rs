@@ -25,7 +25,7 @@ pub(super) fn body(
         }
         names[index] = Some(next);
         if next == 0 {
-            text.push_str("int t0=");
+            text.push_str("C t0=");
         } else {
             text.push_str(&format!(",t{next}="));
         }

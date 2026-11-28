@@ -10,7 +10,7 @@ fn fanout_stops_the_descent() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("int t").count(), 1, "{source}");
-    assert!(source.contains("int t0=-T["), "{source}");
+    assert_eq!(source.matches("C t0=").count(), 1, "{source}");
+    assert!(source.contains("C t0=-T["), "{source}");
     assert!(source.contains("?0:T[4*t0+4];"), "{source}");
 }

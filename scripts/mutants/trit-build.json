@@ -771,9 +771,9 @@
   "name": "body: 临时变量不合并声明",
   "file": "crates/trit-build/src/direct/emit/body.rs",
   "old": "            text.push_str(&format!(\",t{next}=\"));",
-  "new": "            text.push_str(&format!(\"; int8_t t{next}=\"));",
+  "new": "            text.push_str(&format!(\"; C t{next}=\"));",
   "pkg": "trit-build",
-  "filter": "fanout_bytes_stay_within_budget"
+  "filter": "multiple_temporaries_share_one_declaration"
  },
  {
   "name": "body: 三目 guard 恒真",

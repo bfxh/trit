@@ -15,7 +15,7 @@ fn variable_reuse_boundary() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(five.matches("int t").count(), 0, "{five}");
+    assert_eq!(five.matches("C t0=").count(), 0, "{five}");
     assert_eq!(five.matches("v[0]").count(), 2, "{five}");
     assert!(five.contains("4*-v[0]"), "{five}");
     let six = render(
@@ -30,7 +30,7 @@ fn variable_reuse_boundary() {
         &vars(),
         Algebra::Kleene,
     );
-    assert!(six.contains("int t0=v[0];"), "{six}");
+    assert!(six.contains("C t0=v[0];"), "{six}");
     assert_eq!(six.matches("v[0]").count(), 1, "{six}");
 }
 
@@ -48,6 +48,6 @@ fn reused_constant_stays_inline() {
         &vars(),
         Algebra::Kleene,
     );
-    assert_eq!(source.matches("int t").count(), 0, "{source}");
+    assert_eq!(source.matches("C t0=").count(), 0, "{source}");
     assert!(source.contains("?0:T[3*"), "{source}");
 }

@@ -48,7 +48,7 @@ fn direct_c_bytes_stay_within_budget() {
     let fixtures = [
         ("(a & b) | c", 149),
         ("((a & b) | c) & (d | e)", 179),
-        ("((a => b) <=> (!a | b)) ^ c", 207),
+        ("((a => b) <=> (!a | b)) ^ c", 205),
         (
             "(((a & b) | (c & d)) & ((e | f) ^ (g & h))) | !(i & (j | k))",
             290,

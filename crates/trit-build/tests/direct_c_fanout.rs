@@ -46,7 +46,7 @@ const FANOUT: [(&str, &str, usize); 2] = [
     (
         "fan3",
         "module fan3(input a, input b, input c, input d, output y);\n  wire w, p, q;\n  and g1 (w, a, b);\n  or  g2 (p, w, c);\n  xor g3 (q, w, d);\n  and g4 (y, p, q);\nendmodule\n",
-        206,
+        204,
     ),
     (
         "fan5",
