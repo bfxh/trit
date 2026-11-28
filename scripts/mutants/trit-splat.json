@@ -25,7 +25,7 @@
   },
   {
     "name": "raster: painter 排序反了（近的先画、远的后盖）",
-    "file": "crates/trit-splat/src/raster.rs",
+    "file": "crates/trit-splat/src/raster/render.rs",
     "old": "    splats.sort_by(|a, b| {\n        b.depth\n            .partial_cmp(&a.depth)\n            .unwrap_or(std::cmp::Ordering::Equal)\n    });",
     "new": "    splats.sort_by(|a, b| {\n        a.depth\n            .partial_cmp(&b.depth)\n            .unwrap_or(std::cmp::Ordering::Equal)\n    });",
     "pkg": "trit-splat",
