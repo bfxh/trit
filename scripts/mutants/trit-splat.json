@@ -24,6 +24,14 @@
     "filter": "activation_decodes_log_and_sigmoid"
   },
   {
+    "name": "color: sRGB 输入解码被跳过（误当 raw）",
+    "file": "crates/trit-splat/src/color.rs",
+    "old": "            if self.input == ColorSpace::Srgb {\n                c = c.map(srgb_decode);\n            }",
+    "new": "            if false {\n                c = c.map(srgb_decode);\n            }",
+    "pkg": "trit-splat",
+    "filter": "srgb_in_out_roundtrip_is_close"
+  },
+  {
     "name": "raster: painter 排序反了（近的先画、远的后盖）",
     "file": "crates/trit-splat/src/raster/render.rs",
     "old": "    splats.sort_by(|a, b| {\n        b.depth\n            .partial_cmp(&a.depth)\n            .unwrap_or(std::cmp::Ordering::Equal)\n    });",
