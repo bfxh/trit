@@ -3212,7 +3212,7 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/core.rs",
-      "lines": 106
+      "lines": 96
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure.rs",
@@ -3229,6 +3229,10 @@
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure/tests.rs",
       "lines": 61
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_finish/measure_all.rs",
+      "lines": 35
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/mod.rs",
@@ -3285,10 +3289,6 @@
     {
       "file": "crates/trit-orch/src/budget.rs",
       "lines": 180
-    },
-    {
-      "file": "crates/trit-orch/src/capability.rs",
-      "lines": 223
     },
     {
       "file": "crates/trit-orch/src/capability/mod.rs",
@@ -3371,8 +3371,12 @@
       "lines": 3
     },
     {
+      "file": "crates/trit-orch/src/evidence/acceptance_digest.rs",
+      "lines": 16
+    },
+    {
       "file": "crates/trit-orch/src/evidence/core.rs",
-      "lines": 69
+      "lines": 68
     },
     {
       "file": "crates/trit-orch/src/evidence/digest.rs",
@@ -3484,7 +3488,7 @@
     },
     {
       "file": "crates/trit-orch/src/progress/finish/check.rs",
-      "lines": 52
+      "lines": 51
     },
     {
       "file": "crates/trit-orch/src/progress/finish/core.rs",
@@ -3835,6 +3839,10 @@
       "lines": 115
     },
     {
+      "file": "crates/trit-orch/tests/finish_receipts/threshold.rs",
+      "lines": 60
+    },
+    {
       "file": "crates/trit-orch/tests/handoff_signature.rs",
       "lines": 58
     },
@@ -3876,6 +3884,10 @@
     },
     {
       "file": "crates/trit-orch/tests/receipt_plan.rs",
+      "lines": 2
+    },
+    {
+      "file": "crates/trit-orch/tests/receipt_threshold.rs",
       "lines": 2
     },
     {
@@ -5375,16 +5387,8 @@
       "lines": 66
     },
     {
-      "file": "crates/trit-splat/src/color/tests.rs",
-      "lines": 103
-    },
-    {
       "file": "crates/trit-splat/src/color/tests/core.rs",
       "lines": 79
-    },
-    {
-      "file": "crates/trit-splat/src/color/tests/gamut.rs",
-      "lines": 44
     },
     {
       "file": "crates/trit-splat/src/color/tests/gamut/mod.rs",

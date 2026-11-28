@@ -9,7 +9,8 @@ use crate::{cli_inputs::FinishInput, parse};
 mod nonce;
 use nonce::host_nonce;
 
-use super::measure;
+#[path = "measure_all.rs"]
+mod measure_all;
 
 fn flag_present(flag: &str) -> bool {
     std::env::args().skip(2).any(|arg| arg == flag)
@@ -17,7 +18,7 @@ fn flag_present(flag: &str) -> bool {
 
 pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
     let request: FinishInput = parse(input)?;
-    let progress = Progress::from_rounds(request.rounds);
+    let progress = Progress::from_rounds(request.rounds.clone());
 
     // 显式 legacy 逃生舱：只从快照计事实，不要求任何 provenance。
     if flag_present("--allow-unattested") {
@@ -56,18 +57,7 @@ pub(crate) fn run(input: &str) -> Result<Value, trit_orch::Error> {
     }
     // 宿主自己执行验收命令，回执的每个数字都来自真实进程。
     let nonce = request.challenge.clone().unwrap_or_else(host_nonce);
-    for execution in &request.executions {
-        let task_spec = request
-            .tasks
-            .iter()
-            .find(|spec| spec.task.id == execution.task)
-            .ok_or_else(|| trit_orch::Error::ReceiptUnknownTask {
-                task: execution.task.clone(),
-            })?;
-        let receipt =
-            measure::run_execution(execution, request.snapshot.revision, task_spec, &nonce)?;
-        receipts.insert(execution.task.clone(), receipt);
-    }
+    measure_all::host_measure(&request, &mut receipts, &nonce)?;
 
     let summary = if allow_self_reported {
         progress.finish_with_self_reported_receipts(

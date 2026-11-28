@@ -176,7 +176,7 @@ impl Progress {
                 // 任一不符，都说明这条回执属于另一份计划。自报逃生舱已由调用方
                 // 显式承担信任，不额外要求 plan 绑定。
                 if attest.trust == ReceiptTrust::HostMeasuredOnly {
-                    check::plan(task, receipt, snapshot, spec)?;
+                    check::plan(task, receipt, snapshot, spec, attest.spec.min_assertions)?;
                 }
                 // authorization / freshness / usage 也必须有宿主判定，且与快照一致：
                 // 只钉 evidence 会让模型靠自报授权/新鲜度/低报用量解锁完成。

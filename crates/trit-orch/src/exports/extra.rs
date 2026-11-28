@@ -5,5 +5,5 @@ pub use crate::effects::{
     Attempt, Effect, Ledger, LedgerStore, Reconcile, Recovery, dispatch_ready,
 };
 pub use crate::error::Error;
-pub use crate::evidence::*;
+pub use crate::evidence::{acceptance_digest::acceptance_digest, *};
 pub use crate::{capability::*, plan::Plan};

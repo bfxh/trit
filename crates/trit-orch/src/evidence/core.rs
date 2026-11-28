@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Ternary, TokenUsage};
 
+#[path = "acceptance_digest.rs"]
+pub(crate) mod acceptance_digest;
 #[path = "digest.rs"]
 mod digest;
 #[path = "exit.rs"]
@@ -25,11 +27,8 @@ mod provenance;
 pub use provenance::ReceiptProvenance;
 pub use task_digest::task_spec_digest;
 
-/// 一次执行的回执。
-///
-/// 旧版本把 `assertions_passed/failed` 当作「受信 executor 返回」的字段，但同一份
-/// 输入 JSON 既装 snapshot 又装 receipts 时，模型可以同时伪造两者。现在的结构
-/// 把来源显式化：只有 [`Receipt::host_measured`] 构造的回执能过默认完成闸。
+/// 一次执行的回执。旧版本把断言计数当作受信字段；现在只有
+/// [`Receipt::host_measured`] 构造的回执能过默认完成闸。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Receipt {
     pub epoch: u64,
