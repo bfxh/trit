@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v11：Display P3 输出色域）
+
+- `color` 增加 `Gamut::{Srgb,DisplayP3}` 与 `ColorConfig::output_gamut`；源原色按
+  sRGB/Rec.709 解释，线性光矩阵转换到 Display P3（DCI-P3 原色 + D65 白点）。
+- `splat-render` 增 `--gamut srgb|p3`；P3 输出 PNG 写 cHRM 原色与 gAMA
+  （`--color-out srgb` 时 0.45455，raw 时 1.0），便于下游识别。
+- 默认 sRGB 色域仍走恒等早退，不写额外 PNG chunk；真实 synthetic-orbit 48 帧
+  与 v9 逐字节一致。
+- 验证：39 lib + 9 bin + 2 集成测试；P3 红从 sRGB (255,0,0) 转成 P3 线性近似
+  (210,8,4)；默认输出 48 帧 SHA256 与 v9 0 差异；P3 PNG 的 cHRM/gAMA 已被解码器读回。
+- 边界：只做 sRGB/Rec.709 → Display P3 的线性原色矩阵；未做 P3 → sRGB 反向、
+  Rec.2020、ICC 嵌入或色域映射（超出 P3 时仍按通道截断）。
+
 ### Added（trit-orch：动作级 capability 内核与目标白名单，第六门）
 ### Added（trit-splat v10：输出端色彩管理）
 
@@ -15,8 +28,8 @@
 - 验证：36 lib + 8 bin + 2 集成测试全绿；真实 synthetic-orbit/init.ply frame 0
   默认输出 SHA256 与 v9 逐字节一致；tint/曝光/tone map 能改动输出，非法
   `--tone-map` 退出码 1。
-- 边界：当前做的是输出端 post-process，alpha 合成仍在源空间；暂不做
-  P3/Rec.2020 色域转换，后续可在 `ColorSpace` 上扩展。
+- 边界：当前做的是输出端 post-process，alpha 合成仍在源空间；v10 本身不做
+  P3/Rec.2020 色域转换，Display P3 在 v11 补。
 
 ### Added（trit-orch：动作级 capability 内核，第六门）
 

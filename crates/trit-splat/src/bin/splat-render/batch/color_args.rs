@@ -1,8 +1,10 @@
 //! `splat-render` 的色彩参数解析：曝光、色温/色调、饱和度、tone map 与输入/输出空间。
 
-use trit_splat::color::{ColorConfig, ColorSpace, ToneMap};
-
 use crate::cli;
+use trit_splat::color::{ColorConfig, ColorSpace, Gamut, ToneMap, WhiteBalance};
+#[path = "color_args/parse.rs"]
+mod parse;
+use parse::{number, space};
 
 pub(super) fn parse(argv: &[String]) -> Result<ColorConfig, String> {
     let exposure_ev = number(argv, "--exposure")?.unwrap_or(0.0);
@@ -35,30 +37,13 @@ pub(super) fn parse(argv: &[String]) -> Result<ColorConfig, String> {
     Ok(ColorConfig {
         input: space(argv, "--color-in", ColorSpace::Raw)?,
         output: space(argv, "--color-out", ColorSpace::Raw)?,
+        output_gamut: parse::gamut(argv, "--gamut", Gamut::Srgb)?,
         exposure_ev,
-        temperature_k,
-        tint,
+        white_balance: WhiteBalance {
+            temperature_k,
+            tint,
+        },
         saturation,
         tone_map,
     })
-}
-
-fn number(argv: &[String], flag: &str) -> Result<Option<f32>, String> {
-    cli::value(argv, flag)
-        .map(|v| {
-            v.parse::<f32>()
-                .map_err(|_| format!("{flag} 非法数字: {v}"))
-        })
-        .transpose()
-}
-
-fn space(argv: &[String], flag: &str, default: ColorSpace) -> Result<ColorSpace, String> {
-    let Some(v) = cli::value(argv, flag) else {
-        return Ok(default);
-    };
-    match v.to_ascii_lowercase().as_str() {
-        "raw" => Ok(ColorSpace::Raw),
-        "srgb" => Ok(ColorSpace::Srgb),
-        _ => Err(format!("{flag} 只支持 raw|srgb: {v}")),
-    }
 }

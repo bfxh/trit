@@ -1,17 +1,19 @@
 //! splat-render 的 CLI 辅助：参数取值、SH 裁剪、背景色与 PNG 落盘。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use trit_splat::Frame;
 use trit_splat::ply::RawGaussian;
 
 #[path = "cli/args.rs"]
 mod args;
 #[path = "cli/gt.rs"]
 mod gt;
+#[path = "cli/png.rs"]
+mod png;
 
 pub use args::{flag, value};
 pub use gt::decode_gt_rgb;
+pub use png::write_png;
 
 /// 按 `--sh-degree` 截断每点的 SH 系数（0/1/2/3 阶）。
 pub fn truncate_sh(gaussians: &mut [RawGaussian], sh_degree: usize) {
@@ -40,15 +42,4 @@ pub fn background(bg_mode: &str, dataset: &str, cam_file: &str) -> [f32; 3] {
         Ok(v) if v.len() == 3 => [v[0], v[1], v[2]],
         _ => [0.4, 0.4, 0.4],
     }
-}
-
-pub fn write_png(path: &Path, frame: &Frame) -> Result<(), String> {
-    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-    let mut encoder = png::Encoder::new(file, frame.width, frame.height);
-    encoder.set_color(png::ColorType::Rgb);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
-    writer
-        .write_image_data(&frame.rgb)
-        .map_err(|e| e.to_string())
 }

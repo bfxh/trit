@@ -38,5 +38,13 @@
     "new": "    splats.sort_by(|a, b| {\n        a.depth\n            .partial_cmp(&b.depth)\n            .unwrap_or(std::cmp::Ordering::Equal)\n    });",
     "pkg": "trit-splat",
     "filter": "nearer_splat_wins_at_overlap"
+  },
+  {
+    "name": "color: Display P3 转换被跳过（色域仍是 sRGB）",
+    "file": "crates/trit-splat/src/color/gamut.rs",
+    "old": "        Gamut::DisplayP3 => mul(SRGB_TO_P3, c),",
+    "new": "        Gamut::DisplayP3 => c,",
+    "pkg": "trit-splat",
+    "filter": "p3_red_is_converted_from_srgb"
   }
 ]

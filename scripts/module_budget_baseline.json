@@ -5220,7 +5220,11 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/color_args.rs",
-      "lines": 64
+      "lines": 49
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/color_args/parse.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/frames.rs",
@@ -5248,7 +5252,7 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli.rs",
-      "lines": 54
+      "lines": 45
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli/args.rs",
@@ -5261,6 +5265,10 @@
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli/gt/decode.rs",
       "lines": 45
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/cli/png.rs",
+      "lines": 65
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/mip.rs",
@@ -5276,11 +5284,43 @@
     },
     {
       "file": "crates/trit-splat/src/color.rs",
-      "lines": 178
+      "lines": 148
+    },
+    {
+      "file": "crates/trit-splat/src/color/gamut.rs",
+      "lines": 52
     },
     {
       "file": "crates/trit-splat/src/color/tests.rs",
       "lines": 103
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/core.rs",
+      "lines": 79
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/gamut.rs",
+      "lines": 44
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/mod.rs",
+      "lines": 3
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/white_balance.rs",
+      "lines": 43
+    },
+    {
+      "file": "crates/trit-splat/src/color/white_balance.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-splat/src/color/white_balance/kelvin.rs",
+      "lines": 24
+    },
+    {
+      "file": "crates/trit-splat/src/color/white_balance/settings.rs",
+      "lines": 19
     },
     {
       "file": "crates/trit-splat/src/error.rs",
