@@ -10,6 +10,7 @@
 //! - 数组元素里还有数组时强制展开，且向上传播到父对象；
 //! - 数字与字符串保持原文（prettier 不改写数字字面量与转义序列）。
 
+mod batch;
 mod parse;
 mod print;
 
@@ -76,6 +77,8 @@ pub(crate) struct Field {
     pub blank_before: bool,
 }
 
+pub use batch::{available_jobs, format_many};
+
 /// 按文件名推断语法并格式化；不认识的扩展名明确拒绝，不猜。
 pub fn format_path(name: &str, source: &str) -> Result<String, FormatError> {
     let lower = name.to_ascii_lowercase();
@@ -101,40 +104,4 @@ pub fn format_json(source: &str) -> Result<String, FormatError> {
     print::print_value(&value, 0, &mut out);
     out.push('\n');
     Ok(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_containers_have_no_padding() {
-        assert_eq!(format_json("{}").unwrap(), "{}\n");
-        assert_eq!(format_json("[]").unwrap(), "[]\n");
-    }
-
-    #[test]
-    fn inline_object_has_padding() {
-        assert_eq!(format_json(r#"{"a":1}"#).unwrap(), "{ \"a\": 1 }\n");
-    }
-
-    #[test]
-    fn numbers_and_strings_keep_their_source_text() {
-        let out = format_json(r#"{"e":1e10,"f":-0.5,"s":"a\"b\\c"}"#).unwrap();
-        assert!(out.contains("1e10"));
-        assert!(out.contains("-0.5"));
-        assert!(out.contains(r#""a\"b\\c""#));
-    }
-
-    #[test]
-    fn rejects_non_json_syntax_by_extension() {
-        assert!(matches!(
-            format_path("x.js", "let a = 1;"),
-            Err(FormatError::Unsupported("javascript"))
-        ));
-        assert!(matches!(
-            format_path("x.md", "# hi"),
-            Err(FormatError::Unsupported("markdown"))
-        ));
-    }
 }

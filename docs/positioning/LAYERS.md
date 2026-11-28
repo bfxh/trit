@@ -14,7 +14,7 @@
 |---|---|---|---|
 | **L0** | 语义与表示（+ 底件） | 只定义值域/代数/编码，或提供**不需要理解上层语义**的公共底件（测量与夹具）；换掉上层任何一个它都不动 | `trit-core`（algebra / ast / parser / value / limits）、`trit-bench`（交错计时与确定性生成）、`trit-fuzz`（测试语料：随机三值向量与表达式） |
 | **L1** | **算子库** | 输入→输出的**单点计算件**：给一批 trit 回来一批值；有明确的每秒吞吐口径；能被别家内核逐元素替换 | `trit-ops` `trit-dot` `trit-float` `trit-gpu` `trit-attn` `trit-codec` `trit-texture` |
-| **L2** | **算法库** | 解一个**问题**（等价性、可满足、计数、量化、化简、调度、验证）；有 oracle 可对拍；正确性优先于速度 | `trit-eval` `trit-sat` `trit-bdd` `trit-count` `trit-circuit` `trit-policy` `trit-schedule` `trit-graph` |
+| **L2** | **算法库** | 解一个**问题**（等价性、可满足、计数、量化、化简、调度、验证）；有 oracle 可对拍；正确性优先于速度 | `trit-eval` `trit-sat` `trit-bdd` `trit-count` `trit-circuit` `trit-policy` `trit-schedule` `trit-graph` `trit-splat` |
 | **L3** | **学习库** | 会**改参数**：训练循环、量化/STE、评测、清单与复核；产出是权重 + 可复现记录 | `trit-learn` `trit-train` `trit-parts`（含 `parts-depth*`） |
 | **L4** | 生产链与外壳 | 把 L0–L3 接到某个具体产品/平台/流程：CLI、语言服务器、CI 机器人、逆向靶子、安全面、伞包 | `trit-cli` `trit-lsp` `trit-build` `trit-orch` `trit-wasm` `sansheng` `trit-re` `trit-immune` `trit-net` `trit-redteam` `trit-procscan` `trit-gamescan` `trit-unsafe` `trit-capacity` `trit-machines` |
 

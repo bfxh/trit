@@ -51,6 +51,7 @@ members = [
     "crates/trit-immune",
     "crates/trit-orch",
     "crates/trit-wspace",
+    "crates/trit-splat",
 ]
 
 [workspace.package]
