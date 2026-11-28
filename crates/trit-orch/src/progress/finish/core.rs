@@ -10,6 +10,8 @@ use crate::progress::{Progress, Summary};
 
 #[path = "check.rs"]
 mod check;
+#[path = "signed.rs"]
+mod signed;
 
 /// 完成闸对回执来源的信任档位。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +28,7 @@ pub(super) struct Attestation<'a> {
     pub(super) spec: EvidenceSpec,
     pub(super) trust: ReceiptTrust,
     pub(super) nonce: Option<&'a str>,
+    pub(super) signature_key: Option<&'a [u8]>,
 }
 
 impl Progress {
@@ -55,28 +58,7 @@ impl Progress {
                 spec,
                 trust: ReceiptTrust::HostMeasuredOnly,
                 nonce: None,
-            }),
-        )
-    }
-
-    /// 与 [`Self::finish_with_receipts`] 相同，但要求每条宿主测量回执都携带
-    /// 本次 run 的挑战（`nonce`），防止跨轮重放上一轮的真回执。
-    pub fn finish_with_receipts_for_nonce(
-        &self,
-        tasks: &[TaskSpec],
-        snapshot: &Snapshot,
-        receipts: &BTreeMap<String, Receipt>,
-        spec: EvidenceSpec,
-        expected_nonce: &str,
-    ) -> Result<Summary, Error> {
-        self.finish_inner(
-            tasks,
-            snapshot,
-            Some(Attestation {
-                receipts,
-                spec,
-                trust: ReceiptTrust::HostMeasuredOnly,
-                nonce: Some(expected_nonce),
+                signature_key: None,
             }),
         )
     }
@@ -100,6 +82,7 @@ impl Progress {
                 spec,
                 trust: ReceiptTrust::AllowSelfReported,
                 nonce: None,
+                signature_key: None,
             }),
         )
     }
@@ -171,6 +154,11 @@ impl Progress {
                     return Err(Error::ReceiptNonceMismatch {
                         task: task.to_owned(),
                     });
+                }
+                if attest.trust == ReceiptTrust::HostMeasuredOnly
+                    && let Some(key) = attest.signature_key
+                {
+                    signed::check(task, receipt, key)?;
                 }
                 // 计划身份必须由宿主钉住；自报逃生舱不要求 plan 绑定。
                 let required = spec.evidence(attest.spec.min_assertions);
