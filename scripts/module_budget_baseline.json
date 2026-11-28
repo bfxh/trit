@@ -3220,11 +3220,15 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure/core.rs",
-      "lines": 320
+      "lines": 267
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/measure/io.rs",
       "lines": 22
+    },
+    {
+      "file": "crates/trit-orch/src/bin/cli_finish/measure/tests.rs",
+      "lines": 61
     },
     {
       "file": "crates/trit-orch/src/bin/cli_finish/mod.rs",
@@ -3281,6 +3285,10 @@
     {
       "file": "crates/trit-orch/src/budget.rs",
       "lines": 180
+    },
+    {
+      "file": "crates/trit-orch/src/capability.rs",
+      "lines": 223
     },
     {
       "file": "crates/trit-orch/src/capability/mod.rs",
@@ -3364,15 +3372,39 @@
     },
     {
       "file": "crates/trit-orch/src/evidence/core.rs",
-      "lines": 74
+      "lines": 69
     },
     {
       "file": "crates/trit-orch/src/evidence/digest.rs",
       "lines": 40
     },
     {
+      "file": "crates/trit-orch/src/evidence/exit.rs",
+      "lines": 10
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/plan.rs",
+      "lines": 11
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/provenance.rs",
+      "lines": 16
+    },
+    {
       "file": "crates/trit-orch/src/evidence/receipt.rs",
-      "lines": 111
+      "lines": 67
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/receipt_ctor.rs",
+      "lines": 49
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/receipt_plan.rs",
+      "lines": 15
+    },
+    {
+      "file": "crates/trit-orch/src/evidence/task_digest.rs",
+      "lines": 15
     },
     {
       "file": "crates/trit-orch/src/exports.rs",
@@ -3451,8 +3483,12 @@
       "lines": 2
     },
     {
+      "file": "crates/trit-orch/src/progress/finish/check.rs",
+      "lines": 52
+    },
+    {
       "file": "crates/trit-orch/src/progress/finish/core.rs",
-      "lines": 231
+      "lines": 220
     },
     {
       "file": "crates/trit-orch/src/progress/finish/legacy.rs",
@@ -3792,7 +3828,11 @@
     },
     {
       "file": "crates/trit-orch/tests/finish_receipts/core.rs",
-      "lines": 127
+      "lines": 108
+    },
+    {
+      "file": "crates/trit-orch/tests/finish_receipts/plan.rs",
+      "lines": 115
     },
     {
       "file": "crates/trit-orch/tests/handoff_signature.rs",
@@ -3833,6 +3873,10 @@
     {
       "file": "crates/trit-orch/tests/receipt_matrix/core.rs",
       "lines": 234
+    },
+    {
+      "file": "crates/trit-orch/tests/receipt_plan.rs",
+      "lines": 2
     },
     {
       "file": "crates/trit-orch/tests/recovery.rs",
@@ -5236,7 +5280,11 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/color_args/parse.rs",
-      "lines": 40
+      "lines": 37
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/batch/color_args/parse/number.rs",
+      "lines": 12
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/batch/frames.rs",
@@ -5280,7 +5328,11 @@
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/cli/png.rs",
-      "lines": 65
+      "lines": 30
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/cli/png/tests.rs",
+      "lines": 61
     },
     {
       "file": "crates/trit-splat/src/bin/splat-render/mip.rs",
@@ -5296,11 +5348,19 @@
     },
     {
       "file": "crates/trit-splat/src/color.rs",
-      "lines": 148
+      "lines": 138
     },
     {
       "file": "crates/trit-splat/src/color/gamut.rs",
-      "lines": 52
+      "lines": 41
+    },
+    {
+      "file": "crates/trit-splat/src/color/gamut/matrices.rs",
+      "lines": 33
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests.rs",
+      "lines": 103
     },
     {
       "file": "crates/trit-splat/src/color/tests/core.rs",
@@ -5311,12 +5371,28 @@
       "lines": 44
     },
     {
+      "file": "crates/trit-splat/src/color/tests/gamut/mod.rs",
+      "lines": 4
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/gamut/p3.rs",
+      "lines": 44
+    },
+    {
+      "file": "crates/trit-splat/src/color/tests/gamut/rec2020.rs",
+      "lines": 51
+    },
+    {
       "file": "crates/trit-splat/src/color/tests/mod.rs",
       "lines": 3
     },
     {
       "file": "crates/trit-splat/src/color/tests/white_balance.rs",
       "lines": 43
+    },
+    {
+      "file": "crates/trit-splat/src/color/transfer.rs",
+      "lines": 29
     },
     {
       "file": "crates/trit-splat/src/color/white_balance.rs",
