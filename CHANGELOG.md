@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v14：感知色域映射）
+
+- 新增 `color::gamut::map::perceptual`：在目标原色线性 RGB 中以 Rec.709
+  亮度为中性轴，按色度比例把超色域颜色收进 `[0,1]`，保持亮度，避免逐通道
+  截断造成的偏色。
+- 色域转换矩阵后自动调用；默认 `sRGB + raw` 仍走 `is_identity` 早退，保持
+  v9 的 48 帧逐字节输出。
+- `--saturation` / `--exposure` 等造成的超色域不再硬截断；例如
+  `[255,51,0]` 加饱和度 2 后仍保留绿通道，而不是被压成 `[255,11,0]`。
+- 边界：这是输出侧近似映射，不是 ICC 感知 intent 的全色域压缩；保持亮度
+  与色度方向，但不保证 CIELAB 色相角完全不变。
+- 验证：51 lib + 11 bin + 2 集成测试；默认 synthetic-orbit 48 帧与 v9
+  SHA256 0 差异；mutation 13/13 caught；clippy `-D warnings` 通过。
+
 ### Added（trit-splat v13：PNG ICC 嵌入）
 
 - 新增 `color::icc_profile`：按输出色域与传递函数选择自带紧凑 ICC v4

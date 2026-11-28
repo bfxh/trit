@@ -78,5 +78,29 @@
     "new": "            let _ = (&profile[offset..offset + 16], &curve);",
     "pkg": "trit-splat",
     "filter": "patched_gamma_replaces_shared_curve_only"
+  },
+  {
+    "name": "color: 感知映射对在色域内颜色也改写",
+    "file": "crates/trit-splat/src/color/gamut/map.rs",
+    "old": "    if scale >= 1.0 {",
+    "new": "    if scale >= 2.0 {",
+    "pkg": "trit-splat",
+    "filter": "in_gamut_linear_rgb_is_unchanged"
+  },
+  {
+    "name": "color: 感知映射亮度权重顺序错误",
+    "file": "crates/trit-splat/src/color/gamut/map.rs",
+    "old": "const LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];",
+    "new": "const LUMA: [f32; 3] = [0.0722, 0.7152, 0.2126];",
+    "pkg": "trit-splat",
+    "filter": "out_of_gamut_keeps_luma_and_fits_cube"
+  },
+  {
+    "name": "color: 色域转换后未调用感知映射",
+    "file": "crates/trit-splat/src/color/gamut/matrices.rs",
+    "old": "    perceptual(dst)",
+    "new": "    dst",
+    "pkg": "trit-splat",
+    "filter": "config_maps_out_of_gamut_saturation_without_channel_clipping"
   }
 ]
