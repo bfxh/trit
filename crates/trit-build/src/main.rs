@@ -18,7 +18,6 @@
 //! 为什么不是"重写 LLVM"：LLVM 的职责是**二进制**后端的寄存器分配/调度/链接；
 //! 三进制真正独有的是语义（K3/Ł3/B3）、X 的传播、基 3 打包与三值校验。
 //! 这一层自己做，机器码/链接/OS 仍交给 LLVM/Rust——见 `docs/TERNARY-TOOLCHAIN.md`。
-//!
 //! 用法：
 //! ```text
 //! trit-build <source.tri|design.v> [--out DIR] [--algebra k3] [--force] [--check]
@@ -26,13 +25,10 @@
 //!            [--backend table|direct|both] [--verify-c]
 //!            [--cost nodes|gates] [--threads N]
 //! ```
-//!
 //! 独立 crate（`publish = false`）而不是 `trit-cli` 的子命令：`trit-cli` 是可发布包，
 //! 发布图门禁禁止它依赖实验层（`trit-codec`）。
-
 use std::fs;
 use std::path::{Path, PathBuf};
-
 mod artifacts;
 mod bitplan;
 mod cache;
@@ -42,10 +38,10 @@ mod gpu;
 mod hdl;
 mod parallel;
 mod rail;
+mod safe_path;
 mod schedule;
 mod trb;
 mod verilog;
-
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
@@ -583,7 +579,10 @@ fn check_artifacts(manifest_path: &Path, out_dir: &Path, key: &str) -> Result<()
     let mut checked = Vec::new();
     let mut bad = Vec::new();
     for (name, info) in outputs {
-        let path = out_dir.join(name);
+        let Some(path) = safe_path::safe_join(out_dir, name) else {
+            bad.push(json!({"file": name, "unsafe": true}));
+            continue;
+        };
         match fs::read(&path) {
             Ok(bytes) => {
                 let expected = info.get("hash").and_then(Value::as_str).unwrap_or("");

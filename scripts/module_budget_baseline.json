@@ -592,7 +592,7 @@
     },
     {
       "file": "crates/trit-build/src/main.rs",
-      "lines": 728
+      "lines": 727
     },
     {
       "file": "crates/trit-build/src/parallel.rs",
@@ -601,6 +601,10 @@
     {
       "file": "crates/trit-build/src/rail.rs",
       "lines": 311
+    },
+    {
+      "file": "crates/trit-build/src/safe_path.rs",
+      "lines": 98
     },
     {
       "file": "crates/trit-build/src/schedule.rs",
@@ -617,6 +621,10 @@
     {
       "file": "crates/trit-build/tests/build.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-build/tests/check_safety.rs",
+      "lines": 135
     },
     {
       "file": "crates/trit-build/tests/direct_c.rs",
