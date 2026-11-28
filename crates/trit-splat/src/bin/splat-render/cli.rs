@@ -2,9 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use trit_splat::ply::RawGaussian;
-use trit_splat::raster::border_mean;
 use trit_splat::Frame;
+use trit_splat::ply::RawGaussian;
+
+#[path = "cli/gt.rs"]
+mod gt;
 
 pub fn value(argv: &[String], key: &str) -> Option<String> {
     argv.iter()
@@ -33,7 +35,7 @@ pub fn truncate_sh(gaussians: &mut [RawGaussian], sh_degree: usize) {
 pub fn background(bg_mode: &str, dataset: &str, cam_file: &str) -> [f32; 3] {
     if bg_mode == "auto" {
         let gt = PathBuf::from(dataset).join(cam_file);
-        return decode_gt_border(&gt);
+        return gt::decode_gt_border(&gt);
     }
     let parts: Result<Vec<f32>, _> = bg_mode.split(',').map(|s| s.trim().parse()).collect();
     match parts {
@@ -42,49 +44,13 @@ pub fn background(bg_mode: &str, dataset: &str, cam_file: &str) -> [f32; 3] {
     }
 }
 
-/// GT 边界均值（png crate 解码 8bit RGB/RGBA）。
-fn decode_gt_border(path: &Path) -> [f32; 3] {
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("warn: 读不到 GT（{}），背景用灰 0.4: {e}", path.display());
-            return [0.4, 0.4, 0.4];
-        }
-    };
-    let decoder = png::Decoder::new(file);
-    let mut reader = match decoder.read_info() {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("warn: GT 头解析失败: {e}");
-            return [0.4, 0.4, 0.4];
-        }
-    };
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let info = match reader.next_frame(&mut buf) {
-        Ok(info) => info,
-        Err(e) => {
-            eprintln!("warn: GT 解码失败: {e}");
-            return [0.4, 0.4, 0.4];
-        }
-    };
-    let (w, h) = (info.width, info.height);
-    let channels = info.color_type.samples() as usize;
-    let mut rgb = vec![0u8; (w * h * 3) as usize];
-    for i in 0..(w * h) as usize {
-        rgb[i * 3] = buf[i * channels];
-        rgb[i * 3 + 1] = buf[i * channels + 1];
-        rgb[i * 3 + 2] = buf[i * channels + 2];
-    }
-    let mean = border_mean(&rgb, w, h, 4);
-    println!("GT 边界均值: {mean:?} ({path:?})");
-    mean
-}
-
 pub fn write_png(path: &Path, frame: &Frame) -> Result<(), String> {
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut encoder = png::Encoder::new(file, frame.width, frame.height);
     encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
-    writer.write_image_data(&frame.rgb).map_err(|e| e.to_string())
+    writer
+        .write_image_data(&frame.rgb)
+        .map_err(|e| e.to_string())
 }

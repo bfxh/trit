@@ -3,27 +3,22 @@
 //! 数学口径与 3DGS/EWA 一致：`Σ_cam = W Σ_w Wᵀ`，`Σ_2d = J Σ_cam Jᵀ + 0.3·I`
 //! （0.3 为像素膨胀，标准做法）；每像素 α = sigmoid(opacity)·exp(−½ dᵀ Σ₂d⁻¹ d)。
 
-use crate::math::{covariance, Mat4, Vec3};
+use crate::math::{Mat4, Vec3, covariance};
 use crate::ply::RawGaussian;
 
-/// SH 视角色用的常量（3DGS 标准系数）。
+/// SH 视角色用的常量（3DGS 标准系数）。保留参考实现的完整十进制精度，
+/// 截断到 f32 可表示位数会改变末位、影响逐像素对拍。
+#[allow(clippy::excessive_precision)]
 const SH_C0: f32 = 0.282_094_791_773_878_14;
+#[allow(clippy::excessive_precision)]
 const SH_C1: f32 = 0.488_602_511_902_919_89;
+#[allow(clippy::excessive_precision)]
 const SH_C2: [f32; 5] = [
     1.092_548_430_592_079_2,
     -1.092_548_430_592_079_2,
     0.315_391_565_252_520_05,
     -1.092_548_430_592_079_2,
     0.546_274_215_296_039_6,
-];
-const SH_C3: [f32; 7] = [
-    -0.590_043_589_926_543_5,
-    2.890_611_442_640_554,
-    -0.457_045_799_464_465_8,
-    0.373_176_332_647_597_7,
-    -0.457_045_799_464_465_8,
-    1.445_305_721_320_277,
-    -0.590_043_589_926_543_5,
 ];
 
 /// 屏幕空间高斯：中心像素坐标、2D 协方差的逆 (a b; b c)、每像素 α、颜色。
@@ -58,10 +53,10 @@ pub fn eval_color(f_dc: [f32; 3], f_rest: &[f32], view_dir: Vec3) -> [f32; 3] {
     let coeff = |idx: usize, c: usize| f_rest[c * k + idx]; // channel-major（Brush 导出口径）
     let (xx, yy, zz) = (x * x, y * y, z * z);
     let (xy, yz, xz) = (x * y, y * z, x * z);
-    for c in 0..3 {
-        color[c] += SH_C1 * (-y * coeff(0, c) + z * coeff(1, c) - x * coeff(2, c));
+    for (c, channel) in color.iter_mut().enumerate() {
+        *channel += SH_C1 * (-y * coeff(0, c) + z * coeff(1, c) - x * coeff(2, c));
         if k >= 8 {
-            color[c] += SH_C2[0] * xy * coeff(3, c)
+            *channel += SH_C2[0] * xy * coeff(3, c)
                 + SH_C2[1] * yz * coeff(4, c)
                 + SH_C2[2] * (2.0 * zz - xx - yy) * coeff(5, c)
                 + SH_C2[3] * xz * coeff(6, c)
@@ -85,7 +80,7 @@ pub fn eval_color(f_dc: [f32; 3], f_rest: &[f32], view_dir: Vec3) -> [f32; 3] {
             let p13 = f0c * x;
             let p14 = f1b * fc1;
             let p15 = f2a * fc2;
-            color[c] += p9 * coeff(8, c)
+            *channel += p9 * coeff(8, c)
                 + p10 * coeff(9, c)
                 + p11 * coeff(10, c)
                 + p12 * coeff(11, c)
@@ -116,9 +111,7 @@ pub fn project(
             (scale[1] * scale[1] + f2).sqrt(),
             (scale[2] * scale[2] + f2).sqrt(),
         ];
-        let comp = (scale[0] / floored[0])
-            * (scale[1] / floored[1])
-            * (scale[2] / floored[2]);
+        let comp = (scale[0] / floored[0]) * (scale[1] / floored[1]) * (scale[2] / floored[2]);
         scale = floored;
         base_alpha *= comp;
     }

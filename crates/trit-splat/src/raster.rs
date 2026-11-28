@@ -10,11 +10,15 @@
 //! 处理；对 PLY 消费端这是必须自防的病理）。闸门：屏幕空间 σ 超过
 //! [`MAX_SCREEN_SIGMA_RATIO`]×画面最长边的高斯不参与合成。
 
+use crate::Frame;
+
+mod border;
+
 use crate::camera::Intrinsics;
 use crate::math::Mat4;
 use crate::ply::RawGaussian;
-use crate::splat::{project, ScreenGaussian};
-use crate::Frame;
+use crate::splat::{ScreenGaussian, project};
+pub use border::border_mean;
 
 /// 屏幕 σ 闸门比例：σ > ratio × max(w, h) 的高斯视为退化 splat。
 pub const MAX_SCREEN_SIGMA_RATIO: f32 = 0.6;
@@ -49,14 +53,7 @@ pub fn render(
     let mut splats: Vec<ScreenGaussian> = gaussians
         .iter()
         .enumerate()
-        .filter_map(|(idx, g)| {
-            project(
-                g,
-                c2w,
-                intr,
-                min_scales.and_then(|m| m.get(idx).copied()),
-            )
-        })
+        .filter_map(|(idx, g)| project(g, c2w, intr, min_scales.and_then(|m| m.get(idx).copied())))
         .filter(|s| {
             let Some(sigma) = screen_sigma(s) else {
                 return false;
@@ -72,7 +69,11 @@ pub fn render(
             sigma / sigma_min.max(1e-6) < aniso_cap
         })
         .collect();
-    splats.sort_by(|a, b| b.depth.partial_cmp(&a.depth).unwrap_or(std::cmp::Ordering::Equal));
+    splats.sort_by(|a, b| {
+        b.depth
+            .partial_cmp(&a.depth)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // SPLAT_DUMP=<路径>：把排序后的每 splat 中间量导出（u,v,depth,inv_a,inv_b,
     // inv_c,alpha,r,g,b），供 numpy 合成实验台逐级对拍，消灭转写错误。
@@ -80,8 +81,8 @@ pub fn render(
         let mut rows = Vec::with_capacity(splats.len() * 9);
         for s in &splats {
             rows.extend_from_slice(&[
-                s.u, s.v, s.depth, s.inv_a, s.inv_b, s.inv_c, s.alpha,
-                s.color[0], s.color[1], s.color[2],
+                s.u, s.v, s.depth, s.inv_a, s.inv_b, s.inv_c, s.alpha, s.color[0], s.color[1],
+                s.color[2],
             ]);
         }
         let bytes: Vec<u8> = rows.iter().flat_map(|v| v.to_le_bytes()).collect();
@@ -120,8 +121,8 @@ pub fn render(
             let dy = py as f32 + 0.5 - s.v;
             for px in x0.max(0)..=(x1.min(w - 1)) {
                 let dx = px as f32 + 0.5 - s.u;
-                let power = -0.5
-                    * (dx * dx * s.inv_a + 2.0 * dx * dy * s.inv_b + dy * dy * s.inv_c);
+                let power =
+                    -0.5 * (dx * dx * s.inv_a + 2.0 * dx * dy * s.inv_b + dy * dy * s.inv_c);
                 if power > 0.0 {
                     continue; // 数值噪声
                 }
@@ -139,32 +140,6 @@ pub fn render(
         }
     }
     frame
-}
-
-/// `--bg auto` 用：GT 帧边界 4px 环带的均值作背景色（对拍用，注明口径）。
-pub fn border_mean(rgb: &[u8], width: u32, height: u32, band: u32) -> [f32; 3] {
-    let w = width as i32;
-    let h = height as i32;
-    let band = band as i32;
-    let (mut r, mut g, mut b, mut n) = (0.0f64, 0.0f64, 0.0f64, 0u64);
-    for y in 0..h {
-        for x in 0..w {
-            let edge = x < band || x >= w - band || y < band || y >= h - band;
-            if !edge {
-                continue;
-            }
-            let o = ((y as u32) * width + x as u32) as usize * 3;
-            r += rgb[o] as f64;
-            g += rgb[o + 1] as f64;
-            b += rgb[o + 2] as f64;
-            n += 1;
-        }
-    }
-    if n == 0 {
-        return [0.4, 0.4, 0.4];
-    }
-    let n = n as f64;
-    [(r / n) as f32 / 255.0, (g / n) as f32 / 255.0, (b / n) as f32 / 255.0]
 }
 
 #[cfg(test)]
