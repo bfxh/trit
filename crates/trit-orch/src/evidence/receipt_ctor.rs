@@ -1,5 +1,4 @@
 use super::{Exit, Receipt, ReceiptProvenance};
-
 impl Receipt {
     /// 宿主自己测量出的回执。这是默认完成闸唯一接受的构造路径。
     pub fn host_measured(
@@ -21,9 +20,9 @@ impl Receipt {
             usage: None,
             test_digest: None,
             plan: None,
+            signature: String::new(),
         }
     }
-
     /// 显式构造一条自报回执。默认完成闸会拒绝它；只用于外部已有独立信任锚的场景。
     pub fn self_reported(
         epoch: u64,
@@ -44,6 +43,7 @@ impl Receipt {
             usage: None,
             test_digest: None,
             plan: None,
+            signature: String::new(),
         }
     }
 }

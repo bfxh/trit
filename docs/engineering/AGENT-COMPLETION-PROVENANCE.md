@@ -35,6 +35,9 @@ snapshot 里写一个 `Passed`，`finish` 就会报完成，不需要任何 exec
   不要求回执；新调用方应使用 `finish_with_receipts`。
 - CLI `finish` 新增 `receipts` 映射；`min_assertions` 为可选全局下限，缺省时完全采用
   各 `TaskSpec.policy.min_assertions`（旧 JSON 缺该字段时默认 1）；默认要求回执。
+- `finish --receipt-hmac-key-file <path>`（或 `TRIT_ORCH_RECEIPT_HMAC_KEY_FILE`）启用
+  宿主 HMAC-SHA256：宿主测量回执逐条签名；外部传入的 `HostMeasured` 回执只有验签通过
+  才保留来源，否则降级为 `SelfReported`。密钥文件按原始字节读取，少于 16 字节拒绝。
 - `trit-orch finish --allow-unattested` 是显式 legacy 逃生门，只接受无回执的旧快照；
   正式完成声明不应使用它。
 - 错误 kind 固定为 `unattested_evidence` / `receipt_mismatch`，方便宿主和测试按 kind 判定。
@@ -59,6 +62,10 @@ snapshot 里写一个 `Passed`，`finish` 就会报完成，不需要任何 exec
 | `crates/trit-orch/tests/receipt_task_threshold.rs::global_floor_can_raise_but_not_lower_task_floor` | 全局 4 抬高后回执不匹配；全局 0 不能压低任务下限 |
 | `crates/trit-orch/tests/receipt_task_threshold.rs::legacy_task_json_without_policy_still_gets_min_one` | 旧 `TaskSpec` JSON 缺 `min_assertions` → 默认 1，顶层 `epoch` 仍可解析 |
 | `crates/trit-orch/tests/finish_threshold.rs::task_min_assertions_is_authoritative_in_cli_finish` | CLI 未给全局阈值时按任务 3 判，2 条断言回执被拒 |
+| `crates/trit-orch/tests/receipt_signature.rs::signed_host_receipt_passes_hmac_gate` | 有效 HMAC 签名的宿主回执通过 |
+| `crates/trit-orch/tests/receipt_signature.rs::missing_signature_is_refused` | 缺签名 → `receipt_observation_missing`，`field=signature` |
+| `crates/trit-orch/tests/receipt_signature.rs::wrong_key_or_tampering_is_refused` | 错密钥或签名后改字段 → `receipt_observation_mismatch` |
+| `crates/trit-orch/tests/receipt_signature.rs::unsigned_legacy_gate_still_accepts_unsigned_receipts` | 未启用密钥时旧的无签名路径不变 |
 | `crates/trit-orch/tests/unauthorized_finish.rs::finish_with_receipts_rejects_unauthorized_settled_task` | `authorization=False` 的 settled 任务不能报完成 |
 
 本轮实测：
@@ -72,6 +79,7 @@ cargo test -p trit-orch --test receipt_plan -> 4 passed / 0 failed
 cargo test -p trit-orch --test receipt_threshold -> 2 passed / 0 failed
 cargo test -p trit-orch --test receipt_task_threshold -> 3 passed / 0 failed
 cargo test -p trit-orch --test finish_threshold -> 1 passed / 0 failed
+cargo test -p trit-orch --test receipt_signature -> 4 passed / 0 failed
 cargo test -p trit-orch --test unauthorized_finish -> 1 passed / 0 failed
 cargo test -p trit-orch --test progress     -> 8 passed / 0 failed
 cargo clippy -p trit-orch --all-targets -- -D warnings -> ok
@@ -91,8 +99,11 @@ printf '%s' '{"tasks":[{"task":{"id":"a","priority":0,"duration":1,"deps":[]},
 
 ## 4. 诚实边界
 
-- `Receipt` 只是**执行器自报**的 exit/断言数，不是密码学签名。恶意宿主可以伪造一条 receipt；
-  本层解决的是「模型只写 CheckReport、不提供执行回执」这一类幻觉，不解决「宿主本身不可信」。
+- `Receipt` 的 exit/断言数仍由宿主进程产生，默认不是密码学签名。启用
+  `--receipt-hmac-key-file` 后，宿主测量回执带 HMAC-SHA256；缺签名/验签失败按
+  `receipt_observation_missing|mismatch`、`field=signature` 拒绝。HMAC 只证明
+  「字段未被改动 + 签名方持有密钥」，**不证明签名方真的执行了测量**：同时掌握密钥的
+  恶意宿主仍可伪造。它把「宿主可验证」从口头声明变成可校验字段，不解决密钥持有者本身不可信。
 - `finish_with_receipts` 的默认 `HostMeasuredOnly` 路径已要求每条 decisive 回执带
   `plan`：`revision` 必须等于 `snapshot.revision`，`acceptance_digest` 必须等于
   `acceptance_digest(spec, effective_threshold)`（见 `crates/trit-orch/src/progress/finish/check.rs`）。
@@ -112,6 +123,5 @@ printf '%s' '{"tasks":[{"task":{"id":"a","priority":0,"duration":1,"deps":[]},
 
 ## 5. 后续待办
 
-- 是否给 `Receipt` 加宿主侧 HMAC / 签名，区分「执行器自报」与「宿主可验证」；
-- 是否把 `acceptance_digest` 升级为跨语言规范编码，摆脱 `serde_json` 字节序依赖；
-- 是否把 `claim_audit.py` 的 `test-pass` / `number` / `aggregate` 结论作为第二证据链接入完成门。
+- 把 `signing_bytes` 升级为跨语言规范编码，摆脱 `serde_json` 字段序依赖；
+- 把 `claim_audit.py` 的 `test-pass` / `number` / `aggregate` 结论作为第二证据链接入完成门。
