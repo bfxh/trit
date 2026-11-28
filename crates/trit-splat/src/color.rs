@@ -5,9 +5,11 @@
 //! EV=0、无白平衡、饱和度=1、`None` 为恒等，不改变既有输出。
 
 mod gamut;
+mod transfer;
 mod white_balance;
 
 pub use gamut::Gamut;
+pub use transfer::{bt1886_decode, bt1886_encode, srgb_decode, srgb_encode};
 pub use white_balance::{WhiteBalance, white_balance};
 
 use crate::Frame;
@@ -19,6 +21,8 @@ pub enum ColorSpace {
     Raw,
     /// sRGB（IEC 61966-2-1）传递函数。
     Srgb,
+    /// BT.1886 纯 gamma 2.4（Lb=0 简化），用于 8-bit Rec.2020 SDR。
+    Bt1886,
 }
 
 /// 线性光 tone mapping。
@@ -94,9 +98,11 @@ impl ColorConfig {
                 px[1] as f32 / 255.0,
                 px[2] as f32 / 255.0,
             ];
-            if self.input == ColorSpace::Srgb {
-                c = c.map(srgb_decode);
-            }
+            c = match self.input {
+                ColorSpace::Raw => c,
+                ColorSpace::Srgb => c.map(srgb_decode),
+                ColorSpace::Bt1886 => c.map(bt1886_decode),
+            };
             c = [
                 c[0] * gain * wb[0],
                 c[1] * gain * wb[1],
@@ -106,31 +112,15 @@ impl ColorConfig {
             c = c.map(|v| luma + (v - luma) * self.saturation);
             c = gamut::convert(c, self.output_gamut);
             c = c.map(|v| tone_map_channel(v, self.tone_map));
-            if self.output == ColorSpace::Srgb {
-                c = c.map(srgb_encode);
-            }
+            c = match self.output {
+                ColorSpace::Raw => c,
+                ColorSpace::Srgb => c.map(srgb_encode),
+                ColorSpace::Bt1886 => c.map(bt1886_encode),
+            };
             for (dst, v) in px.iter_mut().zip(c) {
                 *dst = (v.clamp(0.0, 1.0) * 255.0).round() as u8;
             }
         }
-    }
-}
-
-/// sRGB 编码：线性光 → sRGB。
-pub fn srgb_encode(v: f32) -> f32 {
-    if v <= 0.003_130_8 {
-        12.92 * v
-    } else {
-        1.055 * v.powf(1.0 / 2.4) - 0.055
-    }
-}
-
-/// sRGB 解码：sRGB → 线性光。
-pub fn srgb_decode(v: f32) -> f32 {
-    if v <= 0.040_45 {
-        v / 12.92
-    } else {
-        ((v + 0.055) / 1.055).powf(2.4)
     }
 }
 

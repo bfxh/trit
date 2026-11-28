@@ -4,15 +4,10 @@ use trit_splat::color::{ColorSpace, Gamut};
 
 use crate::cli;
 
-pub(super) fn number(argv: &[String], flag: &str) -> Result<Option<f32>, String> {
-    cli::value(argv, flag)
-        .map(|v| {
-            v.parse::<f32>()
-                .map_err(|_| format!("{flag} 非法数字: {v}"))
-        })
-        .transpose()
-}
+#[path = "parse/number.rs"]
+mod number;
 
+pub(super) use number::number;
 pub(super) fn space(
     argv: &[String],
     flag: &str,
@@ -24,7 +19,8 @@ pub(super) fn space(
     match v.to_ascii_lowercase().as_str() {
         "raw" => Ok(ColorSpace::Raw),
         "srgb" => Ok(ColorSpace::Srgb),
-        _ => Err(format!("{flag} 只支持 raw|srgb: {v}")),
+        "bt1886" => Ok(ColorSpace::Bt1886),
+        _ => Err(format!("{flag} 只支持 raw|srgb|bt1886: {v}")),
     }
 }
 
@@ -35,6 +31,7 @@ pub(super) fn gamut(argv: &[String], flag: &str, default: Gamut) -> Result<Gamut
     match v.to_ascii_lowercase().as_str() {
         "srgb" => Ok(Gamut::Srgb),
         "p3" | "display-p3" => Ok(Gamut::DisplayP3),
-        _ => Err(format!("{flag} 只支持 srgb|p3: {v}")),
+        "2020" | "rec2020" | "bt2020" => Ok(Gamut::Rec2020),
+        _ => Err(format!("{flag} 只支持 srgb|p3|rec2020: {v}")),
     }
 }

@@ -26,8 +26,8 @@
   {
     "name": "color: sRGB 输入解码被跳过（误当 raw）",
     "file": "crates/trit-splat/src/color.rs",
-    "old": "            if self.input == ColorSpace::Srgb {\n                c = c.map(srgb_decode);\n            }",
-    "new": "            if false {\n                c = c.map(srgb_decode);\n            }",
+    "old": "                ColorSpace::Srgb => c.map(srgb_decode),",
+    "new": "                ColorSpace::Srgb => c,",
     "pkg": "trit-splat",
     "filter": "srgb_in_out_roundtrip_is_close"
   },
@@ -41,10 +41,18 @@
   },
   {
     "name": "color: Display P3 转换被跳过（色域仍是 sRGB）",
-    "file": "crates/trit-splat/src/color/gamut.rs",
+    "file": "crates/trit-splat/src/color/gamut/matrices.rs",
     "old": "        Gamut::DisplayP3 => mul(SRGB_TO_P3, c),",
     "new": "        Gamut::DisplayP3 => c,",
     "pkg": "trit-splat",
     "filter": "p3_red_is_converted_from_srgb"
+  },
+  {
+    "name": "color: Rec.2020 转换被跳过（色域仍是 sRGB）",
+    "file": "crates/trit-splat/src/color/gamut/matrices.rs",
+    "old": "        Gamut::Rec2020 => mul(SRGB_TO_2020, c),",
+    "new": "        Gamut::Rec2020 => c,",
+    "pkg": "trit-splat",
+    "filter": "rec2020_red_is_converted_from_srgb"
   }
 ]

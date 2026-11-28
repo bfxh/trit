@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-splat v12：Rec.2020 输出与 BT.1886）
+
+- `Gamut` 增加 `Rec2020`；sRGB/Rec.709 线性光按矩阵转到 BT.2020 原色（D65 白点），
+  PNG 写 cHRM（红 0.708/0.292、绿 0.170/0.797、蓝 0.131/0.046）。
+- `ColorSpace` 增加 `Bt1886`（Lb=0 的 gamma 2.4），`--color-in/out` 增 `bt1886`；
+  Rec.2020 + BT.1886 输出 PNG 的 gAMA 为 0.41667。
+- `splat-render` 的 `--gamut` 增 `rec2020`（兼容 `2020`/`bt2020`）；默认 sRGB 仍恒等，
+  真实 synthetic-orbit 48 帧与 v9 逐字节一致。
+- 验证：43 lib + 10 bin + 2 集成测试；sRGB 红 (255,0,0) → Rec.2020 线性近似
+  (160,18,4)；白仍为 255；Rec.2020 PNG cHRM/gAMA 已被解码器读回。
+- 边界：只做 sRGB/Rec.709 → Rec.2020 的单向原色矩阵；未做 P3→Rec.2020、
+  色彩适应、ICC 嵌入或感知色域映射（超色域仍按通道截断）。
+
 ### Added（trit-splat v11：Display P3 输出色域）
 
 - `color` 增加 `Gamut::{Srgb,DisplayP3}` 与 `ColorConfig::output_gamut`；源原色按
