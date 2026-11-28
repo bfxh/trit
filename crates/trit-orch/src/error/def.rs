@@ -245,6 +245,15 @@ pub enum Error {
         from: String,
         to: String,
     },
+    #[error("claim audit refused: {detail} (total={total} unverified={unverified} fabricated={fabricated})")]
+    ClaimAuditRefused {
+        detail: String,
+        total: u32,
+        unverified: u32,
+        fabricated: u32,
+    },
+    #[error("claim audit report is unusable: {message}")]
+    ClaimAuditInvalid { message: String },
     #[error("handoff field is blank: {field}")]
     HandoffFieldBlank { field: String },
     #[error("handoff packet {id} expired")]

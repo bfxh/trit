@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added（trit-orch finish：claim_audit 第二证据链）
+
+- `claim_audit.py -Json` 输出机器可读报告（`ok`/`exit`/`verdict`/`summary`/逐条 verdict）。
+- `trit-orch finish` 的 stdin 可带 `claim_audit`：报告必须全绿、非空且自洽，否则分别返回
+  `claim_audit_refused` / `claim_audit_invalid`；`--allow-unattested` 不经过此检查。
+- 新增 `finish_claim_audit` 回归 4 条；默认文本输出与旧 `claim_audit` 行为不变。
+
 ### Fixed（subagent-dispatch：capability 预检先于容量租约）
 
 - `--capability-policy` 的判定移到申请容量租约之前；被拒任务标

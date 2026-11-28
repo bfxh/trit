@@ -49,4 +49,39 @@ pub(crate) struct FinishInput {
     /// 不能压低；缺省时完全采用任务自己的阈值。
     #[serde(default)]
     pub(crate) min_assertions: Option<u32>,
+    /// `claim_audit.py -Json` 的结论。提供时作为第二证据链：非绿报告拒绝完成。
+    #[serde(default)]
+    pub(crate) claim_audit: Option<ClaimAuditReport>,
+}
+
+/// `claim_audit.py -Json` 的顶层结构。只取完成闸需要的字段；未知字段忽略。
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaimAuditReport {
+    pub(crate) ok: bool,
+    #[serde(default)]
+    pub(crate) verdict: String,
+    #[serde(default)]
+    pub(crate) summary: ClaimAuditSummary,
+    #[serde(default)]
+    pub(crate) claims: Vec<ClaimAuditClaim>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct ClaimAuditSummary {
+    #[serde(default)]
+    pub(crate) total: u32,
+    #[serde(default)]
+    pub(crate) verified: u32,
+    #[serde(default)]
+    pub(crate) unverified: u32,
+    #[serde(default)]
+    pub(crate) fabricated: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaimAuditClaim {
+    pub(crate) claim: String,
+    #[serde(default)]
+    pub(crate) kind: String,
+    pub(crate) verdict: String,
 }

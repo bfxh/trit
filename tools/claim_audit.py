@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """claim_audit: model statements are checked against reality, not believed.
 
-    claim_audit.py -Claims <claims.jsonl> -Root <dir> [-Receipts <glob>...]
+    claim_audit.py -Claims <claims.jsonl> -Root <dir> [-Receipts <glob>...] [-Json]
     claim_audit.py second-opinion -Claims <f> -Root <dir> [-Receipts <g>...] [-Ledger <cost-ledger.json>]
 
 Claims file: JSON lines, one claim per line:
@@ -112,6 +112,12 @@ cross-checking).
 Output is pure ASCII (claims are printed backslash-escaped). Machine-path shapes
 in any claim field refuse the whole audit: receipts and audits may be committed,
 and a committed file must not carry local paths.
+
+-Json (audit mode) prints one machine-readable report instead of text: top-level
+`ok` / `exit` / `verdict` / `summary` plus per-claim verdicts. `trit-orch finish`
+consumes this as a second evidence chain (the `claim_audit` input field): a non-green
+report, an empty report, or a report whose `ok` disagrees with its own summary/rows
+refuses completion.
 """
 
 import glob
@@ -157,7 +163,7 @@ VERIFIED, UNVERIFIED, FABRICATED = "VERIFIED", "UNVERIFIED", "FABRICATED"
 
 def parse_args(argv):
     out = {"claims": "", "root": "", "receipts": [], "receipt": "", "ledger": "",
-           "no_derivations": False}
+           "no_derivations": False, "json": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -170,6 +176,10 @@ def parse_args(argv):
             out["receipts"].extend([x for x in val.split(",") if x.strip()])
         elif name in ("noderivations", "no-derivations"):
             out["no_derivations"] = True
+            i += 1
+            continue
+        elif name == "json":
+            out["json"] = True
             i += 1
             continue
         elif name in ("claims", "root", "receipt", "ledger",
@@ -680,12 +690,15 @@ def main(argv):
 
 def run_audit(a, claims):
     receipts, unreadable = load_receipts(a["receipts"])
+    json_mode = bool(a.get("json"))
 
-    print(f"claim_audit: {len(claims)} claim(s) from {os.path.basename(a['claims'])}, "
-          f"{len(receipts)} receipt(s) scanned as evidence")
+    if not json_mode:
+        print(f"claim_audit: {len(claims)} claim(s) from {os.path.basename(a['claims'])}, "
+              f"{len(receipts)} receipt(s) scanned as evidence")
     counts = {VERIFIED: 0, UNVERIFIED: 0, FABRICATED: 0}
     agg_count = 0
     atom_total = 0
+    rows = []
     for idx, claim in enumerate(claims, start=1):
         kind = claim["kind"].strip().lower()
         subs = []
@@ -696,14 +709,58 @@ def run_audit(a, claims):
         else:
             verdict, ev = verify_one(kind, claim, a["root"], receipts)
         counts[verdict] += 1
-        print(f"  [{idx}] {verdict:<10} {ascii_safe(claim['claim'])}")
-        print(f"      {verdict}: {ascii_safe(ev, 160)}")
-        for si, stext, sv, sev in subs:
-            print(f"      atom[{si}] {sv:<10} {ascii_safe(stext, 60)}")
-            print(f"        {sv}: {ascii_safe(sev, 140)}")
-    if unreadable:
+        row = {"index": idx, "claim": claim["claim"], "kind": kind,
+               "verdict": verdict, "evidence": ev}
+        if subs:
+            row["atoms"] = [{"index": si, "claim": stext, "verdict": sv, "evidence": sev}
+                            for si, stext, sv, sev in subs]
+        rows.append(row)
+        if not json_mode:
+            print(f"  [{idx}] {verdict:<10} {ascii_safe(claim['claim'])}")
+            print(f"      {verdict}: {ascii_safe(ev, 160)}")
+            for si, stext, sv, sev in subs:
+                print(f"      atom[{si}] {sv:<10} {ascii_safe(stext, 60)}")
+                print(f"        {sv}: {ascii_safe(sev, 140)}")
+    if unreadable and not json_mode:
         print(f"note: {unreadable} receipt path(s) unreadable or not receipts -- "
               f"counted, never used as evidence")
+
+    if counts[FABRICATED]:
+        code = 2
+        verdict_text = ("FABRICATED present -- claims contradict reality; treat the "
+                        "whole claim set as hostile")
+    elif counts[UNVERIFIED]:
+        code = 1
+        verdict_text = ("UNVERIFIED present -- claims without evidence must not be "
+                        "taken as true")
+    else:
+        code = 0
+        verdict_text = "all claims verified against recorded evidence"
+
+    if json_mode:
+        report = {
+            "tool": "claim_audit",
+            "version": 1,
+            "mode": "audit",
+            "ok": code == 0,
+            "exit": code,
+            "verdict": verdict_text,
+            "summary": {
+                "total": len(claims),
+                "verified": counts[VERIFIED],
+                "unverified": counts[UNVERIFIED],
+                "fabricated": counts[FABRICATED],
+                "aggregates": agg_count,
+                "atoms": atom_total,
+                "derivations": {"verified": DERIV_STATE["verified"],
+                                "rejected": DERIV_STATE["rejected"]},
+            },
+            "unreadable_receipts": unreadable,
+            "claims": rows,
+        }
+        print(json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True))
+        return code
+
     print(f"summary: total={len(claims)} verified={counts[VERIFIED]} "
           f"unverified={counts[UNVERIFIED]} fabricated={counts[FABRICATED]}")
     if agg_count:
@@ -711,16 +768,8 @@ def run_audit(a, claims):
     if DERIV_STATE["verified"] + DERIV_STATE["rejected"]:
         print(f"summary: derivations verified={DERIV_STATE['verified']} "
               f"rejected={DERIV_STATE['rejected']}")
-    if counts[FABRICATED]:
-        print("verdict: FABRICATED present -- claims contradict reality; treat the "
-              "whole claim set as hostile")
-        return 2
-    if counts[UNVERIFIED]:
-        print("verdict: UNVERIFIED present -- claims without evidence must not be "
-              "taken as true")
-        return 1
-    print("verdict: all claims verified against recorded evidence")
-    return 0
+    print(f"verdict: {verdict_text}")
+    return code
 
 
 def run_second_opinion(a, claims):
