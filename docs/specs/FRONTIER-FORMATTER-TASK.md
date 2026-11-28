@@ -115,13 +115,16 @@ node tools/frontier/bench_prettier.js --corpus <语料目录> --out target/prett
 | G3 吞吐（大文档 84,048 字节） | trit-fmt **12.90 MiB/s** vs prettier 3.10.1 **1.48 MiB/s**（8.7 倍） | `cargo bench -p trit-fmt --bench format`；prettier 侧 `node bench_single.js big.json 200` |
 | G3 吞吐（小文档 95 字节） | trit-fmt **1.76 µs/doc** vs prettier **213.35 µs/doc** | 同上 |
 | G4 注释与空行 | JSON 没有注释；空行规则未覆盖（见负结果） | — |
-| G5 接入默认链 | **未接入**，prettier 仍是默认件 | — |
+| G5 接入默认链 | 已接入：CI 的 `frontier` job 对 4 个手写 JSON 跑 `--check`，`TRIT_FMT=0` 回退；已登记进 `docs/specs/DEFAULT-TOOLS.json` | — |
 
 ### 负结果（保留，不删）
 
 - 范围只有 JSON（`.json` / `.jsonc`）；JS/TS/Markdown 返回 `FormatError::Unsupported`，没有半成品实现。
 - 单线程；4 线程 3 倍的目标未验证（bench 只跑单线程）。
-- 未接入真实调用点（G5），默认件清单里 prettier 仍是默认。
+- 接入面只有 4 个手写 JSON（`crates/trit-wspace/mcp.example.json`、`examples/policy.json`、
+  `jobs/example.json`、`.github/data-pipeline.json`）；机器生成的基线文件（`scripts/*baseline*.json`）
+  仍是 `json.dump` 风格，没有接进来——它们与 prettier 风格的差异会产生巨大 diff，需要单独一轮迁移。
+- JS/TS/Markdown 仍未接入（没有实现），prettier 在这三类上仍是唯一选择。
 - 解析器按字节处理：非法 UTF-8 输入未做严格拒绝；重复键保留原序（与 prettier 一致）。
 - 只覆盖 prettier 的 `printWidth=80` 默认值；`--width` 等选项未实现。
 - 小文档那一行的 121 倍放大来自固定开销（prettier 每个文档约 213 µs 的解析器初始化），

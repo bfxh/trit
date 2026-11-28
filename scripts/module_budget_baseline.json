@@ -1959,8 +1959,20 @@
       "lines": 114
     },
     {
+      "file": "crates/trit-fmt/src/bin/trit-fmt.rs",
+      "lines": 109
+    },
+    {
       "file": "crates/trit-fmt/src/lib.rs",
-      "lines": 441
+      "lines": 140
+    },
+    {
+      "file": "crates/trit-fmt/src/parse.rs",
+      "lines": 217
+    },
+    {
+      "file": "crates/trit-fmt/src/print.rs",
+      "lines": 213
     },
     {
       "file": "crates/trit-fmt/tests/corpus.rs",
