@@ -15,6 +15,7 @@
 //!
 //! 渲染核零外部依赖；PNG 落盘与 CLI 在 `png` feature 后（`splat-render` bin）。
 pub mod camera;
+pub mod color;
 mod error;
 pub mod math;
 pub mod ply;
@@ -25,7 +26,6 @@ pub mod splat;
 pub mod spz;
 
 pub use error::SplatError;
-
 /// 渲染结果：w×h 的 RGB8 帧（行主序，无 padding）。
 #[derive(Clone)]
 pub struct Frame {
