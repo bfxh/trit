@@ -114,13 +114,15 @@ node tools/frontier/bench_prettier.js --corpus <语料目录> --out target/prett
 | G2 幂等 | 全部语料 0 反例 | 同上 |
 | G3 吞吐（大文档 84,048 字节） | trit-fmt **12.90 MiB/s** vs prettier 3.10.1 **1.48 MiB/s**（8.7 倍） | `cargo bench -p trit-fmt --bench format`；prettier 侧 `node bench_single.js big.json 200` |
 | G3 吞吐（小文档 95 字节） | trit-fmt **1.76 µs/doc** vs prettier **213.35 µs/doc** | 同上 |
+| G3 并发（4,235,301 字节 / 797 文档） | 4 线程 **3.32×**、8 线程 **3.90×**（按字节分块；按文档数分块只有 2.83×） | `cargo bench -p trit-fmt --bench threads` |
 | G4 注释与空行 | JSON 没有注释；空行规则未覆盖（见负结果） | — |
 | G5 接入默认链 | 已接入：CI 的 `frontier` job 对 4 个手写 JSON 跑 `--check`，`TRIT_FMT=0` 回退；已登记进 `docs/specs/DEFAULT-TOOLS.json` | — |
 
 ### 负结果（保留，不删）
 
 - 范围只有 JSON（`.json` / `.jsonc`）；JS/TS/Markdown 返回 `FormatError::Unsupported`，没有半成品实现。
-- 单线程；4 线程 3 倍的目标未验证（bench 只跑单线程）。
+- 4 线程 **3.32×** 已在 24 核机器验证（`benches/threads.rs`）；8 线程 3.90×，继续加线程受内存带宽限制。
+  分块必须按**字节**：按文档数会把 84 KB 大文档压到一个线程，实测只有 2.83×。
 - 接入面只有 4 个手写 JSON（`crates/trit-wspace/mcp.example.json`、`examples/policy.json`、
   `jobs/example.json`、`.github/data-pipeline.json`）；机器生成的基线文件（`scripts/*baseline*.json`）
   仍是 `json.dump` 风格，没有接进来——它们与 prettier 风格的差异会产生巨大 diff，需要单独一轮迁移。
