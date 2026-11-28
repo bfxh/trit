@@ -392,7 +392,14 @@ jobs:
             crates/trit-wspace/mcp.example.json \
             examples/policy.json \
             jobs/example.json \
-            .github/data-pipeline.json
+            .github/data-pipeline.json \
+            scripts/ai_vendor_baseline.json \
+            scripts/layers.json \
+            scripts/module_budget_baseline.json \
+            scripts/claims_evidence_baseline.json \
+            scripts/docs_hygiene_baseline.json \
+            scripts/test_surface_baseline.json \
+            scripts/alloc_guard_allow.json
 
   agent-checks:
     name: agent checks (registry)
