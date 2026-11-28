@@ -225,8 +225,8 @@ def update_baseline(root: pathlib.Path, baseline_path: pathlib.Path) -> int:
         print("--update 只收紧台账（变少=删测试，必须先把断言补回来）")
         return 1
     payload = {name: entry["tests"] for name, entry in sorted(found.items())}
-    baseline_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-                             encoding="utf-8")
+    baseline_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                             encoding="utf-8", newline="\n")
     print(f"台账已写：{len(payload)} 个单位，{sum(payload.values())} 条测试 → {baseline_path.name}")
     return 0
 

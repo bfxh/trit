@@ -1,12 +1,12 @@
 {
- "changelog": 214163,
- "drive_paths": {
-  "CHANGELOG.md": 1,
-  "docs/reference/DATASETS.md": 1,
-  "docs/plans/GENERAL-PLAN.md": 24,
-  "docs/security/GUARD.md": 5,
-  "docs/reference/MODEL-CARD.md": 4,
-  "docs/plans/VISUAL-PLAN.md": 6,
-  "docs/review/self-audit-2026-10-28.md": 4
- }
+  "changelog": 214163,
+  "drive_paths": {
+    "CHANGELOG.md": 1,
+    "docs/plans/GENERAL-PLAN.md": 24,
+    "docs/plans/VISUAL-PLAN.md": 6,
+    "docs/reference/DATASETS.md": 1,
+    "docs/reference/MODEL-CARD.md": 4,
+    "docs/review/self-audit-2026-10-28.md": 4,
+    "docs/security/GUARD.md": 5
+  }
 }

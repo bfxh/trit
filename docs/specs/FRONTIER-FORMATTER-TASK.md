@@ -129,3 +129,21 @@ node tools/frontier/bench_prettier.js --corpus <语料目录> --out target/prett
 - 只覆盖 prettier 的 `printWidth=80` 默认值；`--width` 等选项未实现。
 - 小文档那一行的 121 倍放大来自固定开销（prettier 每个文档约 213 µs 的解析器初始化），
   不能当作真实吞吐比；大文档 8.7 倍才是可比读数。
+
+## 基线文件迁移（2026-11-28）
+
+棘轮台账的格式统一到 trit-fmt（= prettier 风格），并把 7 个纳入 CI 白名单：
+
+`scripts/ai_vendor_baseline.json`、`scripts/layers.json`、`scripts/module_budget_baseline.json`、
+`scripts/claims_evidence_baseline.json`、`scripts/docs_hygiene_baseline.json`、
+`scripts/test_surface_baseline.json`、`scripts/alloc_guard_allow.json`。
+
+写回侧同步成 `indent=2` + 强制 LF（`newline="\n"`）——原先 `indent=1` 且 Windows 会写 CRLF，
+两个都会让 `--check` 在换平台时随机红。`merge=json-union` 驱动用 `json.loads` 解析，
+与行格式无关，所以重排不影响合并。
+
+### 唯一不迁移的一个（结构性冲突，保留原格式）
+
+`scripts/privacy_scan_baseline.json` 不纳入：它的 `drive-path` 是**重复短字符串数组**，
+trit-fmt 的全标量 fill 会把多个元素并到同一行，而 `json.dump` 永远每元素一行——
+两边会反复互相改写，无法同时稳定。要迁移就得先改数据结构（去重或换键），那是另一件事。
