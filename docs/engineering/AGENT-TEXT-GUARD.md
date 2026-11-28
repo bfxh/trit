@@ -6,7 +6,7 @@
 > 边界：这是**运行期文字入口卫生**，不是训练数据去毒、不是模型权重防护、不是
 > “提示词防火墙”。它不能证明模型不会服从数据里的指令。
 > 状态：`tools/context_guard.py` 59/59 自测；90 例变形攻击 90/90 检出、24 例良性
-> 文本 0 个 high；派发器接入输入与输出两侧后 25/25；81 例独立红队语料
+> 文本 0 个 high；派发器接入输入与输出两侧后 27/27；81 例独立红队语料
 > 0 攻击漏检、0 overblock。红队明细见 `AGENT-REDTEAM.md`。
 
 ## 1. 问题不是“模型会不会读坏词”，而是“它把谁当成指令”
@@ -192,7 +192,7 @@ python tools/subagent_dispatch.py --self-test
 - `--stress`：10 条攻击 × 9 种变形 = **90/90 检出**；8 条良性 × 3 种变形 = 24 例，
   **0 个 high**。这 9 种变形都是**已知的**（plain/zero-width/bidi/tag/fullwidth/
   homoglyph/html/base64/newlines），不是自适应攻击评估。
-- 派发器 `subagent-dispatch self-test: 25/25`：输入侧 clean 扫描、enforce 调用前
+- 派发器 `subagent-dispatch self-test: 27/27`：输入侧 clean 扫描、enforce 调用前
   隔离、warn 放行但留痕；输出侧 enforce 把高风险管理产物移到 `.quarantine`
   （原路径留空）、warn 留下并标 `output-flagged`；二进制产物抽文本后再判；硬链接/
   符号链接 prompt_file 拒绝。
@@ -242,14 +242,14 @@ python tools/subagent_dispatch.py --self-test
 - `python tools/context_guard.py --self-test`：59/59。
 - `python tools/guard_redteam.py --strict`：81 例，0 攻击漏检、0 overblock。
 - `python tools/context_guard.py --stress`：90/90、benign high=0。
-- `python tools/subagent_dispatch.py --self-test`：25/25（输入 + 输出两侧 + 二进制抽取）。
-- `python tools/sandbox_run.py --self-test`：43/43（路径/硬链接/忽略文件写/reparse 路径/内容哈希/index.lock/容量租约附着）。
+- `python tools/subagent_dispatch.py --self-test`：27/27（输入 + 输出两侧 + 二进制抽取）。
+- `python tools/sandbox_run.py --self-test`：47/47（路径/硬链接/忽略文件写/reparse 路径/内容哈希/index.lock/容量租约附着）。
 - `cargo test -p trit-orch --lib capability`：12/12（含目标精确匹配、越界拒绝、缺目标
   拒绝、类别未授予优先于目标）。
 - `cargo test -p trit-orch --test capability`：9 例（读放行、默认拒写、不可信来源转
   `Unknown`、显式提权放行、未知类别解析失败、第六门 K3 合成）。
 - `cargo test -p trit-orch --test capability_targets`：3 例（精确放行、越界拒绝、缺目标
   拒绝）。
-- `pwsh tools/selftest.ps1`：696/0/0（全量入口；AP 组为文字门，AO 组含输出隔离）。
+- `pwsh tools/selftest.ps1`：716/0/0（全量入口；AP 组为文字门，AO 组含输出隔离）。
 - 文档门禁：`docs_hygiene.py` / `privacy_scan.py` / `ai_vendor_scan.py` /
   `terminology.py check` / `git diff --check`。

@@ -4,7 +4,7 @@
 > `tools/sandbox_run.py` 的**本地可复算攻击面**。不攻击外部服务，不制造真实
 > 凭据；默认沙盒不当内核隔离，真隔离路径（`-Isolation wsl`）另行实测。
 >
-> 结论先说：**已修掉一串真实可穿门问题**（复算：`python tools/guard_redteam.py` 81 例 0 漏检；`python tools/context_guard.py --self-test` 59/59；`python tools/sandbox_run.py --self-test` 43/43）：
+> 结论先说：**已修掉一串真实可穿门问题**（复算：`python tools/guard_redteam.py` 81 例 0 漏检；`python tools/context_guard.py --self-test` 59/59；`python tools/sandbox_run.py --self-test` 47/47）：
 > base64 任意位置与四层嵌套、nonce 归一化伪造、`.agent/.git` 排除目录、
 > `.git/index` 与构建缓存漏检、根内 junction 复制/派发、大小写/尾点路径绕过；
 > 本轮又补了 `context_guard --out/--receipt` root 包含、超 256 KiB base64 分窗
@@ -90,7 +90,7 @@
   `.git/index.lock` 退出 manifest，改为运行前后存在性检查 + 0.35 秒稳定窗口；
 - `MAX_HOST_FILES=200000`，超限判 `host-unprovable`，不再把看不见的忽略文件当没发生。
 
-`tools/sandbox_run.py --self-test` 43/43；`sandbox_matrix --cases 40 --parallel 8`
+`tools/sandbox_run.py --self-test` 47/47；`sandbox_matrix --cases 40 --parallel 8`
 40/40、hostwrite 5/5、host_violations=0。
 
 ## 3. 子智能体边界：硬链接/符号链接/junction/大小写
@@ -98,7 +98,7 @@
 `subagent_dispatch.rel_inside()` 原先只做 symlink + realpath；根内硬链接文件仍
 可读到根外 secret，根内 junction 可把 `out` 指向 `.agent`，`.AGENT`/`.agent.`
 可绕过组件表。现在 `nlink > 1`、任何 realpath/lexical 不一致、大小写/尾点归一
-后的 denied component 全部拒绝；派发自测 25/25。
+后的 denied component 全部拒绝；派发自测 27/27。
 
 产物侧新增二进制文本抽取：非 UTF-8 产物不再直接 `opaque`，先按 ASCII/UTF-8
 可打印段抽 1 MiB/128 段；zip/tar 再按 8 成员 / 1 MiB 解文本成员一起扫；抽到
@@ -129,11 +129,11 @@ evidence 不一致报 `receipt_mismatch`；`--allow-unattested` 只作 legacy �
 python tools/context_guard.py --self-test          # 59/59
 python tools/guard_redteam.py                     # 81 例，attack_misses=0
 python tools/context_guard.py --stress --json     # 90/90
-python tools/subagent_dispatch.py --self-test     # 25/25
-python tools/sandbox_run.py --self-test           # 43/43
+python tools/subagent_dispatch.py --self-test     # 27/27
+python tools/sandbox_run.py --self-test           # 47/47
 python tools/sandbox_run.py --self-test-wsl -WslDistro Ubuntu-24.04  # 11/11
 python tools/sandbox_matrix.py --cases 40 --parallel 8 --json  # 40/40
-pwsh tools/selftest.ps1                           # 696/0/0
+pwsh tools/selftest.ps1                           # 716/0/0
 ```
 
 诚实边界：以上都是本地、规则/文件系统层的可复算读数；真实模型是否服从封套

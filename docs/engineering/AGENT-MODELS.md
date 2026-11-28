@@ -4,7 +4,7 @@
 > 沙盒实验、前端面板、后端工程）可以落到不同模型，不必整条链共用一个模型。
 > 边界：路由器只解决“选谁 + 记下选谁”，不解决“谁更聪明”；后者必须靠评测与回执。
 > 状态：**已跑通**（`tools/model_router.py --self-test` 16/16；派发器
-> `tools/subagent_dispatch.py --self-test` 25/25）。本机 `probe` 只打印
+> `tools/subagent_dispatch.py --self-test` 27/27）。本机 `probe` 只打印
 > `env* env-present`（证明环境变量存在，不是鉴权）：2026-11-22 的真实 `deepseek-chat`
 > 调用返回 **HTTP 401 invalid api key**，所以真实外部调用尚未成立，不能把 `probe`
 > 当成鉴权/额度/模型名的证明。
@@ -125,6 +125,12 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
   zip/tar 文本成员再扫，完全抽不到文本才记 `opaque`，不冒充已扫。
   逐任务回执带 `output_guard`（verdict/max_severity/findings/input_sha256/bytes/
   binary/binary_view）。
+- 可选 `--capability-policy <json>` 在 provider 调用前过动作门：`command` provider
+  折成 Exec（命令 basename），HTTP provider 折成 Network（`base_url` 的 host）；
+  任一判定不是 `True` 就把该任务标 `capability-denied`，不调用 provider、不落 `out`。
+  `--untrusted-origin` 声明 prompt 来自不可信数据，是否放行由策略的
+  `allow_untrusted_origin` 决定；二进制定位同 `sandbox_run`，缺失即拒绝。
+  不给策略时行为不变。
 - 输出路径、任务 id 必须唯一；`out` 拒绝绝对路径、`..`、`.git/.agent/node_modules/target`，
   已存在默认拒绝，`--overwrite` 或任务内 `overwrite: true` 才覆盖。
 - 预算是**声明制**：`budget_tokens<=0` 调用前拒绝；声明了预算但 provider 不报 `usage`
@@ -133,8 +139,9 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
 - `--dry-run` 只路由、不调用、不写输出；回执顶层含 `plan_sha256/config_sha256/models`
   和逐任务 `model/status/usage/output_sha256`。`--dry-run` 下的容量准入只模拟，不落租约。
 - 边界：派发器不替代 `agent_verify` 的验证链，也不自动套 `sandbox_run`；`command`
-  provider 是本机 CLI，可信度由接入者负责（不可信提示词请外包裹沙盒）。容量租约
-  是探针估算 + 协调文件，不是 cgroup/Job Object；绕过派发器仍可超。
+  provider 是本机 CLI，可信度由接入者负责（不可信提示词请外包裹沙盒）。
+  `--capability-policy` 只判 provider 调用属于哪个动作、策略是否放行，不改变
+  命令实际在哪跑。容量租约是探针估算 + 协调文件，不是 cgroup/Job Object；绕过派发器仍可超。
 
 ## 5. 证据与边界
 
