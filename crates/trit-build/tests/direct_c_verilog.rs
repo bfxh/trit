@@ -62,7 +62,7 @@ fn direct_backend_emits_c_for_verilog() {
         "direct 后端不该写 lookup.c"
     );
     let source = fs::read_to_string(dir.join("v-out/direct.c")).expect("读 direct.c");
-    assert!(source.contains("C trit_direct(C*v,int n){"), "{source}");
+    assert!(source.contains("C f(C*v,int n){"), "{source}");
     assert!(source.contains("-1,0,1,0,0,0,1,0,-1"));
     let _ = fs::remove_dir_all(&dir);
 }

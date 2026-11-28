@@ -71,7 +71,7 @@ fn direct_backend_writes_linear_c_and_skips_table() {
     assert!(summary["outputs"].get("lookup.c").is_none(), "{summary}");
 
     let source = fs::read_to_string(dir.join("d-out/direct.c")).expect("读 direct.c");
-    assert!(source.contains("C trit_direct(C*v,int n){"), "{source}");
+    assert!(source.contains("C f(C*v,int n){"), "{source}");
     assert!(
         !source.contains("TRIT_TABLE"),
         "直算不该带 3^n 表：{source}"
