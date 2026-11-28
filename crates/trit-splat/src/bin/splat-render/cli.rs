@@ -1,19 +1,17 @@
-//! splat-render 的 CLI 辅助：参数取值、SH 裁剪、GT 边界均值与 PNG 落盘。
+//! splat-render 的 CLI 辅助：参数取值、SH 裁剪、背景色与 PNG 落盘。
 
 use std::path::{Path, PathBuf};
 
 use trit_splat::Frame;
 use trit_splat::ply::RawGaussian;
 
+#[path = "cli/args.rs"]
+mod args;
 #[path = "cli/gt.rs"]
 mod gt;
 
-pub fn value(argv: &[String], key: &str) -> Option<String> {
-    argv.iter()
-        .position(|a| a == key)
-        .and_then(|i| argv.get(i + 1))
-        .cloned()
-}
+pub use args::{flag, value};
+pub use gt::decode_gt_rgb;
 
 /// 按 `--sh-degree` 截断每点的 SH 系数（0/1/2/3 阶）。
 pub fn truncate_sh(gaussians: &mut [RawGaussian], sh_degree: usize) {

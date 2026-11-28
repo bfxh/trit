@@ -1809,6 +1809,7 @@
     "crates/trit-splat/src/math.rs::type::Mat4": 1,
     "crates/trit-splat/src/math.rs::type::Vec3": 3,
     "crates/trit-splat/src/ply/model.rs::type::RawGaussian": 6,
+    "crates/trit-splat/src/psnr.rs::impl::Frame": 1,
     "crates/trit-splat/src/splat.rs::type::ScreenGaussian": 8,
     "crates/trit-texture/src/bin/ttx-verify.rs::type::Tally": 0,
     "crates/trit-texture/src/convert.rs::type::RgbaImage": 3,
