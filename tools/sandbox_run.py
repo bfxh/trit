@@ -20,8 +20,9 @@
   3b. 可选 `-CapabilityPolicy <json>`：把 Exec（命令 basename）、Write
       （profile 非 read-only 时）、Network（`-AllowNetwork` 时）折成动作，逐条
       问 `trit-orch capability`；任一不是 True 就不运行，回执记 decisions。
-      未给策略时完全保持旧行为；二进制按 `-CapabilityBin` / `TRIT_ORCH_BIN` /
-      PATH / 仓库 target 目录定位，缺失即拒绝（fail-closed）。
+      未显式给策略时，检测 `<root>/.agent/capability.json`，存在即启用；都没有则
+      保持旧行为。二进制按 `-CapabilityBin` / `TRIT_ORCH_BIN` / PATH / 仓库 target
+      目录定位，缺失即拒绝（fail-closed）。
   4. 用 run_caps.py 套内核资源帽（内存/进程数/超时），stdin 接 DEVNULL，
      环境变量只留白名单（密钥类变量会摘掉，回执只记变量名不记值）；
   4b. 只有显式 `-Isolation wsl` 才走 WSL2+bwrap `--unshare-all`：空根只读 bind

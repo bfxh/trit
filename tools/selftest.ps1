@@ -2812,6 +2812,13 @@ if (-not $afPy) {
         'AF22 chain.lock 不进 changes（.journal 在 SKIP 集里），changes 仍看得见命令写的文件' `
         (@($afFullDoc.changes) -join ';')
 
+    # --- AF22d/AF22e: 认领门默认开启；--no-claim-gate 才回到旧行为 ---
+    $afDefOut = @(& $afPy $avPy -Root $AfA -Changed (Join-Path $AfA 'pkg\core.py') -Lang python -DryRun 2>&1)
+    Assert-True ($LASTEXITCODE -eq 2 -and (($afDefOut -join ' ') -match '认领门默认开启')) `
+        'AF22d 认领门默认开启：缺 --claim-who 在参数校验阶段拒绝' "e=$LASTEXITCODE"
+    $afOffOut = @(& $afPy $avPy -Root $AfA -Changed (Join-Path $AfA 'pkg\core.py') -Lang python -DryRun --no-claim-gate 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0) 'AF22e --no-claim-gate 显式关闭后回到旧行为' "e=$LASTEXITCODE"
+
     # --- AF23: 多智能体认领门：认领过才放行，未认领/被别人占都 fail-closed ---
     # 三态表与 scripts/agent_claims.py gate 同源；unknown 不是通行证（没登记 ≠ 没人）。
     $AfCoord = Join-Path $Work 'af-coord'
@@ -5533,8 +5540,8 @@ if (-not $anPy) {
     $skipped++
 } else {
     $aoOut = @(& $anPy (Join-Path $tools 'subagent_dispatch.py') --self-test 2>&1)
-    Assert-True ($LASTEXITCODE -eq 0 -and (($aoOut -join ' ') -match 'subagent-dispatch self-test: 32/32')) `
-        'AO1 子智能体派发 32/32：三角色分模型/并行产出/已有产物拒绝/重复 id 与 out 拒绝/硬链接与符号链接拒绝/根内 junction 拒绝/大小写与尾点拒绝/零预算拒绝/无 usage 预算拒绝/无路由拒绝/dry-run 不落写/prompt guard 前置隔离/输出侧污染隔离与 warn 留痕/二进制文本抽取/capability 两例/claim-release 三例/orch-select 两例' "e=$LASTEXITCODE"
+    Assert-True ($LASTEXITCODE -eq 0 -and (($aoOut -join ' ') -match 'subagent-dispatch self-test: 33/33')) `
+        'AO1 子智能体派发 33/33：三角色分模型/并行产出/已有产物拒绝/重复 id 与 out 拒绝/硬链接与符号链接拒绝/根内 junction 拒绝/大小写与尾点拒绝/零预算拒绝/无 usage 预算拒绝/无路由拒绝/dry-run 不落写/prompt guard 前置隔离/输出侧污染隔离与 warn 留痕/二进制文本抽取/capability 两例与自动发现/claim-release 三例/orch-select 两例' "e=$LASTEXITCODE"
 }
 
 
