@@ -11,8 +11,8 @@ pub(super) fn implies(
 ) {
     let base = resolve.len();
     negation::push(resolve, kept, consts, left);
-    let left = *resolve.last().expect("非空 IR");
-    absorb::or(resolve, kept, consts, left, right, Algebra::Kleene);
+    let left_index = resolve.len() - 1;
+    absorb::or(resolve, kept, consts, left_index, right, Algebra::Kleene);
     let out = *resolve.last().expect("非空 IR");
     resolve.truncate(base);
     resolve.push(out);

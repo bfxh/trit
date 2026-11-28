@@ -2,7 +2,6 @@
 //! 随机表达式 / 网表 × 三代数 × 编译 C 逐行对拍。
 //!
 //! 固定种子，失败可复现；只调用 CLI，不依赖内部 IR 细节。
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -45,7 +44,6 @@ fn scratch(name: &str) -> PathBuf {
             .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
-    let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("创建临时目录");
     dir
 }
@@ -77,7 +75,7 @@ fn netlist(rng: &mut Rng) -> String {
     let gates = 3 + rng.pick(6);
     let mut sources: Vec<String> = VARS[..inputs].iter().map(|v| v.to_string()).collect();
     let mut lines = vec![format!(
-        "module random(input {}, output y);",
+        "module random({}, output y);",
         VARS[..inputs]
             .iter()
             .map(|v| format!("input {v}"))
@@ -98,7 +96,8 @@ fn netlist(rng: &mut Rng) -> String {
 }
 
 fn run(dir: &Path, name: &str, text: &str, algebra: &str) -> serde_json::Value {
-    let source = dir.join(format!("{name}.src"));
+    let ext = ["tri", "v"][usize::from(text.starts_with("module"))];
+    let source = dir.join(format!("{name}.{ext}"));
     let out = dir.join(format!("{name}-{algebra}"));
     fs::write(&source, text).expect("写源文件");
     let output = Command::new(bin())
@@ -116,7 +115,7 @@ fn run(dir: &Path, name: &str, text: &str, algebra: &str) -> serde_json::Value {
         .expect("运行 trit-build");
     assert!(
         output.status.success(),
-        "{name} {algebra}: {}",
+        "{name} {algebra} source={text}: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let summary: serde_json::Value =
