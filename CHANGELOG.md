@@ -19,6 +19,17 @@
 - `trit-fmt --parser markdown` 走 stdin；文件模式按扩展名自动分派。
   `crates/trit-fmt/src/bin/trit-fmt.rs` 的用法文本移入 `src/bin/help.txt`（`include_str!`），
   行数 127→102，台账同轮收紧。
+### Added（trit-splat v7：批量帧渲染 + PSNR 评测）
+
+- `splat-render` 的帧选择扩成 `--frame N|all|a..b|csv`（兼容原 `--frame N`），
+  新增 `--frames` 别名；资产只读一次，多帧复用同一高斯集与 Mip 尺度。
+- 多帧 `--out` 支持目录（写 `frame_XXXX.png`）或 `{frame}` 模板；单帧保持原路径。
+- `Frame::psnr_db`：8bit RGB、MSE 归一化到 [0,1] 的 PSNR；尺寸不一致返回 None，
+  逐像素一致返回 +∞。
+- `--psnr` 打逐帧/均值；`--psnr-json <path>` 落 JSON（无穷用 `infinite` 标记）；
+  `--fail-under <db>` 在均值低于阈值时退出码 3。
+- 验证：26 lib + 6 bin + 2 集成测试全绿；synthetic-orbit/init.ply 的 frame 0..3
+  读数 13.26 / 13.30 / 13.44 dB，均值 13.33 dB（未训练 init，仅作 CLI 链路 smoke）。
 
 ### Changed（trit-splat：拆文件收绿模块预算，纯搬运）
 
