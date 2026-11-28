@@ -1,8 +1,7 @@
 //! 帧间并行：每帧独立渲染，资产与相机表只读共享。
-
 use std::path::PathBuf;
-
 use trit_splat::camera::Transforms;
+use trit_splat::color::ColorConfig;
 use trit_splat::ply::RawGaussian;
 
 #[path = "slot.rs"]
@@ -23,6 +22,7 @@ pub(super) fn render_frames(
     want_psnr: bool,
     want_depth: bool,
     depth_max: f32,
+    color: &ColorConfig,
     frames: &[usize],
     paths: &[PathBuf],
     threads: usize,
@@ -40,7 +40,7 @@ pub(super) fn render_frames(
         for (&frame, path) in frames.iter().zip(paths) {
             out.push(render_slot(
                 gaussians, transforms, min_scales, dataset, bg_mode, want_psnr, want_depth,
-                depth_max, frame, path,
+                depth_max, color, frame, path,
             )?);
         }
         return Ok(out);
@@ -56,7 +56,7 @@ pub(super) fn render_frames(
                 for (&frame, path) in frame_chunk.iter().zip(path_chunk) {
                     out.push(render_slot(
                         gaussians, transforms, min_scales, dataset, bg_mode, want_psnr, want_depth,
-                        depth_max, frame, path,
+                        depth_max, color, frame, path,
                     )?);
                 }
                 Ok::<_, String>(out)
