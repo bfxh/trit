@@ -1,0 +1,17 @@
+[package]
+name = "trit-fmt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "前沿格式化器（首个目标：与 prettier 3 对拍的 JSON 打印）"
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = "1.0.154"
+
+[[bench]]
+name = "format"
+harness = false

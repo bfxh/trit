@@ -143,6 +143,7 @@
 | [AGENT-DELIVERY.md](engineering/AGENT-DELIVERY.md) | 交接包的 DeliveryReceipt 四态账本（Rust）：sent/delivered/read/acted 顺序、actor、acted 证据、包哈希绑定、`.agent/delivery` 与 state_hash 跳过；`check` 只读预检一次给出交接门 + 账本状态；`cargo test -p trit-orch --test delivery --test delivery_cli --test delivery_check` 9/9 |
 | [AGENT-CAPACITY.md](engineering/AGENT-CAPACITY.md) | 本机容量租约与跨项目协调：CPU/load/内存/GPU/磁盘/IO 探针、共享租约目录 + 跨进程锁 + TTL + 硬 deadline + heartbeat、`subagent_dispatch --capacity auto / enforce` 的 provider 前准入与 CAPACITY CONTRACT、`sandbox_run`/`run_caps` 共用租约；21/21 自测与诚实边界 |
 | [AGENT-CONTEXT-SEARCH.md](engineering/AGENT-CONTEXT-SEARCH.md) | 1M 窗口 / 850K 触发 / 700K 目标：锚点保留 + 抽取式摘要 + fail-closed；搜索结果相关性/安全/权威/新鲜度/去重/token 预算评分与自动推理强度；23/23 + 22/22 自测、100/100 随机不变量、14/14 交叉接缝 |
+    | [tech-stack-policy.md](tech-stack-policy.md) | 新增 Python 只准测试代码：规则、执行方式（write_file / MCP）与边界 |
 | [AGENT-ALIGNMENT.md](engineering/AGENT-ALIGNMENT.md) | 目标→需求→产物/证据/变更的显式对齐门：v1 单目标、v2 单根目标树、v3 证据绑定实际成功 run 命令、每个 goal 必须被需求父链覆盖、non-goal 路径/对象级排除/声明范围、声明变更必须实际发生（空变更集不再免检）、父链、悬空引用、sha256/locator、未挂变更、需求矛盾、scaffold 空骨架、journal-end 后 run 后漂移复核；101/101 自测、100/100 随机不变量、AL27–AL40 链集成、全仓 710 通过 |
 | [AGENT-STABILITY.md](engineering/AGENT-STABILITY.md) | 稳定性/抖动探针：重复执行项目命令，按退出码混判、输出指纹和耗时比分出 stable-pass / stable-fail / flaky / nondeterministic / jittery / unknown；接进 `agent_verify` 默认链（有清单才启用），清单命令先过 policy；unknown 不放行、超时杀进程树、报告保留每次 exit/output SHA/耗时；38/38 自测、ST1-ST6 链集成、全仓 716 通过 |
 | [AGENT-MODELS.md](engineering/AGENT-MODELS.md) | 子智能体按角色选模型：`route/probe/call`、配置 schema、密钥只走环境变量、16 条路由自测、25 条派发与输出隔离自测、未落地项 |
@@ -157,6 +158,7 @@
 | [CMD-DRIVER.md](engineering/CMD-DRIVER.md) | PTC 命令行降错：plan 预检、argv 无 shell、逐步 verify、无盲重试、错误分类与摘要/本地回执分离；34/34 自测，work-bench 4 步 13/13、81/81 质量不变 |
 | [CI-CD.md](engineering/CI-CD.md) | CI/CD 与发布：开发侧 work-bench/PTC 质量门、agent-quality workflow、Release 质量前置与用户侧资产过滤、CI 预算规则 |
 | [VERIFICATION.md](engineering/VERIFICATION.md) | 主库三值语义的 Verus 验证锚点：K3 规格与代数律证明、3×3 完备对拍 `trit-core`、`scripts/verify.py` 统一入口（固定版本 + SHA-256）与 CI；覆盖范围与路线图 |
+| [LEAN.md](engineering/LEAN.md) | Lean 4 证明锚点（模型层）：零 Mathlib 小仓库直证 TriVec 单点与位平面公式，与 Verus 代码层分工同一批命题 |
 | [LOGGING.md](engineering/LOGGING.md) | 统一运行时日志：`TRIT_LOG` 级别/前缀过滤、文本与 JSONL、文件输出；诊断走 `trit_log`、结果留 stdout 的口径与迁移现状 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
@@ -182,6 +184,8 @@
 | [README-SPEC.md](specs/README-SPEC.md) | README 规范：首屏只放什么、性能数字怎么给 |
 | [DOC-INDEX.md](specs/DOC-INDEX.md) | 新增 / 搬迁 / 改名文档的流程与判红条件 |
 | [AGENT-TASK-STANDARD.md](AGENT-TASK-STANDARD.md) | 高智商智能体任务标准：自包含起点、机器可判验收、显式禁区、失败回退、S/A/B/C 分级 |
+| [FRONTIER.md](specs/FRONTIER.md) | 前沿设计宪章：默认 MCP/默认工具、反老旧设计三问、上帝对象上下游全禁、质量不变的超越（基线/读数/负结果） |
+| [FRONTIER-FORMATTER-TASK.md](specs/FRONTIER-FORMATTER-TASK.md) | S 级任务卡：prettier 类格式化器的 Rust 重写（oracle DIFF 0 + 幂等 + 吞吐/内存超越 + 负结果入册） |
 
 ## AGENT-TASKS/ — 可派发的任务包
 
