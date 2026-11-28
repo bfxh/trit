@@ -31,7 +31,7 @@ jobs:
         with:
           key: ${{ hashFiles('Cargo.toml') }}
       - name: Install numpy for script self-tests
-        run: python3 -m pip install --user numpy
+        run: python3 -m pip install --user numpy scikit-learn
       - name: Collect changed crates
         id: crates
         env:
@@ -101,7 +101,7 @@ jobs:
         with:
           key: ${{ hashFiles('Cargo.toml') }}
       - name: Install numpy for script self-tests
-        run: python3 -m pip install --user numpy
+        run: python3 -m pip install --user numpy scikit-learn
       - name: mutation gate (shard ${{ matrix.shard }}/4)
         run: |
           set -o pipefail
