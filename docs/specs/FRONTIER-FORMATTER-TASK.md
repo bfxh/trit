@@ -28,7 +28,31 @@
 | G4 | 注释与空行 | 注释不丢失、不换归属；连续空行折叠规则与 prettier 一致（逐条断言） |
 | G5 | 接入默认链 | 登记进 `docs/specs/DEFAULT-TOOLS.json`；替换一个真实调用点并保留回退开关 |
 
-目标值在派发时以本机实测基线为准；读数写进 `docs/results/`，负结果同样入册。
+## 基线（2026-11-28 实测，prettier 3.10.1）
+
+oracle：prettier **3.10.1**（Node 20+，`prettier.format` API，单进程）。
+
+| 指标 | 读数 |
+|---|---|
+| 语料 | 250 文件 / 1,296,600 字节（10× 混合模板：JS 函数 / TS 接口 / JSON 配置 / Markdown 文档） |
+| 单轮最优 | 943 / 949 / 960 ms（3 次独立运行，每次 3 轮取最优） |
+| 吞吐 | **1.29–1.31 MiB/s**（单线程） |
+| 峰值内存 | RSS 264–277 MB；heapUsed 114–177 MB |
+
+G3 据此换算：单线程 ≥ **2.6 MiB/s**（2×），4 线程 ≥ **3.9 MiB/s**（3×），RSS ≤ **265 MB**。
+读数随机器变化，派发时必须在同机重测并替换本节。
+
+复算要点（语料与脚本放仓外临时目录，不提交）：
+
+1. 语料：10 组混合模板（JS 函数体 / TS 接口 + 泛型 / JSON 嵌套对象 / Markdown 多级标题），
+   每组复制成 25 个文件凑到 ~1.3 MB；
+2. `npm init -y && npm i prettier@3.10.1`；
+3. bench 脚本逐文件 `await prettier.format(text, {parser})`，parser 按扩展名
+   （`.js`→`babel`、`.ts`→`typescript`、`.json`→`json`、`.md`→`markdown`），
+   warmup 1 轮后计时 3 轮取最优，同时输出 `process.memoryUsage()` 的 rss/heapUsed；
+4. 记录机器规格（核数 / 内存 / OS）——换机读数不可比。
+
+读数与负结果写进本卡或 `CHANGELOG.md`；**不写 `docs/results/`**（该目录属于公开树禁区）。
 
 ## 非目标
 

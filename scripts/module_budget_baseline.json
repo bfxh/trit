@@ -4551,6 +4551,10 @@
       "lines": 88
     },
     {
+      "file": "crates/trit-policy/tests/god_object_surface.rs",
+      "lines": 317
+    },
+    {
       "file": "crates/trit-policy/tests/policy.rs",
       "lines": 318
     },

@@ -380,6 +380,8 @@ jobs:
       # 判的是"默认件清单完整 + S 级任务包四门槛"，判不了设计是否真的更前沿（宪章 §3）。
       - name: Default tools manifest + S-level task gates
         run: cargo test -p trit-policy --test frontier_design
+      - name: God-object surface ratchet (pub fields / pub fns per type)
+        run: cargo test -p trit-policy --test god_object_surface
 
   agent-checks:
     name: agent checks (registry)
