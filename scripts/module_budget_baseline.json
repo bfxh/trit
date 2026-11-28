@@ -5139,6 +5139,110 @@
       "lines": 448
     },
     {
+      "file": "crates/trit-splat/src/bin/splat-render.rs",
+      "lines": 107
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/cli.rs",
+      "lines": 56
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/cli/gt.rs",
+      "lines": 43
+    },
+    {
+      "file": "crates/trit-splat/src/bin/splat-render/mip.rs",
+      "lines": 30
+    },
+    {
+      "file": "crates/trit-splat/src/camera.rs",
+      "lines": 151
+    },
+    {
+      "file": "crates/trit-splat/src/camera/tests.rs",
+      "lines": 53
+    },
+    {
+      "file": "crates/trit-splat/src/error.rs",
+      "lines": 21
+    },
+    {
+      "file": "crates/trit-splat/src/lib.rs",
+      "lines": 50
+    },
+    {
+      "file": "crates/trit-splat/src/math.rs",
+      "lines": 152
+    },
+    {
+      "file": "crates/trit-splat/src/math/tests.rs",
+      "lines": 35
+    },
+    {
+      "file": "crates/trit-splat/src/ply.rs",
+      "lines": 149
+    },
+    {
+      "file": "crates/trit-splat/src/ply/model.rs",
+      "lines": 29
+    },
+    {
+      "file": "crates/trit-splat/src/ply/tests.rs",
+      "lines": 81
+    },
+    {
+      "file": "crates/trit-splat/src/ply/tests/activation.rs",
+      "lines": 19
+    },
+    {
+      "file": "crates/trit-splat/src/raster.rs",
+      "lines": 146
+    },
+    {
+      "file": "crates/trit-splat/src/raster/border.rs",
+      "lines": 29
+    },
+    {
+      "file": "crates/trit-splat/src/raster/tests.rs",
+      "lines": 71
+    },
+    {
+      "file": "crates/trit-splat/src/raster/tests/border.rs",
+      "lines": 14
+    },
+    {
+      "file": "crates/trit-splat/src/raster/tests/degenerate.rs",
+      "lines": 30
+    },
+    {
+      "file": "crates/trit-splat/src/splat.rs",
+      "lines": 201
+    },
+    {
+      "file": "crates/trit-splat/src/splat/tests.rs",
+      "lines": 67
+    },
+    {
+      "file": "crates/trit-splat/src/splat/tests/color.rs",
+      "lines": 11
+    },
+    {
+      "file": "crates/trit-splat/src/spz.rs",
+      "lines": 194
+    },
+    {
+      "file": "crates/trit-splat/tests/common/mod.rs",
+      "lines": 48
+    },
+    {
+      "file": "crates/trit-splat/tests/render_background.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-splat/tests/render_dataset.rs",
+      "lines": 40
+    },
+    {
       "file": "crates/trit-texture/benches/sample.rs",
       "lines": 258
     },

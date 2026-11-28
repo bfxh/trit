@@ -1,0 +1,34 @@
+[
+  {
+    "name": "splat: 视深符号反了（相机后方的点不再被剔除）",
+    "file": "crates/trit-splat/src/splat.rs",
+    "old": "    let depth = -cam.z;",
+    "new": "    let depth = cam.z;",
+    "pkg": "trit-splat",
+    "filter": "gaussian_behind_camera_is_culled"
+  },
+  {
+    "name": "splat: SH 每通道系数数按 4 划分（K=3 被误判成不足）",
+    "file": "crates/trit-splat/src/splat.rs",
+    "old": "    let k = f_rest.len() / 3; // 每通道系数数（SH1=3, SH2=8, SH3=15）",
+    "new": "    let k = f_rest.len() / 4; // 每通道系数数（SH1=3, SH2=8, SH3=15）",
+    "pkg": "trit-splat",
+    "filter": "sh1_directional_term_changes_with_view"
+  },
+  {
+    "name": "ply: 四元数按 XYZW 直通（丢掉 W 在首位的换算）",
+    "file": "crates/trit-splat/src/ply/model.rs",
+    "old": "    let rot_xyzw = [g.rot_xyzw[1], g.rot_xyzw[2], g.rot_xyzw[3], g.rot_xyzw[0]];",
+    "new": "    let rot_xyzw = [g.rot_xyzw[0], g.rot_xyzw[1], g.rot_xyzw[2], g.rot_xyzw[3]];",
+    "pkg": "trit-splat",
+    "filter": "activation_decodes_log_and_sigmoid"
+  },
+  {
+    "name": "raster: painter 排序反了（近的先画、远的后盖）",
+    "file": "crates/trit-splat/src/raster.rs",
+    "old": "    splats.sort_by(|a, b| {\n        b.depth\n            .partial_cmp(&a.depth)\n            .unwrap_or(std::cmp::Ordering::Equal)\n    });",
+    "new": "    splats.sort_by(|a, b| {\n        a.depth\n            .partial_cmp(&b.depth)\n            .unwrap_or(std::cmp::Ordering::Equal)\n    });",
+    "pkg": "trit-splat",
+    "filter": "nearer_splat_wins_at_overlap"
+  }
+]
