@@ -1,0 +1,7 @@
+trit-fmt —— 前沿格式化器（当前范围：JSON / Markdown 块级）
+
+用法：
+  trit-fmt --check <FILE>...        只判：有文件不符合格式就退出 1
+  trit-fmt --write <FILE>...        原地写回（只改空白与标记，不改语义）
+  trit-fmt <FILE>...                打印到 stdout
+  trit-fmt --parser <json|markdown> 读 stdin，写到 stdout
