@@ -5,10 +5,13 @@
 //! EV=0、无白平衡、饱和度=1、`None` 为恒等，不改变既有输出。
 
 mod gamut;
+mod icc;
+mod tone;
 mod transfer;
 mod white_balance;
 
 pub use gamut::Gamut;
+pub use icc::profile as icc_profile;
 pub use transfer::{bt1886_decode, bt1886_encode, srgb_decode, srgb_encode};
 pub use white_balance::{WhiteBalance, white_balance};
 
@@ -111,7 +114,7 @@ impl ColorConfig {
             let luma = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
             c = c.map(|v| luma + (v - luma) * self.saturation);
             c = gamut::convert(c, self.output_gamut);
-            c = c.map(|v| tone_map_channel(v, self.tone_map));
+            c = c.map(|v| tone::map_channel(v, self.tone_map));
             c = match self.output {
                 ColorSpace::Raw => c,
                 ColorSpace::Srgb => c.map(srgb_encode),
@@ -121,15 +124,6 @@ impl ColorConfig {
                 *dst = (v.clamp(0.0, 1.0) * 255.0).round() as u8;
             }
         }
-    }
-}
-
-fn tone_map_channel(v: f32, mode: ToneMap) -> f32 {
-    let v = v.max(0.0);
-    match mode {
-        ToneMap::None => v,
-        ToneMap::Reinhard => v / (1.0 + v),
-        ToneMap::Aces => (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14),
     }
 }
 
