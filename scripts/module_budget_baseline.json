@@ -1947,12 +1947,20 @@
       "lines": 114
     },
     {
+      "file": "crates/trit-fmt/benches/threads.rs",
+      "lines": 121
+    },
+    {
+      "file": "crates/trit-fmt/src/batch.rs",
+      "lines": 104
+    },
+    {
       "file": "crates/trit-fmt/src/bin/trit-fmt.rs",
       "lines": 109
     },
     {
       "file": "crates/trit-fmt/src/lib.rs",
-      "lines": 140
+      "lines": 107
     },
     {
       "file": "crates/trit-fmt/src/parse.rs",
@@ -1965,6 +1973,14 @@
     {
       "file": "crates/trit-fmt/tests/corpus.rs",
       "lines": 89
+    },
+    {
+      "file": "crates/trit-fmt/tests/parallel.rs",
+      "lines": 82
+    },
+    {
+      "file": "crates/trit-fmt/tests/unit.rs",
+      "lines": 37
     },
     {
       "file": "crates/trit-fuzz/src/corpus.rs",
