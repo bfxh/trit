@@ -25,13 +25,13 @@ fn numbers_and_strings_keep_their_source_text() {
 }
 
 #[test]
-fn rejects_non_json_syntax_by_extension() {
+fn rejects_unimplemented_syntaxes_by_extension() {
     assert!(matches!(
         format_path("x.js", "let a = 1;"),
         Err(FormatError::Unsupported("javascript"))
     ));
     assert!(matches!(
-        format_path("x.md", "# hi"),
-        Err(FormatError::Unsupported("markdown"))
+        format_path("x.ts", "let a: number = 1;"),
+        Err(FormatError::Unsupported("typescript"))
     ));
 }

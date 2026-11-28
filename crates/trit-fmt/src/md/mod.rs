@@ -13,6 +13,7 @@
 //! 代码块内嵌格式化（```js / ```json 的正文 prettier 会再格式化）。
 
 mod parse;
+mod table;
 mod print;
 mod width;
 

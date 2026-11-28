@@ -3,7 +3,8 @@
 //! 只做**块级**；行内文本保持原样，只折叠代码段之外的连续空格。
 //! 不认识的构造返回 `Unsupported`——不猜、不静默改写。
 
-use super::{Align, Block, List, ListItem, Table};
+use super::table::try_table;
+use super::{Block, List, ListItem};
 use crate::FormatError;
 
 pub(crate) fn parse_document(source: &str) -> Result<Vec<Block>, FormatError> {
@@ -149,11 +150,13 @@ fn collect_fence(lines: &[String], start: usize, fence: char, run: usize) -> (St
     let mut body = String::new();
     let mut i = start + 1;
     while i < lines.len() {
-        if let Some((close, close_run, extra)) = fence_close(&lines[i]) {
-            if close == fence && close_run >= run && extra.is_empty() {
-                i += 1;
-                break;
-            }
+        if let Some((close, close_run, extra)) = fence_close(&lines[i])
+            && close == fence
+            && close_run >= run
+            && extra.is_empty()
+        {
+            i += 1;
+            break;
         }
         let line = &lines[i];
         let cut = leading_spaces(line).min(indent);
@@ -332,13 +335,13 @@ fn collect_list(
                 continue;
             }
             let indent = leading_spaces(line);
-            if let Some(next) = list_marker(line) {
-                if next.indent <= first.indent + 1 {
-                    if blanks > 0 {
-                        loose = true;
-                    }
-                    break;
+            if let Some(next) = list_marker(line)
+                && next.indent <= first.indent + 1
+            {
+                if blanks > 0 {
+                    loose = true;
                 }
+                break;
             }
             if indent >= marker.content_indent {
                 if blanks > 0 {
@@ -438,102 +441,6 @@ fn collect_indented_code(lines: &[String], start: usize) -> (String, usize) {
     (body.trim_end_matches('\n').to_owned(), i)
 }
 
-fn try_table(lines: &[String], start: usize) -> Option<(Table, usize)> {
-    let header = &lines[start];
-    if !header.contains('|') {
-        return None;
-    }
-    let delimiter = lines.get(start + 1)?;
-    let header_cells = split_cells(header);
-    let delimiter_cells = split_cells(delimiter);
-    if header_cells.len() != delimiter_cells.len() || delimiter_cells.is_empty() {
-        return None;
-    }
-    let mut align = Vec::with_capacity(delimiter_cells.len());
-    for cell in &delimiter_cells {
-        let text = cell.trim();
-        let left = text.starts_with(':');
-        let right = text.ends_with(':') && text.len() > 1;
-        let dashes = text.trim_start_matches(':').trim_end_matches(':');
-        if dashes.is_empty() || !dashes.chars().all(|c| c == '-') {
-            return None;
-        }
-        align.push(match (left, right) {
-            (true, true) => Align::Center,
-            (true, false) => Align::Left,
-            (false, true) => Align::Right,
-            (false, false) => Align::None,
-        });
-    }
-    let mut rows = Vec::new();
-    let mut i = start + 2;
-    while i < lines.len() {
-        let line = &lines[i];
-        if is_blank(line) {
-            break;
-        }
-        if !line.contains('|') && starts_block(line) {
-            break;
-        }
-        let mut cells = split_cells(line);
-        cells.truncate(header_cells.len());
-        rows.push(
-            cells
-                .into_iter()
-                .map(|cell| normalize_inline(cell.trim()))
-                .collect(),
-        );
-        i += 1;
-    }
-    Some((
-        Table {
-            align,
-            header: header_cells
-                .into_iter()
-                .map(|cell| normalize_inline(cell.trim()))
-                .collect(),
-            rows,
-        },
-        i,
-    ))
-}
-
-fn split_cells(line: &str) -> Vec<String> {
-    let text = line.trim();
-    let mut cells = Vec::new();
-    let mut current = String::new();
-    let mut escaped = false;
-    for c in text.chars() {
-        if escaped {
-            current.push(c);
-            escaped = false;
-            continue;
-        }
-        match c {
-            '\\' => {
-                current.push(c);
-                escaped = true;
-            }
-            '|' => {
-                cells.push(current.clone());
-                current.clear();
-            }
-            _ => current.push(c),
-        }
-    }
-    cells.push(current);
-    if text.starts_with('|') && cells.first().is_some_and(|cell| cell.trim().is_empty()) {
-        cells.remove(0);
-    }
-    if text.ends_with('|') && cells.last().is_some_and(|cell| cell.trim().is_empty()) {
-        cells.pop();
-    }
-    cells
-        .into_iter()
-        .map(|cell| cell.trim().to_owned())
-        .collect()
-}
-
 fn collect_paragraph(lines: &[String], start: usize) -> Result<(Block, usize), FormatError> {
     let mut body: Vec<String> = Vec::new();
     let mut i = start;
@@ -554,7 +461,7 @@ fn collect_paragraph(lines: &[String], start: usize) -> Result<(Block, usize), F
     Ok((Block::Paragraph { lines: body }, i))
 }
 
-fn starts_block(line: &str) -> bool {
+pub(crate) fn starts_block(line: &str) -> bool {
     heading(line).is_some()
         || fence_open(line).is_some()
         || is_rule(line)
@@ -658,24 +565,22 @@ fn normalize_emphasis(text: &str) -> String {
         }
         if (c == '*' || c == '_') && is_boundary(out.chars().last()) {
             let run = chars[i..].iter().take_while(|x| **x == c).count();
-            if run <= 2 && i + run < chars.len() && !chars[i + run].is_whitespace() {
-                if let Some(close) = find_closer(&chars, i + run, c, run) {
-                    let marker = match (c, run) {
-                        ('*', 1) => '_',
-                        ('_', 2) => '*',
-                        _ => c,
-                    };
-                    for _ in 0..run {
-                        out.push(marker);
-                    }
-                    let inner: String = chars[i + run..close].iter().collect();
-                    out.push_str(&normalize_emphasis(&inner));
-                    for _ in 0..run {
-                        out.push(marker);
-                    }
-                    i = close + run;
-                    continue;
-                }
+            if run <= 2
+                && i + run < chars.len()
+                && !chars[i + run].is_whitespace()
+                && let Some(close) = find_closer(&chars, i + run, c, run)
+            {
+                let marker = match (c, run) {
+                    ('*', 1) => '_',
+                    ('_', 2) => '*',
+                    _ => c,
+                };
+                out.extend(std::iter::repeat_n(marker, run));
+                let inner: String = chars[i + run..close].iter().collect();
+                out.push_str(&normalize_emphasis(&inner));
+                out.extend(std::iter::repeat_n(marker, run));
+                i = close + run;
+                continue;
             }
             for _ in 0..run {
                 out.push(c);

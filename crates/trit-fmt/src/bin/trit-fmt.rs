@@ -9,19 +9,7 @@ use std::process::ExitCode;
 
 use trit_fmt::format_path;
 
-fn help() {
-    println!(
-        "trit-fmt {} —— 前沿格式化器（当前范围：JSON / Markdown 块级）
-
-用法：
-  trit-fmt --check <FILE>...        只判：有文件不符合格式就退出 1
-  trit-fmt --write <FILE>...        原地写回（只改空白与标记，不改语义）
-  trit-fmt <FILE>...                打印到 stdout
-  trit-fmt --parser <json|markdown> 读 stdin，写到 stdout
-",
-        env!("CARGO_PKG_VERSION")
-    );
-}
+const HELP: &str = include_str!("help.txt");
 
 fn main() -> ExitCode {
     let mut check = false;
@@ -33,15 +21,9 @@ fn main() -> ExitCode {
         match arg.as_str() {
             "--check" => check = true,
             "--write" | "-w" => write = true,
-            "--parser" => match args.next() {
-                Some(value) => parser = Some(value),
-                None => {
-                    eprintln!("trit-fmt: --parser 缺少值");
-                    return ExitCode::from(2);
-                }
-            },
+            "--parser" => parser = args.next(),
             "--help" | "-h" => {
-                help();
+                print!("{HELP}");
                 return ExitCode::SUCCESS;
             }
             other if other.starts_with('-') => {
@@ -55,21 +37,18 @@ fn main() -> ExitCode {
         eprintln!("trit-fmt: --check 与 --write 不能同时给");
         return ExitCode::from(2);
     }
-
+    let parser = parser.as_deref().unwrap_or("json");
+    if !matches!(parser, "json" | "markdown" | "md") {
+        eprintln!("trit-fmt: 不认识的 parser: {parser}");
+        return ExitCode::from(2);
+    }
     if files.is_empty() {
-        let name = match parser.as_deref() {
-            None | Some("json") => "stdin.json",
-            Some("markdown") | Some("md") => "stdin.md",
-            Some(other) => {
-                eprintln!("trit-fmt: 不认识的 parser: {other}");
-                return ExitCode::from(2);
-            }
-        };
         let mut source = String::new();
         if let Err(error) = std::io::stdin().read_to_string(&mut source) {
             eprintln!("trit-fmt: 读 stdin 失败: {error}");
             return ExitCode::from(1);
         }
+        let name = if parser == "json" { "stdin.json" } else { "stdin.md" };
         return match format_path(name, &source) {
             Ok(out) => {
                 print!("{out}");
@@ -119,9 +98,5 @@ fn main() -> ExitCode {
         print!("{formatted}");
     }
 
-    if failed == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
-    }
+    ExitCode::from(if failed == 0 { 0 } else { 1 })
 }
