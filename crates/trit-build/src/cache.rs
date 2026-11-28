@@ -15,7 +15,7 @@ pub(crate) fn cache_hit(manifest_path: &Path, out_dir: &Path) -> Option<Value> {
     let manifest: Value = serde_json::from_str(&text).ok()?;
     let outputs = manifest.get("outputs")?.as_object()?;
     for (name, info) in outputs {
-        let path = out_dir.join(name);
+        let path = crate::safe_path::safe_join(out_dir, name)?;
         let bytes = fs::read(&path).ok()?;
         if hash64(&bytes) != u64::from_str_radix(info.get("hash")?.as_str()?, 16).ok()? {
             return None;
