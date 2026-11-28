@@ -63,7 +63,7 @@ fn direct_backend_emits_c_for_verilog() {
     );
     let source = fs::read_to_string(dir.join("v-out/direct.c")).expect("读 direct.c");
     assert!(
-        source.contains("int8_t trit_direct(const int8_t*v,unsigned n){"),
+        source.contains("C trit_direct(const C*v,unsigned n){"),
         "{source}"
     );
     assert!(source.contains("-1,0,1,0,0,0,1,0,-1"));

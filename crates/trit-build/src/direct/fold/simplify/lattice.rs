@@ -1,12 +1,11 @@
 //! 格吸收律：`x ∧ (x ∨ y) = x`、`x ∨ (x ∧ y) = x`。
-//!
-//! K3/Ł3 的 `∧` / `∨` 是格序 min/max，吸收成立；B3 的 `U` 传染会破坏它：
-//! `F ∧ (F ∨ U) = F ∧ U = U`，所以 B3 不做这条规则。
+//! K3/Ł3 成立；B3 的 `U` 传染破坏它，不做。
 
 use trit_core::Algebra;
 
 use crate::direct::ir::Op;
 mod chain;
+pub(super) mod pair;
 
 pub(super) fn absorbed(
     alg: Algebra,

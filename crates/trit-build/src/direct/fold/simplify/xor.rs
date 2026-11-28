@@ -1,8 +1,4 @@
-//! 三值强加 `⊕` 的常量律，按代数分派。
-//!
-//! K3/B3 的 `⊕` 在已知值上按合取：`x ⊕ 1 = x`、`x ⊕ X = X`；`0` 不是单位元。
-//! Ł3 的 `⊕` 是饱和加法：`x ⊕ 0 = x`、`x ⊕ 1 = 1`；`X` 处 `F ⊕ X` 与 `X ⊕ X` 不同，保留原式。
-//! `x ⊕ ¬x = 1` 只在 Ł3 成立；K3/B3 的 `X ⊕ X = X` 明确保留。
+//! 三值强加 `⊕` 的常量律与格对偶：`(p ∨ q) ⊕ (p ∧ q) = p ⊕ q`。
 
 use trit_core::Algebra;
 use trit_core::value::Ternary;
@@ -20,6 +16,10 @@ pub(super) fn push(
 ) {
     let left = resolve[left];
     let right = resolve[right];
+    if let Some((p, q)) = super::lattice::pair::meet_join(kept, left, right) {
+        push_node(resolve, kept, consts, Op::Xor(p, q));
+        return;
+    }
     if matches!(alg, Algebra::Lukasiewicz) {
         if consts[left] == Some(Ternary::False) {
             resolve.push(right);

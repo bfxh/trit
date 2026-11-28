@@ -96,10 +96,10 @@ fn render_is_linear_not_a_truth_table() {
     let source = emit(&expr, &vars, Algebra::Kleene).expect("生成");
     assert!(source.starts_with("/*K3 a,b,c*/"), "{source}");
     assert!(
-        source.contains("int8_t trit_direct(const int8_t*v,unsigned n){"),
+        source.contains("C trit_direct(const C*v,unsigned n){"),
         "{source}"
     );
-    assert!(source.contains("static const int8_t T[]"), "{source}");
+    assert!(source.contains("static C T[]"), "{source}");
     assert!(source.contains("-v["), "{source}");
     assert!(!source.contains("T_NOT"), "{source}");
     assert!(
