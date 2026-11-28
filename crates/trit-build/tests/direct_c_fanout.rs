@@ -76,8 +76,10 @@ fn fanout_bytes_stay_within_budget() {
 #[test]
 fn verify_c_matches_fanout_every_row() {
     let dir = scratch("verify");
-    for alg in ["kleene", "lukasiewicz", "bochvar"] {
-        run(&dir, &format!("fan5-{alg}"), FANOUT[1].1, Some(alg));
+    for (name, source, _) in FANOUT {
+        for alg in ["kleene", "lukasiewicz", "bochvar"] {
+            run(&dir, &format!("{name}-{alg}"), source, Some(alg));
+        }
     }
     let _ = fs::remove_dir_all(&dir);
 }
