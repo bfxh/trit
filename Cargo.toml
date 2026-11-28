@@ -28,6 +28,7 @@ members = [
     "crates/trit-redteam",
     "crates/trit-bdd",
     "crates/trit-policy",
+    "crates/trit-fmt",
     "crates/trit-belnap",
     "crates/trit-wasm",
     "crates/sansheng",

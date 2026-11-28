@@ -2501,6 +2501,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-fmt"
+version = "0.12.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "trit-fuzz"
 version = "0.12.0"
 dependencies = [

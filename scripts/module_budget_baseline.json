@@ -1943,6 +1943,18 @@
       "lines": 70
     },
     {
+      "file": "crates/trit-fmt/benches/format.rs",
+      "lines": 114
+    },
+    {
+      "file": "crates/trit-fmt/src/lib.rs",
+      "lines": 441
+    },
+    {
+      "file": "crates/trit-fmt/tests/corpus.rs",
+      "lines": 89
+    },
+    {
       "file": "crates/trit-fuzz/src/corpus.rs",
       "lines": 156
     },

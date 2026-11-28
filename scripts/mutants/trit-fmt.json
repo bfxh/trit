@@ -1,0 +1,42 @@
+[
+ {
+  "name": "fmt: 打印宽度从 80 放宽到 40（应早折行）",
+  "file": "crates/trit-fmt/src/lib.rs",
+  "old": "const PRINT_WIDTH: usize = 80;",
+  "new": "const PRINT_WIDTH: usize = 40;",
+  "pkg": "trit-fmt",
+  "filter": "matches_prettier_golden"
+ },
+ {
+  "name": "fmt: .json 不再走 JSON 分支（应按 unknown 拒绝）",
+  "file": "crates/trit-fmt/src/lib.rs",
+  "old": "    if lower.ends_with(\".json\") || lower.ends_with(\".jsonc\") {",
+  "new": "    if lower.ends_with(\".jsonc\") {",
+  "pkg": "trit-fmt",
+  "filter": "unsupported_syntaxes_are_rejected_not_guessed"
+ },
+ {
+  "name": "fmt: is_scalar 只认 null（标量数组应改成每元素一行）",
+  "file": "crates/trit-fmt/src/lib.rs",
+  "old": "        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)",
+  "new": "        Value::Null",
+  "pkg": "trit-fmt",
+  "filter": "matches_prettier_golden"
+ },
+ {
+  "name": "fmt: 数组含数组不再强制展开",
+  "file": "crates/trit-fmt/src/lib.rs",
+  "old": "        Value::Array(items) => items.iter().any(|item| matches!(item, Value::Array(_))),",
+  "new": "        Value::Array(_) => false,",
+  "pkg": "trit-fmt",
+  "filter": "matches_prettier_golden"
+ },
+ {
+  "name": "fmt: 单行对象去掉内边距",
+  "file": "crates/trit-fmt/src/lib.rs",
+  "old": "            format!(\"{{ {} }}\", body.join(\", \"))",
+  "new": "            format!(\"{{{}}}\", body.join(\", \"))",
+  "pkg": "trit-fmt",
+  "filter": "matches_prettier_golden"
+ }
+]

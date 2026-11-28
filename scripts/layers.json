@@ -41,6 +41,7 @@
     "trit-attn": "learn",
     "trit-net": "learn",
     "trit-machines": "learn",
+    "trit-fmt": "prod",
     "trit-cli": "prod",
     "trit-lsp": "prod",
     "trit-build": "prod",
