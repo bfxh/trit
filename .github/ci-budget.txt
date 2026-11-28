@@ -3,5 +3,5 @@
 # 规则：没写理由的行直接判红；指向不存在的 job 会警告（job 改名后要同步）。
 # 这里抬的是"上限"，不是预期耗时——超过这个值仍然会被 GitHub 掐掉。
 mutation.yml#changed 90  # 变异门按改动包跑：每条变异都要"改文件 + 跑一遍测试"；trit-wspace 300 条时 57min，本轮 +5 条后 60min 被掐断，抬到 90
-mutation.yml#full-shard 45  # 全量变异的 1/4（4 片并行、各片独立检出，只在 workflow_dispatch / schedule 上跑）；1775 条按 4 片各约 444 条，30 分钟实测被掐断，45 是跑完所需的上限，不是预期
+mutation.yml#full-shard 30  # 全量变异的 1/8（8 片并行、各片独立检出，只在 workflow_dispatch / schedule 上跑）；1775 条按 8 片各约 222 条；4 片 × 45 分钟实测在 418/423 条被掐断，8 片把单片压回 30 分钟预算内
 mutation.yml#full 10  # 聚合 job：下载 4 片日志 + --partition 4 --logs 逐条对账，不跑测试

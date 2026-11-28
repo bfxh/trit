@@ -82,20 +82,21 @@ jobs:
           ARGS: ${{ steps.crates.outputs.args }}
         run: python3 scripts/mutation_check.py $ARGS
 
-  # full 拆 4 片并行（crc32(file\0name) 稳定分片）：每片一个独立检出（同树有单实例锁与共享文件）。
+  # full 拆 8 片并行（crc32(file\0name) 稳定分片）：每片一个独立检出（同树有单实例锁与共享文件）。
+  # 4 片 × 45 分钟实测在 shard 1/2 跑到 418/423 条就被掐断；8 片把单片压到 ~222 条，回到 30 分钟预算内。
   # 聚合 job 保持原名 "mutation (full)"：它不在 required-checks.txt 里（只有 dispatch/schedule 跑），
   # 但名字不变，历史读数与任何外部引用仍对得上。required 的两个名字（self-test / changed crates）不动。
   full-shard:
-    name: mutation (full shard ${{ matrix.shard }}/4)
+    name: mutation (full shard ${{ matrix.shard }}/8)
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       PYTHONUNBUFFERED: "1"
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -104,10 +105,10 @@ jobs:
           key: ${{ hashFiles('Cargo.toml') }}
       - name: Install numpy for script self-tests
         run: python3 -m pip install --user numpy scikit-learn
-      - name: mutation gate (shard ${{ matrix.shard }}/4)
+      - name: mutation gate (shard ${{ matrix.shard }}/8)
         run: |
           set -o pipefail
-          python3 scripts/mutation_check.py --shard ${{ matrix.shard }}/4 2>&1 | tee "shard-${{ matrix.shard }}.log"
+          python3 scripts/mutation_check.py --shard ${{ matrix.shard }}/8 2>&1 | tee "shard-${{ matrix.shard }}.log"
       - name: upload shard log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -131,4 +132,4 @@ jobs:
           path: shard-logs
           merge-multiple: true
       - name: aggregate (partition + per-mutant coverage)
-        run: python3 scripts/mutation_check.py --partition 4 --logs shard-logs
+        run: python3 scripts/mutation_check.py --partition 8 --logs shard-logs
