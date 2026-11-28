@@ -639,6 +639,10 @@
       "lines": 59
     },
     {
+      "file": "crates/trit-build/tests/direct_random_diff.rs",
+      "lines": 158
+    },
+    {
       "file": "crates/trit-build/tests/egraph_equiv.rs",
       "lines": 73
     },
