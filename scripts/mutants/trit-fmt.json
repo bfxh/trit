@@ -17,23 +17,23 @@
  },
  {
   "name": "fmt: is_scalar 只认 null（标量数组应改成每元素一行）",
-  "file": "crates/trit-fmt/src/lib.rs",
+  "file": "crates/trit-fmt/src/print.rs",
   "old": "        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)",
   "new": "        Value::Null",
   "pkg": "trit-fmt",
   "filter": "matches_prettier_golden"
  },
  {
-  "name": "fmt: 数组含数组不再强制展开",
-  "file": "crates/trit-fmt/src/lib.rs",
-  "old": "        Value::Array(items) => items.iter().any(|item| matches!(item, Value::Array(_))),",
-  "new": "        Value::Array(_) => false,",
+  "name": "fmt: 空白行不再强制展开（空行应被压平）",
+  "file": "crates/trit-fmt/src/print.rs",
+  "old": "            seq.items.iter().any(|node| node.blank_before)",
+  "new": "            false",
   "pkg": "trit-fmt",
   "filter": "matches_prettier_golden"
  },
  {
   "name": "fmt: 单行对象去掉内边距",
-  "file": "crates/trit-fmt/src/lib.rs",
+  "file": "crates/trit-fmt/src/print.rs",
   "old": "            format!(\"{{ {} }}\", body.join(\", \"))",
   "new": "            format!(\"{{{}}}\", body.join(\", \"))",
   "pkg": "trit-fmt",
