@@ -183,7 +183,9 @@ def update() -> int:
         return 1
     payload = {"changelog": len(changelog.encode("utf-8")), "drive_paths": found}
     BASELINE.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     print(f"台账已写：CHANGELOG {payload['changelog']} 字节，{len(found)} 个文件仍有盘符路径 → {BASELINE.name}")
     return 0

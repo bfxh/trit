@@ -135,7 +135,9 @@ def main(argv: list[str]) -> int:
             print("REFUSED 无据能力句变多了，--update 不接受：" + "；".join(grew))
             return 1
         BASELINE.write_text(
-            json.dumps(found, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(found, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
         )
         print(f"台账已写：{len(found)} 个文件共 {sum(found.values())} 句无据能力句 → {BASELINE.name}")
         return 0
