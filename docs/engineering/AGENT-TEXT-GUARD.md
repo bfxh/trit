@@ -219,13 +219,15 @@ python tools/subagent_dispatch.py --self-test
 
 ## 6. 下一层（未做，但方向明确）
 
-1. **动作级 capability**：**策略内核已落地**（`crates/trit-orch/src/capability.rs`；判据
-   `cargo test -p trit-orch --test capability` 6/6）：读放行；写/执行/网络默认拒绝；
-   类别已授予但由不可信数据触发时判 `Unknown`（需人确认），只有
-   `allow_untrusted_origin` 显式为 true 才放行。内核作为第六门接进
-   `admit_with_capability`（K3 AND），任一门 False 一票否决。**调用面仍未接**：
-   `context_guard.py` / `sandbox_run.py` / `subagent_dispatch.py` 还没读取这份判定，
-   per-target 白名单也未做；所以这仍只是半层，不能当端到端能力防护。
+1. **动作级 capability**：**策略内核已落地**（`crates/trit-orch/src/capability/mod.rs`；
+   判据 `cargo test -p trit-orch --lib capability` 12/12）：读放行；写/执行/网络默认
+   拒绝；类别已授予但由不可信数据触发时判 `Unknown`（需人确认），只有
+   `allow_untrusted_origin` 显式为 true 才放行。目标白名单 `allow_targets` 按类别
+   配置，**精确匹配**路径/域名：缺目标判 `False`、越界判 `False`，类别未授予时连目标
+   都不看。内核作为第六门接进 `admit_with_capability`（K3 AND），任一门 False 一票
+   否决。**调用面仍未接**：`context_guard.py` / `sandbox_run.py` /
+   `subagent_dispatch.py` 还没读取这份判定；路径规范化、域名小写化、通配也没做
+   （换写法会被保守拒绝）。所以这仍只是半层，不能当端到端能力防护。
 2. **产物 provenance**：回执已有 `output_guard`/哈希，但还没有下游可验证的 sidecar
    或来源签名；产物仍靠“约定路径 + 父智能体自觉”传播。
 3. **记忆写入门**：`memory.py` 写入前强制 `scan` 或 `wrap`，把“记忆是数据”落实到
@@ -242,8 +244,12 @@ python tools/subagent_dispatch.py --self-test
 - `python tools/context_guard.py --stress`：90/90、benign high=0。
 - `python tools/subagent_dispatch.py --self-test`：25/25（输入 + 输出两侧 + 二进制抽取）。
 - `python tools/sandbox_run.py --self-test`：43/43（路径/硬链接/忽略文件写/reparse 路径/内容哈希/index.lock/容量租约附着）。
-- `cargo test -p trit-orch --test capability`：6 例（读放行、默认拒写、不可信来源转
+- `cargo test -p trit-orch --lib capability`：12/12（含目标精确匹配、越界拒绝、缺目标
+  拒绝、类别未授予优先于目标）。
+- `cargo test -p trit-orch --test capability`：9 例（读放行、默认拒写、不可信来源转
   `Unknown`、显式提权放行、未知类别解析失败、第六门 K3 合成）。
+- `cargo test -p trit-orch --test capability_targets`：3 例（精确放行、越界拒绝、缺目标
+  拒绝）。
 - `pwsh tools/selftest.ps1`：696/0/0（全量入口；AP 组为文字门，AO 组含输出隔离）。
 - 文档门禁：`docs_hygiene.py` / `privacy_scan.py` / `ai_vendor_scan.py` /
   `terminology.py check` / `git diff --check`。
