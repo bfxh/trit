@@ -20,7 +20,7 @@
  {
   "name": "claims_evidence: 读数不必带单位",
   "file": "scripts/claims_evidence.py",
-  "old": "MEASUREMENT = re.compile(",
+  "old": "MEASUREMENT = re.compile(\n    r\"\\d+(?:[.,]\\d+)?\\s*(?:×|x|%|pp|‰|ms|µs|us|ns|ps|s/|B/|MB|GB|G |K |M |dB|bps|bit|字节|\"\n    r\"条|个|张|步|轮|种子|/秒|/s\\b|人|行|倍)\"\n)",
   "new": "MEASUREMENT = re.compile(r\"\\d\")  # 有数字就算读数 ⇒ \"提升 30\" 也放行",
   "pkg": "scripts/claims_evidence.py",
   "filter": "",
@@ -29,7 +29,7 @@
  {
   "name": "claims_evidence: 完成类动词不识别",
   "file": "scripts/claims_evidence.py",
-  "old": "CAPABILITY = re.compile(",
+  "old": "CAPABILITY = re.compile(\n    r\"支持|已实现|已经实现|可以做|已能|已完成|完成度|达标|最快的|已落地|已跑通|已验证|已修|已合\"\n)",
   "new": "CAPABILITY = re.compile(r\"已否证\")  # 完成类词全不认 ⇒ 无据句永不拦",
   "pkg": "scripts/claims_evidence.py",
   "filter": "",
