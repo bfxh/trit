@@ -103,3 +103,26 @@ node tools/frontier/bench_prettier.js --corpus <语料目录> --out target/prett
 - [ ] 性能三条读数齐全，含未达到目标值的项
 - [ ] `python scripts/module_budget.py` 绿（新文件已登记）
 - [ ] `cargo test -p trit-policy --test frontier_design` 绿（默认件清单完整）
+
+## 实现进度（2026-11-28）
+
+实现位于 `crates/trit-fmt`（prod 层，零第三方依赖），当前范围是 JSON。
+
+| 判据 | 结果 | 复算 |
+|---|---|---|
+| G1 语义保持 | 13 份语料（含 84,048 字节大文档）与 prettier golden **DIFF 0**；另用 `serde_json` 交叉验证语义相等 | `cargo test -p trit-fmt --test corpus` |
+| G2 幂等 | 全部语料 0 反例 | 同上 |
+| G3 吞吐（大文档 84,048 字节） | trit-fmt **12.90 MiB/s** vs prettier 3.10.1 **1.48 MiB/s**（8.7 倍） | `cargo bench -p trit-fmt --bench format`；prettier 侧 `node bench_single.js big.json 200` |
+| G3 吞吐（小文档 95 字节） | trit-fmt **1.76 µs/doc** vs prettier **213.35 µs/doc** | 同上 |
+| G4 注释与空行 | JSON 没有注释；空行规则未覆盖（见负结果） | — |
+| G5 接入默认链 | **未接入**，prettier 仍是默认件 | — |
+
+### 负结果（保留，不删）
+
+- 范围只有 JSON（`.json` / `.jsonc`）；JS/TS/Markdown 返回 `FormatError::Unsupported`，没有半成品实现。
+- 单线程；4 线程 3 倍的目标未验证（bench 只跑单线程）。
+- 未接入真实调用点（G5），默认件清单里 prettier 仍是默认。
+- 解析器按字节处理：非法 UTF-8 输入未做严格拒绝；重复键保留原序（与 prettier 一致）。
+- 只覆盖 prettier 的 `printWidth=80` 默认值；`--width` 等选项未实现。
+- 小文档那一行的 121 倍放大来自固定开销（prettier 每个文档约 213 µs 的解析器初始化），
+  不能当作真实吞吐比；大文档 8.7 倍才是可比读数。
