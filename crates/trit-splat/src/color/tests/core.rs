@@ -1,6 +1,7 @@
-//! `color` 模块单测：传递函数往返、默认恒等、曝光、饱和度、白平衡与 tone map。
+//! 色彩基础单测：传递函数往返、默认恒等、曝光、饱和度、白平衡与 tone map。
 
-use super::*;
+use crate::Frame;
+use crate::color::*;
 
 fn frame(rgb: &[u8]) -> Frame {
     Frame {
@@ -48,31 +49,6 @@ fn saturation_zero_is_gray() {
     assert_eq!(f.rgb[0], f.rgb[1]);
     assert_eq!(f.rgb[1], f.rgb[2]);
     assert!(f.rgb[0] > 0);
-}
-
-#[test]
-fn neutral_white_balance_is_close_to_identity() {
-    let mut f = frame(&[100, 100, 100]);
-    let cfg = ColorConfig {
-        temperature_k: 6500.0,
-        ..ColorConfig::default()
-    };
-    cfg.apply(&mut f);
-    for c in f.rgb {
-        assert!((c as i32 - 100).abs() <= 1, "wb 中性偏差: {c}");
-    }
-}
-
-#[test]
-fn tint_alone_shifts_green() {
-    let mut f = frame(&[100, 100, 100]);
-    let cfg = ColorConfig {
-        tint: 0.5,
-        ..ColorConfig::default()
-    };
-    cfg.apply(&mut f);
-    assert!(f.rgb[1] > f.rgb[0], "正 tint 应偏绿: {:?}", f.rgb);
-    assert!(f.rgb[1] > f.rgb[2], "正 tint 应偏绿: {:?}", f.rgb);
 }
 
 #[test]

@@ -1,7 +1,14 @@
-//! 输出端色彩管理：输入/输出传递函数、曝光、白平衡、饱和度与 tone mapping。
+//! 输出端色彩管理：传递函数、曝光、白平衡、饱和度、色域转换与 tone mapping。
 //!
-//! 管线：输入解码（可选）→ 曝光 → 白平衡 → 饱和度 → tone map → 输出编码（可选）。
-//! 默认 `raw`/`raw`、EV=0、无白平衡、饱和度=1、`None` 为恒等，不改变既有输出。
+//! 管线：输入解码（可选）→ 曝光 → 白平衡 → 饱和度 → 色域转换 → tone map →
+//! 输出编码（可选）。源原色按 sRGB/Rec.709 解释；默认 `raw`/`raw`、sRGB 色域、
+//! EV=0、无白平衡、饱和度=1、`None` 为恒等，不改变既有输出。
+
+mod gamut;
+mod white_balance;
+
+pub use gamut::Gamut;
+pub use white_balance::{WhiteBalance, white_balance};
 
 use crate::Frame;
 
@@ -30,12 +37,12 @@ pub enum ToneMap {
 pub struct ColorConfig {
     pub input: ColorSpace,
     pub output: ColorSpace,
+    /// 输出原色色域；默认 sRGB/Rec.709，不做转换。
+    pub output_gamut: Gamut,
     /// 曝光补偿，单位 EV（2^EV 线性增益）。
     pub exposure_ev: f32,
-    /// 白平衡色温，单位 K；0 表示关闭。
-    pub temperature_k: f32,
-    /// 绿-洋红色调，[-1, 1]；0 表示中性。
-    pub tint: f32,
+    /// 白平衡；默认中性。
+    pub white_balance: WhiteBalance,
     /// 饱和度，1 为原样，0 为灰度。
     pub saturation: f32,
     pub tone_map: ToneMap,
@@ -46,9 +53,9 @@ impl Default for ColorConfig {
         Self {
             input: ColorSpace::Raw,
             output: ColorSpace::Raw,
+            output_gamut: Gamut::Srgb,
             exposure_ev: 0.0,
-            temperature_k: 0.0,
-            tint: 0.0,
+            white_balance: WhiteBalance::default(),
             saturation: 1.0,
             tone_map: ToneMap::None,
         }
@@ -56,13 +63,14 @@ impl Default for ColorConfig {
 }
 
 impl ColorConfig {
-    /// 是否完全不改变像素（包括输入/输出传递函数）。
+    /// 是否完全不改变像素（包括输入/输出传递函数与色域）。
     pub fn is_identity(&self) -> bool {
         self.input == ColorSpace::Raw
             && self.output == ColorSpace::Raw
+            && self.output_gamut == Gamut::Srgb
             && self.exposure_ev == 0.0
-            && self.temperature_k <= 0.0
-            && self.tint == 0.0
+            && self.white_balance.temperature_k <= 0.0
+            && self.white_balance.tint == 0.0
             && self.saturation == 1.0
             && self.tone_map == ToneMap::None
     }
@@ -73,10 +81,10 @@ impl ColorConfig {
             return;
         }
         let gain = 2.0f32.powf(self.exposure_ev);
-        let wb = if self.temperature_k > 0.0 {
-            white_balance(self.temperature_k, self.tint)
-        } else if self.tint != 0.0 {
-            white_balance(6500.0, self.tint)
+        let wb = if self.white_balance.temperature_k > 0.0 {
+            white_balance(self.white_balance.temperature_k, self.white_balance.tint)
+        } else if self.white_balance.tint != 0.0 {
+            white_balance(6500.0, self.white_balance.tint)
         } else {
             [1.0; 3]
         };
@@ -96,6 +104,7 @@ impl ColorConfig {
             ];
             let luma = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
             c = c.map(|v| luma + (v - luma) * self.saturation);
+            c = gamut::convert(c, self.output_gamut);
             c = c.map(|v| tone_map_channel(v, self.tone_map));
             if self.output == ColorSpace::Srgb {
                 c = c.map(srgb_encode);
@@ -134,45 +143,6 @@ fn tone_map_channel(v: f32, mode: ToneMap) -> f32 {
     }
 }
 
-/// 色温/色调 → 线性 RGB 增益；以 6500K 为中性。
-pub fn white_balance(temperature_k: f32, tint: f32) -> [f32; 3] {
-    let target = kelvin_rgb(temperature_k.max(1.0));
-    let neutral = kelvin_rgb(6500.0);
-    let mut wb = [
-        target[0] / neutral[0],
-        target[1] / neutral[1],
-        target[2] / neutral[2],
-    ];
-    let tint = tint.clamp(-1.0, 1.0);
-    wb[1] *= 1.0 + 0.5 * tint;
-    wb[0] *= 1.0 - 0.25 * tint;
-    wb[2] *= 1.0 - 0.25 * tint;
-    wb
-}
-
-/// Tanner Helland 黑体色温近似，输出 0..1 RGB。
-fn kelvin_rgb(k: f32) -> [f32; 3] {
-    let t = (k / 100.0).clamp(10.0, 400.0);
-    let r = if t <= 66.0 {
-        255.0
-    } else {
-        329.698_73 * (t - 60.0).powf(-0.133_204_76)
-    };
-    let g = if t <= 66.0 {
-        99.470_8 * t.ln() - 161.119_57
-    } else {
-        288.122_17 * (t - 60.0).powf(-0.075_514_85)
-    };
-    let b = if t >= 66.0 {
-        255.0
-    } else if t <= 19.0 {
-        0.0
-    } else {
-        138.517_73 * (t - 10.0).ln() - 305.044_8
-    };
-    [r, g, b].map(|v| (v / 255.0).clamp(0.0, 1.0))
-}
-
 #[cfg(test)]
-#[path = "color/tests.rs"]
+#[path = "color/tests/mod.rs"]
 mod tests;
