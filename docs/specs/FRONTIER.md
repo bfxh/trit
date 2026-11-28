@@ -28,7 +28,9 @@
 ### 1.3 禁上帝对象（上游与下游都禁）
 
 - 单文件 ≤800 行（`scripts/module_budget.py` 棘轮，只减不增）；
-- 单类型职责面（`pub` 方法 / 字段数量）扩张必须同 PR 拆分，或在 PR 里写明为什么不能拆；
+- 单类型职责面棘轮：`pub struct/enum` 的 pub 字段数、`impl` 的 `pub fn` 数，台账
+  `scripts/god_object_surface.json`；**新类型首次登记 ≤32**（实测 1634 个条目 max=32、p95=10），
+  存量按各自当前值冻结、只减不增；判据 `cargo test -p trit-policy --test god_object_surface`；
 - **下游依赖方同样适用**：不因为"只是消费方"就放行巨型结构或隐式全局状态。
 
 ### 1.4 质量不变的超越
@@ -56,6 +58,7 @@
 |---|---|---|
 | 默认工具登记 | 清单字段完整 + 路径存在 | `python3 scripts/frontier_gate.py` |
 | 上帝对象 | 行数棘轮 | `python3 scripts/module_budget.py` |
+| 上帝对象（职责面） | 单类型 pub 项棘轮 | `cargo test -p trit-policy --test god_object_surface` |
 | 能力句有据 | 复算指针或读数 | `python3 scripts/claims_evidence.py` |
 | S 级四门槛 | 任务包字段齐全 | `python3 scripts/frontier_gate.py --tasks` |
 | 数学验证 | Verus/Lean 报告 | `python3 scripts/verify.py` |
