@@ -3267,10 +3267,6 @@
       "lines": 180
     },
     {
-      "file": "crates/trit-orch/src/capability.rs",
-      "lines": 223
-    },
-    {
       "file": "crates/trit-orch/src/capability/mod.rs",
       "lines": 166
     },
@@ -5289,10 +5285,6 @@
     {
       "file": "crates/trit-splat/src/color/gamut.rs",
       "lines": 52
-    },
-    {
-      "file": "crates/trit-splat/src/color/tests.rs",
-      "lines": 103
     },
     {
       "file": "crates/trit-splat/src/color/tests/core.rs",
