@@ -319,10 +319,6 @@
       "lines": 49
     },
     {
-      "file": "crates/trit-build/src/direct/emit/tests/many.rs",
-      "lines": 17
-    },
-    {
       "file": "crates/trit-build/src/direct/fold.rs",
       "lines": 54
     },
